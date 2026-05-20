@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Agency — State &amp; Next Steps</title>
+<style>
+  :root {
+    --navy: #0a1f44;
+    --navy-2: #14305c;
+    --ink: #1a2233;
+    --paper: #f7f5f1;
+    --card: #ffffff;
+    --coral: #ff6a5a;
+    --coral-deep: #e0493a;
+    --line: #e3ddd3;
+    --muted: #6b7385;
+    --green: #1f9d6b;
+    --amber: #d98a16;
+    --red: #d6453c;
+    --blue: #2f6df0;
+    --shadow: 0 1px 2px rgba(10,31,68,.06), 0 8px 24px rgba(10,31,68,.07);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* Header */
+  header.hero {
+    background:
+      radial-gradient(1200px 400px at 90% -10%, rgba(255,106,90,.18), transparent 60%),
+      linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%);
+    color: #fff;
+    padding: 56px 0 64px;
+    margin-bottom: -36px;
+  }
+  .hero .wrap { padding-bottom: 0; }
+  .eyebrow {
+    text-transform: uppercase; letter-spacing: .22em; font-size: 12px;
+    font-weight: 700; color: var(--coral); margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(2rem, 1rem + 4.5vw, 3.4rem);
+    line-height: 1.04; margin: 0 0 18px; font-weight: 800; letter-spacing: -.02em;
+  }
+  .hero p.lede { font-size: 1.08rem; max-width: 70ch; color: #cdd6e6; margin: 0; }
+  .hero .meta { margin-top: 26px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+    color: #eaf0fb; padding: 7px 13px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    backdrop-filter: blur(6px);
+  }
+  .chip b { color: #fff; }
+
+  /* Section scaffolding */
+  section { margin-top: 52px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 20px; }
+  .sec-num {
+    font-variant-numeric: tabular-nums; font-weight: 800; font-size: 14px;
+    color: var(--coral-deep); background: #fff; border: 1px solid var(--line);
+    width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex: none;
+    box-shadow: var(--shadow);
+  }
+  h2 { font-size: 1.5rem; margin: 0; font-weight: 800; letter-spacing: -.01em; }
+  .sec-sub { color: var(--muted); font-size: .95rem; margin: 2px 0 0; }
+
+  /* Cards */
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 760px) { .g2, .g3 { grid-template-columns: 1fr; } }
+
+  /* Strategy locked grid */
+  .locked { padding: 6px; }
+  .locked .row {
+    display: grid; grid-template-columns: 168px 1fr; gap: 12px; align-items: baseline;
+    padding: 13px 16px; border-bottom: 1px solid var(--line);
+  }
+  .locked .row:last-child { border-bottom: 0; }
+  .locked .k { font-weight: 700; color: var(--navy); font-size: .92rem; }
+  .locked .v { color: var(--ink); font-size: .95rem; }
+  .lk { color: var(--green); font-weight: 700; }
+
+  /* Status pill */
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .p-done { color: var(--green); background: rgba(31,157,107,.12); }
+  .p-prog { color: var(--amber); background: rgba(217,138,22,.13); }
+  .p-block { color: var(--red); background: rgba(214,69,60,.12); }
+
+  /* Demo cards */
+  .demo { padding: 20px; display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; }
+  .demo::after {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  }
+  .demo.d-done::after { background: var(--green); }
+  .demo.d-prog::after { background: var(--amber); }
+  .demo .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .demo h3 { margin: 0; font-size: 1.06rem; font-weight: 800; }
+  .demo .persona { color: var(--muted); font-size: .82rem; margin-top: 2px; }
+  .demo .mech { font-size: .88rem; color: var(--ink); }
+  .demo .mech b { color: var(--navy); }
+  .demo .foot { font-size: .82rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+  .demo .foot a { color: var(--blue); text-decoration: none; font-weight: 600; }
+  .demo .foot a:hover { text-decoration: underline; }
+
+  /* Blockers */
+  .blockers { border: 1px solid #f0c9c4; background: linear-gradient(180deg,#fff 0%, #fff7f5 100%); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+  .blockers .bhead { background: var(--coral); color: #fff; padding: 14px 20px; font-weight: 800; letter-spacing: .01em; display: flex; align-items: center; gap: 10px; }
+  .blockers ol { margin: 0; padding: 8px 0; list-style: none; counter-reset: b; }
+  .blockers li { counter-increment: b; padding: 14px 20px 14px 58px; position: relative; border-bottom: 1px solid #f3ded9; }
+  .blockers li:last-child { border-bottom: 0; }
+  .blockers li::before {
+    content: counter(b); position: absolute; left: 18px; top: 14px;
+    width: 26px; height: 26px; background: var(--navy); color: #fff; border-radius: 7px;
+    display: grid; place-items: center; font-size: 13px; font-weight: 800;
+  }
+  .blockers .bt { font-weight: 700; color: var(--navy); }
+  .blockers .bd { color: var(--ink); font-size: .92rem; margin-top: 2px; }
+  .sev { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; padding: 2px 7px; border-radius: 5px; margin-left: 8px; vertical-align: middle; }
+  .sev.hi { background: rgba(214,69,60,.14); color: var(--red); }
+  .sev.med { background: rgba(217,138,22,.16); color: var(--amber); }
+
+  /* Security note */
+  .secnote { padding: 16px 20px; border-left: 4px solid var(--red); background: #fff; }
+  .secnote b { color: var(--red); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; background: #f0eee8; padding: 1px 6px; border-radius: 5px; }
+
+  /* Timeline */
+  .timeline { position: relative; margin-left: 8px; padding-left: 30px; }
+  .timeline::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+  .tstep { position: relative; margin-bottom: 22px; }
+  .tstep:last-child { margin-bottom: 0; }
+  .tstep::before {
+    content: ""; position: absolute; left: -30px; top: 3px; width: 16px; height: 16px;
+    border-radius: 50%; background: #fff; border: 3px solid var(--coral);
+  }
+  .tstep.now::before { background: var(--coral); box-shadow: 0 0 0 4px rgba(255,106,90,.18); }
+  .tstep .tlabel { font-weight: 800; color: var(--navy); font-size: 1rem; }
+  .tstep .twin { font-size: .8rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  .tstep ul { margin: 8px 0 0; padding-left: 18px; }
+  .tstep li { margin: 4px 0; font-size: .94rem; }
+
+  /* Callout (X algo) */
+  .callout { padding: 22px; background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%); color: #eaf0fb; border-radius: var(--radius); box-shadow: var(--shadow); }
+  .callout h3 { margin: 0 0 10px; color: #fff; font-size: 1.15rem; display: flex; align-items: center; gap: 10px; }
+  .callout .new { font-size: 10px; background: var(--coral); color: #fff; padding: 3px 8px; border-radius: 999px; letter-spacing: .1em; font-weight: 800; }
+  .callout p { margin: 8px 0; font-size: .95rem; }
+  .callout code { background: rgba(255,255,255,.12); padding: 2px 7px; border-radius: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em; color: #fff; }
+  .callout .why { color: #b9c6dd; }
+
+  footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; text-align: center; }
+  footer code { background: #ece9e2; padding: 2px 7px; border-radius: 5px; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">AI Automation Agency &middot; Status Report</p>
+    <h1>Where we are &amp; what's next</h1>
+    <p class="lede">SMB-tier boutique agency. Strategy locked, four demos in flight, site built but undeployed. The path to launch is gated on a small set of concrete blockers, not on more building.</p>
+    <div class="meta">
+      <span class="chip">As of <b>2026-05-20</b></span>
+      <span class="chip">Phase: <b>demo build &rarr; pre-launch</b></span>
+      <span class="chip">Tier: <b>SMB&nbsp;$3&ndash;15K</b></span>
+      <span class="chip">Entity: <b>Aletheia&nbsp;LLC&nbsp;+&nbsp;DBA</b></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- 1. STRATEGY LOCKED -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">1</span>
+      <div><h2>Strategy &mdash; locked</h2><p class="sec-sub">No open strategic decisions blocking. These are settled.</p></div>
+    </div>
+    <div class="card locked">
+      <div class="row"><div class="k">Tier</div><div class="v"><span class="lk">&check;</span> SMB $3&ndash;15K (not mid-market)</div></div>
+      <div class="row"><div class="k">Legal entity</div><div class="v"><span class="lk">&check;</span> Aletheia LLC + DBA for the brand</div></div>
+      <div class="row"><div class="k">Process name</div><div class="v"><span class="lk">&check;</span> &ldquo;PILOT&rdquo; (replaced &ldquo;STORM&rdquo; placeholder)</div></div>
+      <div class="row"><div class="k">Social strategy</div><div class="v"><span class="lk">&check;</span> Personal LinkedIn first, business 1&times;/wk, no bought engagement</div></div>
+      <div class="row"><div class="k">Case studies</div><div class="v"><span class="lk">&check;</span> Fictional engagement scenarios &mdash; no fake named clients</div></div>
+      <div class="row"><div class="k">Founder bio</div><div class="v"><span class="lk">&check;</span> Drafted (fictional, FAU comp-eng) &mdash; needs real name/photo/city swap</div></div>
+      <div class="row"><div class="k">Brand name</div><div class="v"><span style="color:var(--amber);font-weight:700">&deg;</span> Deferred &mdash; running under Aletheia DBA, picked before site deploy</div></div>
+    </div>
+  </section>
+
+  <!-- 2. DEMOS -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">2</span>
+      <div><h2>The four demos</h2><p class="sec-sub">Each locked to a fictional SMB persona. Shared stack (Next.js + Anthropic SDK + Zod), shared &ldquo;verifiable answer&rdquo; sales story.</p></div>
+    </div>
+    <div class="grid g2">
+
+      <div class="card demo d-done">
+        <div class="top">
+          <div><h3>Email Triage</h3><div class="persona">Ledgerline &middot; B2B SaaS bookkeeping</div></div>
+          <span class="pill p-done">Repo live</span>
+        </div>
+        <div class="mech"><b>Sharpest mechanic:</b> verifiable-answer enforcement. Eval 100% (6/6 categories, 0 schema errors).</div>
+        <div class="foot">Next: Gmail + Slack surfaces (labels/drafts, never auto-send) &middot; <a href="https://github.com/mrgyatso/email-triage-agent">mrgyatso/email-triage-agent</a></div>
+      </div>
+
+      <div class="card demo d-done">
+        <div class="top">
+          <div><h3>Resume Screening</h3><div class="persona">Wheelhouse Talent &middot; Austin recruiting</div></div>
+          <span class="pill p-done">Repo live</span>
+        </div>
+        <div class="mech"><b>Sharpest mechanic:</b> JD-rubric + verified per-criterion citations + 3-layer injection defense + proactive PII redaction.</div>
+        <div class="foot">Pending: push <span class="mono">feat/compliance-redaction</span>, Sonnet validation run, screenshots &middot; <a href="https://github.com/mrgyatso/resume-screening-agent">mrgyatso/resume-screening-agent</a></div>
+      </div>
+
+      <div class="card demo d-done">
+        <div class="top">
+          <div><h3>Lead Scoring + AR Chase</h3><div class="persona">TempRight &middot; Tampa HVAC</div></div>
+          <span class="pill p-block">Blocked</span>
+        </div>
+        <div class="mech"><b>Sharpest mechanic:</b> hybrid scoring (deterministic + LLM rationale). Code complete locally &mdash; 12 commits, 117 tests green.</div>
+        <div class="foot">Blocked on API credits &rarr; full eval + GitHub push (repo empty) + Loom</div>
+      </div>
+
+      <div class="card demo d-prog">
+        <div class="top">
+          <div><h3>Booking Agent</h3><div class="persona">Sunridge Dental &middot; Boca Raton</div></div>
+          <span class="pill p-prog">Phase 2</span>
+        </div>
+        <div class="mech"><b>Sharpest mechanic:</b> <span class="mono">compute_treatment_estimate</span> with cited payer rules. Patching 4 known Phase-2 gaps.</div>
+        <div class="foot">Only demo not yet at Phase 3 &middot; no repo yet</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 3. BLOCKERS -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">3</span>
+      <div><h2>Blockers</h2><p class="sec-sub">What actually stands between &ldquo;demos exist&rdquo; and &ldquo;first sales call.&rdquo;</p></div>
+    </div>
+    <div class="blockers">
+      <div class="bhead">&#9888; Resolve these to unblock launch</div>
+      <ol>
+        <li>
+          <div class="bt">Anthropic API credits drained <span class="sev hi">High</span></div>
+          <div class="bd">Account balance ran dry 2026-05-19 mid-eval. Blocks lead-scoring full eval <em>and every Loom recording</em>. Top up at <span class="mono">console.anthropic.com/billing</span>.</div>
+        </li>
+        <li>
+          <div class="bt">Founder identity details <span class="sev hi">High</span></div>
+          <div class="bd">Need real name + photo + city + prior-role one-liner to lock the LinkedIn bio and the site <span class="mono">/about</span>.</div>
+        </li>
+        <li>
+          <div class="bt">Booking agent behind <span class="sev med">Med</span></div>
+          <div class="bd">Only demo not at Phase 3. Patch the 4 Phase-2 gaps, then it joins the other three.</div>
+        </li>
+        <li>
+          <div class="bt">Site undeployed <span class="sev med">Med</span></div>
+          <div class="bd">Built at <span class="mono">/home/library/vstorm-clone/</span>. Waiting on brand-name finalization + founder bio before deploy.</div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 4. SECURITY -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">4</span>
+      <div><h2>Security flag</h2><p class="sec-sub">Open item, logged repeatedly &mdash; do not skip.</p></div>
+    </div>
+    <div class="card secnote">
+      <b>Rotate the Anthropic API key.</b> The <span class="mono">ANTHROPIC_API_KEY</span> was pasted in chat (now drained). After topping up credits, <b>rotate it</b> before any further live runs. Tracked across multiple log entries; still open.
+    </div>
+  </section>
+
+  <!-- 5. NEXT STEPS -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">5</span>
+      <div><h2>Next steps &mdash; sequence</h2><p class="sec-sub">Dependency order. Each gate unlocks the next.</p></div>
+    </div>
+    <div class="card" style="padding:26px 26px 26px 22px;">
+      <div class="timeline">
+        <div class="tstep now">
+          <span class="twin">Now &middot; unblock</span>
+          <div class="tlabel">Top up credits + rotate key</div>
+          <ul>
+            <li>Top up Anthropic balance, then rotate the exposed key</li>
+            <li>Collect founder name / photo / city / prior-role one-liner</li>
+          </ul>
+        </div>
+        <div class="tstep">
+          <span class="twin">Next 1&ndash;2 days</span>
+          <div class="tlabel">Finish the demo lineup</div>
+          <ul>
+            <li>Lead-scoring: run full eval &rarr; push repo &rarr; tune cascade volume</li>
+            <li>Resume-screening: push <span class="mono">feat/compliance-redaction</span>, Sonnet validation, screenshots</li>
+            <li>Booking-agent: patch 4 gaps &rarr; Phase 3 &rarr; create repo</li>
+          </ul>
+        </div>
+        <div class="tstep">
+          <span class="twin">Once all 4 at Phase 3</span>
+          <div class="tlabel">Turn demos into sales assets</div>
+          <ul>
+            <li>Record a 3&ndash;5 min Loom per demo (focus each one's sharpest mechanic)</li>
+            <li>Rewrite all READMEs as sales assets, not build docs</li>
+            <li>Push all four public repos clean</li>
+          </ul>
+        </div>
+        <div class="tstep">
+          <span class="twin">Then</span>
+          <div class="tlabel">Go public</div>
+          <ul>
+            <li>Pick brand name &rarr; search/replace &rarr; deploy site (Resend + Cal.com wired)</li>
+            <li>LinkedIn launch with founder bio; personal-first content sequence</li>
+            <li><strong>Build the X strategy off the published algorithm</strong> (see below)</li>
+            <li>Cold-email-to-named-prospects, tier-specific to SMB</li>
+            <li>First sales calls</li>
+          </ul>
+        </div>
+        <div class="tstep">
+          <span class="twin">After first paying client</span>
+          <div class="tlabel">Replace fiction with fact</div>
+          <ul>
+            <li>Swap one fictional case study for a real one; fill <span class="mono">NA%</span> placeholders</li>
+            <li>Retainer-conversion conversation at handoff</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. X ALGORITHM CALLOUT -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">6</span>
+      <div><h2>Marketing must-do</h2><p class="sec-sub">New rule added to the wiki this session.</p></div>
+    </div>
+    <div class="callout">
+      <h3>Consult the published X algorithm <span class="new">NEW</span></h3>
+      <p>Before drafting any X / Twitter posting strategy, mine the open-sourced recommendation algorithm. X deliberately published it &mdash; we have the real ranking logic instead of guessing.</p>
+      <p><b>Source:</b> <code>github.com/twitter/the-algorithm</code> + <code>github.com/twitter/the-algorithm-ml</code> (March 2023).</p>
+      <p class="why"><b>How to apply:</b> Extract the load-bearing ranking features (engagement types, recency, author reputation, media presence, reply/quote behavior, negative-feedback penalties) and translate them into concrete posting rules &mdash; format, cadence, engagement tactics &mdash; before locking the X content calendar.</p>
+      <p class="why"><b>Caveat:</b> The snapshot is from 2023; treat it as ground truth on ranking <em>mechanics</em>, not current exact weights.</p>
+    </div>
+  </section>
+
+  <footer>
+    Generated from the wiki &middot; sources: <code>queries/where-are-we-now</code>, <code>workstream-b-demos</code>, <code>workstream-c-marketing</code>, <code>log.md</code><br>
+    Single point of truth: <code>~/wiki/entities/ai-automation-agency/dashboard.md</code>
+  </footer>
+
+</div>
+</body>
+</html>
