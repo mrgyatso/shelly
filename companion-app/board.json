@@ -1,0 +1,74 @@
+{
+  "title": "AI Agency — State & Next Steps",
+  "updated": "2026-05-20",
+  "subtitle": "SMB-tier boutique agency. Strategy locked, four demos in flight, site built but undeployed. The path to launch is gated on a small set of concrete blockers, not on more building.",
+  "meta": [
+    { "label": "As of", "value": "2026-05-20" },
+    { "label": "Phase", "value": "demo build → pre-launch" },
+    { "label": "Tier", "value": "SMB $3–15K" },
+    { "label": "Entity", "value": "Aletheia LLC + DBA" }
+  ],
+  "groups": [
+    {
+      "id": "now",
+      "phase": "Now · unblock",
+      "label": "Top up credits + rotate key",
+      "current": true,
+      "items": [
+        { "id": "topup-credits", "text": "Top up Anthropic balance, then rotate the exposed key" },
+        { "id": "founder-identity", "text": "Collect founder name / photo / city / prior-role one-liner" }
+      ]
+    },
+    {
+      "id": "next-1-2-days",
+      "phase": "Next 1–2 days",
+      "label": "Finish the demo lineup",
+      "items": [
+        { "id": "lead-scoring-eval", "text": "Lead-scoring: run full eval → push repo → tune cascade volume" },
+        { "id": "resume-push", "text": "Resume-screening: push feat/compliance-redaction, Sonnet validation, screenshots" },
+        { "id": "booking-phase3", "text": "Booking-agent: patch 4 gaps → Phase 3 → create repo" }
+      ]
+    },
+    {
+      "id": "all-phase3",
+      "phase": "Once all 4 at Phase 3",
+      "label": "Turn demos into sales assets",
+      "items": [
+        { "id": "looms", "text": "Record a 3–5 min Loom per demo (focus each one's sharpest mechanic)" },
+        { "id": "readmes", "text": "Rewrite all READMEs as sales assets, not build docs" },
+        { "id": "push-repos", "text": "Push all four public repos clean" }
+      ]
+    },
+    {
+      "id": "go-public",
+      "phase": "Then",
+      "label": "Go public",
+      "items": [
+        { "id": "brand-deploy", "text": "Pick brand name → deploy site (Resend + Cal.com wired)" },
+        { "id": "linkedin-launch", "text": "LinkedIn launch with founder bio; personal-first content sequence" },
+        { "id": "x-algo-strategy", "text": "Build the X strategy off the published algorithm" },
+        { "id": "cold-email", "text": "Cold-email-to-named-prospects, tier-specific to SMB" },
+        { "id": "sales-calls", "text": "First sales calls" }
+      ]
+    },
+    {
+      "id": "first-client",
+      "phase": "After first paying client",
+      "label": "Replace fiction with fact",
+      "items": [
+        { "id": "real-case-study", "text": "Swap one fictional case study for a real one; fill NA% placeholders" },
+        { "id": "retainer", "text": "Retainer-conversion conversation at handoff" }
+      ]
+    }
+  ],
+  "callout": {
+    "tag": "NEW",
+    "title": "Consult the published X algorithm",
+    "lines": [
+      "Before drafting any X / Twitter posting strategy, mine the open-sourced recommendation algorithm. X deliberately published it — we have the real ranking logic instead of guessing.",
+      "Source: github.com/twitter/the-algorithm + github.com/twitter/the-algorithm-ml (March 2023).",
+      "How to apply: extract the load-bearing ranking features and translate them into concrete posting rules before locking the X content calendar.",
+      "Caveat: the snapshot is from 2023; treat it as ground truth on ranking mechanics, not current exact weights."
+    ]
+  }
+}

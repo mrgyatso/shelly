@@ -6,6 +6,9 @@ dist/
 build/
 .vite/
 
+# runtime state (server-generated)
+companion-app/state.json
+
 # env / secrets
 .env
 .env.*

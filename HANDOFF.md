@@ -62,24 +62,45 @@ We compared three ways to "interface with the session". Summary of why we landed
 claude-code-companion/
 ├── README.md                     # overview + status
 ├── HANDOFF.md                    # this file
-├── .gitignore                    # node
-└── prototype/
-    └── status-board.html         # the static visual prototype (becomes the MCP App UI basis)
+├── .gitignore                    # node + companion-app/state.json
+├── prototype/
+│   └── status-board.html         # the static visual prototype (reference look)
+└── companion-app/                # WORKING MCP App scaffold (built + smoke-tested on Linux)
+    ├── package.json              # build: vite singlefile; serve: tsx server.ts
+    ├── tsconfig.json
+    ├── vite.config.ts            # vite-plugin-singlefile (bundles UI to one HTML)
+    ├── board.json                # board content + tasks (the agency next-steps)
+    ├── server.ts                 # MCP server: 4 tools + ui:// resource, StreamableHTTP /mcp
+    ├── mcp-app.html              # UI shell + styles (from the prototype look)
+    └── src/mcp-app.ts            # UI logic (App class, checkboxes, ask-back)
 ```
 
-No server/app code yet — that's the production work below.
+`companion-app/` is a **working scaffold**: `npm run typecheck` clean, `npm run build` produces a
+260KB self-contained `dist/mcp-app.html`, and the MCP server passed an end-to-end smoke test (lists 4
+tools; `show_status_board` returns the board payload with `_meta["ui/resourceUri"]`; `set_task_status`
+toggles + persists; `record_question` queues). What's left is rendering it in a real graphical client.
 
 ## 4. Production build plan (MCP Apps)
 
-### 4.1 Scaffold (fastest path)
-The official skill scaffolds server + UI + config. In Claude Code on the Mac:
+### 4.0 IMPORTANT: published `ext-apps@0.1.0` differs from the build-guide docs
+The `companion-app/` code already accounts for this; note it before changing things:
+- **No `@modelcontextprotocol/ext-apps/server` export.** There are no `registerAppTool` /
+  `registerAppResource` helpers. Register tools/resources **directly on the MCP SDK** (`McpServer`),
+  and set the MCP Apps metadata by hand:
+  - UI-bearing tool result carries `_meta["ui/resourceUri"] = "ui://..."`
+  - the UI resource is served with `mimeType: "text/html;profile=mcp-app"`
+- **Ask-back uses `app.sendMessage({ role: "user", content: [{ type:"text", text }] })`** — this sends
+  a real user message to the model. (The docs' `updateModelContext` is not how 0.1.0 does it.)
+- **UI connects with a transport:** `await app.connect(new PostMessageTransport(window.parent))`.
+- `callServerTool({ name, arguments })` and the `ontoolresult` setter work as expected.
+
+### 4.1 Scaffold (already done; or regenerate via the skill)
+`companion-app/` is already scaffolded and working. If you'd rather regenerate from the official skill:
 
 ```
 /plugin marketplace add modelcontextprotocol/ext-apps
 /plugin install mcp-apps@modelcontextprotocol-ext-apps
 ```
-
-Then: "Create an MCP App that renders a status board with checkable tasks and a per-item ask button."
 
 ### 4.2 Manual structure (if you prefer to understand it)
 ```
@@ -137,20 +158,30 @@ Prereqs on the Mac: Node 18+ (20/22 ideal), `git`, `gh` (optional), a paid Claud
 custom-connector test path.
 
 ```bash
-git clone https://github.com/<owner>/claude-code-companion.git
+git clone https://github.com/mrgyatso/claude-code-companion.git
 cd claude-code-companion
 
-# open the prototype to see the target look
+# see the target look
 open prototype/status-board.html
 
-# scaffold the MCP App (see §4.1) or create companion-app/ manually (see §4.2)
-# build the UI from prototype/status-board.html, wire the tools, then:
-#   cd companion-app && npm install && npm run build && npm run serve
-# test offline with basic-host (§4.5), then tunnel + custom connector for claude.ai
+# run the working scaffold
+cd companion-app
+npm install
+npm run build           # bundles UI -> dist/mcp-app.html
+PORT=3009 npm run serve # MCP server on http://localhost:3009/mcp
+
+# in another terminal, render it in the offline test host:
+git clone https://github.com/modelcontextprotocol/ext-apps.git
+cd ext-apps/examples/basic-host && npm install
+SERVERS='["http://localhost:3009/mcp"]' npm start   # open http://localhost:8080
+
+# then for a real client: npx cloudflared tunnel --url http://localhost:3009
+#   add the HTTPS URL as a custom connector in claude.ai (paid plan), call "show status board"
 ```
 
-Suggested first commit on the Mac: scaffold `companion-app/` and get `show_status_board` rendering the
-prototype in `basic-host`. Then layer `set_task_status` persistence, then the ask-back.
+First milestone on the Mac: see `show_status_board` render in `basic-host`, toggle a checkbox, click
+**Ask** on a task and confirm the question lands in the conversation (that exercises `sendMessage`).
+Then wire the live session-transcript feed if you want the read-side mirror (tail the session JSONL).
 
 ## 6. Open questions / decisions deferred
 - Confirm whether this Claude Code/clients build supports MCP **sampling** (affects out-of-band ask-back).
