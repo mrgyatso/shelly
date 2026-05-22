@@ -22,12 +22,12 @@
         "minHeight": 280,
         "alwaysOnTop": false,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "resizable": true,
         "skipTaskbar": false,
         "visible": true,
         "shadow": true,
-        "backgroundColor": "#0f121e"
+        "backgroundColor": "#00000000"
       }
     ],
     "security": {
