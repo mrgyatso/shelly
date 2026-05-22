@@ -10,7 +10,7 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 /** Height of the chrome bar — keep in sync with `--chrome-h` in styles.css. */
 const CHROME_H = 38;
 const MIN_W = 320;
-const MIN_H = 280;
+const MIN_H = 120;
 /** Panel corner-radius range — the card morphs rounder when tall, tighter when wide. */
 const MIN_RADIUS = 10;
 const MAX_RADIUS = 20;
