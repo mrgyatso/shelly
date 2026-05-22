@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Fit probe — wide</title>
+<style>
+  html, body { margin: 0; background: #f4f5f8; font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { display: flex; justify-content: center; padding: 16px; }
+  .row {
+    display: flex;
+    gap: 14px;
+    align-items: stretch;
+  }
+  .tile {
+    width: 200px;
+    background: #fff;
+    border: 1px solid #e2e5ec;
+    border-radius: 12px;
+    padding: 16px 18px;
+    box-shadow: 0 6px 24px rgba(20, 24, 40, 0.08);
+  }
+  h1 { margin: 0 0 6px; font-size: 15px; }
+  p { margin: 0; color: #5b6275; font-size: 12.5px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="row" data-fit-root>
+    <div class="tile"><h1>Landscape</h1><p>A wide artifact — a row of tiles.</p></div>
+    <div class="tile"><h1>Morph</h1><p>The window should grow wide and the card corners tighten.</p></div>
+    <div class="tile"><h1>Tighter</h1><p>Wide aspect maps to the smaller corner radius.</p></div>
+    <div class="tile"><h1>Card</h1><p>Compare against fit-tall, which rounds more.</p></div>
+  </div>
+  <script>
+    (function () {
+      var el = document.querySelector("[data-fit-root]") || document.body;
+      var post = function () {
+        parent.postMessage(
+          { source: "companion-artifact", kind: "size", w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) },
+          "*"
+        );
+      };
+      if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+      addEventListener("load", post);
+      post();
+    })();
+  </script>
+</body>
+</html>

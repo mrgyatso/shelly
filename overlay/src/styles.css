@@ -23,6 +23,8 @@ body {
   flex-direction: column;
   /* rounded translucent panel sitting inside the transparent window */
   border-radius: var(--radius);
+  /* morph the corners alongside the window resize (resize.ts applyRadius, ~180ms) */
+  transition: border-radius 180ms cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
 }
 

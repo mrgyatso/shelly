@@ -11,6 +11,9 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 const CHROME_H = 38;
 const MIN_W = 320;
 const MIN_H = 280;
+/** Panel corner-radius range — the card morphs rounder when tall, tighter when wide. */
+const MIN_RADIUS = 10;
+const MAX_RADIUS = 20;
 /** Breathing room so the artifact's own scrollbars don't appear at fit size. */
 const PAD = 8;
 /** Keep the window off the very edge of the work area. */
@@ -80,6 +83,19 @@ async function animateTo(target: Size): Promise<void> {
   });
 }
 
+/**
+ * Map a target window size to a panel corner radius and set it as a CSS var:
+ * tall/portrait artifacts get a rounder card, wide/landscape ones a tighter one.
+ * styles.css transitions `border-radius` over the same ~180ms (ANIM_MS), so the
+ * shape morphs in parallel with the window resize.
+ */
+function applyRadius({ w, h }: Size): void {
+  const ratio = Math.max(0.5, Math.min(2, w / h)); // clamp portrait..landscape
+  const t = (ratio - 0.5) / 1.5; // 0 at portrait, 1 at landscape
+  const radius = Math.round(MAX_RADIUS - t * (MAX_RADIUS - MIN_RADIUS));
+  document.documentElement.style.setProperty("--radius", `${radius}px`);
+}
+
 async function fit(content: Size): Promise<void> {
   const target = await targetSize(content);
   // Echo guard: resizing reflows the artifact, which re-reports; ignore reports
@@ -92,6 +108,7 @@ async function fit(content: Size): Promise<void> {
     return;
   }
   lastTarget = target;
+  applyRadius(target);
   await animateTo(target);
 }
 
