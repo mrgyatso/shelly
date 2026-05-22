@@ -84,6 +84,7 @@ body {
   color: var(--muted);
   font-size: 13px;
 }
+.empty[hidden] { display: none; }
 
 #frame {
   flex: 1;
