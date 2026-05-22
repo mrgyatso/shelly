@@ -5,6 +5,11 @@ node_modules/
 dist/
 build/
 .vite/
+ui-dist/
+target/
+
+# runtime state (persisted checkbox state)
+state.json
 
 # env / secrets
 .env

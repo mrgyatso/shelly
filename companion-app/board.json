@@ -1,0 +1,177 @@
+{
+  "id": "ai-agency",
+  "eyebrow": "AI Automation Agency · Status Report",
+  "title": "Where we are & what's next",
+  "lede": "SMB-tier boutique agency. Strategy locked, four demos in flight, site built but undeployed. The path to launch is gated on a small set of concrete blockers, not on more building.",
+  "meta": [
+    { "label": "As of", "value": "2026-05-20" },
+    { "label": "Phase", "value": "demo build → pre-launch" },
+    { "label": "Tier", "value": "SMB $3–15K" },
+    { "label": "Entity", "value": "Aletheia LLC + DBA" }
+  ],
+  "sections": [
+    {
+      "type": "info",
+      "num": 1,
+      "title": "Strategy — locked",
+      "sub": "No open strategic decisions blocking. These are settled.",
+      "rows": [
+        { "k": "Tier", "v": "SMB $3–15K (not mid-market)", "ok": true },
+        { "k": "Legal entity", "v": "Aletheia LLC + DBA for the brand", "ok": true },
+        { "k": "Process name", "v": "\"PILOT\" (replaced \"STORM\" placeholder)", "ok": true },
+        { "k": "Social strategy", "v": "Personal LinkedIn first, business 1×/wk, no bought engagement", "ok": true },
+        { "k": "Case studies", "v": "Fictional engagement scenarios, no fake named clients", "ok": true },
+        { "k": "Founder bio", "v": "Drafted (fictional, FAU comp-eng), needs real name/photo/city swap", "ok": true },
+        { "k": "Brand name", "v": "Deferred, running under Aletheia DBA, picked before site deploy", "ok": false }
+      ]
+    },
+    {
+      "type": "cards",
+      "num": 2,
+      "title": "The four demos",
+      "sub": "Each locked to a fictional SMB persona. Shared stack (Next.js + Anthropic SDK + Zod), shared \"verifiable answer\" sales story.",
+      "cards": [
+        {
+          "title": "Email Triage",
+          "persona": "Ledgerline · B2B SaaS bookkeeping",
+          "status": "done",
+          "statusLabel": "Repo live",
+          "mech": "Sharpest mechanic: verifiable-answer enforcement. Eval 100% (6/6 categories, 0 schema errors).",
+          "foot": "Next: Gmail + Slack surfaces (labels/drafts, never auto-send)"
+        },
+        {
+          "title": "Resume Screening",
+          "persona": "Wheelhouse Talent · Austin recruiting",
+          "status": "done",
+          "statusLabel": "Repo live",
+          "mech": "Sharpest mechanic: JD-rubric + verified per-criterion citations + 3-layer injection defense + proactive PII redaction.",
+          "foot": "Pending: push feat/compliance-redaction, Sonnet validation run, screenshots"
+        },
+        {
+          "title": "Lead Scoring + AR Chase",
+          "persona": "TempRight · Tampa HVAC",
+          "status": "block",
+          "statusLabel": "Blocked",
+          "mech": "Sharpest mechanic: hybrid scoring (deterministic + LLM rationale). Code complete locally, 12 commits, 117 tests green.",
+          "foot": "Blocked on API credits → full eval + GitHub push (repo empty) + Loom"
+        },
+        {
+          "title": "Booking Agent",
+          "persona": "Sunridge Dental · Boca Raton",
+          "status": "prog",
+          "statusLabel": "Phase 2",
+          "mech": "Sharpest mechanic: compute_treatment_estimate with cited payer rules. Patching 4 known Phase-2 gaps.",
+          "foot": "Only demo not yet at Phase 3, no repo yet"
+        }
+      ]
+    },
+    {
+      "type": "blockers",
+      "num": 3,
+      "title": "Blockers",
+      "sub": "What actually stands between \"demos exist\" and \"first sales call.\"",
+      "items": [
+        {
+          "title": "Anthropic API credits drained",
+          "sev": "hi",
+          "desc": "Account balance ran dry 2026-05-19 mid-eval. Blocks lead-scoring full eval and every Loom recording. Top up at console.anthropic.com/billing."
+        },
+        {
+          "title": "Founder identity details",
+          "sev": "hi",
+          "desc": "Need real name + photo + city + prior-role one-liner to lock the LinkedIn bio and the site /about."
+        },
+        {
+          "title": "Booking agent behind",
+          "sev": "med",
+          "desc": "Only demo not at Phase 3. Patch the 4 Phase-2 gaps, then it joins the other three."
+        },
+        {
+          "title": "Site undeployed",
+          "sev": "med",
+          "desc": "Built at /home/library/vstorm-clone/. Waiting on brand-name finalization + founder bio before deploy."
+        }
+      ]
+    },
+    {
+      "type": "note",
+      "num": 4,
+      "title": "Security flag",
+      "sub": "Open item, logged repeatedly, do not skip.",
+      "body": "Rotate the Anthropic API key. The ANTHROPIC_API_KEY was pasted in chat (now drained). After topping up credits, rotate it before any further live runs. Tracked across multiple log entries; still open."
+    },
+    {
+      "type": "tasks",
+      "num": 5,
+      "title": "Next steps — sequence",
+      "sub": "Dependency order. Each gate unlocks the next. Check items off as they land; ask about any item to dig in.",
+      "groups": [
+        {
+          "id": "now",
+          "when": "Now · unblock",
+          "label": "Top up credits + rotate key",
+          "now": true,
+          "tasks": [
+            { "id": "credits-topup", "text": "Top up Anthropic balance, then rotate the exposed key" },
+            { "id": "founder-details", "text": "Collect founder name / photo / city / prior-role one-liner" }
+          ]
+        },
+        {
+          "id": "demos",
+          "when": "Next 1–2 days",
+          "label": "Finish the demo lineup",
+          "tasks": [
+            { "id": "lead-scoring-eval", "text": "Lead-scoring: run full eval → push repo → tune cascade volume" },
+            { "id": "resume-redaction", "text": "Resume-screening: push feat/compliance-redaction, Sonnet validation, screenshots" },
+            { "id": "booking-phase3", "text": "Booking-agent: patch 4 gaps → Phase 3 → create repo" }
+          ]
+        },
+        {
+          "id": "sales-assets",
+          "when": "Once all 4 at Phase 3",
+          "label": "Turn demos into sales assets",
+          "tasks": [
+            { "id": "looms", "text": "Record a 3–5 min Loom per demo (focus each one's sharpest mechanic)" },
+            { "id": "readmes", "text": "Rewrite all READMEs as sales assets, not build docs" },
+            { "id": "push-repos", "text": "Push all four public repos clean" }
+          ]
+        },
+        {
+          "id": "go-public",
+          "when": "Then",
+          "label": "Go public",
+          "tasks": [
+            { "id": "deploy-site", "text": "Pick brand name → search/replace → deploy site (Resend + Cal.com wired)" },
+            { "id": "linkedin-launch", "text": "LinkedIn launch with founder bio; personal-first content sequence" },
+            { "id": "x-strategy", "text": "Build the X strategy off the published algorithm" },
+            { "id": "cold-email", "text": "Cold-email-to-named-prospects, tier-specific to SMB" },
+            { "id": "sales-calls", "text": "First sales calls" }
+          ]
+        },
+        {
+          "id": "post-client",
+          "when": "After first paying client",
+          "label": "Replace fiction with fact",
+          "tasks": [
+            { "id": "real-case-study", "text": "Swap one fictional case study for a real one; fill NA% placeholders" },
+            { "id": "retainer", "text": "Retainer-conversion conversation at handoff" }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "callout",
+      "num": 6,
+      "title": "Marketing must-do",
+      "sub": "New rule added to the wiki this session.",
+      "heading": "Consult the published X algorithm",
+      "badge": "NEW",
+      "paras": [
+        "Before drafting any X / Twitter posting strategy, mine the open-sourced recommendation algorithm. X deliberately published it, so we have the real ranking logic instead of guessing.",
+        "Source: github.com/twitter/the-algorithm + github.com/twitter/the-algorithm-ml (March 2023).",
+        "How to apply: Extract the load-bearing ranking features (engagement types, recency, author reputation, media presence, reply/quote behavior, negative-feedback penalties) and translate them into concrete posting rules before locking the X content calendar.",
+        "Caveat: The snapshot is from 2023; treat it as ground truth on ranking mechanics, not current exact weights."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>inline-js-probe</title>
+    <style>
+      body { font: 16px system-ui; padding: 24px; background: #101418; color: #e6edf3; }
+      .run { color: #3fb950; } .blocked { color: #f85149; }
+    </style>
+  </head>
+  <body>
+    <h1>Inline-JS CSP probe</h1>
+    <p id="static">STATIC HTML + CSS rendered (no JS required).</p>
+    <p id="classic" class="blocked">classic inline &lt;script&gt;: NOT RUN</p>
+    <p id="module" class="blocked">inline &lt;script type="module"&gt;: NOT RUN</p>
+
+    <!-- Classic inline script: distinct console marker + DOM/parent signals. -->
+    <script>
+      console.log("[PROBE] classic-inline RAN");
+      var c = document.getElementById("classic");
+      c.textContent = 'classic inline <script>: RAN';
+      c.className = "run";
+      try { window.parent.postMessage("[PROBE] classic-inline RAN", "*"); } catch (e) {}
+    </script>
+
+    <!-- Module inline script: the exact form the demo board uses. -->
+    <script type="module">
+      console.log("[PROBE] module-inline RAN");
+      const m = document.getElementById("module");
+      m.textContent = 'inline <script type="module">: RAN';
+      m.className = "run";
+      try { window.parent.postMessage("[PROBE] module-inline RAN", "*"); } catch (e) {}
+    </script>
+  </body>
+</html>

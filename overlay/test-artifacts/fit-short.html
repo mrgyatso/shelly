@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Fit probe — short</title>
+<style>
+  html, body { margin: 0; background: #f4f5f8; font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { display: flex; justify-content: center; padding: 16px; }
+  .card {
+    width: 320px;
+    background: #fff;
+    border: 1px solid #e2e5ec;
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: 0 6px 24px rgba(20, 24, 40, 0.08);
+  }
+  h1 { margin: 0 0 6px; font-size: 16px; }
+  p { margin: 0; color: #5b6275; font-size: 13px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="card" data-fit-root>
+    <h1>Short item</h1>
+    <p>A small artifact. The window should shrink to roughly this card's size.</p>
+  </div>
+  <script>
+    (function () {
+      var el = document.querySelector("[data-fit-root]") || document.body;
+      var post = function () {
+        parent.postMessage(
+          { source: "companion-artifact", kind: "size", w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) },
+          "*"
+        );
+      };
+      if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+      addEventListener("load", post);
+      post();
+    })();
+  </script>
+</body>
+</html>
