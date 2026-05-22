@@ -1,12 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager};
-
-/// Holds an artifact path queued before the frontend registered its listener
-/// (the first-launch race). The frontend drains it on boot via
-/// [`take_pending_artifact`].
-#[derive(Default)]
-pub struct PendingArtifact(pub Mutex<Option<String>>);
+use tauri::{AppHandle, Manager};
 
 /// Extract the first artifact path from a forwarded argv vector.
 ///
@@ -68,28 +61,6 @@ fn percent_decode(s: &str) -> String {
         i += 1;
     }
     String::from_utf8_lossy(&out).into_owned()
-}
-
-/// Show + raise the overlay window and tell the frontend which file to load.
-/// Also queues the path so a frontend that hasn't booted yet can still pick it up.
-pub fn open_in_window(app: &AppHandle, path: String) {
-    if let Some(state) = app.try_state::<PendingArtifact>() {
-        if let Ok(mut pending) = state.0.lock() {
-            *pending = Some(path.clone());
-        }
-    }
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.set_always_on_top(true);
-        // Show + raise without activating, so the user's terminal keeps focus.
-        crate::macos_panel::order_front_without_activating(&win);
-    }
-    let _ = app.emit("open-artifact", path);
-}
-
-/// Drain any artifact queued before the frontend was ready (called once on boot).
-#[tauri::command]
-pub fn take_pending_artifact(state: tauri::State<'_, PendingArtifact>) -> Option<String> {
-    state.0.lock().ok().and_then(|mut p| p.take())
 }
 
 /// Out-of-(asset)-scope fallback: read raw HTML so the shell can use `iframe.srcdoc`.

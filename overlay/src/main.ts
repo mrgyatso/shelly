@@ -4,6 +4,13 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { initFit, resetFit } from "./resize";
 
+declare global {
+  interface Window {
+    /** Artifact path injected by the Rust window builder before this page boots. */
+    __ARTIFACT_PATH__?: string;
+  }
+}
+
 const frame = document.getElementById("frame") as HTMLIFrameElement;
 const emptyEl = document.getElementById("empty") as HTMLElement;
 const titleEl = document.getElementById("title") as HTMLElement;
@@ -57,20 +64,17 @@ document.getElementById("external")?.addEventListener("click", () => {
   if (current) openPath(current).catch((e) => console.error("openPath failed", e));
 });
 document.getElementById("hide")?.addEventListener("click", () => {
-  win.hide().catch((e) => console.error("hide failed", e));
+  win.close().catch((e) => console.error("close failed", e));
 });
 
 // Resize the window to fit each artifact's reported content size.
 initFit();
 
-// Live updates while running (single-instance / RunEvent::Opened emit this).
+// Same-path re-open (e.g. Claude rewrote the file): the Rust side emits this to
+// the existing window so it reloads in place instead of spawning a duplicate.
 void listen<string>("open-artifact", (event) => {
   void loadArtifact(event.payload);
 });
 
-// Drain anything queued before this listener existed (the first-launch race).
-invoke<string | null>("take_pending_artifact")
-  .then((p) => {
-    if (p) void loadArtifact(p);
-  })
-  .catch((e) => console.error("take_pending_artifact failed", e));
+// This window is dedicated to one artifact; its path is injected before boot.
+if (window.__ARTIFACT_PATH__) void loadArtifact(window.__ARTIFACT_PATH__);

@@ -69,13 +69,17 @@ mod imp {
     /// Show + raise the panel WITHOUT activating the app, so the terminal keeps
     /// keyboard focus. Use everywhere instead of `show()` + `set_focus()`.
     ///
-    /// AppKit window ordering MUST run on the main thread. The callers here
-    /// (single-instance arg-forward, global-shortcut handler) fire on tokio
-    /// worker threads, and unlike Tauri's own `show()`/`set_focus()` (which
-    /// marshal internally), a raw `orderFrontRegardless` off the main thread
-    /// aborts with SIGILL ("must only be used from the main thread"). So hop to
-    /// the main thread explicitly.
+    /// `show()` keeps Tauri's visibility state correct (and reveals panels we
+    /// created hidden); under `ActivationPolicy::Prohibited` the app can never
+    /// activate, so neither `show()` nor the native order-front can pull keyboard
+    /// focus from the terminal. AppKit window ordering MUST run on the main
+    /// thread: callers here (single-instance arg-forward, global-shortcut
+    /// handler) fire on tokio worker threads, and unlike Tauri's own `show()`
+    /// (which marshals internally), a raw `orderFrontRegardless` off the main
+    /// thread aborts with SIGILL ("must only be used from the main thread"). So
+    /// hop to the main thread explicitly for the order-front.
     pub fn order_front_without_activating(window: &WebviewWindow) {
+        let _ = window.show();
         let win = window.clone();
         let _ = window.run_on_main_thread(move || {
             let Ok(ptr) = win.ns_window() else { return };

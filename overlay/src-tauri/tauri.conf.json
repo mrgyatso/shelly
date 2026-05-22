@@ -12,24 +12,7 @@
   "app": {
     "withGlobalTauri": true,
     "macOSPrivateApi": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "Companion Overlay",
-        "width": 460,
-        "height": 640,
-        "minWidth": 320,
-        "minHeight": 280,
-        "alwaysOnTop": false,
-        "decorations": false,
-        "transparent": true,
-        "resizable": true,
-        "skipTaskbar": false,
-        "visible": true,
-        "shadow": true,
-        "backgroundColor": "#00000000"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: tauri:; frame-src 'self' asset: http://asset.localhost",
       "assetProtocol": {
