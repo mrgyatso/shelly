@@ -39,6 +39,37 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let _ = app.deep_link().register_all();
             }
+
+            // Global show/hide toggle (⌘0). Registered from Rust, so it needs no
+            // capability permission — capabilities only gate frontend IPC. This is
+            // the guaranteed escape hatch once the window goes frameless (Q2) and
+            // transparent (Q3): even if the chrome mis-paints, ⌘0 always recovers it.
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_global_shortcut::{
+                    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+                };
+                let toggle = Shortcut::new(Some(Modifiers::SUPER), Code::Digit0);
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(|app, shortcut, event| {
+                            if event.state == ShortcutState::Pressed
+                                && shortcut.matches(Modifiers::SUPER, Code::Digit0)
+                            {
+                                if let Some(win) = app.get_webview_window("main") {
+                                    if win.is_visible().unwrap_or(false) {
+                                        let _ = win.hide();
+                                    } else {
+                                        let _ = win.show();
+                                        let _ = win.set_focus();
+                                    }
+                                }
+                            }
+                        })
+                        .build(),
+                )?;
+                app.global_shortcut().register(toggle)?;
+            }
             Ok(())
         });
 
