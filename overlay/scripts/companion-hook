@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+# companion-hook — Claude Code PostToolUse hook.
+# Pops the overlay when an HTML artifact is written into the canonical artifacts
+# dir. Reads the hook JSON payload on stdin; never blocks the originating write.
+#
+# Wire it (global) in ~/.claude/settings.json:
+#   "PostToolUse": [{ "matcher": "Write|Edit",
+#     "hooks": [{ "type": "command",
+#       "command": "/Users/gyatso/claude-code-companion/overlay/scripts/companion-hook" }] }]
+
+ARTIFACTS_DIR="$HOME/codeviz/public/artifacts"
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+
+payload=$(cat)
+
+# Cheap pre-filter: skip the JSON parse for the 99% of writes that aren't artifacts.
+case "$payload" in
+  *codeviz/public/artifacts/*) ;;
+  *) exit 0 ;;
+esac
+
+# Pull tool_input.file_path out of the payload (Write/Edit both carry it).
+fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log((JSON.parse(d).tool_input||{}).file_path||"")}catch(e){}})')
+
+case "$fp" in
+  "$ARTIFACTS_DIR"/*.html)
+    nohup "$SCRIPT_DIR/companion" open "$fp" >/dev/null 2>&1 &
+    ;;
+esac
+
+exit 0
