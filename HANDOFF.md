@@ -2,10 +2,13 @@
 
 > Updated **2026-05-22**. **The adaptive-window workstream is DONE: Q1 (fit-to-content
 > sizing), Q2 (frameless + global ⌘0 toggle), Q3 (rounded-rect transparency), and Q4
-> (fluid aspect→radius morph) are all built and verified.** Q1 is merged to `master`
-> (PR #1). Q2–Q4 are on branch **`feat/adaptive-window-q2-q4`** (PR open — see below).
+> (fluid aspect→radius morph) are all built and verified.** All of Q1–Q4 are now
+> merged to `master` — Q1 via PR #1, Q2–Q4 via PR #2 (merge commit `7ac0f1c`);
+> branch `feat/adaptive-window-q2-q4` deleted, no open PRs remain.
 >
-> The global auto-trigger remains **PAUSED** per the user — do not build it unless asked.
+> The global auto-trigger is now **LIVE** (2026-05-22): a global `PostToolUse` hook
+> auto-pops the overlay when Claude writes `*.html` into `~/codeviz/public/artifacts/`.
+> See "Auto-trigger — how it's wired" below.
 > If this file and the wiki ever disagree, **trust the wiki**
 > (`~/wiki/entities/claude-code-companion/`).
 
@@ -118,17 +121,51 @@ instance (single-instance) — handy for cycling artifacts to watch the morph li
   ```
 - **Never disrupt TUICommander** (vite :1420, bridge :9223) — it hosts the live Claude session.
 
+## 4b. Auto-trigger — how it's wired (LIVE, 2026-05-22)
+
+When Claude writes `*.html` into `~/codeviz/public/artifacts/`, the overlay pops on its own:
+
+- **Hook:** `~/.claude/settings.json` → `hooks.PostToolUse` (matcher `Write|Edit`) runs
+  `overlay/scripts/companion-hook`.
+- **Filter:** `companion-hook` reads the hook JSON on stdin, cheap-prefilters on the artifacts
+  path, extracts `tool_input.file_path` (via `node`), and on a match runs `companion open <path>`
+  (`nohup`, non-blocking; always exits 0 so it never blocks the write).
+- **CLI:** `companion` (`overlay/scripts/companion`) symlinked into `/usr/local/bin`; resolves
+  the binary from `~/Applications/Companion Overlay.app` first.
+- **Binary:** release `.app` at `~/Applications/Companion Overlay.app`
+  (`npm run tauri build -- --bundles app`, env stripped per §3). Release drops the debug
+  mcp-bridge — so **no headless webview introspection on it; verify by eye** (⌘0 escape hatch).
+- **Convention:** `~/.claude/rules/common/html-output.md` documents the auto-preview and now
+  carries the fit-reporter snippet, so generated artifacts self-size (Option 1).
+- **Scope decision:** complements codeviz (artifacts still served at `localhost:3001`); the
+  trigger is scoped to the artifacts dir so it never fires on node_modules / build output.
+
+Two fit bugs were fixed while verifying: `styles.css` `.empty[hidden]` (placeholder was
+overlapping the iframe — `.empty`'s `display:grid` overrode `[hidden]`), and `resize.ts`
+`MIN_H` 280→120 (small artifacts were clamped up, exposing the iframe's white background).
+
 ## 5. Where to pick up next
 
-1. **PAUSED (per user) — global auto-trigger:** a global `PostToolUse` hook running
-   `companion open <abs-path>` on `.html` writes; symlink `overlay/scripts/companion` into
-   PATH. **Do not start unless asked.**
-2. **Blob / non-rectangular shape (Q3 stretch):** needs the Rust ~60fps cursor-polling loop
-   toggling `setIgnoreCursorEvents` by cursor-vs-shape hit-test. Opt-in only — this is the
-   exact failure mode that ghosted the desktop. Rounded-rect is the safe default we shipped.
-3. **Deferred (designed-for, not built):** board interactivity (iframe `postMessage` →
-   `invoke` → Rust state) and "ask-back" (inject a user turn via PTY / TUICommander
-   `session input`).
+The global auto-trigger is **DONE / LIVE**. Remaining, roughly in priority:
+
+1. **Non-activating auto-pop (high):** artifacts now pop while you work in the terminal, so the
+   window stealing focus is disruptive. Make it show-without-activating (NSPanel
+   `nonactivatingPanel` / `setActivationPolicy`, or show + don't focus) so it never grabs the
+   keyboard mid-type.
+2. **Universal fitting (Option 3):** the reporter is opt-in per artifact (baked into the
+   `html-output.md` convention for Claude's own output). For hand-written / third-party /
+   pre-existing HTML, have the overlay inject the reporter itself — intercept the `asset:`
+   response in Rust and rewrite the HTML before serving.
+3. **Multi-instance / focus-following (big, parked):** several Claude instances across Ghostty
+   tabs each emit artifacts; bind each to its terminal instance and show the right one as focus
+   changes. Open design Qs in the wiki backlog.
+4. **Smaller polish:** `MIN_W` (320) leaves a white strip on narrow artifacts (same class as the
+   fixed `MIN_H`); the 8px `PAD` shows the iframe's white on non-filling artifacts; ⌘0 is global
+   so it shadows zoom-reset app-wide.
+5. **Blob / non-rectangular shape (Q3 stretch):** Rust ~60fps cursor-polling loop toggling
+   `setIgnoreCursorEvents`. Opt-in only — the exact failure mode that ghosted the desktop.
+6. **Deferred (designed-for):** board interactivity (iframe `postMessage` → `invoke` → Rust
+   state) and "ask-back" (inject a user turn via PTY / TUICommander `session input`).
 
 ## 6. RESOLVED earlier — inline JS runs via `asset:` (kept for context)
 
