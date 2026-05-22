@@ -6,17 +6,13 @@ UI that reflects and drives the live session. The cockpit you keep open in a sea
 
 ## Status
 
-**Working scaffold.** What exists today:
+**Early seed.** What exists today:
 
-- `companion-app/` — a working MCP App: 4-tool MCP server + a self-contained UI built from the
-  prototype. `npm run typecheck` clean, `npm run build` produces a 260KB single-file `dist/mcp-app.html`,
-  and the server passed an end-to-end smoke test (tools list, board payload with the UI `_meta`,
-  checkbox toggle + persistence, follow-up queue). Not yet rendered in a real graphical client.
-- `prototype/status-board.html` — the polished static board the UI look is modeled on.
-- `HANDOFF.md` — full context, the architecture decision, the published-API gotchas, and how to run it.
+- `prototype/status-board.html` — a polished static HTML status board (the AI-agency "where we are /
+  next steps" doc). This is the **visual prototype** the production app is modeled on.
+- `HANDOFF.md` — the full context, the architecture decision, and the production build plan.
 
-What's left: render it in a graphical Claude client (claude.ai web on the Mac, or the offline
-`basic-host`), then optionally add the live session-transcript feed.
+What does **not** exist yet: the app/server code. That is the production work, to continue on macOS.
 
 ## Chosen architecture: MCP Apps
 
@@ -29,8 +25,7 @@ Read **[HANDOFF.md](./HANDOFF.md)** for the why, the build steps, and how to con
 ## Quick continue (macOS)
 
 ```bash
-git clone https://github.com/mrgyatso/claude-code-companion.git
-cd claude-code-companion/companion-app
-npm install && npm run build && PORT=3009 npm run serve
-# then render it (HANDOFF.md → "Continue on macOS")
+git clone https://github.com/<owner>/claude-code-companion.git
+cd claude-code-companion
+# then follow HANDOFF.md → "Continue on macOS"
 ```

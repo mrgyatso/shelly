@@ -1,29 +1,29 @@
 {
-  "name": "companion-app",
+  "name": "claude-code-companion",
   "version": "0.1.0",
-  "private": true,
+  "description": "Session-aware MCP App companion: turns Claude's static status docs into interactive, checkable, ask-back surfaces.",
   "type": "module",
-  "description": "MCP App: interactive, session-aware status board for Claude Code",
   "scripts": {
-    "build": "INPUT=mcp-app.html vite build",
-    "serve": "npx tsx server.ts",
-    "dev": "npm run build && npm run serve",
-    "typecheck": "tsc --noEmit"
+    "build:ui": "vite build",
+    "build:server": "tsc -p tsconfig.json",
+    "build": "npm run build:ui && npm run build:server",
+    "start": "node dist/server.js"
   },
+  "keywords": [
+    "mcp",
+    "mcp-apps",
+    "claude"
+  ],
+  "license": "ISC",
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "^0.1.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "cors": "^2.8.5",
-    "express": "^4.21.0",
-    "zod": "^3.23.0"
+    "@modelcontextprotocol/ext-apps": "^1.7.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.0.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
-    "vite": "^5.4.0",
-    "vite-plugin-singlefile": "^2.0.0"
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.13",
+    "vite-plugin-singlefile": "^2.3.3"
   }
 }

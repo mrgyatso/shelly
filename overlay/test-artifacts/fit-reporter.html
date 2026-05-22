@@ -1,0 +1,29 @@
+<!--
+  Companion overlay fit-reporter snippet.
+
+  Paste this <script> into any artifact that should size the overlay window to
+  its content. It measures the element marked `data-fit-root` (falling back to
+  <body>) and posts the size up to the host window, which clamps + animates the
+  window to fit. Re-fires on layout changes via ResizeObserver.
+
+  Contract: postMessage({ source: "companion-artifact", kind: "size", w, h }).
+-->
+<script>
+  (function () {
+    var el = document.querySelector("[data-fit-root]") || document.body;
+    var post = function () {
+      parent.postMessage(
+        {
+          source: "companion-artifact",
+          kind: "size",
+          w: Math.ceil(el.scrollWidth),
+          h: Math.ceil(el.scrollHeight),
+        },
+        "*"
+      );
+    };
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+    addEventListener("load", post);
+    post();
+  })();
+</script>

@@ -1,0 +1,33 @@
+#!/usr/bin/env sh
+# companion — drive the floating HTML artifact overlay.
+#
+#   companion open <file.html>   load an artifact (launches the overlay if needed)
+#
+# Invoking the real binary (not `open -a`) is what lets tauri-plugin-single-instance
+# forward these args to an already-running overlay. Resolves the binary from the
+# installed .app first, then the local dev/release build.
+set -e
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+
+CANDIDATES="/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay
+$HOME/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay
+$SCRIPT_DIR/../src-tauri/target/release/companion-overlay
+$SCRIPT_DIR/../src-tauri/target/debug/companion-overlay"
+
+BIN=""
+IFS='
+'
+for c in $CANDIDATES; do
+  [ -n "$c" ] || continue
+  if [ -x "$c" ]; then BIN="$c"; break; fi
+done
+unset IFS
+
+if [ -z "$BIN" ]; then
+  echo "companion: overlay binary not found." >&2
+  echo "  Build it: cd overlay && npm run tauri build   (or run 'npm run tauri dev')" >&2
+  exit 1
+fi
+
+exec "$BIN" "$@"

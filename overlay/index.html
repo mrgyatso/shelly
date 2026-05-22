@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>Companion Overlay</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <div class="chrome" data-tauri-drag-region>
+      <span class="dot" aria-hidden="true"></span>
+      <span id="title" class="chrome-title" data-tauri-drag-region>No artifact</span>
+      <div class="chrome-actions">
+        <button id="refresh" title="Reload">⟳</button>
+        <button id="external" title="Open in browser">↗</button>
+        <button id="hide" title="Hide">✕</button>
+      </div>
+    </div>
+    <div id="empty" class="empty">Waiting for an artifact…</div>
+    <iframe id="frame" sandbox="allow-scripts" referrerpolicy="no-referrer" hidden></iframe>
+  </body>
+</html>

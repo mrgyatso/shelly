@@ -1,0 +1,33 @@
+[package]
+name = "companion-overlay"
+version = "0.1.0"
+description = "Ghostly floating overlay that renders Claude's HTML artifacts"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name (Windows quirk).
+name = "companion_overlay_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# DO NOT REMOVE. Production builds must enable this so `generate_context!` embeds
+# the frontend (served from tauri://localhost). Without it, tauri-codegen sets
+# `dev = true` and the window loads `devUrl` (http://localhost:1420) instead.
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset", "macos-private-api"] }
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-deep-link = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Compiled in all builds but only REGISTERED under #[cfg(debug_assertions)] in
+# lib.rs (Cargo can't gate deps on debug_assertions). Lets the hypothesi
+# tauri-mcp-server drive the dev build (screenshots / DOM / IPC) for headless
+# verification. Dead code in release since the plugin is never registered there.
+tauri-plugin-mcp-bridge = "0.11"

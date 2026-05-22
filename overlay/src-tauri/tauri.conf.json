@@ -1,0 +1,59 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Companion Overlay",
+  "version": "0.1.0",
+  "identifier": "com.claudecode.companion-overlay",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Companion Overlay",
+        "width": 460,
+        "height": 640,
+        "minWidth": 320,
+        "minHeight": 280,
+        "alwaysOnTop": false,
+        "decorations": true,
+        "transparent": false,
+        "resizable": true,
+        "skipTaskbar": false,
+        "visible": true,
+        "shadow": true,
+        "backgroundColor": "#0f121e"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: tauri:; frame-src 'self' asset: http://asset.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/**", "$TEMP/**", "$DOCUMENT/**", "$DESKTOP/**", "$DOWNLOAD/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["companion"]
+      }
+    }
+  }
+}
