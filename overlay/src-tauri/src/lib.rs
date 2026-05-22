@@ -1,4 +1,5 @@
 mod artifact;
+mod macos_panel;
 
 use tauri::Manager;
 
@@ -11,8 +12,7 @@ pub fn run() {
             if let Some(path) = artifact::parse_open_args(&args, Some(&cwd)) {
                 artifact::open_in_window(app, path);
             } else if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.set_focus();
+                macos_panel::order_front_without_activating(&win);
             }
         }))
         .plugin(tauri_plugin_opener::init())
@@ -24,6 +24,20 @@ pub fn run() {
             artifact::artifact_in_scope
         ])
         .setup(|app| {
+            // Prohibited activation policy = pure background process: no Dock
+            // icon, no Cmd-Tab, and crucially the app can never become active.
+            // This is what actually stops the overlay stealing terminal focus on
+            // click / auto-pop — a non-activating NSPanel is necessary but NOT
+            // sufficient while the app stays a Regular (focus-grabbing) app.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
+
+            // Make the overlay a non-activating NSPanel so showing/raising/
+            // clicking it never steals keyboard focus from the user's terminal.
+            if let Some(win) = app.get_webview_window("main") {
+                macos_panel::make_nonactivating_panel(&win);
+            }
+
             // First-launch: this very process may carry `open <path>`.
             // (single-instance only fires for *subsequent* invocations.)
             let args: Vec<String> = std::env::args().collect();
@@ -60,8 +74,7 @@ pub fn run() {
                                     if win.is_visible().unwrap_or(false) {
                                         let _ = win.hide();
                                     } else {
-                                        let _ = win.show();
-                                        let _ = win.set_focus();
+                                        macos_panel::order_front_without_activating(&win);
                                     }
                                 }
                             }

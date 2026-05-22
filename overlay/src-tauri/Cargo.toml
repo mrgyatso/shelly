@@ -32,3 +32,10 @@ serde_json = "1"
 # tauri-mcp-server drive the dev build (screenshots / DOM / IPC) for headless
 # verification. Dead code in release since the plugin is never registered there.
 tauri-plugin-mcp-bridge = "0.11"
+
+# macOS-only: reclass the overlay window to a non-activating NSPanel so it can
+# show/raise/be-clicked without activating this app (which would steal terminal
+# keyboard focus). These versions are already in the dep tree via tao/wry.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSView", "NSWindow", "NSPanel"] }

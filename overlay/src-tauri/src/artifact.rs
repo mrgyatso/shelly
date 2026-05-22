@@ -47,7 +47,9 @@ fn normalize(p: &str, cwd: Option<&str>) -> Option<String> {
     };
     // canonicalize also verifies the file exists, which is what we want before
     // trying to render it.
-    abs.canonicalize().ok().map(|p| p.to_string_lossy().into_owned())
+    abs.canonicalize()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 fn percent_decode(s: &str) -> String {
@@ -77,10 +79,9 @@ pub fn open_in_window(app: &AppHandle, path: String) {
         }
     }
     if let Some(win) = app.get_webview_window("main") {
-        let _ = win.show();
-        let _ = win.unminimize();
         let _ = win.set_always_on_top(true);
-        let _ = win.set_focus();
+        // Show + raise without activating, so the user's terminal keeps focus.
+        crate::macos_panel::order_front_without_activating(&win);
     }
     let _ = app.emit("open-artifact", path);
 }
@@ -96,7 +97,11 @@ pub fn take_pending_artifact(state: tauri::State<'_, PendingArtifact>) -> Option
 pub fn read_artifact(path: String) -> Result<String, String> {
     match std::fs::read_to_string(&path) {
         Ok(html) => {
-            eprintln!("[overlay] read_artifact OK: {} ({} bytes)", path, html.len());
+            eprintln!(
+                "[overlay] read_artifact OK: {} ({} bytes)",
+                path,
+                html.len()
+            );
             Ok(html)
         }
         Err(e) => {
