@@ -13,7 +13,6 @@ declare global {
 
 const frame = document.getElementById("frame") as HTMLIFrameElement;
 const emptyEl = document.getElementById("empty") as HTMLElement;
-const titleEl = document.getElementById("title") as HTMLElement;
 const win = getCurrentWindow();
 let current = "";
 
@@ -33,7 +32,6 @@ async function loadArtifact(path: string): Promise<void> {
   if (!path) return;
   current = path;
   resetFit();
-  titleEl.textContent = basename(path);
   try {
     const inScope = await invoke<boolean>("artifact_in_scope", { path });
     if (inScope) {
@@ -49,7 +47,6 @@ async function loadArtifact(path: string): Promise<void> {
     frame.hidden = false;
     emptyEl.hidden = true;
   } catch (e) {
-    titleEl.textContent = "Failed to load";
     emptyEl.textContent = `Could not read ${basename(path)}`;
     emptyEl.hidden = false;
     frame.hidden = true;

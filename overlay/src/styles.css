@@ -1,5 +1,4 @@
 :root {
-  --chrome-h: 38px;
   --bg: rgba(15, 18, 30, 0.82);
   --fg: #e8ecf6;
   --muted: #8b93a7;
@@ -28,50 +27,56 @@ body {
   overflow: hidden;
 }
 
-/* Custom title bar (window is borderless: decorations:false) */
-.chrome {
-  height: var(--chrome-h);
-  flex: none;
+/* Invisible full-width drag strip along the top edge — same footprint as the
+   old title bar, so you can grab anywhere across the top to move the panel
+   while the artifact still fills the window seamlessly. Sits above the iframe
+   (which would otherwise swallow the drag) but stays transparent. */
+.dragbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  z-index: 5;
+}
+
+/* Floating, hover-revealed controls. No title bar: the artifact fills the
+   window edge-to-edge so it reads as one seamless surface, not a window. */
+.controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px 0 12px;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
   background: var(--bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 6px 20px -8px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
   user-select: none;
 }
-.dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px rgba(255, 106, 90, 0.7);
-  flex: none;
-}
-.chrome-title {
-  flex: 1;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--fg);
-}
-.chrome-actions { display: flex; gap: 2px; flex: none; }
-.chrome-actions button {
-  -webkit-app-region: no-drag;
+/* Reveal whenever the pointer is over the panel (the iframe is a child of body,
+   so hovering the artifact counts as hovering body). */
+body:hover .controls { opacity: 1; pointer-events: auto; }
+.controls button {
   appearance: none;
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 14px;
-  width: 26px; height: 26px;
+  font-size: 13px;
+  width: 24px; height: 24px;
   border-radius: 7px;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
-.chrome-actions button:hover { background: rgba(255, 255, 255, 0.1); color: var(--fg); }
+.controls button:hover { background: rgba(255, 255, 255, 0.12); color: var(--fg); }
 #hide:hover { background: rgba(255, 106, 90, 0.85); color: #fff; }
 
 .empty {

@@ -7,8 +7,6 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 // snippet baked into generated artifacts), and we grow/shrink the window to
 // match — clamped to the monitor work area, animated so it feels fluid.
 
-/** Height of the chrome bar — keep in sync with `--chrome-h` in styles.css. */
-const CHROME_H = 38;
 const MIN_W = 320;
 const MIN_H = 120;
 /** Panel corner-radius range — the card morphs rounder when tall, tighter when wide. */
@@ -55,7 +53,7 @@ async function targetSize(content: Size): Promise<Size> {
   const maxW = mon ? Math.floor(mon.workArea.size.width / scale) - SCREEN_MARGIN : 1600;
   const maxH = mon ? Math.floor(mon.workArea.size.height / scale) - SCREEN_MARGIN : 1000;
   const w = Math.min(Math.max(content.w + PAD, MIN_W), maxW);
-  const h = Math.min(Math.max(content.h + CHROME_H + PAD, MIN_H), maxH);
+  const h = Math.min(Math.max(content.h + PAD, MIN_H), maxH);
   return { w, h };
 }
 
