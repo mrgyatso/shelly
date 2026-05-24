@@ -1,5 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { initFit, resetFit } from "./resize";
@@ -13,7 +12,7 @@ declare global {
 
 const frame = document.getElementById("frame") as HTMLIFrameElement;
 const emptyEl = document.getElementById("empty") as HTMLElement;
-const win = getCurrentWindow();
+const win = getCurrentWebviewWindow();
 let current = "";
 
 function basename(p: string): string {
@@ -69,7 +68,7 @@ initFit();
 
 // Same-path re-open (e.g. Claude rewrote the file): the Rust side emits this to
 // the existing window so it reloads in place instead of spawning a duplicate.
-void listen<string>("open-artifact", (event) => {
+void win.listen<string>("open-artifact", (event) => {
   void loadArtifact(event.payload);
 });
 

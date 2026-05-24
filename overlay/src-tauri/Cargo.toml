@@ -39,3 +39,6 @@ tauri-plugin-mcp-bridge = "0.11"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSView", "NSWindow", "NSPanel"] }
+# Read the focused terminal window's bounds via CGWindowListCopyWindowInfo (the
+# Follow-Ghostty docking mode in layout.rs). Already in the tree via tao/wry.
+core-foundation = "0.10"
