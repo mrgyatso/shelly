@@ -1,4 +1,5 @@
 mod artifact;
+mod layout;
 mod macos_panel;
 mod windows;
 
@@ -6,6 +7,7 @@ mod windows;
 pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
+        .manage(layout::LayoutState::default())
         // single-instance first so a forwarded `companion open …` exits fast.
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             // This callback fires on the plugin's socket-listener thread, but
@@ -25,7 +27,8 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .invoke_handler(tauri::generate_handler![
             artifact::read_artifact,
-            artifact::artifact_in_scope
+            artifact::artifact_in_scope,
+            layout::notify_fit
         ])
         .setup(|app| {
             // Prohibited activation policy = pure background daemon: no Dock
@@ -102,6 +105,11 @@ pub fn run() {
                 // Stay alive as a background daemon: closing the last panel must
                 // not quit, so a later `companion open` still forwards here.
                 tauri::RunEvent::ExitRequested { api, .. } => api.prevent_exit(),
+                // A panel closed (✕): re-flow the remaining ones so no gap is left.
+                tauri::RunEvent::WindowEvent {
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } => crate::layout::arrange(app_handle),
                 // macOS Finder / `open file.html` / `companion://` URL handler.
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Opened { urls } => {

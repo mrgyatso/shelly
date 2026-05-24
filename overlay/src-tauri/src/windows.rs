@@ -10,18 +10,13 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use tauri::{AppHandle, Emitter, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Initial panel size before the artifact reports its own fit size.
 const PANEL_W: f64 = 460.0;
 const PANEL_H: f64 = 640.0;
 const MIN_W: f64 = 320.0;
 const MIN_H: f64 = 120.0;
-/// Cascade offset so stacked opens don't land exactly on top of each other.
-const CASCADE_STEP: f64 = 36.0;
-const CASCADE_WRAP: usize = 6;
-/// Gap from the monitor edge.
-const MARGIN: f64 = 56.0;
 /// Label prefix marking a window as an artifact panel.
 const LABEL_PREFIX: &str = "art_";
 
@@ -55,12 +50,6 @@ pub fn open_artifact_window(app: &AppHandle, path: String) {
         serde_json::to_string(&path).unwrap_or_else(|_| "\"\"".into())
     );
 
-    let index = app
-        .webview_windows()
-        .keys()
-        .filter(|l| l.starts_with(LABEL_PREFIX))
-        .count();
-
     let win = match WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title("Companion Overlay")
         .inner_size(PANEL_W, PANEL_H)
@@ -85,9 +74,10 @@ pub fn open_artifact_window(app: &AppHandle, path: String) {
 
     // Reclass to a non-activating NSPanel BEFORE it becomes visible.
     crate::macos_panel::make_nonactivating_panel(&win);
-    if let Some(pos) = cascade_position(app, index) {
-        let _ = win.set_position(pos);
-    }
+    // Place it in the column. The size here is the pre-fit default; the frontend
+    // re-triggers arrange() via notify_fit once it knows the artifact's real size.
+    crate::layout::record_open(app, &label);
+    crate::layout::arrange(app);
     crate::macos_panel::order_front_without_activating(&win);
 }
 
@@ -109,17 +99,4 @@ pub fn toggle_all(app: &AppHandle) {
             crate::macos_panel::order_front_without_activating(win);
         }
     }
-}
-
-/// Cascade the `index`-th panel down from the monitor's top-right corner.
-fn cascade_position(app: &AppHandle, index: usize) -> Option<LogicalPosition<f64>> {
-    let mon = app.primary_monitor().ok().flatten()?;
-    let scale = mon.scale_factor();
-    let work_w = mon.size().width as f64 / scale;
-    let origin_x = mon.position().x as f64 / scale;
-    let origin_y = mon.position().y as f64 / scale;
-    let step = (index % CASCADE_WRAP) as f64 * CASCADE_STEP;
-    let x = (origin_x + work_w - PANEL_W - MARGIN - step).max(origin_x + MARGIN);
-    let y = origin_y + MARGIN + step;
-    Some(LogicalPosition::new(x, y))
 }

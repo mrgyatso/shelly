@@ -1,5 +1,6 @@
 import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
+import { invoke } from "@tauri-apps/api/core";
 
 // Fit-to-content sizing. The artifact iframe is opaque-origin (no
 // `allow-same-origin`), so the parent can't read its layout. Instead the
@@ -108,6 +109,8 @@ async function fit(content: Size): Promise<void> {
   lastTarget = target;
   applyRadius(target);
   await animateTo(target);
+  // Let Rust re-flow the column now that this panel knows its real size.
+  void invoke("notify_fit");
 }
 
 /** Clear fit state so the next artifact re-fits from scratch. */
