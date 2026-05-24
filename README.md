@@ -1,20 +1,35 @@
 # Claude Code Companion
 
-**A ghostly floating overlay that renders the HTML artifacts Claude writes — right on top of your terminal, without ever stealing keyboard focus.**
+**Claude writes HTML to keep you in the loop. This keeps the HTML in front of you.**
 
 [![Latest release](https://img.shields.io/github/v/release/mrgyatso/claude-code-companion?include_prereleases&sort=semver)](https://github.com/mrgyatso/claude-code-companion/releases)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-black?logo=apple)](#requirements)
 [![Signing: unsigned preview](https://img.shields.io/badge/signing-unsigned%20preview-orange)](#-first-launch-its-unsigned)
 [![Downloads](https://img.shields.io/github/downloads/mrgyatso/claude-code-companion/total)](https://github.com/mrgyatso/claude-code-companion/releases)
 
-When Claude saves an `.html` artifact — a plan, a diagram, a review, a dashboard — a borderless panel fades in and renders it live, on top of whatever you're doing. Run Claude anywhere (Ghostty, iTerm, VS Code, Desktop); the trigger is just "Claude writes a file." Open several at once — each artifact gets its own panel you can drag, pin, and close. Your terminal keeps the keyboard the whole time.
+A **ghostly floating overlay** that renders the HTML artifacts Claude writes — the instant it writes them, right on top of your terminal, without ever stealing your keyboard.
+
+---
+
+## The idea
+
+This tool exists because of one observation, made far better in Anthropic's [*"The unreasonable effectiveness of HTML"*](https://claude.com/blog/using-claude-code-the-unreasonable-effectiveness-of-html):
+
+> As Claude takes on more, I'd noticed I was reading plans less closely… the real reason I use HTML instead of Markdown is that it helps me **feel much more in the loop with Claude**.
+
+As agents get more capable, Markdown becomes a restrictive way for them to talk back to you. A hundred-line plan is hard to read; a wall of text invites you to skim and disengage. HTML reverses that. The same output can carry **tables, CSS, SVG illustrations, live code, sliders and toggles, spatial layouts** — and it's instantly shareable and even interactive. You stop reading *about* the work and start *looking at* it. As the post puts it: **"You stay in the loop, but the loop gets much tighter."**
+
+But there's a gap. Once Claude is emitting a *web of HTML files* — brainstorms, mockups, plans, reviews, dashboards — where do they go? Into a folder you forget, or a graveyard of browser tabs. The friction of *finding and opening them* quietly loosens the loop again.
+
+**Claude Code Companion closes that gap.** The moment Claude saves an `.html` artifact, a borderless panel fades in and renders it live — over whatever you're doing, in whatever client you run Claude in (Ghostty, iTerm, VS Code, Desktop). Interactive artifacts actually work; their scripts run. Open several at once and compare them side by side. You never leave your terminal, never hunt for a file, never lose focus. The artifact just *appears* — and the loop stays tight.
 
 ---
 
 ## Contents
 
+- [The idea](#the-idea)
 - [Demo](#demo)
-- [Highlights](#highlights)
+- [What makes it work](#what-makes-it-work)
 - [Requirements](#requirements)
 - [Install (recommended)](#install-recommended)
 - [⚠️ First launch: it's unsigned](#-first-launch-its-unsigned)
@@ -25,7 +40,7 @@ When Claude saves an `.html` artifact — a plan, a diagram, a review, a dashboa
 - [How it works](#how-it-works)
 - [Project layout](#project-layout)
 - [Status & roadmap](#status--roadmap)
-- [License](#license)
+- [Credit & license](#credit--license)
 
 ---
 
@@ -39,20 +54,20 @@ When Claude saves an `.html` artifact — a plan, a diagram, a review, a dashboa
   Or drop a GIF at assets/demo.gif and use:  ![demo](assets/demo.gif)
 -->
 
-> 📹 **Demo video coming soon.** Paste the uploaded video URL here — it shows an artifact popping in, two panels re-flowing, the corner-radius morph, drag-to-pin, and `⌘0` toggle.
+> 📹 **Demo video coming soon.** Paste the uploaded video URL here — it shows an artifact popping in the moment Claude writes it, two panels re-flowing so you can compare them, the corner-radius morph, drag-to-pin, and the `⌘0` toggle.
 
 ---
 
-## Highlights
+## What makes it work
 
-- **Renders any local `.html`** in a sandboxed `<iframe>`. In-scope artifacts load via the `asset:` protocol so their own inline/module scripts run — interactive artifacts work, not just static markup.
-- **Fit-to-content sizing** — each panel grows/shrinks to its artifact's real size, clamped to your screen, with an animated re-flow and a corner-radius that morphs with the aspect ratio.
-- **One panel per artifact** — several float at once, each dragged / pinned / closed independently. Re-opening the same file refreshes it in place.
-- **Never steals focus** — each panel is a non-activating macOS `NSPanel` and the app runs as a Dock-less background daemon, so clicking or scrolling a panel leaves your terminal keyboard-focused.
-- **Two layout modes** — a tidy right-edge column (default), or packed beside your focused terminal and following it as it moves (`⌘9`).
-- **Drag-to-pin** — drag a panel and it stays put, opting out of re-flow until you close it.
-- **No scrollbar chrome** — tall artifacts scroll on small screens, but the ugly bar never shows.
-- **Auto-pops** when Claude writes an artifact, via a `PostToolUse` hook.
+Each capability maps to *why* HTML keeps you in the loop — and removes the friction that would otherwise pull you out of it.
+
+- **The artifact appears on its own.** A `PostToolUse` hook pops the overlay the instant Claude writes an `.html`. No "where did it save that," no opening a file — the work shows up where your eyes already are.
+- **Interactive artifacts actually run.** In-scope files load via the `asset:` protocol in a sandboxed iframe, so their inline scripts execute — sliders, toggles, editable fields, SVG, canvases. Two-way artifacts work, not just static markup.
+- **Compare side by side.** One panel per artifact; several float at once. Lay six approaches next to each other — the "web of HTML files" the blog describes, all on screen at once.
+- **It never breaks your flow.** Each panel is a non-activating macOS `NSPanel` and the app is a Dock-less background daemon, so clicking, scrolling, or dragging a panel leaves your terminal keyboard-focused. The loop tightens; your hands never leave the keyboard.
+- **It fits the work, not a fixed box.** Panels size to each artifact's real content, clamp to your screen, re-flow with a smooth animation, and morph their corner radius to the aspect ratio. Tall artifacts scroll on small screens — with no ugly scrollbar.
+- **Host-agnostic.** The only trigger is "Claude writes a file and runs a command," so it works the same wherever you run Claude.
 
 ---
 
@@ -127,7 +142,7 @@ Drag the **top edge** of a panel to move it (dragging pins it — it stops re-fl
 
 ## Auto-pop on artifact write
 
-Wire a `PostToolUse` hook so the overlay pops whenever Claude writes an `.html` into your artifacts directory. Add to `~/.claude/settings.json` (use the **absolute** path to the script):
+This is the heart of the tool — the artifact showing up on its own. Wire a `PostToolUse` hook so the overlay pops whenever Claude writes an `.html` into your artifacts directory. Add to `~/.claude/settings.json` (use the **absolute** path to the script):
 
 ```json
 {
@@ -145,6 +160,8 @@ Wire a `PostToolUse` hook so the overlay pops whenever Claude writes an `.html` 
 ```
 
 The watched directory defaults to `$HOME/codeviz/public/artifacts` and is configurable via the **`COMPANION_ARTIFACTS_DIR`** environment variable. The hook cheap-prefilters on that path, never blocks the originating write, and only fires for `*.html`.
+
+> Pair this with a house rule telling Claude to *prefer HTML artifacts* for plans, comparisons, reviews, and reports, and to write them into that directory. Then the loop runs itself: Claude thinks → writes HTML → it appears in front of you.
 
 ---
 
@@ -256,6 +273,8 @@ Next up:
 
 ---
 
-## License
+## Credit & license
+
+The idea is owed to Anthropic's [*"Using Claude Code: the unreasonable effectiveness of HTML"*](https://claude.com/blog/using-claude-code-the-unreasonable-effectiveness-of-html) by Thariq Shihipar. This project is just the surface that makes that workflow effortless.
 
 No license is set yet — treat this as **all rights reserved** for now. If you'd like to use or redistribute it, please open an issue and ask.
