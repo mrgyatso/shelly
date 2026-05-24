@@ -9,6 +9,8 @@
 
 A **ghostly floating overlay** that renders the HTML artifacts Claude writes — the instant it writes them, right on top of your terminal, without ever stealing your keyboard.
 
+> 💡 *Inspired by Anthropic's [**"Using Claude Code: the unreasonable effectiveness of HTML"**](https://claude.com/blog/using-claude-code-the-unreasonable-effectiveness-of-html) by Thariq Shihipar. That post makes the case for HTML; this tool is the surface that makes it effortless.*
+
 ---
 
 ## The idea
