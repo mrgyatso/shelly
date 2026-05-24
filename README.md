@@ -39,16 +39,16 @@ The catch is that those HTML files have to live somewhere, and opening them by h
 
 ## Requirements
 
-macOS. The release build is Intel (x86_64) and runs on Apple Silicon under Rosetta 2. Building from source needs Rust and Node 18+.
+macOS 11 or later. The release is a universal build that runs natively on both Apple Silicon and Intel. Building from source needs Rust and Node 18+.
 
 ## Install
 
 1. Download the latest `.dmg` from the [Releases page](https://github.com/mrgyatso/claude-code-companion/releases).
 2. Open it and drag Companion Overlay into Applications.
 3. Approve it on first launch (see below).
-4. Clone this repo and link the CLI so Claude and you can open artifacts:
+4. Link the `companion` CLI (shipped inside the app) so Claude and you can open artifacts:
    ```bash
-   ln -sf "$PWD/overlay/scripts/companion" /usr/local/bin/companion
+   ln -sf "/Applications/Companion Overlay.app/Contents/Resources/scripts/companion" /usr/local/bin/companion
    ```
 
 ## First launch
@@ -87,7 +87,7 @@ The point of the tool is not opening artifacts by hand. Add a `PostToolUse` hook
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "/abs/path/to/overlay/scripts/companion-hook" }
+          { "type": "command", "command": "/Applications/Companion Overlay.app/Contents/Resources/scripts/companion-hook" }
         ]
       }
     ]
@@ -110,12 +110,11 @@ cp -R "src-tauri/target/release/bundle/macos/Companion Overlay.app" ~/Applicatio
 ln -sf "$PWD/scripts/companion" /usr/local/bin/companion
 ```
 
-Use `--bundles dmg` to produce a distributable `.dmg` instead.
+Use `--bundles dmg` to produce a distributable `.dmg` instead. Add `--target universal-apple-darwin` (with both `rustup target add aarch64-apple-darwin x86_64-apple-darwin`) to build the universal binary that ships in releases.
 
 ## Roadmap
 
 - Signing and notarization, to remove the Gatekeeper warning.
-- A native Apple Silicon build alongside the Intel one.
 - Binding panels to the terminal that produced them, for multiple Claude sessions at once.
 
 ## Credit and license
