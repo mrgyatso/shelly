@@ -178,6 +178,36 @@ pub fn run() {
                     eprintln!("[overlay] ExitRequested (prevented; daemon stays alive)");
                     api.prevent_exit();
                 }
+                // A panel is about to close (✕ → JS `close()`): restore its
+                // original window class BEFORE tao tears it down, so the reclassed
+                // NSPanel isn't disposed via the wrong AppKit path (which raises a
+                // foreign NSException and aborts the daemon). Do NOT prevent the
+                // close — let the teardown proceed on the restored class.
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::CloseRequested { .. },
+                    ..
+                } => {
+                    if let Some(win) = app_handle.get_webview_window(&label) {
+                        crate::macos_panel::restore_original_class(&win);
+                    }
+                }
+                // A panel moved. If it's a genuine user drag (the panel is visible
+                // and we aren't mid-move ourselves), pin it so future re-flows leave
+                // it where the user put it.
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Moved(_),
+                    ..
+                } => {
+                    if let Some(win) = app_handle.get_webview_window(&label) {
+                        if win.is_visible().unwrap_or(false)
+                            && !crate::layout::is_moving(app_handle, &label)
+                        {
+                            crate::layout::pin(app_handle, &label);
+                        }
+                    }
+                }
                 // A panel closed (✕): re-flow the remaining ones so no gap is left.
                 tauri::RunEvent::WindowEvent {
                     label,
@@ -190,13 +220,9 @@ pub fn run() {
                     );
                     // Re-flow the survivors on the next main-thread tick (deferred to
                     // avoid re-entrant window ops during the destroy dispatch).
-                    // NOTE: currently moot — closing a panel aborts the daemon via a
-                    // foreign NSException raised in the reclassed-NSPanel teardown
-                    // (see macos_panel; confirmed: crash persists with this removed).
-                    // Once that root cause is fixed, this re-flows the remaining panels.
                     let handle = app_handle.clone();
                     let _ = app_handle.run_on_main_thread(move || {
-                        crate::layout::arrange(&handle);
+                        crate::layout::arrange(&handle, true);
                     });
                 }
                 // macOS Finder / `open file.html` / `companion://` URL handler.

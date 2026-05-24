@@ -9,6 +9,7 @@
 #[cfg(target_os = "macos")]
 mod imp {
     use std::ffi::c_void;
+    use std::sync::OnceLock;
 
     use objc2::runtime::AnyClass;
     use objc2::{msg_send, sel, ClassType};
@@ -18,6 +19,13 @@ mod imp {
     extern "C" {
         fn object_setClass(obj: *mut c_void, cls: *const c_void) -> *const c_void;
     }
+
+    /// The class tao allocated the window with, captured the first time we
+    /// reclass to NSPanel. tao registers a single window class, so every overlay
+    /// window shares it — one stored pointer restores any of them. Stored as
+    /// `usize` because the class object is a stable process-global. Used by
+    /// `restore_original_class` to undo the reclass before teardown.
+    static ORIGINAL_CLASS: OnceLock<usize> = OnceLock::new();
 
     /// Reclass the window's backing `NSWindow` to `NSPanel` and give it the
     /// non-activating style plus cross-Space / over-fullscreen collection
@@ -36,8 +44,19 @@ mod imp {
         // duration of these synchronous calls. NSPanel ⊂ NSWindow, so the
         // reclassed object still responds to every selector used here.
         unsafe {
-            object_setClass(ptr, cls.cast());
+            let old_class = object_setClass(ptr, cls.cast());
+            // Remember what tao gave us so we can reclass back before teardown
+            // (see `restore_original_class`). First window wins; all share it.
+            let _ = ORIGINAL_CLASS.set(old_class as usize);
             let panel: &NSPanel = &*(ptr as *const NSPanel);
+            // Lifecycle stays with Tauri, NOT AppKit. A programmatically-created
+            // NSPanel defaults to `releasedWhenClosed = true`, so closing it makes
+            // AppKit release/dealloc the object — but Tauri still owns and tears
+            // down the same NSWindow. The double disposal raises a foreign Obj-C
+            // NSException during native teardown, which Rust cannot catch, so the
+            // whole daemon aborts (close one panel → all panels die). Hand the
+            // lifecycle entirely to Tauri so AppKit never releases out from under it.
+            panel.setReleasedWhenClosed(false);
             // Non-activating: the panel can show/become-key without activating
             // this app (so the terminal keeps focus).
             panel.setStyleMask(panel.styleMask() | NSWindowStyleMask::NonactivatingPanel);
@@ -63,6 +82,32 @@ mod imp {
             if responds {
                 let _: () = msg_send![panel, _setPreventsActivation: true];
             }
+        }
+    }
+
+    /// Reclass the window's NSWindow BACK to the class tao created it with, to be
+    /// called right before the window tears down (on `CloseRequested`). We reclass
+    /// each window to `NSPanel` via `object_setClass`, but `NSPanel` and tao's own
+    /// window subclass are *siblings* under `NSWindow`, so disposing the object
+    /// while it still claims to be `NSPanel` runs the wrong AppKit teardown path
+    /// and raises a foreign Obj-C `NSException` — which Rust cannot catch, so it
+    /// aborts the whole daemon (close one panel → every panel dies). Restoring the
+    /// original class first lets tao dispose a window of the exact class it
+    /// allocated. No-op if we never reclassed (e.g. `ns_window` unavailable).
+    pub fn restore_original_class(window: &WebviewWindow) {
+        let Some(&old) = ORIGINAL_CLASS.get() else {
+            return;
+        };
+        let Ok(ptr) = window.ns_window() else { return };
+        if ptr.is_null() {
+            return;
+        }
+        // SAFETY: runs on the main thread (CloseRequested dispatch). `ptr` is the
+        // live NSWindow backing this Tauri window, and `old` is exactly the class
+        // pointer `object_setClass` returned when we reclassed this same object,
+        // so it is a valid class for it.
+        unsafe {
+            object_setClass(ptr, old as *const c_void);
         }
     }
 
@@ -100,6 +145,8 @@ mod imp {
     use tauri::WebviewWindow;
 
     pub fn make_nonactivating_panel(_window: &WebviewWindow) {}
+
+    pub fn restore_original_class(_window: &WebviewWindow) {}
 
     pub fn order_front_without_activating(window: &WebviewWindow) {
         let _ = window.show();

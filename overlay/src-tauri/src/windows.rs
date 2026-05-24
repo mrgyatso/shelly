@@ -77,7 +77,9 @@ pub fn open_artifact_window(app: &AppHandle, path: String) {
     // Place it in the column. The size here is the pre-fit default; the frontend
     // re-triggers arrange() via notify_fit once it knows the artifact's real size.
     crate::layout::record_open(app, &label);
-    crate::layout::arrange(app);
+    // Animate the existing panels shifting to make room; the new window is still
+    // hidden here, so `apply_moves` snaps it into its slot before we reveal it.
+    crate::layout::arrange(app, true);
     crate::macos_panel::order_front_without_activating(&win);
 }
 

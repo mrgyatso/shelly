@@ -11,7 +11,10 @@
 //!   edge — sized to each artifact so they never overlap, and kept in sync as the
 //!   terminal moves/resizes via a background poll. Falls back to Free if no terminal.
 
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, LogicalPosition, Manager};
 
@@ -21,6 +24,19 @@ const SCREEN_MARGIN: f64 = 16.0;
 const TOP_MARGIN: f64 = 40.0;
 /// Gap between stacked panels.
 const GAP: f64 = 12.0;
+
+/// Re-flow glide: total time and frame count (~16 ms/frame).
+const ANIM_MS: u64 = 300;
+const ANIM_FRAMES: u32 = 18;
+/// After a programmatic move, ignore the window's own `Moved` events for this long
+/// so our placement/animation is never mistaken for a user drag.
+const MOVE_GRACE_MS: u64 = 220;
+/// Don't animate or emit sub-pixel moves.
+const MIN_MOVE: f64 = 1.0;
+
+/// Bumped on every `arrange`; a running glide aborts when it sees a newer value,
+/// so a fresh re-flow cleanly supersedes an in-flight one (no fighting tweens).
+static ARRANGE_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Lock a mutex, tolerating poisoning: a panic elsewhere (now contained by the
 /// run-loop `guard`) must not turn every later lock into a fresh fatal panic.
@@ -45,6 +61,10 @@ pub enum LayoutMode {
 pub struct LayoutState {
     order: Mutex<Vec<String>>,
     mode: Mutex<LayoutMode>,
+    /// Panels the user has dragged off their auto slot — left untouched by re-flow.
+    pinned: Mutex<HashSet<String>>,
+    /// label → instant until which a `Moved` is ours (programmatic), not a drag.
+    moving: Mutex<HashMap<String, Instant>>,
 }
 
 /// Remember a freshly opened panel's label, preserving open order.
@@ -54,6 +74,35 @@ pub fn record_open(app: &AppHandle, label: &str) {
     if !order.iter().any(|l| l == label) {
         order.push(label.to_string());
     }
+}
+
+/// Mark `label` as user-pinned (dragged off its auto slot): re-flow skips it from
+/// now on, until the panel is closed. Idempotent; logs once on the transition.
+pub fn pin(app: &AppHandle, label: &str) {
+    let state = app.state::<LayoutState>();
+    if lock(&state.pinned).insert(label.to_string()) {
+        eprintln!("[overlay] pinned '{label}' (user-dragged; exempt from re-flow)");
+    }
+}
+
+/// True while a programmatic move of `label` is still settling, so its `Moved`
+/// events must not be mistaken for a user drag.
+pub fn is_moving(app: &AppHandle, label: &str) -> bool {
+    let state = app.state::<LayoutState>();
+    let moving = lock(&state.moving)
+        .get(label)
+        .is_some_and(|t| Instant::now() < *t);
+    moving
+}
+
+/// Record that we're moving `label` ourselves; suppresses drag-detection for the
+/// grace window. Called on every programmatic `set_position` (snap or each frame).
+fn mark_moving(app: &AppHandle, label: &str) {
+    let state = app.state::<LayoutState>();
+    lock(&state.moving).insert(
+        label.to_string(),
+        Instant::now() + Duration::from_millis(MOVE_GRACE_MS),
+    );
 }
 
 /// Current layout mode.
@@ -74,7 +123,7 @@ pub fn toggle_mode(app: &AppHandle) -> LayoutMode {
         };
         *m
     };
-    arrange(app);
+    arrange(app, true);
     mode
 }
 
@@ -156,7 +205,13 @@ fn regions_for(app: &AppHandle, screen: &Region) -> Vec<Region> {
 /// Lay panels into one region as top-down columns flush to `region.anchor`, wrapping
 /// to a new column (away from the anchor) when one fills vertically. Returns how many
 /// panels fit; the rest spill to the next region.
-fn pack_region(app: &AppHandle, region: &Region, labels: &[String], scale: f64) -> usize {
+fn pack_region(
+    app: &AppHandle,
+    region: &Region,
+    labels: &[String],
+    scale: f64,
+    moves: &mut Vec<(String, f64, f64)>,
+) -> usize {
     let mut placed = 0usize;
     // The current column's edge on the anchor side.
     let mut near = match region.anchor {
@@ -204,7 +259,7 @@ fn pack_region(app: &AppHandle, region: &Region, labels: &[String], scale: f64) 
             break;
         }
 
-        let _ = win.set_position(LogicalPosition::new(x, y));
+        moves.push((label.clone(), x, y));
         y += h + GAP;
         col_w = col_w.max(w);
         col_started = true;
@@ -215,12 +270,21 @@ fn pack_region(app: &AppHandle, region: &Region, labels: &[String], scale: f64) 
 
 /// Re-flow every artifact panel. Idempotent: re-running after a panel fits, opens,
 /// closes, the mode flips, or the terminal moves keeps the same tidy arrangement.
-pub fn arrange(app: &AppHandle) {
+pub fn arrange(app: &AppHandle, animate: bool) {
     let state = app.state::<LayoutState>();
+    // Prune state to live windows, then drop user-pinned panels: they keep the
+    // position the user dragged them to and never participate in re-flow.
     let labels: Vec<String> = {
         let mut order = lock(&state.order);
         order.retain(|l| app.get_webview_window(l).is_some());
-        order.clone()
+        lock(&state.pinned).retain(|l| app.get_webview_window(l).is_some());
+        lock(&state.moving).retain(|l, _| app.get_webview_window(l).is_some());
+        let pinned = lock(&state.pinned);
+        order
+            .iter()
+            .filter(|l| !pinned.contains(l.as_str()))
+            .cloned()
+            .collect()
     };
     if labels.is_empty() {
         return;
@@ -230,26 +294,87 @@ pub fn arrange(app: &AppHandle) {
         return;
     };
 
+    // Compute every target first, then apply them as one coordinated batch.
     // Fill each region in turn; whatever one can't hold spills to the next.
+    let mut moves: Vec<(String, f64, f64)> = Vec::new();
     let regions = regions_for(app, &screen);
     let mut idx = 0;
     for region in &regions {
         if idx >= labels.len() {
             break;
         }
-        idx += pack_region(app, region, &labels[idx..], scale);
+        idx += pack_region(app, region, &labels[idx..], scale, &mut moves);
     }
     // Both gutters full → drop the remainder into the screen column so nothing is lost.
     if idx < labels.len() {
-        pack_region(app, &screen, &labels[idx..], scale);
+        pack_region(app, &screen, &labels[idx..], scale, &mut moves);
     }
+
+    apply_moves(app, moves, scale, animate);
+}
+
+/// Apply computed target positions. When `animate`, each currently-visible panel
+/// glides to its target over `ANIM_MS` (ease-out cubic); hidden panels (just
+/// created, not yet shown) and the non-animated path snap directly. Sub-pixel
+/// moves are skipped, and every move is marked so it isn't read back as a drag.
+fn apply_moves(app: &AppHandle, moves: Vec<(String, f64, f64)>, scale: f64, animate: bool) {
+    // Supersede any in-flight glide.
+    let my_gen = ARRANGE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+
+    let mut batch: Vec<(String, (f64, f64), (f64, f64))> = Vec::new();
+    for (label, tx, ty) in moves {
+        let Some(win) = app.get_webview_window(&label) else {
+            continue;
+        };
+        // Current position in logical points (outer_position is physical).
+        let cur = win
+            .outer_position()
+            .ok()
+            .map(|p| (p.x as f64 / scale, p.y as f64 / scale));
+        // Already at the target → nothing to do.
+        if cur.is_some_and(|(cx, cy)| (cx - tx).abs() <= MIN_MOVE && (cy - ty).abs() <= MIN_MOVE) {
+            continue;
+        }
+        let visible = win.is_visible().unwrap_or(false);
+        if animate && visible && cur.is_some() {
+            batch.push((label, cur.unwrap(), (tx, ty)));
+        } else {
+            mark_moving(app, &label);
+            let _ = win.set_position(LogicalPosition::new(tx, ty));
+        }
+    }
+
+    if batch.is_empty() {
+        return;
+    }
+
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let frame = Duration::from_millis(ANIM_MS / ANIM_FRAMES as u64);
+        for i in 1..=ANIM_FRAMES {
+            if ARRANGE_GEN.load(Ordering::SeqCst) != my_gen {
+                return; // a newer arrange superseded us
+            }
+            let t = i as f64 / ANIM_FRAMES as f64;
+            let e = 1.0 - (1.0 - t).powi(3); // ease-out cubic; i == FRAMES → e == 1 (exact)
+            for (label, (cx, cy), (tx, ty)) in &batch {
+                let x = cx + (tx - cx) * e;
+                let y = cy + (ty - cy) * e;
+                mark_moving(&app, label);
+                if let Some(win) = app.get_webview_window(label) {
+                    let _ = win.set_position(LogicalPosition::new(x, y));
+                }
+            }
+            std::thread::sleep(frame);
+        }
+    });
 }
 
 /// Called by the frontend once a panel has resized to its artifact's fitted size,
 /// so the column can be laid out with real dimensions.
 #[tauri::command]
 pub fn notify_fit(app: AppHandle) {
-    arrange(&app);
+    arrange(&app, true);
 }
 
 /// A terminal window's on-screen rectangle (logical points, top-left origin —
@@ -279,7 +404,9 @@ pub fn start_follow_poll(app: AppHandle) {
             let now = terminal_bounds();
             if now != last {
                 last = now;
-                arrange(&app);
+                // Live tracking of the terminal — snap instantly (not a discrete
+                // re-flow; a glide here would lag behind the drag).
+                arrange(&app, false);
             }
         }
     });
