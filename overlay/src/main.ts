@@ -15,6 +15,11 @@ const emptyEl = document.getElementById("empty") as HTMLElement;
 const win = getCurrentWebviewWindow();
 let current = "";
 
+/** If the iframe hasn't fired `load` within this window, surface an error
+ *  instead of leaving a blank panel (bad path / asset-protocol failure). */
+const LOAD_TIMEOUT_MS = 2500;
+let loadTimer = 0;
+
 function basename(p: string): string {
   return p.split("/").pop() || p;
 }
@@ -32,6 +37,24 @@ async function loadArtifact(path: string): Promise<void> {
   current = path;
   resetFit();
   try {
+    // Load guard: confirm the iframe actually rendered something. `load` fires on
+    // success; if it doesn't within LOAD_TIMEOUT_MS we show an error rather than a
+    // silent blank panel. Registered before src/srcdoc so we never miss the event.
+    let loaded = false;
+    clearTimeout(loadTimer);
+    frame.onload = () => {
+      loaded = true;
+      frame.hidden = false;
+      emptyEl.hidden = true;
+    };
+    loadTimer = window.setTimeout(() => {
+      if (!loaded && current === path) {
+        emptyEl.textContent = `Could not load ${basename(path)}`;
+        emptyEl.hidden = false;
+        frame.hidden = true;
+      }
+    }, LOAD_TIMEOUT_MS);
+
     const inScope = await invoke<boolean>("artifact_in_scope", { path });
     if (inScope) {
       frame.removeAttribute("srcdoc");

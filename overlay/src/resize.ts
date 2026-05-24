@@ -18,6 +18,11 @@ const PAD = 8;
 /** Keep the window off the very edge of the work area. */
 const SCREEN_MARGIN = 16;
 const ANIM_MS = 180;
+/** If an artifact never reports a size (snippet missing / 3rd-party HTML), fall
+ *  back to a sensible window after this delay instead of leaving it at MIN_*. */
+const FALLBACK_W = 760;
+const FALLBACK_H = 900;
+const FALLBACK_MS = 400;
 
 const win = getCurrentWindow();
 
@@ -35,6 +40,8 @@ interface FitMessage {
 
 let raf = 0;
 let lastTarget: Size | null = null;
+let gotReport = false;
+let fallbackTimer = 0;
 
 function isFitMessage(d: unknown): d is FitMessage {
   if (!d || typeof d !== "object") return false;
@@ -96,6 +103,8 @@ function applyRadius({ w, h }: Size): void {
 }
 
 async function fit(content: Size): Promise<void> {
+  gotReport = true;
+  clearTimeout(fallbackTimer);
   const target = await targetSize(content);
   // Echo guard: resizing reflows the artifact, which re-reports; ignore reports
   // that resolve to (nearly) the size we just applied so we don't oscillate.
@@ -116,6 +125,11 @@ async function fit(content: Size): Promise<void> {
 /** Clear fit state so the next artifact re-fits from scratch. */
 export function resetFit(): void {
   lastTarget = null;
+  gotReport = false;
+  clearTimeout(fallbackTimer);
+  fallbackTimer = window.setTimeout(() => {
+    if (!gotReport) void fit({ w: FALLBACK_W, h: FALLBACK_H });
+  }, FALLBACK_MS);
 }
 
 /** Start listening for size reports from the artifact iframe. Call once on boot. */
