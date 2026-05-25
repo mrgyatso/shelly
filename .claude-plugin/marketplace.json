@@ -1,0 +1,15 @@
+{
+  "name": "claude-code-companion",
+  "description": "The Companion overlay plugin: auto-render Claude's HTML artifacts, a 'prefer HTML' skill, and a doctor health check.",
+  "owner": {
+    "name": "mrgyatso",
+    "url": "https://github.com/mrgyatso"
+  },
+  "plugins": [
+    {
+      "name": "companion",
+      "source": "./plugin",
+      "description": "Auto-render Claude's HTML artifacts in the Companion overlay; adds a 'prefer HTML' skill and a doctor health-check command. Pairs with the Companion Overlay app."
+    }
+  ]
+}

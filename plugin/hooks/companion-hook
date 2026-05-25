@@ -1,0 +1,35 @@
+#!/usr/bin/env sh
+# companion-hook (plugin copy) — Claude Code PostToolUse hook.
+#
+# Pops the Companion overlay when Claude writes an HTML artifact into the watched
+# dir. Reads the hook JSON payload on stdin; never blocks the originating write.
+#
+# Unlike the app-bundled copy, this calls the `companion` CLI from PATH (installed
+# with the Companion Overlay app), and no-ops silently if the app isn't installed —
+# so the plugin is harmless on a machine without the overlay.
+#
+# Watched dir: $COMPANION_ARTIFACTS_DIR (default: $HOME/.claude/companion/artifacts).
+
+ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/.claude/companion/artifacts}"
+
+payload=$(cat)
+
+# Cheap pre-filter: skip the JSON parse for the 99% of writes that aren't artifacts.
+case "$payload" in
+  *"$ARTIFACTS_DIR"/*) ;;
+  *) exit 0 ;;
+esac
+
+# Seam to the app: if the overlay CLI isn't installed, do nothing.
+command -v companion >/dev/null 2>&1 || exit 0
+
+# Pull tool_input.file_path out of the payload (Write/Edit both carry it).
+fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log((JSON.parse(d).tool_input||{}).file_path||"")}catch(e){}})' 2>/dev/null)
+
+case "$fp" in
+  "$ARTIFACTS_DIR"/*.html)
+    nohup companion open "$fp" >/dev/null 2>&1 &
+    ;;
+esac
+
+exit 0
