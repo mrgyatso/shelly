@@ -122,6 +122,42 @@ For the **full-document** case, build a normal self-contained page (your own lay
 sections, SVG/diagrams as needed) — just keep `data-fit-root` on the main wrapper with a
 definite width (e.g. 720–960px) and include the size-report snippet above.
 
+## Surfacing or re-showing an existing artifact
+
+Writing a new `.html` into the artifacts dir is what pops the overlay. But the auto-pop only
+fires on a *fresh* write — so when the user asks to **see an artifact again** ("show me that
+again", "open it", "pull that back up"), don't re-write the file. Run the explicit surface verb:
+
+```
+companion open <abs-path>
+```
+
+That's the one way to put an existing file on the overlay. Don't use other file-delivery
+mechanisms for this — they hand the file to the client without rendering it on the overlay.
+
+## First-run: build an example artifact on request
+
+When someone has just installed Companion and asks to **see what it does** — "show me an
+example artifact", "show me an example", "what does this do", "demo it" — build a real,
+self-contained **full-document** artifact that explains Companion itself, and write it into
+the artifacts dir (writing pops it). Don't pre-fetch or copy a canned file; generate a fresh,
+polished page each time — it's the product's first impression.
+
+Cover, briefly and visually:
+
+- **What the overlay is** — a focus-stealing-free floating window that auto-renders any HTML
+  Claude writes, layered over your terminal.
+- **How artifacts appear** — Claude writes a self-contained `.html` into the watched dir
+  (`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}`) and the overlay pops it. No
+  copy-paste, no browser tab.
+- **The cadence** — small "pill" heads-up for light changes, full document when the content is
+  dense (a plan, review, diagram, comparison).
+- **How to check it's healthy** — `/companion:doctor` renders a health panel in the overlay.
+
+Make it look designed (this is onboarding), and keep the required `data-fit-root` + size-report
+snippet so it sizes correctly. This is also the perfect smoke test: if the page pops in the
+overlay, the whole skill → write → hook → overlay path works end to end.
+
 ## Verify it's wired
 
 Run `/companion:doctor` (or `companion doctor` in a shell) — it renders a health panel in
