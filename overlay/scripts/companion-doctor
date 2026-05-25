@@ -1,0 +1,176 @@
+#!/usr/bin/env sh
+# companion-doctor — health check for the Companion overlay setup.
+#
+# Runs six checks, prints a plaintext summary to stdout, then renders the same
+# report as an HTML panel inside the overlay. Seeing the panel is itself the
+# proof that the render path works; the plaintext is the fallback for when the
+# overlay is the thing that's broken.
+#
+# Invoked as `companion doctor` (the wrapper execs here). No args.
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/codeviz/public/artifacts}"
+
+# Locate the installed .app (needed for version + signing checks).
+APP=""
+for a in "/Applications/Companion Overlay.app" "$HOME/Applications/Companion Overlay.app"; do
+  [ -d "$a" ] && { APP="$a"; break; }
+done
+
+# --- row accumulation: build HTML and plaintext in parallel ----------------
+HTML_ROWS=""
+TEXT_ROWS=""
+OVERALL=ok
+
+escalate() {
+  case "$1" in
+    bad) OVERALL=bad ;;
+    warn) [ "$OVERALL" = bad ] || OVERALL=warn ;;
+  esac
+}
+
+add() {  # $1=state(ok|warn|bad)  $2=label  $3=detail
+  escalate "$1"
+  case "$1" in
+    ok)   g="✓"; cls="g"; tg="ok  " ;;
+    warn) g="~"; cls="y"; tg="~~  " ;;
+    bad)  g="✗"; cls="r"; tg="!!  " ;;
+  esac
+  HTML_ROWS="${HTML_ROWS}<div class=\"row\"><span class=\"gl ${cls}\">${g}</span><span class=\"lbl\">${2}</span><span class=\"det\">${3}</span></div>"
+  TEXT_ROWS="${TEXT_ROWS}  ${tg}${2}  —  ${3}
+"
+}
+
+# 1. app installed --------------------------------------------------------
+if [ -n "$APP" ]; then
+  ver=$(/usr/bin/defaults read "$APP/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo "?")
+  add ok "app installed" "$APP ($ver)"
+elif [ -x "$SCRIPT_DIR/../src-tauri/target/release/companion-overlay" ] \
+  || [ -x "$SCRIPT_DIR/../src-tauri/target/debug/companion-overlay" ]; then
+  add warn "app installed" "not in /Applications — using a local dev build"
+else
+  add bad "app installed" "Companion Overlay.app not found — install the DMG"
+fi
+
+# 2. cli on PATH ----------------------------------------------------------
+cli=$(command -v companion 2>/dev/null || true)
+if [ -n "$cli" ]; then
+  add ok "cli on PATH" "$cli"
+else
+  add warn "cli on PATH" "not linked — ln -s '$SCRIPT_DIR/companion' /usr/local/bin/companion"
+fi
+
+# 3. overlay daemon -------------------------------------------------------
+pids=$(pgrep -x companion-overlay 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+if [ -n "$pids" ]; then
+  add ok "overlay daemon" "running (pid $pids)"
+else
+  add warn "overlay daemon" "idle — starts on the first 'companion open'"
+fi
+
+# 4. PostToolUse hook -----------------------------------------------------
+hook_found=""
+for s in "$HOME/.claude/settings.json" "$HOME/.claude/settings.local.json"; do
+  if [ -f "$s" ] && grep -q "companion-hook" "$s" 2>/dev/null; then
+    hook_found="${s#"$HOME"/}"
+    break
+  fi
+done
+if [ -n "$hook_found" ]; then
+  add ok "PostToolUse hook" "wired in $hook_found"
+else
+  add bad "PostToolUse hook" "absent — install the plugin, or add companion-hook to settings.json"
+fi
+
+# 5. artifacts dir --------------------------------------------------------
+if [ -d "$ARTIFACTS_DIR" ]; then
+  add ok "artifacts dir" "$ARTIFACTS_DIR"
+else
+  add warn "artifacts dir" "$ARTIFACTS_DIR (missing — set COMPANION_ARTIFACTS_DIR or create it)"
+fi
+
+# 6. signed / notarized ---------------------------------------------------
+if [ -n "$APP" ]; then
+  if spctl -a -t exec "$APP" >/dev/null 2>&1; then
+    add ok "signed / notarized" "accepted by Gatekeeper"
+  else
+    add warn "signed / notarized" "unsigned preview — right-click → Open the first time"
+  fi
+else
+  add warn "signed / notarized" "n/a — app not installed"
+fi
+
+# --- headline ------------------------------------------------------------
+case "$OVERALL" in
+  ok)   HEAD="All systems go";       HCLS="g" ;;
+  warn) HEAD="Working, with notes";  HCLS="y" ;;
+  bad)  HEAD="Action needed";        HCLS="r" ;;
+esac
+TS=$(date '+%Y-%m-%d %H:%M')
+
+# --- plaintext (always, even if the overlay can't render) ----------------
+printf '\ncompanion doctor — %s\n' "$HEAD"
+printf '%s\n' "$TEXT_ROWS"
+
+# --- HTML panel, rendered in the overlay ---------------------------------
+OUT="${TMPDIR:-/tmp}/companion-doctor.html"
+cat > "$OUT" <<HTML
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>companion doctor</title>
+<style>
+  :root {
+    --paper:#f4f1ec; --surface:#ffffff; --ink:#1a1714; --muted:#6e655b;
+    --accent:#ff6a5a; --accent-ink:#c4392b; --ok:#2e7d52; --warn:#b07d23; --bad:#c4392b;
+    --line:rgba(26,23,20,0.12);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{scrollbar-width:none;}
+  html::-webkit-scrollbar{width:0;height:0;display:none;}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;}
+  [data-fit-root]{width:600px;margin:0 auto;padding:26px 28px 22px;}
+  .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px;}
+  .eyebrow{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent-ink);}
+  .ts{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  h1{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:-0.01em;margin:6px 0 18px;}
+  h1 .pin{display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:9px;vertical-align:middle;}
+  h1 .pin.g{background:var(--ok);} h1 .pin.y{background:var(--warn);} h1 .pin.r{background:var(--bad);}
+  .rows{display:grid;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:8px;}
+  .row{display:grid;grid-template-columns:22px 152px 1fr;gap:10px;align-items:baseline;padding:9px 10px;border-radius:9px;}
+  .row:nth-child(odd){background:rgba(26,23,20,0.025);}
+  .gl{font-family:var(--mono);font-weight:700;font-size:14px;text-align:center;}
+  .gl.g{color:var(--ok);} .gl.y{color:var(--warn);} .gl.r{color:var(--bad);}
+  .lbl{font-size:14px;font-weight:600;}
+  .det{font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.45;word-break:break-word;}
+  .foot{margin-top:14px;font-size:12px;color:var(--muted);text-align:center;}
+  .foot b{color:var(--accent-ink);}
+</style>
+</head>
+<body>
+<main data-fit-root>
+  <div class="top"><span class="eyebrow">companion · doctor</span><span class="ts">$TS</span></div>
+  <h1><span class="pin $HCLS"></span>$HEAD</h1>
+  <div class="rows">$HTML_ROWS</div>
+  <div class="foot">You are reading this <b>inside the overlay</b> — so the render path works.</div>
+</main>
+<script>
+  (function(){
+    var el=document.querySelector("[data-fit-root]")||document.body;
+    var post=function(){parent.postMessage({source:"companion-artifact",kind:"size",
+      w:Math.ceil(el.scrollWidth),h:Math.ceil(el.scrollHeight)},"*");};
+    if(typeof ResizeObserver!=="undefined") new ResizeObserver(post).observe(el);
+    addEventListener("load",post); post();
+  })();
+</script>
+</body>
+</html>
+HTML
+
+# Render it (ignore failure — plaintext above already gave the diagnosis).
+"$SCRIPT_DIR/companion" open "$OUT" >/dev/null 2>&1 || true

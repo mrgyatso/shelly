@@ -8,7 +8,23 @@
 # installed .app first, then the local dev/release build.
 set -e
 
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# Resolve $0 through symlinks (e.g. /usr/local/bin/companion) so SCRIPT_DIR is
+# the real scripts dir — needed to find sibling scripts like companion-doctor.
+SELF=$0
+while [ -L "$SELF" ]; do
+  target=$(readlink "$SELF")
+  case "$target" in
+    /*) SELF=$target ;;
+    *) SELF=$(dirname "$SELF")/$target ;;
+  esac
+done
+SCRIPT_DIR=$(cd "$(dirname "$SELF")" && pwd)
+
+# Subcommands handled in the wrapper. The binary only understands `open`, so
+# anything else must be intercepted here before we exec it.
+case "$1" in
+  doctor) exec "$SCRIPT_DIR/companion-doctor" ;;
+esac
 
 CANDIDATES="/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay
 $HOME/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay
