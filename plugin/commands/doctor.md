@@ -10,5 +10,6 @@ report as a health panel **inside the overlay** — so if the panel appears, the
 works end to end.
 
 If the `companion` command is not found, the app/CLI isn't installed: tell the user to install
-the Companion Overlay app (Homebrew cask `claude-code-companion`, or the GitHub release DMG),
-then symlink or add `companion` to PATH, and try again.
+with `brew install --cask mrgyatso/tap/claude-code-companion` (which also links the CLI onto
+PATH and clears the quarantine flag), or download the GitHub release DMG and symlink `companion`
+to PATH, then try again.

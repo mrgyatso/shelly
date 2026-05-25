@@ -43,6 +43,20 @@ macOS 11 or later. The release is a universal build that runs natively on both A
 
 ## Install
 
+### Homebrew (recommended)
+
+```bash
+brew install --cask mrgyatso/tap/claude-code-companion
+```
+
+This installs the app to `/Applications`, symlinks the `companion` CLI onto your PATH, and clears the macOS quarantine flag for you. Then confirm everything is wired:
+
+```bash
+companion doctor
+```
+
+### Manual
+
 1. Download the latest `.dmg` from the [Releases page](https://github.com/mrgyatso/claude-code-companion/releases).
 2. Open it and drag Companion Overlay into Applications.
 3. Approve it on first launch (see below).
@@ -53,7 +67,9 @@ macOS 11 or later. The release is a universal build that runs natively on both A
 
 ## First launch
 
-The build isn't signed yet, so macOS will block it the first time ("Companion Overlay can't be opened because Apple cannot check it for malicious software"). Right-click the app in Applications, choose Open, then Open again. If that doesn't work, clear the quarantine flag:
+> Homebrew users can skip this — the cask clears the quarantine flag on install.
+
+The build isn't signed yet, so macOS will block a manual install the first time ("Companion Overlay can't be opened because Apple cannot check it for malicious software"). Right-click the app in Applications, choose Open, then Open again. If that doesn't work, clear the quarantine flag:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Companion Overlay.app"
