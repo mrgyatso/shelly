@@ -1,0 +1,76 @@
+name: Cask smoke test
+
+# Validate the Homebrew cask install path end-to-end on Apple Silicon
+# (this project's primary dev box is Intel; arm64 runtime has not been
+# physically confirmed). Runs on every push to master and on demand.
+#
+# Coverage: install via cask → app placed → CLI on PATH → companion doctor
+# passes its layered checks. The actual overlay rendering (window popping
+# on screen) still needs a human's eyes — a headless runner can't verify
+# graphics.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'overlay/**'
+      - '.github/workflows/cask-smoketest.yml'
+  workflow_dispatch:
+
+jobs:
+  cask-install:
+    name: brew install + companion doctor (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Show runner arch
+        run: |
+          uname -m
+          sw_vers
+
+      - name: Install the cask
+        run: |
+          brew install --cask mrgyatso/tap/claude-code-companion
+
+      - name: Confirm app placed
+        run: |
+          test -d "/Applications/Companion Overlay.app" \
+            || (echo "::error::app missing in /Applications" && exit 1)
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+            "/Applications/Companion Overlay.app/Contents/Info.plist"
+
+      - name: Confirm CLI symlinks
+        run: |
+          which companion
+          ls -l "$(which companion)"
+
+      - name: Quarantine cleared by cask postflight
+        run: |
+          # postflight runs `xattr -dr com.apple.quarantine`; verify the flag is gone.
+          if xattr -p com.apple.quarantine "/Applications/Companion Overlay.app" 2>/dev/null; then
+            echo "::error::quarantine flag still set — cask postflight did not run"
+            exit 1
+          fi
+          echo "ok — no quarantine flag"
+
+      - name: Run companion doctor
+        run: |
+          companion doctor || echo "doctor exit: $?"
+
+      - name: Doctor reports app + cli + dir green
+        run: |
+          out=$(companion doctor 2>&1 || true)
+          echo "$out"
+          # Require at least the deterministic, headless-safe rows.
+          echo "$out" | grep -q "ok  app installed"  || (echo "::error::doctor: app row missing"   && exit 1)
+          echo "$out" | grep -q "ok  cli on PATH"    || (echo "::error::doctor: cli row missing"   && exit 1)
+          echo "$out" | grep -q "ok  artifacts dir"  || (echo "::error::doctor: dir row missing"   && exit 1)
+          # Note: 'overlay daemon' and 'PostToolUse hook' rows may NOT be green on a
+          # fresh CI runner (the daemon hasn't been launched and ~/.claude/settings.json
+          # has no user hook). That's expected; this job validates the install layer
+          # only — the render path needs a human (see plugin-e2e-checklist.html).
