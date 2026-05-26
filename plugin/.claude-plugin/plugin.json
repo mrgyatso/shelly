@@ -1,7 +1,7 @@
 {
   "name": "companion",
-  "description": "Auto-render Claude's HTML artifacts in the Companion overlay, and prefer HTML for change heads-ups, plans, reviews, and reports. Pairs with the Companion Overlay app (installed separately).",
-  "version": "0.1.2",
+  "description": "Auto-render Claude's HTML artifacts in the Companion overlay, prefer HTML for plans/reviews/reports, AND enforce render-at-end-of-turn via a Stop hook so deliverables don't drown in terminal walls of text. Pairs with the Companion Overlay app (installed separately).",
+  "version": "0.1.3",
   "author": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso/claude-code-companion"

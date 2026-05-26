@@ -19,6 +19,15 @@ cheap; default toward showing something.
 **Skip it** only for: trivial conversational answers, pure code edits the user is actively
 watching, one-line lookups, or when the user has said they don't want artifacts.
 
+> **The Stop hook backstops this.** A `prefer-html-enforcer` Stop hook in the same
+> plugin inspects every end-of-turn message; if it scores ≥2 deliverable signals
+> (numbered steps, install commands, multiple URLs/paths, code blocks, bold section
+> heads) AND no fresh `.html` landed in the artifacts dir in the last 2 minutes, it
+> returns `decision:"block"` and forces Claude to render before truly ending. So
+> "I forgot to write the artifact" stops being possible — the worst case is the
+> user sees an extra render-and-finish round trip when the heuristic catches a
+> deliverable that slipped through.
+
 ## The form factor: small by default, large only when dense
 
 Pick the artifact's weight from the **content's density**, not habit:
