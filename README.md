@@ -94,7 +94,28 @@ Shortcuts:
 
 ## Auto-pop
 
-The point of the tool is not opening artifacts by hand. Add a `PostToolUse` hook so the overlay pops whenever Claude writes an `.html` file. In `~/.claude/settings.json`:
+The point of the tool is not opening artifacts by hand. Two ways to wire it up:
+
+### Plugin (recommended)
+
+Install the Claude Code plugin and the wiring lands automatically — no editing `settings.json` by hand. In Claude Code:
+
+```
+> /plugin marketplace add mrgyatso/claude-code-companion
+> /plugin install companion@claude-code-companion
+```
+
+That gives you:
+
+- a `PostToolUse` hook that pops the overlay on every HTML write,
+- a `prefer-html` skill that nudges Claude to render plans, reviews, and reports as artifacts — with a Stop-hook backstop so deliverables don't get buried in walls of terminal text,
+- `/companion:doctor` (health panel in the overlay) and `/companion:example` (build an onboarding artifact on demand) commands.
+
+The plugin's watched folder defaults to `~/.claude/companion/artifacts` (override with `COMPANION_ARTIFACTS_DIR`).
+
+### Manual
+
+If you'd rather wire it by hand, add a `PostToolUse` hook in `~/.claude/settings.json`:
 
 ```json
 {
@@ -111,7 +132,7 @@ The point of the tool is not opening artifacts by hand. Add a `PostToolUse` hook
 }
 ```
 
-The watched folder defaults to `$HOME/codeviz/public/artifacts` and can be changed with the `COMPANION_ARTIFACTS_DIR` environment variable. Tell Claude to prefer HTML for plans, reviews, and reports, and the loop runs itself.
+The watched folder defaults to `$HOME/codeviz/public/artifacts` and can be changed with the `COMPANION_ARTIFACTS_DIR` environment variable.
 
 ## Build from source
 
@@ -137,4 +158,4 @@ Use `--bundles dmg` to produce a distributable `.dmg` instead. Add `--target uni
 
 The idea comes from Thariq Shihipar's ["The unreasonable effectiveness of HTML"](https://claude.com/blog/using-claude-code-the-unreasonable-effectiveness-of-html) ([@trq212](https://x.com/trq212)). This project is the surface that makes that workflow effortless.
 
-No license is set yet, so treat this as all rights reserved for now. If you want to use or redistribute it, open an issue and ask.
+Licensed under the [MIT License](./LICENSE).
