@@ -80,6 +80,14 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
+        // Register the overlay as a macOS Login Item so it's already running
+        // when the user starts a session — no "first artifact after reboot goes
+        // nowhere because the daemon hadn't been launched yet." Idempotent;
+        // user can disable via System Settings → General → Login Items.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             artifact::read_artifact,
             artifact::artifact_in_scope,
@@ -146,6 +154,17 @@ pub fn run() {
             // Keep the column docked to the terminal while in Terminal mode.
             #[cfg(target_os = "macos")]
             crate::layout::start_follow_poll(app.handle().clone());
+
+            // Register as a Login Item so the overlay autostarts after every
+            // reboot — fixes the "nothing pops after a reboot because the
+            // daemon isn't running yet" issue. Idempotent (safe to call when
+            // already enabled). Failure here must not block the daemon, so we
+            // swallow errors (the user can still launch the app manually).
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let _ = app.autolaunch().enable();
+            }
 
             Ok(())
         });
