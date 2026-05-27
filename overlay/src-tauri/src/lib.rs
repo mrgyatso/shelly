@@ -80,6 +80,10 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
+        // Lets interactive review artifacts write their compiled prose to the
+        // system clipboard via the plugin's JS API (writeText). Only write is
+        // permitted in capabilities; we never read the user's clipboard.
+        .plugin(tauri_plugin_clipboard_manager::init())
         // Register the overlay as a macOS Login Item so it's already running
         // when the user starts a session — no "first artifact after reboot goes
         // nowhere because the daemon hadn't been launched yet." Idempotent;
@@ -94,14 +98,22 @@ pub fn run() {
             layout::notify_fit
         ])
         .setup(|app| {
-            // Prohibited activation policy = pure background daemon: no Dock
-            // icon, no Cmd-Tab, and crucially the app can never become active.
-            // This is what actually stops the panels stealing terminal focus on
-            // click / auto-pop (a non-activating NSPanel is necessary but NOT
-            // sufficient while the app stays a Regular, focus-grabbing app), and
-            // it lets the process persist with zero windows between opens.
+            // Accessory activation policy: no Dock icon, no Cmd-Tab — like
+            // Prohibited — but the app CAN become active when a control needs
+            // key focus (a text field click in an interactive review artifact).
+            //
+            // Earlier this was `Prohibited` to guarantee no focus theft, but
+            // that also made it impossible for ANY window to become key, which
+            // broke typing into iframe textareas. The standard floating-palette
+            // pattern (Xcode's Documentation viewer, Finder's Get Info) uses
+            // Accessory + non-activating NSPanel + `becomesKeyOnlyIfNeeded` +
+            // the private `_setPreventsActivation:` call we already do in
+            // `macos_panel.rs`. That trio gives us: the panel pops / drags /
+            // gets clicked without making the app active OR taking key, but
+            // clicking specifically on a text input DOES make the panel key
+            // so the user can type. Terminal stays the front app the whole time.
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             // First-launch: this very process may carry `open <path>`.
             // (single-instance only fires for *subsequent* invocations.)

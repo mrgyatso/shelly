@@ -16,5 +16,11 @@
       <button id="external" title="Open in browser">↗</button>
       <button id="hide" title="Close">✕</button>
     </div>
+    <!-- Shown briefly after an interactive review artifact submits its
+         compiled prose (kind:"submit"). The artifact's clipboard write
+         lands in submit.ts, which then toggles `.visible` on this div. -->
+    <div id="copied-toast" class="copied-toast">
+      <span class="check">✓</span> Copied &mdash; <kbd>⌘V</kbd> in terminal
+    </div>
   </body>
 </html>

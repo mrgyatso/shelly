@@ -98,3 +98,57 @@ body:hover .controls { opacity: 1; pointer-events: auto; }
   background: #fff; /* artifacts assume a white page */
 }
 #frame[hidden] { display: none; }
+
+/* Copied-to-clipboard toast — appears bottom-right of the overlay frame for
+   ~1.5s after an interactive review artifact submits its compiled feedback.
+   Sits OUTSIDE the iframe so the artifact author can't restyle it; uniform
+   confirmation surface across all artifacts. */
+.copied-toast {
+  position: absolute;
+  bottom: 14px;
+  right: 14px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: var(--bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.65);
+  color: var(--fg);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.copied-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.copied-toast .check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #2e7d52;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+.copied-toast kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--fg);
+}

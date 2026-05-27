@@ -59,9 +59,25 @@ mod imp {
             panel.setReleasedWhenClosed(false);
             // Non-activating: the panel can show/become-key without activating
             // this app (so the terminal keeps focus).
-            panel.setStyleMask(panel.styleMask() | NSWindowStyleMask::NonactivatingPanel);
+            //
+            // ALSO Resizable: NSPanel's default `canBecomeKeyWindow` returns NO
+            // for borderless panels (no title bar AND no resize bar). Without
+            // YES from `canBecomeKey`, the panel can never become the key window
+            // — which means iframe text fields never receive keyboard events,
+            // because there IS no key window for them to attach to. Adding
+            // NSWindowStyleMask::Resizable flips the default to YES; the panel
+            // remains visually borderless because there's no chrome to draw the
+            // resize affordance on.
+            panel.setStyleMask(
+                panel.styleMask()
+                    | NSWindowStyleMask::NonactivatingPanel
+                    | NSWindowStyleMask::Resizable,
+            );
             // Become key ONLY when a control actually needs it — so clicking the
             // chrome / scrolling the artifact does NOT pull keyboard focus.
+            // Combined with `canBecomeKeyWindow == YES` (from Resizable above),
+            // this gives the floating-palette pattern: text-field click ⇒ panel
+            // becomes key for typing, every other click leaves the terminal key.
             panel.setBecomesKeyOnlyIfNeeded(true);
             // Float above the app's normal windows.
             panel.setFloatingPanel(true);
@@ -69,19 +85,19 @@ mod imp {
                 NSWindowCollectionBehavior::CanJoinAllSpaces
                     | NSWindowCollectionBehavior::FullScreenAuxiliary,
             );
-            // CRITICAL: AppKit sets the WindowServer "prevents activation" tag
-            // (kCGSPreventsActivationTagBit) via the private `-_setPreventsActivation:`
-            // ONLY at panel init. Flipping the nonactivating bit later with
-            // `setStyleMask:` does NOT re-sync that tag, so without this the app
-            // still steals focus on mouse-down even though the mask looks right.
-            // Force the tag now. Guarded by respondsToSelector so it can't crash
-            // if a future OS drops the private method. (This app already uses
-            // macOSPrivateApi; MAS is a deliberate non-goal.)
-            let responds: bool =
-                msg_send![panel, respondsToSelector: sel!(_setPreventsActivation:)];
-            if responds {
-                let _: () = msg_send![panel, _setPreventsActivation: true];
-            }
+            // NOTE: previously we also called `-_setPreventsActivation: true`
+            // (a private WindowServer-level tag) here as a belt-and-suspenders
+            // focus-theft guard. That tag is too strong for interactive review
+            // artifacts: it blocks the panel from EVER becoming the key window,
+            // even when `becomesKeyOnlyIfNeeded` would otherwise route a text-
+            // field click into making the panel key (without activating the app).
+            // The combination still in place — `nonactivatingPanel` style mask
+            // + `becomesKeyOnlyIfNeeded(true)` + `ActivationPolicy::Accessory`
+            // (set in lib.rs) — is the canonical floating-palette pattern and
+            // should prevent focus theft for normal pop / drag / chrome clicks
+            // while permitting key for text inputs. If focus regression appears,
+            // restore the private call but gate it on a per-panel opt-in (e.g.
+            // a `prevents-activation` arg in the window builder URL).
         }
     }
 

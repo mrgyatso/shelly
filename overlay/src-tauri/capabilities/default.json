@@ -16,6 +16,7 @@
     "core:window:allow-inner-size",
     "core:window:allow-current-monitor",
     "opener:default",
-    "deep-link:default"
+    "deep-link:default",
+    "clipboard-manager:allow-write-text"
   ]
 }

@@ -134,6 +134,153 @@ For the **full-document** case, build a normal self-contained page (your own lay
 sections, SVG/diagrams as needed) — just keep `data-fit-root` on the main wrapper with a
 definite width (e.g. 720–960px) and include the size-report snippet above.
 
+## Interactive review artifacts (multi-item plans, todos, reviews)
+
+When the artifact is a **list of N items the user might want to react to individually** —
+implementation plans, todo lists, code-review checklists, decision sets, comparison
+options — reach for the **interactive review form**. Each item gets inline action
+buttons (approve / comment / reject). The user marks items as they read, optionally
+types a free-text comment under any item, and clicks a single Submit button. The
+overlay compiles all decisions into one coherent prose message and writes it to the
+system clipboard. The user pastes the result into the terminal — one paste, the whole
+review batched.
+
+**Reach for this form** for: implementation plans (3+ steps), prioritised todo lists,
+plan-mode review handoffs, multi-option comparisons where each option needs its own
+verdict, "things I noticed" review checklists. **Skip it** for: pill recaps, single-
+section reports, dashboards, status snapshots without per-item decisions, anything
+where the user is going to respond holistically rather than per-row.
+
+### Item HTML shape
+
+Each reviewable item is a `<li>` (or any element) marked with `data-companion-item`
+and a `data-item-label` describing what the item is, in a way that will read
+naturally inside the compiled submit message:
+
+```html
+<li data-companion-item data-item-label="Wire the postMessage handler in resize.ts">
+  <div class="item-row">
+    <span class="item-label">Wire the postMessage handler in resize.ts</span>
+    <div class="item-actions">
+      <button class="act" data-action="approve" aria-label="Approve">✓</button>
+      <button class="act" data-action="comment" aria-label="Comment">✎</button>
+      <button class="act" data-action="reject"  aria-label="Reject">✗</button>
+    </div>
+  </div>
+  <textarea data-comment hidden placeholder="Comment on this item…"></textarea>
+</li>
+```
+
+`data-item-label` is what goes into the compiled output. The visible item content
+can be richer (sub-text, code spans, links) — only the label string is sent.
+
+### Submit button
+
+One Submit button per artifact, with `data-companion-submit` set to the title that
+prefixes the compiled message:
+
+```html
+<button class="submit" data-companion-submit="Implementation plan review">
+  Submit feedback
+</button>
+```
+
+### Required review helper snippet
+
+This script handles click delegation (sets `data-state` on items, toggles textarea
+visibility), and on submit walks all items to compose the prose message and
+postMessage it. Include it in addition to (not instead of) the size-reporter
+snippet — the review helper is opt-in, the size-reporter is required for every
+artifact:
+
+```html
+<script>
+  (function () {
+    var GLY = { approve: "✓", comment: "✎", reject: "✗" };
+
+    // Click delegation: action buttons set data-state on the parent item;
+    // clicking the same action again toggles it off. Comment shows textarea.
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-action]");
+      if (btn) {
+        var item = btn.closest("[data-companion-item]");
+        if (!item) return;
+        var action = btn.getAttribute("data-action");
+        var current = item.getAttribute("data-state");
+        var ta = item.querySelector("textarea[data-comment]");
+        if (current === action) {
+          item.removeAttribute("data-state");
+          if (ta) ta.hidden = true;
+          return;
+        }
+        item.setAttribute("data-state", action);
+        if (ta) ta.hidden = (action !== "comment");
+        if (action === "comment" && ta) setTimeout(function () { ta.focus(); }, 0);
+        return;
+      }
+      var submitBtn = e.target.closest("[data-companion-submit]");
+      if (submitBtn) {
+        var title = submitBtn.getAttribute("data-companion-submit") || "Review feedback";
+        var items = document.querySelectorAll("[data-companion-item][data-state]");
+        if (items.length === 0) return;
+        var lines = ["Re: " + title, ""];
+        items.forEach(function (it) {
+          var state = it.getAttribute("data-state");
+          var label = it.getAttribute("data-item-label") || "(unlabeled)";
+          lines.push(GLY[state] + " " + label);
+          if (state === "comment") {
+            var t = it.querySelector("textarea[data-comment]");
+            if (t && t.value.trim()) {
+              t.value.trim().split("\n").forEach(function (l) { lines.push("   " + l); });
+            }
+          }
+        });
+        parent.postMessage({
+          source: "companion-artifact",
+          kind: "submit",
+          text: lines.join("\n")
+        }, "*");
+      }
+    });
+  })();
+</script>
+```
+
+### Compiled output shape
+
+The submitted message follows a deterministic shape so Claude can parse it cleanly
+when the user pastes it back in. For a 5-item review:
+
+```
+Re: Implementation plan review
+
+✓ Item 1 label
+✓ Item 2 label
+✎ Item 3 label
+   user's free-text comment, multi-line preserved
+✗ Item 4 label
+✎ Item 5 label
+   another comment
+```
+
+### Minimal CSS guidance
+
+Avoid the template-y look. Action buttons should:
+
+- Be small icon-only inline buttons (✓ ✎ ✗ glyphs are fine; aria-labels carry the meaning).
+- Tint per-state via `[data-state="approve|comment|reject"]` on the item — e.g. coloured
+  left border + filled active button. Subtle, not loud.
+- Reveal the textarea inline under the item (not as a modal) when comment is selected.
+
+The whole artifact should still pass the [design-quality](../../../README.md) bar —
+this is not a stock todo widget.
+
+### Default to the review form for multi-item artifacts
+
+When emitting an artifact that's effectively a list of 3+ decisions, **default to
+the interactive review form**. The user shouldn't have to ask for it — that's the
+whole point. Single round trip beats ten retyped responses.
+
 ## Surfacing or re-showing an existing artifact
 
 Writing a new `.html` into the artifacts dir is what pops the overlay. But the auto-pop only

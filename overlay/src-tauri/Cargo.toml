@@ -26,6 +26,7 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
+tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Compiled in all builds but only REGISTERED under #[cfg(debug_assertions)] in
