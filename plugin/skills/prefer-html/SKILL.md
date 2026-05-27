@@ -281,6 +281,265 @@ When emitting an artifact that's effectively a list of 3+ decisions, **default t
 the interactive review form**. The user shouldn't have to ask for it — that's the
 whole point. Single round trip beats ten retyped responses.
 
+## Ambient inline comments (let the user ask about any block)
+
+The review form above asks *"do you approve / reject / comment on these specific
+items?"*. Sometimes the artifact isn't a decision form at all — it's an
+informational artifact (a recap, a status report, a design dossier, an explainer)
+and the user might still have a question about some specific part of it. The
+**ambient comments helper** turns every paragraph, heading, list item, code block,
+and blockquote in the artifact into a hover-revealed comment target. The artifact
+*looks like a normal report*; on hover, a small 💬 icon appears in the gutter next
+to each block. Click it to drop an inline comment composer, type, save. Submit
+compiles every comment with its quoted snippet into prose and copies it.
+
+**Reach for this form** for any informational artifact where you want to lower the
+threshold for "the user wants to ask about one specific paragraph but doesn't want
+to retype it" — recaps, status briefings, explainers, comparisons-as-prose,
+research summaries, post-mortems. **Don't combine** it with the interactive review
+form in the same artifact — both helpers respond to the same `data-companion-submit`
+button and would write competing payloads to the clipboard. Pick one per artifact.
+
+### Convention
+
+Wrap the readable content in a `<div data-companion-commentable>` and include the
+helper snippet below. The helper auto-discovers `p, li, h2, h3, h4, blockquote, pre`
+elements inside the wrapper and attaches the affordance to each. Add a Submit
+button anywhere in the page with `data-companion-submit="title"` — the same
+attribute the review form uses (the helper short-circuits when no comments exist,
+so a Submit button can safely live next to other UI):
+
+```html
+<div data-companion-commentable>
+  <h2>What shipped this session</h2>
+  <p>Normal prose. On hover, a 💬 appears to the left.</p>
+  <ul>
+    <li>List items are commentable too.</li>
+  </ul>
+  <pre><code>// so are code blocks</code></pre>
+</div>
+
+<button data-companion-submit="Comments on session recap">Submit → ⌘V</button>
+```
+
+### Required ambient-comments helper snippet
+
+Drop this in addition to (not instead of) the size-reporter snippet. Safe to
+include even when there's no `data-companion-commentable` wrapper present — the
+helper no-ops in that case:
+
+```html
+<style>
+  [data-companion-commentable] .companion-commentable {
+    position: relative; border-radius: 5px; cursor: text;
+    transition: background 140ms ease, box-shadow 140ms ease;
+  }
+  .companion-commentable:hover {
+    background: rgba(182,120,29,0.07); box-shadow: inset 2px 0 0 #b6781d;
+  }
+  .companion-commentable.has-comment {
+    background: rgba(46,125,82,0.05); box-shadow: inset 2px 0 0 #2e7d52;
+  }
+  .companion-ask-btn {
+    position: absolute; left: -36px; top: 50%; transform: translateY(-50%);
+    width: 26px; height: 26px; padding: 0;
+    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #6e655b;
+    border-radius: 6px; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    font-size: 12px; box-shadow: 0 4px 10px -6px rgba(26,23,20,0.4);
+  }
+  .companion-commentable:hover > .companion-ask-btn,
+  .companion-commentable.has-comment > .companion-ask-btn { display: inline-flex; }
+  .companion-commentable.has-comment > .companion-ask-btn {
+    color: #2e7d52; border-color: #2e7d52;
+  }
+  .companion-composer {
+    margin: 6px 0 10px; padding: 10px 11px;
+    background: #fff; border: 1px solid #b6781d; border-radius: 8px;
+    box-shadow: 0 10px 24px -16px rgba(26,23,20,0.5);
+  }
+  .companion-composer .ref {
+    font: 600 11px/1.4 ui-monospace, Menlo, monospace; color: #6e655b;
+    border-left: 2px solid #b6781d; padding: 4px 8px; margin-bottom: 6px;
+    background: rgba(182,120,29,0.07); border-radius: 0 4px 4px 0;
+  }
+  .companion-composer textarea {
+    display: block; width: 100%; min-height: 64px; padding: 8px 10px;
+    font: 13px/1.5 -apple-system, system-ui, sans-serif;
+    background: #f4f1ec; color: #1a1714;
+    border: 1px solid rgba(26,23,20,0.2); border-radius: 6px;
+    outline: none; resize: vertical; box-sizing: border-box;
+  }
+  .companion-composer textarea:focus { border-color: #b6781d; }
+  .companion-composer .row {
+    display: flex; justify-content: space-between; gap: 8px; margin-top: 8px;
+  }
+  .companion-composer button {
+    font: 600 11.5px/1 -apple-system, system-ui, sans-serif;
+    padding: 7px 11px; border-radius: 6px; cursor: pointer;
+    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #1a1714;
+  }
+  .companion-composer button.save {
+    background: #1a1714; color: #f4f1ec; border-color: #1a1714;
+  }
+  .companion-composer button.delete {
+    color: #6e655b; border-color: transparent; background: transparent;
+  }
+  .companion-annotation {
+    margin: 4px 0 10px; padding: 7px 10px;
+    background: rgba(46,125,82,0.08); border-left: 2px solid #2e7d52;
+    border-radius: 0 6px 6px 0; color: #1a1714;
+    font-size: 12.5px; line-height: 1.5; cursor: pointer;
+  }
+  .companion-annotation::before { content: "💬 "; }
+</style>
+<script>
+  (function () {
+    var root = document.querySelector("[data-companion-commentable]");
+    if (!root) return;
+    var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre";
+    var blocks = Array.prototype.slice.call(root.querySelectorAll(BLOCK_SELECTOR));
+    var comments = new Map();
+    var open = null;
+
+    blocks.forEach(function (b, i) {
+      b.classList.add("companion-commentable");
+      b.dataset.cBlockId = "b" + i;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "companion-ask-btn";
+      btn.title = "Comment on this block";
+      btn.textContent = "💬";
+      btn.addEventListener("click", function (e) { e.stopPropagation(); openFor(b); });
+      b.appendChild(btn);
+      b.addEventListener("click", function (e) {
+        if (btn.contains(e.target)) return;
+        if (!e.shiftKey) return;
+        openFor(b);
+      });
+    });
+
+    function snippet(b) {
+      var c = b.cloneNode(true);
+      var x = c.querySelector(".companion-ask-btn"); if (x) x.remove();
+      var t = (c.textContent || "").replace(/\s+/g, " ").trim();
+      return t.length > 80 ? t.slice(0, 77) + "…" : t;
+    }
+    function closeOpen() { if (open) { open.remove(); open = null; } }
+    function openFor(b) {
+      closeOpen();
+      var id = b.dataset.cBlockId;
+      var box = document.createElement("div");
+      box.className = "companion-composer";
+      box.innerHTML =
+        '<div class="ref"></div>' +
+        '<textarea placeholder="Your question or comment about this block…"></textarea>' +
+        '<div class="row">' +
+          '<button type="button" class="delete">Discard</button>' +
+          '<div style="display:flex;gap:6px;">' +
+            '<button type="button" class="cancel">Cancel</button>' +
+            '<button type="button" class="save">Save</button>' +
+          '</div>' +
+        '</div>';
+      box.querySelector(".ref").textContent = snippet(b);
+      b.parentNode.insertBefore(box, b.nextSibling);
+      open = box;
+      var ta = box.querySelector("textarea");
+      ta.value = comments.get(id) || "";
+      setTimeout(function () { ta.focus(); }, 60);
+      box.querySelector(".save").addEventListener("click", function () {
+        var v = ta.value.trim();
+        if (v) { comments.set(id, v); b.classList.add("has-comment"); renderAnno(b, v); }
+        else   { comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); }
+        closeOpen();
+      });
+      box.querySelector(".cancel").addEventListener("click", closeOpen);
+      box.querySelector(".delete").addEventListener("click", function () {
+        comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); closeOpen();
+      });
+    }
+    function renderAnno(b, t) {
+      removeAnno(b);
+      var note = document.createElement("div");
+      note.className = "companion-annotation";
+      note.dataset.forBlock = b.dataset.cBlockId;
+      note.textContent = t;
+      note.addEventListener("click", function () { openFor(b); });
+      b.parentNode.insertBefore(note, b.nextSibling);
+    }
+    function removeAnno(b) {
+      var n = b.parentNode.querySelector(
+        '.companion-annotation[data-for-block="' + b.dataset.cBlockId + '"]'
+      );
+      if (n) n.remove();
+    }
+
+    document.addEventListener("click", function (e) {
+      var submitBtn = e.target.closest("[data-companion-submit]");
+      if (!submitBtn || comments.size === 0) return;
+      var title = submitBtn.getAttribute("data-companion-submit") || "Comments";
+      var lines = ["Re: " + title, ""];
+      blocks.forEach(function (b) {
+        var id = b.dataset.cBlockId;
+        if (!comments.has(id)) return;
+        lines.push("On: " + JSON.stringify(snippet(b)));
+        comments.get(id).split("\n").forEach(function (l) { lines.push("    " + l); });
+        lines.push("");
+      });
+      parent.postMessage({
+        source: "companion-artifact",
+        kind: "submit",
+        text: lines.join("\n")
+      }, "*");
+    });
+  })();
+</script>
+```
+
+### Layout note (margin for the 💬 icon)
+
+The icon floats in a negative left margin (`left: -36px`). The wrapping container
+needs enough left padding to give it room — bump the artifact's main wrapper to
+`padding-left: 56px` (or whatever pulls the prose ~36 px clear of the left edge),
+otherwise the icon will be clipped by the overlay's edge:
+
+```css
+[data-fit-root] { padding-left: 56px; }
+```
+
+### Compiled output shape
+
+For an artifact with three commented blocks, the submitted message lands as:
+
+```
+Re: Comments on session recap
+
+On: "The overlay's borderless NSPanel now becomes the key window when…"
+    why does becomesKeyOnlyIfNeeded play with the subclass override —
+    do they conflict?
+
+On: "ActivationPolicy::Accessory keeps the app out of Dock and Cmd-Tab"
+    is there a way to also hide from Mission Control?
+
+On: "Push the three local commits to origin/master."
+    let's do this in the next session
+```
+
+The quoted snippet is the first 80 characters of the block's text — enough context
+for Claude to know which paragraph the user is asking about without echoing the
+whole thing back.
+
+### When to include ambient comments by default
+
+Default ON for any informational artifact longer than ~3 blocks (a multi-paragraph
+recap, a sectioned briefing, an explainer with code). The cost is small — ~150
+lines of CSS + JS, all dead until the user hovers — and it converts every
+informational artifact from a one-way wall into a thing the user can ask back
+about without leaving the overlay.
+
+Default OFF for: pills, single-card status flips, decision artifacts (use the
+review form instead), anything where the user isn't reading prose.
+
 ## Surfacing or re-showing an existing artifact
 
 Writing a new `.html` into the artifacts dir is what pops the overlay. But the auto-pop only

@@ -1,7 +1,7 @@
 {
   "name": "companion",
-  "description": "Auto-render Claude's HTML artifacts in the Companion overlay, prefer HTML for plans/reviews/reports, and let users pull an artifact on demand via /companion:render. Optional Stop-hook backstop available via /companion:enforce (off by default). Supports interactive review artifacts: click ✓/✎/✗ on items to compose batched feedback in one paste. Pairs with the Companion Overlay app (installed separately).",
-  "version": "0.1.5",
+  "description": "Auto-render Claude's HTML artifacts in the Companion overlay, prefer HTML for plans/reviews/reports, and let users pull an artifact on demand via /companion:render. Optional Stop-hook backstop available via /companion:enforce (off by default). Supports interactive review artifacts (click ✓/✎/✗ on items to compose batched feedback in one paste) and ambient inline comments (hover any paragraph/list/code-block to drop a question on it). Pairs with the Companion Overlay app (installed separately).",
+  "version": "0.1.6",
   "author": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso/claude-code-companion"
