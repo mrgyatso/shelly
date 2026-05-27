@@ -108,8 +108,8 @@ Install the Claude Code plugin and the wiring lands automatically — no editing
 That gives you:
 
 - a `PostToolUse` hook that pops the overlay on every HTML write,
-- a `prefer-html` skill that nudges Claude to render plans, reviews, and reports as artifacts — with a Stop-hook backstop so deliverables don't get buried in walls of terminal text,
-- `/companion:doctor` (health panel in the overlay) and `/companion:example` (build an onboarding artifact on demand) commands.
+- a `prefer-html` skill that nudges Claude to render plans, reviews, and reports as artifacts,
+- four slash commands: `/companion:doctor` (overlay health panel), `/companion:example` (build an onboarding artifact on demand), `/companion:render` (pull an artifact about recent work), and `/companion:enforce on|off|status` — an optional Stop-hook backstop that forces an artifact at end-of-turn when one is missing. Off by default; turn it on for sessions where you want forced rendering.
 
 The plugin's watched folder defaults to `~/.claude/companion/artifacts` (override with `COMPANION_ARTIFACTS_DIR`).
 

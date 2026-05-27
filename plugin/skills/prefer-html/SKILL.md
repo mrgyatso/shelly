@@ -19,14 +19,17 @@ cheap; default toward showing something.
 **Skip it** only for: trivial conversational answers, pure code edits the user is actively
 watching, one-line lookups, or when the user has said they don't want artifacts.
 
-> **The Stop hook backstops this.** A `prefer-html-enforcer` Stop hook in the same
-> plugin inspects every end-of-turn message; if it scores ≥2 deliverable signals
-> (numbered steps, install commands, multiple URLs/paths, code blocks, bold section
-> heads) AND no fresh `.html` landed in the artifacts dir in the last 2 minutes, it
-> returns `decision:"block"` and forces Claude to render before truly ending. So
-> "I forgot to write the artifact" stops being possible — the worst case is the
-> user sees an extra render-and-finish round trip when the heuristic catches a
-> deliverable that slipped through.
+> **Two user-side verbs and an opt-in backstop.** When the user wants an artifact
+> about what was just discussed but Claude didn't render one, they run
+> `/companion:render` to pull one explicitly — Claude renders, the overlay pops it,
+> the turn ends. For sessions that *do* want forced rendering (e.g. walking away and
+> wanting a wall of artifacts on return), `/companion:enforce on` activates a Stop
+> hook that blocks end-of-turn messages scoring ≥2 deliverable signals (numbered
+> steps, install commands, multiple URLs/paths, code blocks, bold section heads)
+> until an artifact is written. Enforcer is **off by default**: skill-guided
+> judgment plus user pull cover the common case without surprise Stop blocks.
+> Toggle off again with `/companion:enforce off`; check state with
+> `/companion:enforce status`.
 
 ## The form factor: small by default, large only when dense
 

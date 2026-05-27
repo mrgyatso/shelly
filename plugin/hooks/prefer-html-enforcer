@@ -26,6 +26,12 @@
 
 ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/codeviz/public/artifacts}"
 
+# Opt-in: hook is a no-op unless the user has run `/companion:enforce on`,
+# which creates this flag file. Off by default — skill-guided judgment plus
+# the `/companion:render` user-pull verb cover the common case.
+ENFORCE_FLAG="${HOME}/.claude/companion/enforce.flag"
+[ -f "$ENFORCE_FLAG" ] || exit 0
+
 payload=$(cat)
 
 # Extract last_assistant_message using node if available. Falls back to a tiny
