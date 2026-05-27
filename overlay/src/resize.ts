@@ -1,5 +1,5 @@
 import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
-import { LogicalSize } from "@tauri-apps/api/dpi";
+import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 
 // Fit-to-content sizing. The artifact iframe is opaque-origin (no
@@ -67,12 +67,44 @@ async function targetSize(content: Size): Promise<Size> {
 
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 
-/** Tween the window's inner size to `target` (Tauri has no native animated resize). */
+/** Tween the window's inner size *and* position to `target`.
+ *
+ *  Why both: Tauri's setSize grows the window from its top-left anchor, so a
+ *  panel placed flush to the right edge of the screen would extend past the
+ *  monitor's right edge as it grew — visibly spilling onto an adjacent monitor
+ *  for the ~180ms of the resize, before the Rust re-flow snapped it back.
+ *
+ *  Fix: capture the current monitor *before* the tween starts (so a brief
+ *  multi-monitor straddle can't switch which monitor we're targeting), keep
+ *  the panel's right edge anchored to where it was, and clamp the resulting
+ *  rect to that monitor's work area. The Rust arrange() that fires afterwards
+ *  will then see "already at target" and skip its own move. */
 async function animateTo(target: Size): Promise<void> {
   const mon = await currentMonitor();
   const scale = mon?.scaleFactor ?? 1;
   const startPhys = await win.innerSize();
+  const startPosPhys = await win.outerPosition();
   const start: Size = { w: startPhys.width / scale, h: startPhys.height / scale };
+  const startPos = { x: startPosPhys.x / scale, y: startPosPhys.y / scale };
+
+  // Right-anchored re-flow: keep the right edge where it is, grow leftward.
+  // Then clamp into the monitor's work area so we can never spill across a
+  // multi-monitor boundary mid-tween.
+  const monLeft = mon ? mon.workArea.position.x / scale : 0;
+  const monTop = mon ? mon.workArea.position.y / scale : 0;
+  const monW = mon ? mon.workArea.size.width / scale : 1600;
+  const monH = mon ? mon.workArea.size.height / scale : 1000;
+  const startRight = startPos.x + start.w;
+  const desiredX = startRight - target.w;
+  const targetX = Math.max(
+    monLeft + SCREEN_MARGIN,
+    Math.min(desiredX, monLeft + monW - target.w - SCREEN_MARGIN),
+  );
+  const targetY = Math.max(
+    monTop + SCREEN_MARGIN,
+    Math.min(startPos.y, monTop + monH - target.h - SCREEN_MARGIN),
+  );
+
   cancelAnimationFrame(raf);
   const t0 = performance.now();
   await new Promise<void>((resolve) => {
@@ -81,7 +113,10 @@ async function animateTo(target: Size): Promise<void> {
       const k = easeOutCubic(p);
       const w = Math.round(start.w + (target.w - start.w) * k);
       const h = Math.round(start.h + (target.h - start.h) * k);
+      const x = Math.round(startPos.x + (targetX - startPos.x) * k);
+      const y = Math.round(startPos.y + (targetY - startPos.y) * k);
       void win.setSize(new LogicalSize(w, h));
+      void win.setPosition(new LogicalPosition(x, y));
       if (p < 1) raf = requestAnimationFrame(step);
       else resolve();
     };
