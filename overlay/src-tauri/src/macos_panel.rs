@@ -11,8 +11,8 @@ mod imp {
     use std::ffi::c_void;
     use std::sync::OnceLock;
 
-    use objc2::runtime::AnyClass;
-    use objc2::{msg_send, sel, ClassType};
+    use objc2::runtime::{AnyClass, Bool, ClassBuilder, Sel};
+    use objc2::{sel, ClassType};
     use objc2_app_kit::{NSPanel, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
     use tauri::WebviewWindow;
 
@@ -21,11 +21,67 @@ mod imp {
     }
 
     /// The class tao allocated the window with, captured the first time we
-    /// reclass to NSPanel. tao registers a single window class, so every overlay
-    /// window shares it — one stored pointer restores any of them. Stored as
-    /// `usize` because the class object is a stable process-global. Used by
-    /// `restore_original_class` to undo the reclass before teardown.
+    /// reclass to `CompanionKeyPanel`. tao registers a single window class, so
+    /// every overlay window shares it — one stored pointer restores any of
+    /// them. Stored as `usize` because the class object is a stable
+    /// process-global. Used by `restore_original_class` to undo the reclass
+    /// before teardown.
     static ORIGINAL_CLASS: OnceLock<usize> = OnceLock::new();
+
+    /// Process-global cache of the registered `CompanionKeyPanel` class.
+    /// Registered exactly once via `ClassBuilder` (Obj-C will refuse to
+    /// register the same class name twice — and `ClassBuilder::new` returns
+    /// `None` in that case).
+    static KEY_PANEL_CLASS: OnceLock<&'static AnyClass> = OnceLock::new();
+
+    /// `canBecomeKeyWindow` override. Borderless `NSPanel`s return NO by
+    /// default (no title bar AND no resize bar), which blocks the panel from
+    /// ever becoming key. We unconditionally return YES so iframe text fields
+    /// can receive `keyDown:` once the user clicks into them. Focus theft is
+    /// still prevented by `becomesKeyOnlyIfNeeded = true` +
+    /// `ActivationPolicy::Accessory`: the panel becomes key only on an
+    /// explicit text-field click, never on auto-pop or chrome interaction.
+    extern "C-unwind" fn can_become_key(_this: &NSPanel, _cmd: Sel) -> Bool {
+        Bool::YES
+    }
+
+    /// `canBecomeMainWindow` override. Returning YES here mirrors
+    /// `canBecomeKeyWindow` so AppKit's key/main bookkeeping stays coherent
+    /// for the same reasons — without it, certain focus-chain handoffs (web
+    /// view → first responder → key window) break in subtle ways.
+    extern "C-unwind" fn can_become_main(_this: &NSPanel, _cmd: Sel) -> Bool {
+        Bool::YES
+    }
+
+    /// Register (once) and return a custom `NSPanel` subclass that overrides
+    /// `canBecomeKeyWindow` and `canBecomeMainWindow` to return YES. Reclassing
+    /// the tao-created `NSWindow` to *this* (rather than plain `NSPanel`) is
+    /// what lets keystrokes reach the WKWebView → iframe → textarea chain.
+    fn key_panel_class() -> &'static AnyClass {
+        KEY_PANEL_CLASS.get_or_init(|| {
+            let superclass: &AnyClass = NSPanel::class();
+            let mut builder = ClassBuilder::new(c"CompanionKeyPanel", superclass)
+                .expect("CompanionKeyPanel class registration failed");
+            // SAFETY: Both overrides match NSWindow's existing selector
+            // encodings exactly: zero args, `BOOL` (= `Bool`) return, with the
+            // standard `(self, _cmd)` receiver/selector pair.
+            // The `fn(_, _) -> _` underscore form is intentional — the explicit
+            // `fn(&NSPanel, Sel) -> Bool` cast captures a specific lifetime on
+            // `&NSPanel` and fails the `for<'a>` HRTB on `MethodImplementation`.
+            // Inference resolves to the higher-rank form objc2 expects.
+            unsafe {
+                builder.add_method(
+                    sel!(canBecomeKeyWindow),
+                    can_become_key as extern "C-unwind" fn(_, _) -> _,
+                );
+                builder.add_method(
+                    sel!(canBecomeMainWindow),
+                    can_become_main as extern "C-unwind" fn(_, _) -> _,
+                );
+            }
+            builder.register()
+        })
+    }
 
     /// Reclass the window's backing `NSWindow` to `NSPanel` and give it the
     /// non-activating style plus cross-Space / over-fullscreen collection
@@ -37,12 +93,16 @@ mod imp {
         if ptr.is_null() {
             return;
         }
-        let cls: *const AnyClass = NSPanel::class();
+        // Reclass to our `CompanionKeyPanel : NSPanel` subclass (NOT plain
+        // NSPanel) so `canBecomeKeyWindow` returns YES — required for the
+        // WKWebView → iframe → textarea focus chain to receive keystrokes.
+        let cls: *const AnyClass = key_panel_class();
         // SAFETY: `ptr` is the live NSWindow backing this Tauri window. AppKit
         // window mutation must happen on the main thread, where Tauri runs
         // `setup` and window callbacks. We only message the object for the
-        // duration of these synchronous calls. NSPanel ⊂ NSWindow, so the
-        // reclassed object still responds to every selector used here.
+        // duration of these synchronous calls. CompanionKeyPanel ⊂ NSPanel ⊂
+        // NSWindow, so the reclassed object still responds to every selector
+        // used here.
         unsafe {
             let old_class = object_setClass(ptr, cls.cast());
             // Remember what tao gave us so we can reclass back before teardown
@@ -60,14 +120,13 @@ mod imp {
             // Non-activating: the panel can show/become-key without activating
             // this app (so the terminal keeps focus).
             //
-            // ALSO Resizable: NSPanel's default `canBecomeKeyWindow` returns NO
-            // for borderless panels (no title bar AND no resize bar). Without
-            // YES from `canBecomeKey`, the panel can never become the key window
-            // — which means iframe text fields never receive keyboard events,
-            // because there IS no key window for them to attach to. Adding
-            // NSWindowStyleMask::Resizable flips the default to YES; the panel
-            // remains visually borderless because there's no chrome to draw the
-            // resize affordance on.
+            // ALSO Resizable: defense in depth. The reclass to
+            // `CompanionKeyPanel` is what actually guarantees
+            // `canBecomeKeyWindow == YES`; the Resizable flag is a redundant
+            // secondary signal (NSPanel's default returns YES when title-bar
+            // OR resize-bar is set), kept in case some AppKit internal also
+            // consults the style mask directly. Visually borderless because
+            // there's no chrome to draw the resize affordance on.
             panel.setStyleMask(
                 panel.styleMask()
                     | NSWindowStyleMask::NonactivatingPanel
@@ -75,9 +134,10 @@ mod imp {
             );
             // Become key ONLY when a control actually needs it — so clicking the
             // chrome / scrolling the artifact does NOT pull keyboard focus.
-            // Combined with `canBecomeKeyWindow == YES` (from Resizable above),
-            // this gives the floating-palette pattern: text-field click ⇒ panel
-            // becomes key for typing, every other click leaves the terminal key.
+            // Combined with `canBecomeKeyWindow == YES` (from the
+            // `CompanionKeyPanel` subclass), this gives the floating-palette
+            // pattern: text-field click ⇒ panel becomes key for typing, every
+            // other click leaves the terminal key.
             panel.setBecomesKeyOnlyIfNeeded(true);
             // Float above the app's normal windows.
             panel.setFloatingPanel(true);
