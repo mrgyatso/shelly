@@ -2,25 +2,28 @@
 description: Build and pop an example artifact in the overlay that explains what Companion does
 ---
 
-Build a real, self-contained **full-document** HTML artifact that explains what the Companion
-overlay is and how it works, then write it into the artifacts dir
-(`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/companion-example.html`). Writing the
+Build a real, self-contained HTML artifact that explains what the Companion overlay is — and
+build it in the **combined "brief + Next steps" shape** (the skill's default), so the example
+*is* a live demo of the format, not just a description of it. Write it to
+`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/companion-example.html`. Writing the
 file is what pops the overlay — no other action needed.
 
 Generate it fresh (don't copy a canned file). Make it look designed — this is the user's first
-impression. Cover, briefly and visually:
+impression. Give it:
 
-- **What the overlay is** — a floating, focus-stealing-free window that auto-renders any HTML
-  Claude writes, layered over your terminal.
-- **How artifacts appear** — Claude writes a self-contained `.html` into the watched dir and the
-  overlay pops it. No copy-paste, no browser tab.
-- **The cadence** — a small "pill" heads-up for light changes, a full document when the content
-  is dense (plans, reviews, diagrams, comparisons).
-- **Health check** — `/companion:doctor` renders a health panel in the overlay.
+- **An informative page (or two)**, wrapped in `data-companion-commentable` so the user can hover
+  any block and click 💬 to ask about it. Cover, briefly and visually: what the overlay is (a
+  floating, focus-stealing-free window that auto-renders any HTML Claude writes); how artifacts
+  appear (Claude writes a self-contained `.html` into the watched dir → the overlay pops it, no
+  copy-paste, no browser tab); the cadence (Claude renders **by judgment** — when a turn has real
+  substance — not on every action); and the health check (`/companion:doctor`).
+- **A final "Next steps" page** — a small review form (✓ try it / ✎ note / ✗ skip + **Do all**)
+  with a couple of starter actions like "render an example for my current project" or "switch to
+  manual mode", so the user's very first artifact teaches the read-then-decide loop.
 
-Keep the required `data-fit-root` wrapper (definite width, e.g. 720–960px) and the size-report
-snippet so the overlay sizes it correctly. See the `prefer-html` skill for the snippet and
-templates.
+Use the self-contained **unified helper** from the `prefer-html` skill ("The default shape"
+section) for comments + decisions + the single Submit, plus the required `data-fit-root` wrapper
+and the size-report snippet. Only drop to a plain pill if the overlay can't be confirmed working.
 
 If, after writing, nothing appears, the app/CLI likely isn't installed — tell the user to install
 with `brew install --cask mrgyatso/tap/claude-code-companion`, then run `/companion:doctor` to

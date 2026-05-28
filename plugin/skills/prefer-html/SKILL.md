@@ -38,8 +38,11 @@ default artifact does two jobs at once, as a single multi-page document:
    per item, plus a **Do all** button) that converts the brief into decisions and pushes
    the work forward. Every substantive artifact must end with one of these.
 
-This is the standing format, not optional polish: **informative AND goal-oriented**, always
-handing the user the next thing to act on, turn after turn (the "decision treadmill").
+This is the standing format for the artifacts you *do* produce: **informative AND
+goal-oriented**, each one handing the user a clear next thing to act on. But it governs
+**shape, not frequency.** Whether a turn deserves an artifact at all is the judgment call in
+the cadence section below — render when there's real substance (technically involved,
+information-dense, or genuinely worth a visual), **never as a reflex on every tool call.**
 
 **One unified Submit collects both.** The ambient-comments helper and the review-form
 helper would otherwise fight over `data-companion-submit`. Use the **combined helper**
