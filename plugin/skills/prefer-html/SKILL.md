@@ -162,12 +162,16 @@ an outer card won't double-icon its inner text).
     if (n) n.remove();
   }
 
-  // review items: ✓ approve / ✎ comment / ✗ reject
+  // review items: ✓ approve / ✎ comment / ✗ reject.
+  // The comment box stays hidden until ✎ is clicked. Toggle via inline style.display
+  // (NOT the `hidden` attr) so author CSS like `.item textarea{display:block}` can't
+  // accidentally reveal it — inline style wins. Force-hide all boxes on load too.
+  items.forEach(function (it) { var t = it.querySelector("textarea[data-comment]"); if (t) t.style.display = "none"; });
   function setState(item, action) {
     var current = item.getAttribute("data-state");
     var ta = item.querySelector("textarea[data-comment]");
-    if (current === action) { item.removeAttribute("data-state"); if (ta) ta.hidden = true; }
-    else { item.setAttribute("data-state", action); if (ta) ta.hidden = (action !== "comment");
+    if (current === action) { item.removeAttribute("data-state"); if (ta) ta.style.display = "none"; }
+    else { item.setAttribute("data-state", action); if (ta) ta.style.display = (action === "comment") ? "block" : "none";
       if (action === "comment" && ta) setTimeout(function () { ta.focus(); }, 0); }
     refresh();
   }
@@ -177,7 +181,7 @@ an outer card won't double-icon its inner text).
     if (btn) { var it = btn.closest("[data-companion-item]"); if (it) setState(it, btn.getAttribute("data-action")); return; }
     if (e.target.closest("[data-doall]")) {
       items.forEach(function (it) { it.setAttribute("data-state", "approve");
-        var ta = it.querySelector("textarea[data-comment]"); if (ta) ta.hidden = true; });
+        var ta = it.querySelector("textarea[data-comment]"); if (ta) ta.style.display = "none"; });
       refresh(); return;
     }
     var sub = e.target.closest("[data-companion-submit]");
@@ -588,11 +592,11 @@ artifact:
         var ta = item.querySelector("textarea[data-comment]");
         if (current === action) {
           item.removeAttribute("data-state");
-          if (ta) ta.hidden = true;
+          if (ta) ta.style.display = "none";
           return;
         }
         item.setAttribute("data-state", action);
-        if (ta) ta.hidden = (action !== "comment");
+        if (ta) ta.style.display = (action === "comment") ? "block" : "none";
         if (action === "comment" && ta) setTimeout(function () { ta.focus(); }, 0);
         return;
       }
@@ -649,6 +653,12 @@ Avoid the template-y look. Action buttons should:
 - Tint per-state via `[data-state="approve|comment|reject"]` on the item — e.g. coloured
   left border + filled active button. Subtle, not loud.
 - Reveal the textarea inline under the item (not as a modal) when comment is selected.
+- **Keep the comment textarea hidden by default** (`display:none`), revealed only on ✎.
+  GOTCHA: a rule like `.item textarea { display:block }` overrides the `hidden` attribute
+  and leaves the box always-open — which makes ✎ look dead and lets typed text be dropped
+  on submit (the item never gets `data-state="comment"`). The helper now toggles
+  `style.display` inline (and force-hides on load) so this can't bite, but don't author a
+  default-visible textarea anyway.
 
 The whole artifact should still pass the [design-quality](../../../README.md) bar —
 this is not a stock todo widget.
