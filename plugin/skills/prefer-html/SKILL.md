@@ -26,6 +26,221 @@ file's content is one word and controls the rest of this skill.
 
 The user flips between modes with `/companion:mode agent|manual|status`.
 
+## The default shape (MANDATORY in agent mode): brief + a "Next steps" page
+
+For any **substantive** turn — anything past a one-line answer or a quick pill — the
+default artifact does two jobs at once, as a single multi-page document:
+
+1. **Inform.** One or more content pages (findings, status, explanation, comparison),
+   each wrapped in `data-companion-commentable` so the user can hover any block and
+   click 💬 to question *that specific line* without retyping it.
+2. **Propel.** A final **"Next steps" page** — a review form (✓ do it / ✎ note / ✗ skip
+   per item, plus a **Do all** button) that converts the brief into decisions and pushes
+   the work forward. Every substantive artifact must end with one of these.
+
+This is the standing format, not optional polish: **informative AND goal-oriented**, always
+handing the user the next thing to act on, turn after turn (the "decision treadmill").
+
+**One unified Submit collects both.** The ambient-comments helper and the review-form
+helper would otherwise fight over `data-companion-submit`. Use the **combined helper**
+(below) instead: it gathers block-comments *and* item-decisions into one pasteable payload,
+sectioned as `— Questions / comments —` then `— Decisions —`. Critical wiring rule: put
+`data-companion-commentable` only on the **content** pages, never on the Next-steps page,
+so the two helpers don't double up on the same blocks.
+
+The **unified helper is inlined below** — copy it verbatim. It is self-contained (no
+external files, no machine-specific paths); use the ambient-comments CSS and the
+review-form CSS documented later in this file for styling.
+
+### HTML wiring
+
+```html
+<!-- content page(s): commentable -->
+<section data-companion-commentable> … prose, lists, headings … </section>
+<!-- the Next-steps page: review items, NOT commentable -->
+<section>
+  <div class="item" data-companion-item data-item-label="Short label that reads well in the submit message">
+    <div class="item-row">
+      <div class="item-main"><div class="item-title">…</div><div class="item-sub">…</div></div>
+      <div class="item-actions">
+        <button class="act do"   data-action="approve" title="Do it">✓</button>
+        <button class="act info" data-action="comment" title="More info / note">✎</button>
+        <button class="act skip" data-action="reject"  title="Skip">✗</button>
+      </div>
+    </div>
+    <textarea data-comment hidden placeholder="What to clarify, or a note…"></textarea>
+  </div>
+  <!-- submit bar -->
+  <div class="bar">
+    <span class="count" data-count>nothing marked yet</span>
+    <button class="doall" data-doall>✓ Do all</button>
+    <button class="submit" data-companion-submit="Title that prefixes the compiled message">Submit → ⌘V</button>
+  </div>
+</section>
+```
+
+### Unified helper script (ambient comments + review items → one submit)
+
+```html
+<script>
+(function () {
+  var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre";
+  var submitBtn = document.querySelector("[data-companion-submit]");
+  var countEl = document.querySelector("[data-count]");
+  var items = [].slice.call(document.querySelectorAll("[data-companion-item]"));
+  var comments = new Map();
+  var open = null;
+
+  // ambient comments on every commentable block (skipping review items)
+  var blocks = [];
+  [].slice.call(document.querySelectorAll("[data-companion-commentable]")).forEach(function (root) {
+    [].slice.call(root.querySelectorAll(BLOCK_SELECTOR)).forEach(function (b) {
+      if (b.closest("[data-companion-item]")) return;
+      blocks.push(b);
+    });
+  });
+  blocks.forEach(function (b, i) {
+    b.classList.add("companion-commentable");
+    b.dataset.cBlockId = "b" + i;
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "companion-ask-btn";
+    btn.title = "Comment on this block"; btn.textContent = "💬";
+    btn.addEventListener("click", function (e) { e.stopPropagation(); openFor(b); });
+    b.appendChild(btn);
+  });
+  function snippet(b) {
+    var c = b.cloneNode(true); var x = c.querySelector(".companion-ask-btn"); if (x) x.remove();
+    var t = (c.textContent || "").replace(/\s+/g, " ").trim();
+    return t.length > 80 ? t.slice(0, 77) + "…" : t;
+  }
+  function closeOpen() { if (open) { open.remove(); open = null; } }
+  function openFor(b) {
+    closeOpen();
+    var id = b.dataset.cBlockId;
+    var box = document.createElement("div");
+    box.className = "companion-composer";
+    box.innerHTML = '<div class="ref"></div>' +
+      '<textarea placeholder="Your question or comment about this block…"></textarea>' +
+      '<div class="row"><button type="button" class="delete">Discard</button>' +
+      '<div style="display:flex;gap:6px;"><button type="button" class="cancel">Cancel</button>' +
+      '<button type="button" class="save">Save</button></div></div>';
+    box.querySelector(".ref").textContent = snippet(b);
+    b.parentNode.insertBefore(box, b.nextSibling);
+    open = box;
+    var ta = box.querySelector("textarea"); ta.value = comments.get(id) || "";
+    setTimeout(function () { ta.focus(); }, 60);
+    box.querySelector(".save").addEventListener("click", function () {
+      var v = ta.value.trim();
+      if (v) { comments.set(id, v); b.classList.add("has-comment"); renderAnno(b, v); }
+      else { comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); }
+      closeOpen(); refresh();
+    });
+    box.querySelector(".cancel").addEventListener("click", closeOpen);
+    box.querySelector(".delete").addEventListener("click", function () {
+      comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); closeOpen(); refresh();
+    });
+  }
+  function renderAnno(b, t) {
+    removeAnno(b);
+    var note = document.createElement("div");
+    note.className = "companion-annotation"; note.dataset.forBlock = b.dataset.cBlockId;
+    note.textContent = t; note.addEventListener("click", function () { openFor(b); });
+    b.parentNode.insertBefore(note, b.nextSibling);
+  }
+  function removeAnno(b) {
+    var n = b.parentNode.querySelector('.companion-annotation[data-for-block="' + b.dataset.cBlockId + '"]');
+    if (n) n.remove();
+  }
+
+  // review items: ✓ approve / ✎ comment / ✗ reject
+  function setState(item, action) {
+    var current = item.getAttribute("data-state");
+    var ta = item.querySelector("textarea[data-comment]");
+    if (current === action) { item.removeAttribute("data-state"); if (ta) ta.hidden = true; }
+    else { item.setAttribute("data-state", action); if (ta) ta.hidden = (action !== "comment");
+      if (action === "comment" && ta) setTimeout(function () { ta.focus(); }, 0); }
+    refresh();
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-action]");
+    if (btn) { var it = btn.closest("[data-companion-item]"); if (it) setState(it, btn.getAttribute("data-action")); return; }
+    if (e.target.closest("[data-doall]")) {
+      items.forEach(function (it) { it.setAttribute("data-state", "approve");
+        var ta = it.querySelector("textarea[data-comment]"); if (ta) ta.hidden = true; });
+      refresh(); return;
+    }
+    var sub = e.target.closest("[data-companion-submit]");
+    if (sub) doSubmit(sub);
+  });
+
+  function pending() { return comments.size + document.querySelectorAll("[data-companion-item][data-state]").length; }
+  function refresh() {
+    var c = comments.size, d = document.querySelectorAll("[data-companion-item][data-state]").length;
+    if (countEl) countEl.textContent = (c || d)
+      ? (d + " decision" + (d !== 1 ? "s" : "") + (c ? (" · " + c + " comment" + (c !== 1 ? "s" : "")) : ""))
+      : "nothing marked yet";
+    if (submitBtn) submitBtn.classList.toggle("ready", (c + d) > 0);
+  }
+  function build(title) {
+    var lines = ["Re: " + title, ""];
+    var cBlocks = blocks.filter(function (b) { return comments.has(b.dataset.cBlockId); });
+    if (cBlocks.length) {
+      lines.push("— Questions / comments —", "");
+      cBlocks.forEach(function (b) {
+        lines.push("On: " + JSON.stringify(snippet(b)));
+        comments.get(b.dataset.cBlockId).split("\n").forEach(function (l) { lines.push("    " + l); });
+        lines.push("");
+      });
+    }
+    var marked = [].slice.call(document.querySelectorAll("[data-companion-item][data-state]"));
+    if (marked.length) {
+      var verb = { approve: "✓ Do it:", reject: "✗ Skip:", comment: "✎ Note:" };
+      lines.push("— Decisions —", "");
+      marked.forEach(function (it) {
+        var s = it.getAttribute("data-state");
+        lines.push(verb[s] + " " + (it.getAttribute("data-item-label") || "(unlabeled)"));
+        if (s === "comment") { var t = it.querySelector("textarea[data-comment]");
+          if (t && t.value.trim()) t.value.trim().split("\n").forEach(function (l) { lines.push("    " + l); }); }
+      });
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+  function fallbackCopy(text) {
+    try { var ta = document.createElement("textarea"); ta.value = text;
+      ta.style.position = "fixed"; ta.style.top = "-1000px"; document.body.appendChild(ta);
+      ta.focus(); ta.select(); var ok = document.execCommand("copy"); ta.remove(); return ok;
+    } catch (e) { return false; }
+  }
+  function flash(msg) {
+    if (!submitBtn) return;
+    var prev = submitBtn.dataset.label || submitBtn.textContent;
+    submitBtn.dataset.label = prev; submitBtn.textContent = msg;
+    clearTimeout(submitBtn._t); submitBtn._t = setTimeout(function () { submitBtn.textContent = submitBtn.dataset.label; }, 2000);
+  }
+  function doSubmit(sub) {
+    if (pending() === 0) { flash("Mark an item or leave a 💬 first"); return; }
+    var text = build(sub.getAttribute("data-companion-submit") || "Review");
+    try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: text }, "*"); } catch (e) {}
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(function () { flash("Copied ✓ — ⌘V to paste"); })
+        .catch(function () { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent to overlay ✓"); });
+    } else { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent to overlay ✓"); }
+  }
+  refresh();
+})();
+</script>
+```
+
+The ambient-comments and review-form snippets documented later in this file remain valid
+for **single-purpose** artifacts (a pure recap, or a pure decision list). The unified helper
+above supersedes them whenever a single artifact carries both.
+
+Skip the dual shape only for genuine one-liners (a pill status flip) — nothing to question,
+nothing to decide.
+
 ## The cadence (agent mode only): consider an artifact after every change
 
 When you finish a change, run a quick meta-check — *"is this worth a heads-up?"* —
