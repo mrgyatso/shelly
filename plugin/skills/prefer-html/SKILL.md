@@ -9,27 +9,38 @@ The Companion overlay auto-renders any `.html` file written into the artifacts d
 floating it over the terminal without stealing focus. This skill makes Claude *use*
 that surface: emit an artifact after meaningful work, sized to the work.
 
-## The cadence: consider an artifact after every change
+## First — check the mode
 
-When you finish a change, run a quick meta-check — *"is this worth a heads-up?"* — and
-**almost always emit some artifact when real work was done.** The overlay is meant to be
-a continuous "here's what just changed" feed, not an occasional report. The check is
-cheap; default toward showing something.
+Before deciding whether to render anything, read `~/.claude/companion/mode` with a
+quick Bash call: `cat "$HOME/.claude/companion/mode" 2>/dev/null || echo agent`. The
+file's content is one word and controls the rest of this skill.
 
-**Skip it** only for: trivial conversational answers, pure code edits the user is actively
-watching, one-line lookups, or when the user has said they don't want artifacts.
+- **`agent`** (default; the file may not exist) — Follow the cadence rules below.
+  Claude judges when an artifact helps and renders one.
+- **`manual`** — **Render nothing in this skill.** No auto-rendered HTML on this
+  turn, period. The user controls rendering explicitly via the `/html` slash command
+  (which bypasses this mode check and always renders). Skip the rest of this skill's
+  cadence advice and reply in plain chat instead. Exception: if the user *did* run
+  `/html` (or its deprecated alias `/companion:render`) this turn, that command's own
+  prompt overrides — render the artifact it asked for.
 
-> **Two user-side verbs and an opt-in backstop.** When the user wants an artifact
-> about what was just discussed but Claude didn't render one, they run
-> `/companion:render` to pull one explicitly — Claude renders, the overlay pops it,
-> the turn ends. For sessions that *do* want forced rendering (e.g. walking away and
-> wanting a wall of artifacts on return), `/companion:enforce on` activates a Stop
-> hook that blocks end-of-turn messages scoring ≥2 deliverable signals (numbered
-> steps, install commands, multiple URLs/paths, code blocks, bold section heads)
-> until an artifact is written. Enforcer is **off by default**: skill-guided
-> judgment plus user pull cover the common case without surprise Stop blocks.
-> Toggle off again with `/companion:enforce off`; check state with
-> `/companion:enforce status`.
+The user flips between modes with `/companion:mode agent|manual|status`.
+
+## The cadence (agent mode only): consider an artifact after every change
+
+When you finish a change, run a quick meta-check — *"is this worth a heads-up?"* —
+and **emit an artifact when real work was done.** The overlay is meant to be a
+"here's what just changed" feed for the user; default toward showing something when
+there's something to show.
+
+**Skip it** for: trivial conversational answers, pure code edits the user is actively
+watching, one-line lookups, or when the user has said they don't want artifacts. (And
+of course in **manual mode**, skip every time.)
+
+> **The pull verb.** Regardless of mode, the user can run `/html` to ask for an
+> artifact about the current turn. `/html` bypasses the mode check — it always
+> renders. `/companion:render` is the deprecated alias and still works for one
+> release.
 
 ## The form factor: small by default, large only when dense
 
@@ -333,6 +344,12 @@ helper no-ops in that case:
   [data-companion-commentable] .companion-commentable {
     position: relative; border-radius: 5px; cursor: text;
     transition: background 140ms ease, box-shadow 140ms ease;
+  }
+  /* Hover-bridge: extend the hover hit area 36 px into the left gutter so
+     the cursor doesn't leave :hover while travelling toward the 💬 icon. */
+  .companion-commentable::before {
+    content: ""; position: absolute;
+    top: 0; left: -36px; width: 36px; height: 100%;
   }
   .companion-commentable:hover {
     background: rgba(182,120,29,0.07); box-shadow: inset 2px 0 0 #b6781d;

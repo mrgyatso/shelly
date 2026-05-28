@@ -1,8 +1,10 @@
 ---
-description: Render an HTML artifact summarising the most recent work, decisions, or status from this conversation
+description: Deprecated alias for /html — render an HTML artifact summarising the most recent work, decisions, or status from this conversation
 ---
 
-Render a self-contained HTML artifact that summarises the most recent meaningful work, decisions, or status from this conversation. The user has asked for one explicitly — they want to see a visual summary instead of more terminal text.
+**Deprecation note:** `/companion:render` is the deprecated alias of `/html` (top-level). They do the same thing; `/html` is preferred going forward. After rendering, mention briefly to the user that `/html` is the new shorter verb. This alias is kept for one release.
+
+Render a self-contained HTML artifact that summarises the most recent meaningful work, decisions, or status from this conversation. The user has asked for one explicitly — they want to see a visual summary instead of more terminal text. **Render the artifact regardless of the current Companion mode** (this is the user pull verb; it bypasses `agent`/`manual` mode entirely).
 
 Use the `prefer-html` skill's guidance for **form factor**:
 

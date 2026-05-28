@@ -109,7 +109,13 @@ That gives you:
 
 - a `PostToolUse` hook that pops the overlay on every HTML write,
 - a `prefer-html` skill that nudges Claude to render plans, reviews, and reports as artifacts,
-- four slash commands: `/companion:doctor` (overlay health panel), `/companion:example` (build an onboarding artifact on demand), `/companion:render` (pull an artifact about recent work), and `/companion:enforce on|off|status` — an optional Stop-hook backstop that forces an artifact at end-of-turn when one is missing. Off by default; turn it on for sessions where you want forced rendering.
+- four slash commands:
+  - `/html` — pull an artifact about the current turn, regardless of mode.
+  - `/companion:mode agent|manual|status` — set the auto-rendering mode. **`agent`** (default) lets Claude judge when an artifact helps. **`manual`** turns auto-rendering off entirely; you pull on demand with `/html`. Status prints the current mode.
+  - `/companion:doctor` — overlay health panel.
+  - `/companion:example` — build an onboarding artifact on demand.
+
+`/companion:render` is the deprecated alias of `/html` and works for one release.
 
 The plugin's watched folder defaults to `~/.claude/companion/artifacts` (override with `COMPANION_ARTIFACTS_DIR`).
 
