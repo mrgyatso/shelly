@@ -52,10 +52,18 @@ Pick the artifact's weight from the **content's density**, not habit:
 - **Full document — only when the content earns it.** Use the room for diagrams,
   graphs, tables, multi-section plans, code reviews, comparisons, post-mortems —
   anything genuinely dense or visual.
+- **Multi-page document — when the work splits into several independent subjects.**
+  One self-contained file with a sidebar that navigates between pages: an overview plus
+  one page per subject (per project, per incident, per area). Right when a single scroll
+  would bury distinct topics that each deserve their own space — *"audit my whole wiki
+  for loose ends"*, *"review these five incidents"*. See **Multi-page documents** below
+  for the guardrails and template.
 
 **Principle: don't shrink for shrinking's sake, and don't pad to fill space.** A small
 pill is the *correct, finished* form for a light change — not a degraded document.
-A full document is correct when there's real substance. Density decides.
+A full document is correct when there's real substance. Density decides — and when the
+substance is several *independent* things, the right shape is multi-page, not a longer
+scroll.
 
 ## How to emit
 
@@ -144,6 +152,140 @@ A ~360px self-sizing "what changed" card. Swap the accent color by intent
 For the **full-document** case, build a normal self-contained page (your own layout,
 sections, SVG/diagrams as needed) — just keep `data-fit-root` on the main wrapper with a
 definite width (e.g. 720–960px) and include the size-report snippet above.
+
+## Multi-page documents (several independent subjects in one file)
+
+Some deliverables aren't one topic — they're *many*. *"Audit my whole wiki for loose
+ends"* might surface ten projects, each with its own open threads; *"review these five
+incidents"* is five write-ups. Flattening those into one long scroll buries them. Instead,
+emit a **single self-contained `.html` with internal navigation**: a sidebar lists the
+pages, the content pane shows the active one, an **Overview** page lands first.
+
+**This is still ONE file.** Multi-page means internal show/hide navigation — *not*
+multiple files. That keeps the self-contained rule intact, opens in a browser, pops as a
+single overlay panel, and sizes through the same size-report snippet (switching pages
+re-fires the `ResizeObserver`, so the panel re-fits to each page).
+
+### When to go multi-page (all three should hold)
+
+1. **≥3 genuinely independent subjects** that are *peers* — per-project, per-incident,
+   per-component — with no single narrative thread running through them. If there *is* a
+   through-line, a single scrolling document with headings reads better.
+2. **Each subject has real substance** — more than a few lines. A two-line subject
+   belongs in the Overview, not on its own page.
+3. **The reader will want to jump**, not read top-to-bottom.
+
+### Guardrails
+
+- **One file, always.** Internal nav, never N separate files.
+- **Lead with an Overview page** — orient the reader, give the count, one line per
+  subject. It's the landing page (`.active` on load).
+- **Soft cap ~12 pages.** Beyond that, group subjects or summarise the long tail on the
+  Overview — don't emit 30 pages.
+- **At most one submit-driven helper in the whole file.** The interactive review form
+  and ambient comments both fire the single `data-companion-submit` button, so across a
+  multi-page file you still get only *one* of them. Plain multi-page nav uses no submit
+  button, so it composes freely with one helper — e.g. ambient comments layered on the
+  pages. If you do layer ambient comments, bump `.mp-pages { padding-left: 56px }` so the
+  💬 icon clears the sidebar.
+
+### Multi-page template (copy, fill, write)
+
+A ~780px file: a sticky sidebar of page links beside a content pane. Pure DOM show/hide
+(no history API — the sandboxed iframe is opaque-origin, so `pushState` would throw).
+Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
+
+```html
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8" /><title>multi-page</title>
+<style>
+  :root { --accent:#2e7d52; --ink:#1a1714; --muted:#6e655b; --surface:#fff;
+    --paper:#f4f1ec; --line:rgba(26,23,20,0.12); }
+  * { box-sizing:border-box; }
+  html { scrollbar-width:none; } html::-webkit-scrollbar { display:none; }
+  html, body { margin:0; background:var(--paper); color:var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  [data-fit-root] { width:780px; margin:0 auto; background:var(--paper);
+    display:grid; grid-template-columns:212px 1fr; align-items:start; }
+  .mp-nav { position:sticky; top:0; align-self:start;
+    padding:20px 14px 22px 18px; border-right:1px solid var(--line); }
+  .mp-brand { font:700 11px/1.2 ui-monospace, Menlo, monospace; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent); margin-bottom:14px; }
+  .mp-nav a { display:flex; gap:8px; padding:7px 10px; margin:1px 0; border-radius:7px;
+    color:var(--muted); text-decoration:none; font-size:13px; line-height:1.35;
+    cursor:pointer; transition:background 120ms, color 120ms; }
+  .mp-nav a:hover { background:rgba(26,23,20,0.05); color:var(--ink); }
+  .mp-nav a.active { background:var(--ink); color:var(--paper); }
+  .mp-nav a .n { min-width:1.3em; opacity:.55; font-variant-numeric:tabular-nums; }
+  .mp-pages { padding:26px 30px 32px; min-width:0; }
+  .mp-pages > section { display:none; }
+  .mp-pages > section.active { display:block; animation:mpIn 180ms ease both; }
+  @keyframes mpIn { from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+  .kicker { font:600 11px/1 ui-monospace, Menlo, monospace; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--accent); margin-bottom:9px; }
+  .mp-pages h1 { font-size:21px; margin:0 0 8px; letter-spacing:-0.01em; }
+  .mp-pages h2 { font-size:14px; margin:18px 0 6px; }
+  .mp-pages p, .mp-pages li { font-size:14px; line-height:1.6; }
+  .mp-pages ul { padding-left:18px; }
+</style></head>
+<body>
+  <div data-fit-root>
+    <nav class="mp-nav" aria-label="Pages">
+      <div class="mp-brand">DOC TITLE</div>
+      <a data-mp-link href="#overview" class="active"><span class="n">·</span> Overview</a>
+      <a data-mp-link href="#p1"><span class="n">1</span> First subject</a>
+      <a data-mp-link href="#p2"><span class="n">2</span> Second subject</a>
+      <!-- one <a> per subject -->
+    </nav>
+    <main class="mp-pages">
+      <section id="overview" data-mp-page class="active">
+        <div class="kicker">Overview</div>
+        <h1>What this covers</h1>
+        <p>One short orienting paragraph + the count.</p>
+        <ul>
+          <li><strong>First subject</strong> — one-line summary.</li>
+          <li><strong>Second subject</strong> — one-line summary.</li>
+        </ul>
+      </section>
+      <section id="p1" data-mp-page>
+        <div class="kicker">Subject 1 of N</div>
+        <h1>First subject</h1>
+        <p>Real substance for this subject.</p>
+      </section>
+      <section id="p2" data-mp-page>
+        <div class="kicker">Subject 2 of N</div>
+        <h1>Second subject</h1>
+        <p>Real substance for this subject.</p>
+      </section>
+      <!-- one <section> per subject -->
+    </main>
+  </div>
+  <script>
+    (function () {
+      var links = [].slice.call(document.querySelectorAll("[data-mp-link]"));
+      var pages = [].slice.call(document.querySelectorAll("[data-mp-page]"));
+      function show(id) {
+        var hit = false;
+        pages.forEach(function (p) { var on = p.id === id; p.classList.toggle("active", on); if (on) hit = true; });
+        links.forEach(function (a) { a.classList.toggle("active", a.getAttribute("href") === "#" + id); });
+        if (!hit && pages[0]) { pages[0].classList.add("active"); if (links[0]) links[0].classList.add("active"); }
+      }
+      links.forEach(function (a) {
+        a.addEventListener("click", function (e) { e.preventDefault(); show(a.getAttribute("href").slice(1)); });
+      });
+    })();
+    (function () {
+      var el = document.querySelector("[data-fit-root]") || document.body;
+      var post = function () { parent.postMessage({ source: "companion-artifact", kind: "size",
+        w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
+      if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+      addEventListener("load", post); post();
+    })();
+  </script>
+</body>
+</html>
+```
 
 ## Interactive review artifacts (multi-item plans, todos, reviews)
 
