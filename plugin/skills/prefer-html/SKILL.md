@@ -79,12 +79,18 @@ review-form CSS documented later in this file for styling.
 </section>
 ```
 
+The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) inside a
+`data-companion-commentable` region. **Content placed in styled `<div>`s — cards, callouts,
+custom rows — is invisible to that tag list and will get no 💬.** Add `data-companion-block`
+to any such container to make it commentable (the helper de-dupes nested matches, so marking
+an outer card won't double-icon its inner text).
+
 ### Unified helper script (ambient comments + review items → one submit)
 
 ```html
 <script>
 (function () {
-  var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre";
+  var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre, [data-companion-block]";
   var submitBtn = document.querySelector("[data-companion-submit]");
   var countEl = document.querySelector("[data-count]");
   var items = [].slice.call(document.querySelectorAll("[data-companion-item]"));
@@ -96,6 +102,7 @@ review-form CSS documented later in this file for styling.
   [].slice.call(document.querySelectorAll("[data-companion-commentable]")).forEach(function (root) {
     [].slice.call(root.querySelectorAll(BLOCK_SELECTOR)).forEach(function (b) {
       if (b.closest("[data-companion-item]")) return;
+      if (b.parentElement && b.parentElement.closest(BLOCK_SELECTOR)) return; // avoid nested icons
       blocks.push(b);
     });
   });
