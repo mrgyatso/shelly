@@ -110,12 +110,14 @@ That gives you:
 - a `PostToolUse` hook that pops the overlay on every HTML write,
 - a `prefer-html` skill that nudges Claude to render plans, reviews, and reports as artifacts,
 - four slash commands:
-  - `/html` — pull an artifact about the current turn, regardless of mode.
-  - `/companion:mode agent|manual|status` — set the auto-rendering mode. **`agent`** (default) lets Claude judge when an artifact helps. **`manual`** turns auto-rendering off entirely; you pull on demand with `/html`. Status prints the current mode.
+  - `/companion:html` — pull an artifact about the current turn, regardless of mode.
+  - `/companion:mode agent|manual|status` — set the auto-rendering mode. **`agent`** (default) lets Claude judge when an artifact helps. **`manual`** turns auto-rendering off entirely; you pull on demand with `/companion:html`. Status prints the current mode.
   - `/companion:doctor` — overlay health panel.
   - `/companion:example` — build an onboarding artifact on demand.
 
-`/companion:render` is the deprecated alias of `/html` and works for one release.
+`/companion:render` is the deprecated alias of `/companion:html` and works for one release.
+
+**Want a shorter `/html`?** Plugin commands are always namespaced (`/companion:html`) to avoid collisions between plugins — there's no way for the plugin to ship a bare `/html`. If you'd like the shorter verb, drop a one-line user command at `~/.claude/commands/html.md` that loads the `prefer-html` skill and renders; user-level commands aren't namespaced, so it surfaces as `/html`.
 
 The plugin's watched folder defaults to `~/.claude/companion/artifacts` (override with `COMPANION_ARTIFACTS_DIR`).
 

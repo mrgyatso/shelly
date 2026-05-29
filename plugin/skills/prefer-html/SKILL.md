@@ -1,6 +1,6 @@
 ---
 name: prefer-html
-description: Render a heads-up in the Companion overlay after making changes, and prefer self-contained HTML artifacts for plans, reviews, comparisons, diagrams, and reports. Use after completing any non-trivial change (to show what changed) or when a response would otherwise be a standalone document. Decides between a small "pill" heads-up and a full HTML document by content density.
+description: MANDATORY before writing any `.html` artifact into the Companion artifacts dir (`~/codeviz/public/artifacts/` or `${COMPANION_ARTIFACTS_DIR}`). The skill carries the unified helper script, the required DOM markers (`data-companion-commentable`, `data-companion-item`, `data-companion-submit`, `data-fit-root`), the size-reporter snippet, and the pill / full-document / multi-page templates. Writing an HTML artifact without first loading this skill ships a static page with no commentable blocks, no review form, and no submit — the user cannot interact with it. Use BEFORE the Write call, not after. Also use when responding to `/companion:html`, when emitting a heads-up after a non-trivial change, or when a response would otherwise be a standalone document (plans, reviews, comparisons, diagrams, reports). Decides between a pill heads-up, a full document, and a multi-page document by content density.
 ---
 
 # Prefer HTML — render what changed in the Companion overlay
@@ -18,11 +18,11 @@ file's content is one word and controls the rest of this skill.
 - **`agent`** (default; the file may not exist) — Follow the cadence rules below.
   Claude judges when an artifact helps and renders one.
 - **`manual`** — **Render nothing in this skill.** No auto-rendered HTML on this
-  turn, period. The user controls rendering explicitly via the `/html` slash command
-  (which bypasses this mode check and always renders). Skip the rest of this skill's
-  cadence advice and reply in plain chat instead. Exception: if the user *did* run
-  `/html` (or its deprecated alias `/companion:render`) this turn, that command's own
-  prompt overrides — render the artifact it asked for.
+  turn, period. The user controls rendering explicitly via the `/companion:html` slash
+  command (which bypasses this mode check and always renders). Skip the rest of this
+  skill's cadence advice and reply in plain chat instead. Exception: if the user *did*
+  run `/companion:html` (or its deprecated alias `/companion:render`) this turn, that
+  command's own prompt overrides — render the artifact it asked for.
 
 The user flips between modes with `/companion:mode agent|manual|status`.
 
@@ -266,10 +266,10 @@ there's something to show.
 watching, one-line lookups, or when the user has said they don't want artifacts. (And
 of course in **manual mode**, skip every time.)
 
-> **The pull verb.** Regardless of mode, the user can run `/html` to ask for an
-> artifact about the current turn. `/html` bypasses the mode check — it always
-> renders. `/companion:render` is the deprecated alias and still works for one
-> release.
+> **The pull verb.** Regardless of mode, the user can run `/companion:html` to ask
+> for an artifact about the current turn. `/companion:html` bypasses the mode check —
+> it always renders. `/companion:render` is the deprecated alias and still works for
+> one release.
 
 ## The form factor: small by default, large only when dense
 

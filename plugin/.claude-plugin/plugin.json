@@ -1,7 +1,7 @@
 {
   "name": "companion",
-  "description": "Render Claude's work as HTML artifacts in the Companion overlay. Two modes: 'agent' (Claude auto-renders when judgment says it helps) and 'manual' (pull-only via /html). Flip with /companion:mode. Sizes each artifact to the work — pill for light changes, full document when dense, or a multi-page doc (sidebar nav, one page per subject) when the work splits into several independent topics. Includes interactive review artifacts (click ✓/✎/✗ on items to batch feedback to clipboard) and ambient inline comments (hover any block to drop a question on it). Pairs with the Companion Overlay app (installed separately).",
-  "version": "0.3.2",
+  "description": "Render Claude's work as HTML artifacts in the Companion overlay. Two modes: 'agent' (Claude auto-renders when judgment says it helps) and 'manual' (pull-only via /companion:html). Flip with /companion:mode. Sizes each artifact to the work — pill for light changes, full document when dense, or a multi-page doc (sidebar nav, one page per subject) when the work splits into several independent topics. Includes interactive review artifacts (click ✓/✎/✗ on items to batch feedback to clipboard) and ambient inline comments (hover any block to drop a question on it). Pairs with the Companion Overlay app (installed separately).",
+  "version": "0.3.3",
   "author": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso/claude-code-companion"
