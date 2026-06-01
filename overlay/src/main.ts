@@ -7,6 +7,8 @@ declare global {
   interface Window {
     /** Artifact path injected by the Rust window builder before this page boots. */
     __ARTIFACT_PATH__?: string;
+    /** Set on the history HUD window so the same bundle renders the grid instead. */
+    __HISTORY_MODE__?: boolean;
   }
 }
 
@@ -76,24 +78,31 @@ async function loadArtifact(path: string): Promise<void> {
   }
 }
 
-document.getElementById("refresh")?.addEventListener("click", () => {
-  if (current) void loadArtifact(current);
-});
-document.getElementById("external")?.addEventListener("click", () => {
-  if (current) openPath(current).catch((e) => console.error("openPath failed", e));
-});
-document.getElementById("hide")?.addEventListener("click", () => {
-  win.close().catch((e) => console.error("close failed", e));
-});
+// The history HUD reuses this same bundle. When flagged, render the grid and
+// skip all the single-artifact wiring below (fit-reporter, controls, listeners).
+// Dynamic import keeps the HUD code out of the artifact panels' boot path.
+if (window.__HISTORY_MODE__) {
+  void import("./history").then((m) => m.initHistory());
+} else {
+  document.getElementById("refresh")?.addEventListener("click", () => {
+    if (current) void loadArtifact(current);
+  });
+  document.getElementById("external")?.addEventListener("click", () => {
+    if (current) openPath(current).catch((e) => console.error("openPath failed", e));
+  });
+  document.getElementById("hide")?.addEventListener("click", () => {
+    win.close().catch((e) => console.error("close failed", e));
+  });
 
-// Resize the window to fit each artifact's reported content size.
-initFit();
+  // Resize the window to fit each artifact's reported content size.
+  initFit();
 
-// Same-path re-open (e.g. Claude rewrote the file): the Rust side emits this to
-// the existing window so it reloads in place instead of spawning a duplicate.
-void win.listen<string>("open-artifact", (event) => {
-  void loadArtifact(event.payload);
-});
+  // Same-path re-open (e.g. Claude rewrote the file): the Rust side emits this to
+  // the existing window so it reloads in place instead of spawning a duplicate.
+  void win.listen<string>("open-artifact", (event) => {
+    void loadArtifact(event.payload);
+  });
 
-// This window is dedicated to one artifact; its path is injected before boot.
-if (window.__ARTIFACT_PATH__) void loadArtifact(window.__ARTIFACT_PATH__);
+  // This window is dedicated to one artifact; its path is injected before boot.
+  if (window.__ARTIFACT_PATH__) void loadArtifact(window.__ARTIFACT_PATH__);
+}

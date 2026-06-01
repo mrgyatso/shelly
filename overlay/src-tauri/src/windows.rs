@@ -19,6 +19,9 @@ const MIN_W: f64 = 320.0;
 const MIN_H: f64 = 120.0;
 /// Label prefix marking a window as an artifact panel.
 const LABEL_PREFIX: &str = "art_";
+/// The single history HUD window. Fixed (not content-hashed) so ⌘8 always
+/// finds the one instance to toggle.
+pub const HISTORY_LABEL: &str = "hist_main";
 
 /// Deterministic, label-safe id for an artifact path. `DefaultHasher::new()` is
 /// seedless, so the same path maps to the same label for the life of the process
@@ -83,18 +86,68 @@ pub fn open_artifact_window(app: &AppHandle, path: String) {
     crate::macos_panel::order_front_without_activating(&win);
 }
 
+/// Open — or toggle — the single history HUD window. Centered and larger than an
+/// artifact panel, it's a mouse-driven picker rather than a content panel, so it
+/// is deliberately left OUT of the column layout: we never call `record_open`,
+/// which is the only thing `layout::arrange` iterates, so it's auto-excluded.
+pub fn open_history_window(app: &AppHandle) {
+    // Already built: toggle visibility (⌘8 acts as show/hide).
+    if let Some(win) = app.get_webview_window(HISTORY_LABEL) {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+        } else {
+            crate::macos_panel::order_front_without_activating(&win);
+        }
+        return;
+    }
+
+    let win =
+        match WebviewWindowBuilder::new(app, HISTORY_LABEL, WebviewUrl::App("index.html".into()))
+            .title("Companion History")
+            .inner_size(900.0, 640.0)
+            .min_inner_size(560.0, 360.0)
+            .decorations(false)
+            .transparent(true)
+            .resizable(true)
+            .shadow(true)
+            .always_on_top(true)
+            .center()
+            .visible(false)
+            .initialization_script("window.__HISTORY_MODE__ = true;")
+            .build()
+        {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[overlay] failed to create history window: {e}");
+                return;
+            }
+        };
+
+    // Same non-activating float as artifact panels (also restores cleanly on
+    // close via the shared CloseRequested handler in lib.rs). No record_open /
+    // arrange — the HUD is centered, not part of the column.
+    crate::macos_panel::make_nonactivating_panel(&win);
+    crate::macos_panel::order_front_without_activating(&win);
+}
+
 /// Raise every panel without activating (the no-arg `companion` invocation).
+/// The HUD is excluded — it's toggled only by ⌘8, never swept up with panels.
 pub fn raise_all(app: &AppHandle) {
     for win in app.webview_windows().values() {
+        if win.label() == HISTORY_LABEL {
+            continue;
+        }
         crate::macos_panel::order_front_without_activating(win);
     }
 }
 
 /// Global ⌘0 toggle: if any panel is visible, hide them all; otherwise show all.
+/// The HUD is excluded so ⌘0 never hides/shows it alongside the artifact panels.
 pub fn toggle_all(app: &AppHandle) {
     let wins = app.webview_windows();
-    let any_visible = wins.values().any(|w| w.is_visible().unwrap_or(false));
-    for win in wins.values() {
+    let panels = || wins.values().filter(|w| w.label() != HISTORY_LABEL);
+    let any_visible = panels().any(|w| w.is_visible().unwrap_or(false));
+    for win in panels() {
         if any_visible {
             let _ = win.hide();
         } else {

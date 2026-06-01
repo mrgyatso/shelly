@@ -22,5 +22,20 @@
     <div id="copied-toast" class="copied-toast">
       <span class="check">✓</span> Copied &mdash; <kbd>⌘V</kbd> in terminal
     </div>
+
+    <!-- History HUD (⌘8). Hidden by default; history.ts reveals it only on the
+         hist_main window and fills #history-grid with artifact preview cards. -->
+    <div id="history" class="history" hidden>
+      <header class="history-bar" data-tauri-drag-region>
+        <h1>History</h1>
+        <button id="history-close" title="Close">✕</button>
+      </header>
+      <div id="history-status" class="history-status" hidden></div>
+      <div class="history-stage">
+        <button id="hist-prev" class="hist-arrow hist-prev" title="Previous">‹</button>
+        <div id="history-carousel" class="history-carousel"></div>
+        <button id="hist-next" class="hist-arrow hist-next" title="Next">›</button>
+      </div>
+    </div>
   </body>
 </html>

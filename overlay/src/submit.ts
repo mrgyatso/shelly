@@ -10,7 +10,13 @@ let toastTimer = 0;
 
 export async function handleSubmit(text: string): Promise<void> {
   try {
-    await writeText(text);
+    // Append the artifact's own file path so pasted feedback is self-identifying
+    // — the agent can Read that file for full context even for an old artifact
+    // re-opened from history. The sandboxed iframe can't see its own path, but
+    // this overlay window can (Rust injects it as __ARTIFACT_PATH__ at build).
+    const path = window.__ARTIFACT_PATH__;
+    const payload = path ? `${text}\n\n— Companion artifact: ${path} —` : text;
+    await writeText(payload);
     showCopiedToast();
   } catch (e) {
     // Clipboard plugin failure shouldn't crash the overlay; log and move on.

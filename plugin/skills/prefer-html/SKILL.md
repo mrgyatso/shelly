@@ -1,6 +1,6 @@
 ---
 name: prefer-html
-description: MANDATORY before writing any `.html` artifact into the Companion artifacts dir (`~/codeviz/public/artifacts/` or `${COMPANION_ARTIFACTS_DIR}`). The skill carries the unified helper script, the required DOM markers (`data-companion-commentable`, `data-companion-item`, `data-companion-submit`, `data-fit-root`), the size-reporter snippet, and the pill / full-document / multi-page templates. Writing an HTML artifact without first loading this skill ships a static page with no commentable blocks, no review form, and no submit — the user cannot interact with it. Use BEFORE the Write call, not after. Also use when responding to `/companion:html`, when emitting a heads-up after a non-trivial change, or when a response would otherwise be a standalone document (plans, reviews, comparisons, diagrams, reports). Decides between a pill heads-up, a full document, and a multi-page document by content density.
+description: MANDATORY before writing any `.html` artifact into the Companion artifacts dir (`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}` — confirm the live path with `companion doctor`). The skill carries the unified helper script, the required DOM markers (`data-companion-commentable`, `data-companion-item`, `data-companion-submit`, `data-fit-root`), the size-reporter snippet, and the pill / full-document / multi-page templates. Writing an HTML artifact without first loading this skill ships a static page with no commentable blocks, no review form, and no submit — the user cannot interact with it. Use BEFORE the Write call, not after. Also use when responding to `/companion:html`, when emitting a heads-up after a non-trivial change, or when a response would otherwise be a standalone document (plans, reviews, comparisons, diagrams, reports). Decides between a pill heads-up, a full document, and a multi-page document by content density.
 ---
 
 # Prefer HTML — render what changed in the Companion overlay
@@ -196,8 +196,21 @@ an outer card won't double-icon its inner text).
       : "nothing marked yet";
     if (submitBtn) submitBtn.classList.toggle("ready", (c + d) > 0);
   }
+  function meta() {
+    var el = document.getElementById("companion-meta");
+    if (!el) return [];
+    try { var m = JSON.parse(el.textContent); } catch (e) { return []; }
+    var L = ["[Companion artifact feedback]"];
+    if (m.subject) L.push("Subject: " + m.subject);
+    if (m.summary) L.push("About: " + m.summary);
+    if (m.project) L.push("Project: " + m.project + (m.branch ? " (" + m.branch + ")" : ""));
+    if (m.created) L.push("Created: " + m.created);
+    if (m.files && m.files.length) L.push("Files: " + m.files.join(", "));
+    L.push("");
+    return L;
+  }
   function build(title) {
-    var lines = ["Re: " + title, ""];
+    var lines = meta().concat(["Re: " + title, ""]);
     var cBlocks = blocks.filter(function (b) { return comments.has(b.dataset.cBlockId); });
     if (cBlocks.length) {
       lines.push("— Questions / comments —", "");
@@ -237,11 +250,17 @@ an outer card won't double-icon its inner text).
     if (pending() === 0) { flash("Mark an item or leave a 💬 first"); return; }
     var text = build(sub.getAttribute("data-companion-submit") || "Review");
     try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: text }, "*"); } catch (e) {}
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text)
-        .then(function () { flash("Copied ✓ — ⌘V to paste"); })
-        .catch(function () { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent to overlay ✓"); });
-    } else { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent to overlay ✓"); }
+    // Inside the Companion overlay (iframed) the overlay is the single clipboard
+    // writer — it appends the artifact's file path before writing, so we must NOT
+    // also self-write here or the two race and the path-less copy can win. Only
+    // self-write when standalone (opened directly in a browser, not iframed).
+    if (window.parent === window) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(function () { flash("Copied ✓ — ⌘V to paste"); })
+          .catch(function () { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); });
+      } else { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); }
+    } else { flash("Sent to overlay ✓ — ⌘V to paste"); }
   }
   refresh();
 })();
@@ -330,6 +349,30 @@ root scrollbar, and include this snippet at the end of `<body>`:
   })();
 </script>
 ```
+
+### Metadata block (so feedback on this artifact is self-identifying)
+
+Add a `companion-meta` block in `<head>`. When the user submits feedback, the helper
+prepends these fields to the pasted message, so the agent — **even in a different,
+later session re-opening this artifact from the history HUD (⌘8)** — knows which
+artifact it is, what it was about, and which files it concerns. The history HUD also
+shows `summary` as the card subtitle. Skip it only for throwaway pills.
+
+```html
+<script type="application/json" id="companion-meta">
+{
+  "subject": "<short subject line>",
+  "summary": "<1–2 sentence plain-English description of what this artifact is about>",
+  "files": ["<repo-relative paths the artifact concerns>"],
+  "project": "<cwd or repo, e.g. ~/claude-code-companion>",
+  "branch": "<git branch>",
+  "created": "<YYYY-MM-DD>"
+}
+</script>
+```
+
+All fields are optional; fill what you know at authoring time. Keep `summary` to one or
+two sentences — it is the highest-leverage field for a cold agent picking up context.
 
 ## Pill template (the default — copy, fill, write)
 

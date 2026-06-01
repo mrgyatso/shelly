@@ -1,4 +1,5 @@
 mod artifact;
+mod history;
 mod layout;
 mod macos_panel;
 mod windows;
@@ -70,7 +71,11 @@ pub fn run() {
             let handle = app.clone();
             let _ = app.run_on_main_thread(move || {
                 guard(|| {
-                    if let Some(path) = artifact::parse_open_args(&args, Some(&cwd)) {
+                    // `companion history` toggles the HUD (a keybind-free trigger,
+                    // useful when ⌘8 is swallowed e.g. over remote desktop).
+                    if args.iter().any(|a| a == "history") {
+                        windows::open_history_window(&handle);
+                    } else if let Some(path) = artifact::parse_open_args(&args, Some(&cwd)) {
                         windows::open_artifact_window(&handle, path);
                     } else {
                         windows::raise_all(&handle);
@@ -95,7 +100,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             artifact::read_artifact,
             artifact::artifact_in_scope,
-            layout::notify_fit
+            layout::notify_fit,
+            history::list_artifacts,
+            history::reopen_artifact
         ])
         .setup(|app| {
             // Accessory activation policy: no Dock icon, no Cmd-Tab — like
@@ -121,7 +128,10 @@ pub fn run() {
             let cwd = std::env::current_dir()
                 .ok()
                 .map(|p| p.to_string_lossy().into_owned());
-            if let Some(path) = artifact::parse_open_args(&args, cwd.as_deref()) {
+            if args.iter().any(|a| a == "history") {
+                let handle = app.handle().clone();
+                guard(move || windows::open_history_window(&handle));
+            } else if let Some(path) = artifact::parse_open_args(&args, cwd.as_deref()) {
                 let handle = app.handle().clone();
                 guard(move || windows::open_artifact_window(&handle, path));
             }
@@ -142,9 +152,11 @@ pub fn run() {
                     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
                 };
                 // ⌘0 = show/hide all panels. ⌘9 = toggle Free ↔ Terminal (dock the
-                // column to the focused terminal window and follow it).
+                // column to the focused terminal window and follow it). ⌘8 = open
+                // the history HUD (a grid of past artifacts to re-open).
                 let toggle = Shortcut::new(Some(Modifiers::SUPER), Code::Digit0);
                 let follow = Shortcut::new(Some(Modifiers::SUPER), Code::Digit9);
+                let history = Shortcut::new(Some(Modifiers::SUPER), Code::Digit8);
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(|app, shortcut, event| {
@@ -155,12 +167,15 @@ pub fn run() {
                                 windows::toggle_all(app);
                             } else if shortcut.matches(Modifiers::SUPER, Code::Digit9) {
                                 crate::layout::toggle_mode(app);
+                            } else if shortcut.matches(Modifiers::SUPER, Code::Digit8) {
+                                windows::open_history_window(app);
                             }
                         })
                         .build(),
                 )?;
                 app.global_shortcut().register(toggle)?;
                 app.global_shortcut().register(follow)?;
+                app.global_shortcut().register(history)?;
             }
 
             // Keep the column docked to the terminal while in Terminal mode.

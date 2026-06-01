@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the per-artifact overlay panels",
-  "windows": ["art_*"],
+  "description": "Capability for the per-artifact overlay panels and the history HUD",
+  "windows": ["art_*", "hist_*"],
   "permissions": [
     "core:default",
     "core:window:allow-show",
