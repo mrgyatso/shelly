@@ -9,6 +9,8 @@ declare global {
     __ARTIFACT_PATH__?: string;
     /** Set on the history HUD window so the same bundle renders the grid instead. */
     __HISTORY_MODE__?: boolean;
+    /** Set on the live surface window so the same bundle renders the live pane. */
+    __LIVE_MODE__?: boolean;
   }
 }
 
@@ -81,7 +83,9 @@ async function loadArtifact(path: string): Promise<void> {
 // The history HUD reuses this same bundle. When flagged, render the grid and
 // skip all the single-artifact wiring below (fit-reporter, controls, listeners).
 // Dynamic import keeps the HUD code out of the artifact panels' boot path.
-if (window.__HISTORY_MODE__) {
+if (window.__LIVE_MODE__) {
+  void import("./live").then((m) => m.initLive());
+} else if (window.__HISTORY_MODE__) {
   void import("./history").then((m) => m.initHistory());
 } else {
   document.getElementById("refresh")?.addEventListener("click", () => {

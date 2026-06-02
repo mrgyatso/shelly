@@ -22,6 +22,9 @@ const LABEL_PREFIX: &str = "art_";
 /// The single history HUD window. Fixed (not content-hashed) so ⌘8 always
 /// finds the one instance to toggle.
 pub const HISTORY_LABEL: &str = "hist_main";
+/// The single always-on live surface window. Fixed label so `companion live`
+/// always finds the one instance to create-or-raise.
+pub const LIVE_LABEL: &str = "live_main";
 
 /// Deterministic, label-safe id for an artifact path. `DefaultHasher::new()` is
 /// seedless, so the same path maps to the same label for the life of the process
@@ -130,11 +133,47 @@ pub fn open_history_window(app: &AppHandle) {
     crate::macos_panel::order_front_without_activating(&win);
 }
 
+/// Open — or, if already up, raise — the single always-on live surface. Like the
+/// HUD it's deliberately left OUT of the column layout (no `record_open`): it's a
+/// persistent state pane the user parks where they like, not a content panel that
+/// re-flows. It updates in place by polling `read_live`, so re-invoking this just
+/// re-reveals the existing window rather than refreshing it.
+pub fn open_live_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(LIVE_LABEL) {
+        crate::macos_panel::order_front_without_activating(&win);
+        return;
+    }
+
+    let win = match WebviewWindowBuilder::new(app, LIVE_LABEL, WebviewUrl::App("index.html".into()))
+        .title("Companion Live")
+        .inner_size(440.0, 560.0)
+        .min_inner_size(320.0, 200.0)
+        .decorations(false)
+        .transparent(true)
+        .resizable(true)
+        .shadow(true)
+        .always_on_top(true)
+        .visible(false)
+        .initialization_script("window.__LIVE_MODE__ = true;")
+        .build()
+    {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("[overlay] failed to create live window: {e}");
+            return;
+        }
+    };
+
+    crate::macos_panel::make_nonactivating_panel(&win);
+    crate::macos_panel::order_front_without_activating(&win);
+}
+
 /// Raise every panel without activating (the no-arg `companion` invocation).
-/// The HUD is excluded — it's toggled only by ⌘8, never swept up with panels.
+/// The HUD and live surface are excluded — each is driven by its own trigger,
+/// never swept up with the artifact panels.
 pub fn raise_all(app: &AppHandle) {
     for win in app.webview_windows().values() {
-        if win.label() == HISTORY_LABEL {
+        if win.label() == HISTORY_LABEL || win.label() == LIVE_LABEL {
             continue;
         }
         crate::macos_panel::order_front_without_activating(win);
@@ -145,7 +184,10 @@ pub fn raise_all(app: &AppHandle) {
 /// The HUD is excluded so ⌘0 never hides/shows it alongside the artifact panels.
 pub fn toggle_all(app: &AppHandle) {
     let wins = app.webview_windows();
-    let panels = || wins.values().filter(|w| w.label() != HISTORY_LABEL);
+    let panels = || {
+        wins.values()
+            .filter(|w| w.label() != HISTORY_LABEL && w.label() != LIVE_LABEL)
+    };
     let any_visible = panels().any(|w| w.is_visible().unwrap_or(false));
     for win in panels() {
         if any_visible {

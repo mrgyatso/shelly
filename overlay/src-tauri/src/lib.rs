@@ -1,6 +1,7 @@
 mod artifact;
 mod history;
 mod layout;
+mod live;
 mod macos_panel;
 mod windows;
 
@@ -75,6 +76,8 @@ pub fn run() {
                     // useful when ⌘8 is swallowed e.g. over remote desktop).
                     if args.iter().any(|a| a == "history") {
                         windows::open_history_window(&handle);
+                    } else if args.iter().any(|a| a == "live") {
+                        windows::open_live_window(&handle);
                     } else if let Some(path) = artifact::parse_open_args(&args, Some(&cwd)) {
                         windows::open_artifact_window(&handle, path);
                     } else {
@@ -102,7 +105,8 @@ pub fn run() {
             artifact::artifact_in_scope,
             layout::notify_fit,
             history::list_artifacts,
-            history::reopen_artifact
+            history::reopen_artifact,
+            live::read_live
         ])
         .setup(|app| {
             // Accessory activation policy: no Dock icon, no Cmd-Tab — like
@@ -131,9 +135,21 @@ pub fn run() {
             if args.iter().any(|a| a == "history") {
                 let handle = app.handle().clone();
                 guard(move || windows::open_history_window(&handle));
+            } else if args.iter().any(|a| a == "live") {
+                let handle = app.handle().clone();
+                guard(move || windows::open_live_window(&handle));
             } else if let Some(path) = artifact::parse_open_args(&args, cwd.as_deref()) {
                 let handle = app.handle().clone();
                 guard(move || windows::open_artifact_window(&handle, path));
+            }
+
+            // Always-on: bring up the live surface on every launch, regardless of
+            // any artifact/history arg above. Idempotent (open_live_window raises
+            // the existing window if it's already up), so the `live` arg path and
+            // this can't double-create it.
+            {
+                let handle = app.handle().clone();
+                guard(move || windows::open_live_window(&handle));
             }
             // Runtime deep-link registration (needed in dev / on Linux).
             #[cfg(any(target_os = "linux", debug_assertions))]

@@ -1,49 +1,74 @@
 #!/usr/bin/env sh
-# companion-consider — Claude Code Stop hook.
-# Once per work turn, nudges Claude to *consider* whether an HTML artifact is
-# worth rendering — it never forces one. Emits {"decision":"block","reason":…}
-# so the nudge is fed back into Claude's context with full conversation, where
-# the render/skip call is actually made. Reads the hook JSON payload on stdin.
+# companion-consider — Claude Code Stop hook (always-on backstop).
 #
-# Three guards keep it quiet:
+# Under the always-on model the live surface (~/.claude/companion/live.json) is
+# meant to be refreshed every work turn as part of the normal response — no extra
+# round-trip. This hook is just the BACKSTOP: it fires only when a work turn did
+# NOT refresh the surface, and nudges Claude to do it. The common path (I updated
+# live.json this turn) costs nothing — it exits silently.
+#
+# Guards:
 #   1. stop_hook_active → already nudged this turn; exit (prevents a loop).
-#   2. mode == manual   → user opted out of auto-render; exit.
-#   3. work gate        → only nudge if the turn used tools (skip pure chat).
-#
-# Wire it (global) in ~/.claude/settings.json — use the absolute path to this file:
-#   "Stop": [{ "hooks": [{ "type": "command",
-#     "command": "</abs/path/to>/plugin/hooks/companion-consider" }] }]
+#   2. mode == manual   → user opted out; exit.
+#   3. current-turn scan → classify THIS turn from the transcript:
+#        idle  (no tool use)            → exit (pure chat; nothing to reflect)
+#        fresh (wrote live.json)        → exit (surface already refreshed)
+#        stale (worked, didn't update)  → nudge
+#      Scoped to the current turn (since the last human message), so a previous
+#      turn's tool use can't trigger a false nudge.
 
 MODE_FILE="${HOME}/.claude/companion/mode"
 
 payload=$(cat)
 
-# Guard 1 — loop: if we already blocked this turn, Claude is mid-continuation.
-# Bail so the consideration happens exactly once.
+# Guard 1 — loop.
 case "$payload" in
   *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) exit 0 ;;
 esac
 
-# Guard 2 — manual mode: absent file defaults to agent (nudge on).
+# Guard 2 — manual mode (absent file defaults to agent).
 if [ "$(cat "$MODE_FILE" 2>/dev/null)" = "manual" ]; then
   exit 0
 fi
 
-# Guard 3 — work gate: only nudge when the turn actually did something. Tail the
-# transcript and look for a recent tool_use; pure-conversation turns have none.
-# Any read failure falls through to "no work" → no nudge (no surprise round-trips).
+# Guard 3 — classify the current turn from the transcript. Walk backward to the
+# human message that started this turn; collect assistant tool_use along the way.
 transcript=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).transcript_path||"")}catch(e){}})')
-worked=0
+state="idle"
 if [ -n "$transcript" ] && [ -f "$transcript" ]; then
-  if tail -n 30 "$transcript" 2>/dev/null | grep -q '"tool_use"'; then
-    worked=1
-  fi
+  state=$(node -e '
+    const fs=require("fs");
+    let lines;
+    try { lines = fs.readFileSync(process.argv[1],"utf8").trim().split("\n"); }
+    catch (e) { console.log("idle"); process.exit(0); }
+    let worked=false, wroteLive=false;
+    for (let i=lines.length-1;i>=0;i--){
+      let o; try{o=JSON.parse(lines[i]);}catch(e){continue;}
+      const msg=o.message||o;
+      const role=msg.role||o.type;
+      const content=msg.content;
+      if (role==="assistant" && Array.isArray(content)){
+        for (const b of content){
+          if (b && b.type==="tool_use"){
+            worked=true;
+            const fp=(b.input&&(b.input.file_path||b.input.path))||"";
+            if (/companion\/live\.json$/.test(fp)) wroteLive=true;
+          }
+        }
+      }
+      if (role==="user"){
+        const isTR=Array.isArray(content)&&content.some(b=>b&&b.type==="tool_result");
+        if (!isTR) break; // reached the human message that opened this turn
+      }
+    }
+    console.log(worked ? (wroteLive ? "fresh" : "stale") : "idle");
+  ' "$transcript" 2>/dev/null)
 fi
-[ "$worked" = "1" ] || exit 0
 
-# All guards passed — inject the consideration. The reason is fed to Claude, which
-# continues with full context and decides to render (via prefer-html) or stop.
+[ "$state" = "stale" ] || exit 0
+
+# Worked this turn but the live surface is stale — nudge to refresh it.
 cat <<'EOF'
-{"decision":"block","reason":"Companion: you just finished a turn that did real work. Before ending, consider one thing — is there an HTML artifact worth putting on the overlay right now? Litmus test: can you name a concrete next-step DECISION or QUESTION to put in front of the user? If yes, load the prefer-html skill and render the combined brief + Next-steps artifact. If no — no real decision to surface, or this was routine — then render nothing, say nothing about having considered it, and end the turn. Bias hard toward NOT rendering; only a genuine deliverable earns one. (This prompt fires every work turn; it never forces an artifact.)"}
+{"decision":"block","reason":"Companion: you did real work this turn but didn't refresh the live surface. If the current state changed — what you're working on, where things stand, or the next decisions — rewrite ~/.claude/companion/live.json as {\"working\": \"…\", \"where\": [\"…\"], \"next\": [{\"title\": \"…\", \"sub\": \"…\", \"kind\": \"decision|todo|blocked\"}]} so the always-on pane reflects it. If nothing meaningful changed, just end the turn. Don't narrate that you considered this. (Backstop only — it fires when a work turn skipped the live update.)"}
 EOF
 exit 0
