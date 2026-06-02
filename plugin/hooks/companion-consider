@@ -1,0 +1,49 @@
+#!/usr/bin/env sh
+# companion-consider — Claude Code Stop hook.
+# Once per work turn, nudges Claude to *consider* whether an HTML artifact is
+# worth rendering — it never forces one. Emits {"decision":"block","reason":…}
+# so the nudge is fed back into Claude's context with full conversation, where
+# the render/skip call is actually made. Reads the hook JSON payload on stdin.
+#
+# Three guards keep it quiet:
+#   1. stop_hook_active → already nudged this turn; exit (prevents a loop).
+#   2. mode == manual   → user opted out of auto-render; exit.
+#   3. work gate        → only nudge if the turn used tools (skip pure chat).
+#
+# Wire it (global) in ~/.claude/settings.json — use the absolute path to this file:
+#   "Stop": [{ "hooks": [{ "type": "command",
+#     "command": "</abs/path/to>/plugin/hooks/companion-consider" }] }]
+
+MODE_FILE="${HOME}/.claude/companion/mode"
+
+payload=$(cat)
+
+# Guard 1 — loop: if we already blocked this turn, Claude is mid-continuation.
+# Bail so the consideration happens exactly once.
+case "$payload" in
+  *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) exit 0 ;;
+esac
+
+# Guard 2 — manual mode: absent file defaults to agent (nudge on).
+if [ "$(cat "$MODE_FILE" 2>/dev/null)" = "manual" ]; then
+  exit 0
+fi
+
+# Guard 3 — work gate: only nudge when the turn actually did something. Tail the
+# transcript and look for a recent tool_use; pure-conversation turns have none.
+# Any read failure falls through to "no work" → no nudge (no surprise round-trips).
+transcript=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).transcript_path||"")}catch(e){}})')
+worked=0
+if [ -n "$transcript" ] && [ -f "$transcript" ]; then
+  if tail -n 30 "$transcript" 2>/dev/null | grep -q '"tool_use"'; then
+    worked=1
+  fi
+fi
+[ "$worked" = "1" ] || exit 0
+
+# All guards passed — inject the consideration. The reason is fed to Claude, which
+# continues with full context and decides to render (via prefer-html) or stop.
+cat <<'EOF'
+{"decision":"block","reason":"Companion: you just finished a turn that did real work. Before ending, consider one thing — is there an HTML artifact worth putting on the overlay right now? Litmus test: can you name a concrete next-step DECISION or QUESTION to put in front of the user? If yes, load the prefer-html skill and render the combined brief + Next-steps artifact. If no — no real decision to surface, or this was routine — then render nothing, say nothing about having considered it, and end the turn. Bias hard toward NOT rendering; only a genuine deliverable earns one. (This prompt fires every work turn; it never forces an artifact.)"}
+EOF
+exit 0
