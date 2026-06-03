@@ -1,18 +1,23 @@
 #!/usr/bin/env sh
 # companion-consider — Claude Code Stop hook (always-on backstop).
 #
-# Under the always-on model the live surface (~/.claude/companion/live.json) is
-# meant to be refreshed every work turn as part of the normal response — no extra
-# round-trip. This hook is just the BACKSTOP: it fires only when a work turn did
-# NOT refresh the surface, and nudges Claude to do it. The common path (I updated
-# live.json this turn) costs nothing — it exits silently.
+# Under the always-on model the live surface is meant to be refreshed every work
+# turn as part of the normal response — no extra round-trip. This hook is just
+# the BACKSTOP: it fires only when a work turn did NOT refresh the surface, and
+# nudges Claude to do it. The common path (I updated the live file this turn)
+# costs nothing — it exits silently.
+#
+# Per-session state: each session writes its own file under
+# ~/.claude/companion/live/<slug>.json (slug = the working dir's basename), so
+# concurrent sessions don't clobber a shared file. The nudge embeds the exact
+# per-cwd path so Claude writes the right one.
 #
 # Guards:
 #   1. stop_hook_active → already nudged this turn; exit (prevents a loop).
 #   2. mode == manual   → user opted out; exit.
 #   3. current-turn scan → classify THIS turn from the transcript:
 #        idle  (no tool use)            → exit (pure chat; nothing to reflect)
-#        fresh (wrote live.json)        → exit (surface already refreshed)
+#        fresh (wrote a live file)      → exit (surface already refreshed)
 #        stale (worked, didn't update)  → nudge
 #      Scoped to the current turn (since the last human message), so a previous
 #      turn's tool use can't trigger a false nudge.
@@ -31,9 +36,24 @@ if [ "$(cat "$MODE_FILE" 2>/dev/null)" = "manual" ]; then
   exit 0
 fi
 
+# Pull transcript_path + cwd out of the payload.
+transcript=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).transcript_path||"")}catch(e){}})')
+cwd=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||process.cwd())}catch(e){console.log(process.cwd())}})')
+
+# Derive a STABLE per-session key. Prefer the git repo root's basename, so
+# cd-ing into a subdir mid-session (e.g. src-tauri) doesn't fragment the surface
+# across several files; fall back to the cwd basename outside a repo. slug
+# sanitizes it to a filename-safe token; project is the human-readable name.
+root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
+[ -n "$root" ] || root="$cwd"
+project=$(basename "$root" 2>/dev/null)
+[ -n "$project" ] || project="session"
+slug=$(printf '%s' "$project" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-\{1,\}/-/g; s/^-//; s/-$//')
+[ -n "$slug" ] || slug="session"
+live_path="${HOME}/.claude/companion/live/${slug}.json"
+
 # Guard 3 — classify the current turn from the transcript. Walk backward to the
 # human message that started this turn; collect assistant tool_use along the way.
-transcript=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).transcript_path||"")}catch(e){}})')
 state="idle"
 if [ -n "$transcript" ] && [ -f "$transcript" ]; then
   state=$(node -e '
@@ -52,7 +72,9 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
           if (b && b.type==="tool_use"){
             worked=true;
             const fp=(b.input&&(b.input.file_path||b.input.path))||"";
-            if (/companion\/live\.json$/.test(fp)) wroteLive=true;
+            // Match both the per-session dir (companion/live/<x>.json) and the
+            // legacy single file (companion/live.json).
+            if (/companion\/live[\/.]/.test(fp)) wroteLive=true;
           }
         }
       }
@@ -67,8 +89,11 @@ fi
 
 [ "$state" = "stale" ] || exit 0
 
-# Worked this turn but the live surface is stale — nudge to refresh it.
-cat <<'EOF'
-{"decision":"block","reason":"Companion: you did real work this turn but didn't refresh the live surface. If the current state changed — what you're working on, where things stand, or the next decisions — rewrite ~/.claude/companion/live.json as {\"working\": \"…\", \"where\": [\"…\"], \"next\": [{\"title\": \"…\", \"sub\": \"…\", \"kind\": \"decision|todo|blocked\"}]} so the always-on pane reflects it. If nothing meaningful changed, just end the turn. Don't narrate that you considered this. (Backstop only — it fires when a work turn skipped the live update.)"}
-EOF
+# Worked this turn but the live surface is stale — nudge to refresh it. Emit the
+# decision JSON via node so the dynamic path is escaped correctly.
+LIVE_PATH="$live_path" PROJECT="$project" node -e '
+  const p=process.env.LIVE_PATH, proj=process.env.PROJECT;
+  const reason=`Companion: you did real work this turn but didn'\''t refresh the live surface. If the current state changed — what you'\''re working on, where things stand, or the next decisions — rewrite ${p} as {"working": "…", "where": ["…"], "next": [{"title": "…", "sub": "…", "kind": "decision|todo|blocked"}], "project": "${proj}"} so the always-on pane reflects it. If nothing meaningful changed, just end the turn. Don'\''t narrate that you considered this. (Backstop only — it fires when a work turn skipped the live update.)`;
+  process.stdout.write(JSON.stringify({decision:"block",reason}));
+'
 exit 0

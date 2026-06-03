@@ -27,7 +27,11 @@
          live_main window and renders the current state from live.json in place. -->
     <div id="live" class="live" hidden>
       <header class="live-bar" data-tauri-drag-region>
-        <h1>Live</h1>
+        <div class="live-ident">
+          <span class="live-pulse" aria-hidden="true"></span>
+          <span class="live-mark">Live</span>
+          <span id="live-project" class="live-project"></span>
+        </div>
         <button id="live-close" title="Hide">✕</button>
       </header>
       <div id="live-body" class="live-body">
@@ -35,7 +39,7 @@
       </div>
       <footer id="live-foot" class="live-foot" hidden>
         <span id="live-count" class="live-count">nothing marked yet</span>
-        <button id="live-doall" class="live-doall">✓ Do all</button>
+        <button id="live-doall" class="live-doall">Do all</button>
         <button id="live-submit" class="live-submit">Submit → ⌘V</button>
       </footer>
     </div>

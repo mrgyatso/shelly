@@ -1,9 +1,12 @@
 // The always-on "live" surface: a single persistent pane reflecting the current
 // state of the work — what we're on (`working`), where we are (`where`), and the
-// next decisions (`next`) — read from ~/.claude/companion/live.json. The agent
-// rewrites that file each turn; this shell polls `read_live` and re-renders in
-// place when it changes, so updates never pop a new window. Loaded lazily by
-// main.ts only on the `live_main` window (window.__LIVE_MODE__).
+// next decisions (`next`) — read from the active per-session file under
+// ~/.claude/companion/live/ (newest-wins; see live.rs). Each session writes its
+// own file, and a `project` label tells the user whose work the pane reflects.
+// The agent rewrites its file each turn; this shell polls `read_live` and
+// re-renders in place behind a soft cross-fade, so updates never pop a new
+// window. Loaded lazily by main.ts only on the `live_main` window
+// (window.__LIVE_MODE__).
 //
 // This is the ephemeral "where are we" tier — substantive turns still snapshot a
 // full artifact into the history HUD separately. The `next` items are
@@ -25,12 +28,16 @@ interface LiveState {
   working?: string;
   where?: string[];
   next?: NextItem[];
+  /** Display name of the session/project this surface reflects (cwd basename). */
+  project?: string;
 }
 
 type Action = "approve" | "comment" | "reject";
 
-/** How often to re-read live.json. The file is tiny; a calm cadence is plenty. */
+/** How often to re-read the live file. It's tiny; a calm cadence is plenty. */
 const POLL_MS = 1200;
+/** Cross-fade duration for a content swap. Matches the CSS opacity transition. */
+const FADE_MS = 180;
 
 const win = getCurrentWebviewWindow();
 let lastRaw = "";
@@ -69,14 +76,33 @@ async function tick(): Promise<void> {
   render(raw);
 }
 
-function render(raw: string): void {
+/** Set the header project label (quiet — hidden when empty via :empty CSS). */
+function setProject(name: string): void {
+  const el = document.getElementById("live-project");
+  if (el) el.textContent = name;
+}
+
+/** Swap the body content behind a soft opacity cross-fade, then run `after`
+ *  (footer toggle + count) once the new content is in place. */
+function swapBody(content: Node | string, after?: () => void): void {
   const body = document.getElementById("live-body");
-  const foot = document.getElementById("live-foot");
   if (!body) return;
+  body.classList.add("fading");
+  window.setTimeout(() => {
+    if (typeof content === "string") body.innerHTML = content;
+    else body.replaceChildren(content);
+    after?.();
+    body.classList.remove("fading");
+  }, FADE_MS);
+}
+
+function render(raw: string): void {
+  const foot = document.getElementById("live-foot");
+  const hideFoot = () => foot?.setAttribute("hidden", "");
 
   if (!raw.trim()) {
-    body.innerHTML = `<div class="live-idle">Nothing on the surface yet.</div>`;
-    foot?.setAttribute("hidden", "");
+    setProject("");
+    swapBody(`<div class="live-idle">Nothing on the surface yet.</div>`, hideFoot);
     return;
   }
 
@@ -84,11 +110,11 @@ function render(raw: string): void {
   try {
     state = JSON.parse(raw) as LiveState;
   } catch {
-    body.innerHTML = `<div class="live-idle">live.json didn't parse.</div>`;
-    foot?.setAttribute("hidden", "");
+    swapBody(`<div class="live-idle">live state didn't parse.</div>`, hideFoot);
     return;
   }
 
+  setProject(state.project || "");
   currentWorking = state.working || "Live";
   const frag = document.createDocumentFragment();
 
@@ -120,12 +146,12 @@ function render(raw: string): void {
     frag.appendChild(list);
   }
 
-  body.replaceChildren(frag);
-
-  // Footer (the submit bar) only when there are decisions to make.
-  if (next.length) foot?.removeAttribute("hidden");
-  else foot?.setAttribute("hidden", "");
-  refresh();
+  swapBody(frag, () => {
+    // Footer (the submit bar) only when there are decisions to make.
+    if (next.length) foot?.removeAttribute("hidden");
+    else hideFoot();
+    refresh();
+  });
 }
 
 function sectionLabel(text: string): HTMLElement {
