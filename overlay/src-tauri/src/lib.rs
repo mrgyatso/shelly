@@ -278,7 +278,10 @@ pub fn run() {
                         if win.is_visible().unwrap_or(false)
                             && !crate::layout::is_moving(app_handle, &label)
                         {
-                            crate::layout::pin(app_handle, &label);
+                            // Pin where the user dropped it, but clamp (debounced)
+                            // so the top can't settle under the menu bar and become
+                            // ungrabbable.
+                            crate::layout::pin_and_clamp(app_handle, &label);
                         }
                     }
                 }

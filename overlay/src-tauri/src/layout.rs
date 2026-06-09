@@ -65,6 +65,10 @@ pub struct LayoutState {
     pinned: Mutex<HashSet<String>>,
     /// label → instant until which a `Moved` is ours (programmatic), not a drag.
     moving: Mutex<HashMap<String, Instant>>,
+    /// label → a monotonically-bumped drag generation, used to debounce the
+    /// post-drag clamp: the clamp only fires when its generation is still the
+    /// latest (i.e. the drag has settled).
+    settle: Mutex<HashMap<String, u64>>,
 }
 
 /// Remember a freshly opened panel's label, preserving open order.
@@ -82,6 +86,54 @@ pub fn pin(app: &AppHandle, label: &str) {
     let state = app.state::<LayoutState>();
     if lock(&state.pinned).insert(label.to_string()) {
         eprintln!("[overlay] pinned '{label}' (user-dragged; exempt from re-flow)");
+    }
+}
+
+/// Pin a just-dragged panel, then schedule a debounced clamp so that once the
+/// drag settles its top edge can't sit under the menu bar (ungrabbable). We don't
+/// clamp mid-drag (that would fight the OS move and flicker) — we bump a per-label
+/// generation and, after a short quiet period, clamp only if no newer drag arrived.
+pub fn pin_and_clamp(app: &AppHandle, label: &str) {
+    pin(app, label);
+    let state = app.state::<LayoutState>();
+    let my_gen = {
+        let mut settle = lock(&state.settle);
+        let g = settle.entry(label.to_string()).or_insert(0);
+        *g += 1;
+        *g
+    };
+    let app = app.clone();
+    let label = label.to_string();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(240));
+        let state = app.state::<LayoutState>();
+        let latest = lock(&state.settle).get(&label).copied().unwrap_or(0);
+        if latest == my_gen {
+            clamp_top(&app, &label); // drag settled — safe to clamp once
+        }
+    });
+}
+
+/// Keep `label`'s top edge below the menu bar of the monitor it's *currently* on,
+/// so a panel dragged up under the menu bar can never become ungrabbable. Uses
+/// `current_monitor()` (multi-monitor safe), not the primary. Its own corrective
+/// move is marked so it isn't read back as a fresh drag.
+pub fn clamp_top(app: &AppHandle, label: &str) {
+    let Some(win) = app.get_webview_window(label) else {
+        return;
+    };
+    let Ok(Some(mon)) = win.current_monitor() else {
+        return;
+    };
+    let scale = mon.scale_factor();
+    let min_top = mon.position().y as f64 / scale + TOP_MARGIN;
+    let Ok(pos) = win.outer_position() else {
+        return;
+    };
+    let (x, y) = (pos.x as f64 / scale, pos.y as f64 / scale);
+    if y < min_top {
+        mark_moving(app, label);
+        let _ = win.set_position(LogicalPosition::new(x, min_top));
     }
 }
 
@@ -279,6 +331,7 @@ pub fn arrange(app: &AppHandle, animate: bool) {
         order.retain(|l| app.get_webview_window(l).is_some());
         lock(&state.pinned).retain(|l| app.get_webview_window(l).is_some());
         lock(&state.moving).retain(|l, _| app.get_webview_window(l).is_some());
+        lock(&state.settle).retain(|l, _| app.get_webview_window(l).is_some());
         let pinned = lock(&state.pinned);
         order
             .iter()
