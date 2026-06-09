@@ -281,6 +281,15 @@ and **emit an artifact when real work was done.** The overlay is meant to be a
 "here's what just changed" feed for the user; default toward showing something when
 there's something to show.
 
+**Always render for strategic / vision / direction-setting turns.** When the turn is a
+*discussion* rather than a change — weighing big directions, exploring a grand-scheme
+idea, evaluating options/trade-offs, doing multi-point analysis, planning architecture,
+or any reply the user will want to revisit, share, or react to point-by-point — produce
+the artifact (informative content pages + a Next-steps page carrying the decisions/fork).
+A long, opinionated reply in chat is exactly the case that belongs on the surface, not in
+the terminal scrollback. This is a primary trigger, not an edge case — don't leave a
+substantive strategy answer as prose just because no file changed.
+
 **Skip it** for: trivial conversational answers, pure code edits the user is actively
 watching, one-line lookups, or when the user has said they don't want artifacts. (And
 of course in **manual mode**, skip every time.)
