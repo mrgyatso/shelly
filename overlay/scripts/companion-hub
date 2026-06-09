@@ -1,0 +1,74 @@
+#!/usr/bin/env sh
+# companion-hub — point the overlay at a remote hub it should pull from, or
+# probe one. Writes ~/.claude/companion/hub.json directly (no running daemon
+# required); the overlay's pull loop re-reads it within a few seconds.
+#
+#   companion hub set <url> <token>     point the overlay at a hub
+#   companion hub show                  print current config (token redacted)
+#   companion hub check [<url> <token>] probe reachability + token (defaults to saved config)
+#
+# The URL is whatever reaches your hub — a public https domain, a Tailscale IP,
+# or a LAN address. We're URL-agnostic.
+set -e
+
+CFG_DIR="$HOME/.claude/companion"
+CFG="$CFG_DIR/hub.json"
+
+usage() {
+  echo "usage: companion hub set <url> <token> | companion hub show | companion hub check [<url> <token>]" >&2
+  exit 1
+}
+
+sub=${1:-}
+[ -n "$sub" ] && shift || true
+
+case "$sub" in
+  set)
+    url=${1:-}; token=${2:-}
+    [ -n "$url" ] && [ -n "$token" ] || usage
+    mkdir -p "$CFG_DIR"
+    # Write JSON via node (already a dependency of the hooks) so URLs/tokens are
+    # escaped correctly rather than hand-built with shell string interpolation.
+    node -e '
+      const fs = require("fs"), os = require("os"), path = require("path");
+      const [, url, token] = process.argv;
+      const dir = path.join(os.homedir(), ".claude", "companion");
+      fs.mkdirSync(dir, { recursive: true });
+      const cfg = { url: url.replace(/\/+$/, ""), token, enabled: true, interval_ms: 4000 };
+      fs.writeFileSync(path.join(dir, "hub.json"), JSON.stringify(cfg, null, 2) + "\n");
+      console.log("hub set → " + cfg.url + "  (overlay will pick it up within a few seconds)");
+    ' "$url" "$token"
+    ;;
+
+  show)
+    [ -f "$CFG" ] || { echo "no hub configured ($CFG absent)"; exit 0; }
+    node -e '
+      const fs = require("fs"), os = require("os"), path = require("path");
+      const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude", "companion", "hub.json"), "utf8"));
+      const tok = cfg.token ? cfg.token.slice(0, 4) + "…(" + cfg.token.length + " chars)" : "(none)";
+      console.log("url:      " + (cfg.url || "(none)"));
+      console.log("token:    " + tok);
+      console.log("enabled:  " + (cfg.enabled !== false));
+      console.log("interval: " + (cfg.interval_ms || 4000) + "ms");
+    '
+    ;;
+
+  check)
+    url=${1:-}; token=${2:-}
+    if [ -z "$url" ] || [ -z "$token" ]; then
+      [ -f "$CFG" ] || { echo "no hub configured; pass <url> <token>" >&2; exit 1; }
+      url=$(node -e 'console.log((JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).url)||"")' "$CFG")
+      token=$(node -e 'console.log((JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).token)||"")' "$CFG")
+    fi
+    url=${url%/}
+    [ -n "$url" ] && [ -n "$token" ] || usage
+    printf 'health … '
+    curl -fsS "$url/api/health" >/dev/null 2>&1 && echo "ok" || { echo "UNREACHABLE"; exit 1; }
+    printf 'token  … '
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "$url/api/live")
+    if [ "$code" = "200" ]; then echo "ok"; else echo "REJECTED (HTTP $code)"; exit 1; fi
+    echo "connected → $url"
+    ;;
+
+  *) usage ;;
+esac

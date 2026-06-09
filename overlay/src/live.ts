@@ -64,16 +64,39 @@ export function initLive(): void {
 }
 
 async function tick(): Promise<void> {
-  let raw = "";
+  let local = "";
+  let remote = "";
   try {
-    raw = await invoke<string>("read_live");
+    [local, remote] = await Promise.all([
+      invoke<string>("read_live"),
+      // A configured remote hub (offsite agents) — never lets the tick fail.
+      invoke<string>("read_live_from_hub").catch(() => ""),
+    ]);
   } catch (e) {
     console.error("read_live failed", e);
     return;
   }
+  const raw = fresher(local, remote);
   if (raw === lastRaw) return; // unchanged — leave the pane (and any in-progress marks) untouched
   lastRaw = raw;
   render(raw);
+}
+
+/** Pick whichever of the local and remote-hub live-states was updated more
+ *  recently (by injected `updated_ms`); prefer a non-empty one. */
+function fresher(local: string, remote: string): string {
+  if (!remote.trim()) return local;
+  if (!local.trim()) return remote;
+  return updatedMs(remote) > updatedMs(local) ? remote : local;
+}
+
+function updatedMs(raw: string): number {
+  try {
+    const v = JSON.parse(raw) as { updated_ms?: number };
+    return typeof v.updated_ms === "number" ? v.updated_ms : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /** Set the header project label (quiet — hidden when empty via :empty CSS). */

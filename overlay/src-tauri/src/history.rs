@@ -55,6 +55,8 @@ fn artifact_dirs() -> Vec<PathBuf> {
     if let Some(home) = std::env::var_os("HOME") {
         let home = Path::new(&home);
         dirs.push(home.join(".claude/companion/artifacts"));
+        // Artifacts pulled from a remote hub (offsite agents) land here.
+        dirs.push(home.join(".claude/companion/remote"));
         dirs.push(home.join("codeviz/public/artifacts"));
     }
     dirs.retain(|d| d.is_dir());

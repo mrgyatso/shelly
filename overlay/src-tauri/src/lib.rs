@@ -1,5 +1,6 @@
 mod artifact;
 mod history;
+mod hub;
 mod layout;
 mod live;
 mod macos_panel;
@@ -106,7 +107,11 @@ pub fn run() {
             layout::notify_fit,
             history::list_artifacts,
             history::reopen_artifact,
-            live::read_live
+            live::read_live,
+            hub::read_live_from_hub,
+            hub::hub_config_get,
+            hub::hub_config_set,
+            hub::hub_test_connection
         ])
         .setup(|app| {
             // Accessory activation policy: no Dock icon, no Cmd-Tab — like
@@ -151,6 +156,13 @@ pub fn run() {
                 let handle = app.handle().clone();
                 guard(move || windows::open_live_window(&handle));
             }
+            // Background remote-hub pull loop: if `~/.claude/companion/hub.json`
+            // points at a hub, download its new artifacts into `remote/` (so the
+            // history HUD shows them) and pop the ones that appear after the
+            // initial sync. No-op until a hub is configured; re-reads config each
+            // tick so `companion hub set …` needs no restart.
+            hub::start_pull_loop(app.handle().clone());
+
             // Runtime deep-link registration (needed in dev / on Linux).
             #[cfg(any(target_os = "linux", debug_assertions))]
             {

@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Companion Hub</title>
+<style>
+  /* ============================================================================
+     Companion Hub — web UI. Mirrors the overlay's "Anthropic-paper" live pane:
+     warm ivory paper, literary serif hero, clay #CC785C accent, hairline ticks,
+     slow alive pulse, soft cross-fades. Self-contained: no build, no CDN.
+     ========================================================================== */
+  :root {
+    /* warm neutrals + clay accent (mirrors overlay/src/styles.css .live block) */
+    --paper: #faf9f5;
+    --paper-card: #ffffff;
+    --paper-sunk: #f0eee6;
+    --ink: #191919;
+    --ink-soft: #6b6660;
+    --ink-faint: #938d84;
+    --clay: #cc785c;
+    --clay-deep: #c06a4d;
+    --clay-soft: rgba(204, 120, 92, 0.13);
+    --do: #5c8a6b;   /* decision */
+    --note: #c0894d; /* todo */
+    --skip: #b0654e; /* blocked */
+    --hair: rgba(25, 25, 25, 0.1);
+    --hair-strong: rgba(25, 25, 25, 0.22);
+    --shadow-card: 0 1px 2px rgba(25, 25, 25, 0.04), 0 12px 32px -16px rgba(25, 25, 25, 0.22);
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background:
+      radial-gradient(120% 80% at 50% -10%, #fffdf7 0%, var(--paper) 55%, var(--paper-sunk) 100%);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button { font-family: inherit; }
+
+  /* a hub-wide soft cross-fade utility */
+  .fade { transition: opacity 0.18s ease; }
+  .fade.fading { opacity: 0; }
+
+  /* ---- visually hidden (for a11y labels) ---- */
+  .vh {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  /* ============================================================================
+     Connect screen
+     ========================================================================== */
+  .connect-wrap {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+  .connect-card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--paper-card);
+    border: 1px solid var(--hair);
+    border-radius: 18px;
+    box-shadow: var(--shadow-card);
+    padding: 36px 34px 34px;
+  }
+  .connect-mark {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 22px;
+  }
+  .connect-pulse {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--clay);
+    animation: pulse 2.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.82); }
+    50%      { opacity: 1;   transform: scale(1.12); }
+  }
+  .connect-mark span {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--clay);
+  }
+  .connect-card h1 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 28px;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    margin: 0 0 10px;
+  }
+  .connect-card p.explainer {
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink-soft);
+    margin: 0 0 26px;
+  }
+  .field-label {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 8px;
+  }
+  .token-input {
+    width: 100%;
+    padding: 12px 14px;
+    font: 14px/1.4 var(--sans);
+    color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--hair-strong);
+    border-radius: 11px;
+    outline: none;
+    transition: border-color 0.14s, box-shadow 0.14s;
+  }
+  .token-input:focus {
+    border-color: var(--clay);
+    box-shadow: 0 0 0 3px var(--clay-soft);
+  }
+  .token-input::placeholder { color: var(--ink-faint); }
+
+  .connect-error {
+    margin: 12px 2px 0;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--skip);
+    min-height: 1.4em;
+  }
+  .connect-error:empty { display: none; }
+
+  .btn-primary {
+    width: 100%;
+    margin-top: 22px;
+    padding: 13px 16px;
+    font: 600 14px/1 var(--sans);
+    color: #fff;
+    background: var(--clay);
+    border: 1px solid var(--clay);
+    border-radius: 11px;
+    cursor: pointer;
+    transition: background 0.14s, transform 0.08s, opacity 0.14s;
+  }
+  .btn-primary:hover { background: var(--clay-deep); }
+  .btn-primary:active { transform: scale(0.985); }
+  .btn-primary:disabled { opacity: 0.6; cursor: default; }
+  .btn-primary[data-busy="1"] { cursor: wait; }
+
+  /* ============================================================================
+     Connected layout
+     ========================================================================== */
+  .app { display: none; }
+  .app.on { display: block; }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px clamp(16px, 4vw, 40px);
+    background: rgba(250, 249, 245, 0.86);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--hair);
+  }
+  .topbar .mark {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 0 0 auto;
+  }
+  .topbar .mark .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--clay);
+    animation: pulse 2.6s ease-in-out infinite;
+  }
+  .topbar .mark .dot.stale { animation: none; background: var(--ink-faint); }
+  .topbar .mark strong {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--clay);
+  }
+  .topbar .conn {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar .conn.reconnecting { color: var(--note); }
+  .btn-ghost {
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    font: 600 11.5px/1 var(--sans);
+    color: var(--ink-soft);
+    background: transparent;
+    border: 1px solid var(--hair);
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background 0.13s, border-color 0.13s, color 0.13s;
+  }
+  .btn-ghost:hover { background: var(--paper-card); border-color: var(--hair-strong); color: var(--ink); }
+
+  .layout {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: clamp(20px, 4vw, 40px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(20px, 3vw, 32px);
+  }
+  @media (min-width: 900px) {
+    .layout {
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+      align-items: start;
+    }
+  }
+
+  .section-eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 14px 2px;
+  }
+
+  /* ---- live card ---- */
+  .live-card {
+    background: var(--paper-card);
+    border: 1px solid var(--hair);
+    border-radius: 18px;
+    box-shadow: var(--shadow-card);
+    padding: 26px 26px 28px;
+  }
+  .live-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .live-project {
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .live-updated {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .live-working {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: clamp(22px, 3.2vw, 30px);
+    line-height: 1.28;
+    letter-spacing: -0.012em;
+    color: var(--ink);
+    margin: 4px 0 0;
+  }
+
+  .live-section {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 26px 0 11px;
+  }
+
+  .live-where { margin: 0; padding: 0; list-style: none; }
+  .live-where li {
+    position: relative;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    padding-left: 18px;
+    margin: 9px 0;
+  }
+  .live-where li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 10px;
+    width: 8px; height: 1px;
+    background: var(--clay);
+    opacity: 0.75;
+  }
+
+  .live-next { display: flex; flex-direction: column; gap: 10px; }
+  .next-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border: 1px solid var(--hair);
+    border-radius: 12px;
+    background: var(--paper-sunk);
+    padding: 13px 15px;
+  }
+  .next-item[data-kind="decision"] { box-shadow: inset 3px 0 0 var(--do); }
+  .next-item[data-kind="todo"]     { box-shadow: inset 3px 0 0 var(--note); }
+  .next-item[data-kind="blocked"]  { box-shadow: inset 3px 0 0 var(--skip); }
+  .next-main { flex: 1; min-width: 0; }
+  .next-title { font-size: 14px; font-weight: 600; color: var(--ink); line-height: 1.4; }
+  .next-sub { font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); margin-top: 3px; }
+  .next-chip {
+    flex: 0 0 auto;
+    align-self: center;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: var(--clay);
+    background: var(--clay-soft);
+  }
+  .next-chip[data-kind="decision"] { color: var(--do); background: rgba(92, 138, 107, 0.13); }
+  .next-chip[data-kind="todo"]     { color: var(--note); background: rgba(192, 137, 77, 0.14); }
+  .next-chip[data-kind="blocked"]  { color: var(--skip); background: rgba(176, 101, 78, 0.14); }
+
+  .live-empty {
+    display: grid;
+    place-items: center;
+    min-height: 160px;
+    text-align: center;
+    color: var(--ink-faint);
+    font-size: 14px;
+    font-style: italic;
+  }
+
+  /* ---- artifact list ---- */
+  .arts-card {
+    background: var(--paper-card);
+    border: 1px solid var(--hair);
+    border-radius: 18px;
+    box-shadow: var(--shadow-card);
+    padding: 22px 10px 12px 10px;
+    overflow: hidden;
+  }
+  .arts-card .section-eyebrow { margin-left: 16px; }
+  .arts-list { display: flex; flex-direction: column; }
+  .art-row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 14px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.13s;
+  }
+  .art-row:hover { background: var(--paper-sunk); }
+  .art-row:active { background: var(--paper-sunk); }
+  .art-row + .art-row { border-top: 1px solid var(--hair); }
+  .art-row:hover + .art-row,
+  .art-row:hover { border-top-color: transparent; }
+  .art-title {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1.35;
+  }
+  .art-sub {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .art-meta {
+    margin-top: 7px;
+    font-size: 11px;
+    color: var(--ink-faint);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .art-meta .proj {
+    color: var(--clay);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60%;
+  }
+  .art-meta .sep { opacity: 0.5; }
+  .arts-empty {
+    padding: 36px 16px;
+    text-align: center;
+    color: var(--ink-faint);
+    font-size: 13.5px;
+    font-style: italic;
+  }
+
+  /* ============================================================================
+     Artifact viewer overlay
+     ========================================================================== */
+  .viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: none;
+    flex-direction: column;
+    background: rgba(240, 238, 230, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .viewer.on { display: flex; }
+  .viewer-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px clamp(12px, 3vw, 24px);
+    background: var(--paper-card);
+    border-bottom: 1px solid var(--hair);
+  }
+  .viewer-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    font: 600 12.5px/1 var(--sans);
+    color: var(--ink-soft);
+    background: var(--paper);
+    border: 1px solid var(--hair);
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background 0.13s, border-color 0.13s, color 0.13s;
+  }
+  .viewer-back:hover { background: var(--paper-sunk); border-color: var(--hair-strong); color: var(--ink); }
+  .viewer-title {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--serif);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .viewer-stage {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    padding: clamp(8px, 2vw, 20px);
+  }
+  .viewer-frame {
+    width: 100%;
+    height: 100%;
+    border: 1px solid var(--hair);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: var(--shadow-card);
+  }
+  .viewer-loading {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--ink-faint);
+    font-size: 13px;
+    font-style: italic;
+    pointer-events: none;
+  }
+  .viewer-loading[hidden] { display: none; }
+</style>
+</head>
+<body>
+
+<!-- ===================== Connect screen ===================== -->
+<div class="connect-wrap" id="connect">
+  <form class="connect-card" id="connect-form" autocomplete="off">
+    <div class="connect-mark"><span class="connect-pulse" aria-hidden="true"></span><span>Companion Hub</span></div>
+    <h1>Connect to your agent</h1>
+    <p class="explainer">Enter the hub access token to view your agent's live state and the artifacts it has published. The token is stored on this device only.</p>
+    <label class="field-label" for="token">Access token</label>
+    <input class="token-input" type="password" id="token" name="token" placeholder="Paste your hub token" autocomplete="off" spellcheck="false" />
+    <div class="connect-error" id="connect-error" role="alert" aria-live="polite"></div>
+    <button class="btn-primary" type="submit" id="connect-btn">Connect</button>
+  </form>
+</div>
+
+<!-- ===================== Connected app ===================== -->
+<div class="app" id="app" aria-hidden="true">
+  <header class="topbar">
+    <div class="mark"><span class="dot" id="conn-dot" aria-hidden="true"></span><strong>Companion Hub</strong></div>
+    <div class="conn" id="conn-status"></div>
+    <button class="btn-ghost" id="disconnect-btn" type="button">Forget token</button>
+  </header>
+
+  <main class="layout">
+    <section aria-labelledby="live-eyebrow">
+      <p class="section-eyebrow" id="live-eyebrow">Live state</p>
+      <div class="live-card fade" id="live-card"></div>
+    </section>
+
+    <section aria-labelledby="arts-eyebrow">
+      <div class="arts-card">
+        <p class="section-eyebrow" id="arts-eyebrow">Artifacts</p>
+        <div class="arts-list fade" id="arts-list"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ===================== Artifact viewer ===================== -->
+<div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Artifact viewer">
+  <div class="viewer-bar">
+    <button class="viewer-back" id="viewer-back" type="button"><span aria-hidden="true">&larr;</span> Back</button>
+    <div class="viewer-title" id="viewer-title"></div>
+  </div>
+  <div class="viewer-stage">
+    <div class="viewer-loading" id="viewer-loading">Loading artifact…</div>
+    <iframe class="viewer-frame" id="viewer-frame" sandbox="allow-scripts" title="Artifact preview"></iframe>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- constants ------------------------------------------------------------
+  var TOKEN_KEY = "companion_hub_token";
+  var POLL_MS = 3000;
+  var FADE_MS = 180;
+
+  // ---- element refs ---------------------------------------------------------
+  var $ = function (id) { return document.getElementById(id); };
+  var connectWrap = $("connect");
+  var connectForm = $("connect-form");
+  var tokenInput = $("token");
+  var connectError = $("connect-error");
+  var connectBtn = $("connect-btn");
+
+  var app = $("app");
+  var connDot = $("conn-dot");
+  var connStatus = $("conn-status");
+  var disconnectBtn = $("disconnect-btn");
+  var liveCard = $("live-card");
+  var artsList = $("arts-list");
+
+  var viewer = $("viewer");
+  var viewerBack = $("viewer-back");
+  var viewerTitle = $("viewer-title");
+  var viewerFrame = $("viewer-frame");
+  var viewerLoading = $("viewer-loading");
+
+  // ---- runtime state --------------------------------------------------------
+  var token = null;
+  var pollTimer = null;
+  var lastLiveRaw = null;
+  var lastArtsRaw = null;
+  var viewerOpen = false;
+
+  // ---- small helpers --------------------------------------------------------
+
+  /** Relative "Ns ago" from an epoch-ms timestamp. */
+  function relTime(ms) {
+    if (!ms || typeof ms !== "number" || !isFinite(ms)) return "";
+    var diff = Date.now() - ms;
+    if (diff < 0) diff = 0;
+    var s = Math.round(diff / 1000);
+    if (s < 5) return "just now";
+    if (s < 60) return s + "s ago";
+    var m = Math.round(s / 60);
+    if (m < 60) return m + "m ago";
+    var h = Math.round(m / 60);
+    if (h < 24) return h + "h ago";
+    var d = Math.round(h / 24);
+    return d + "d ago";
+  }
+
+  /** Cross-fade `el`'s content: fade out, run `fill`, fade back in. */
+  function crossFade(el, fill) {
+    el.classList.add("fading");
+    window.setTimeout(function () {
+      fill();
+      el.classList.remove("fading");
+    }, FADE_MS);
+  }
+
+  // ---- API ------------------------------------------------------------------
+
+  function api(path, withAuth) {
+    var headers = {};
+    if (withAuth) headers["Authorization"] = "Bearer " + token;
+    return fetch(path, { headers: headers, cache: "no-store" });
+  }
+
+  // ---- connect flow ---------------------------------------------------------
+
+  function showError(msg) {
+    connectError.textContent = msg || "";
+  }
+
+  function setBusy(busy) {
+    connectBtn.disabled = busy;
+    connectBtn.setAttribute("data-busy", busy ? "1" : "0");
+    connectBtn.textContent = busy ? "Connecting…" : "Connect";
+  }
+
+  /** Validate a candidate token: health (no auth) then live (auth). Resolves to
+   *  null on success, or an error message string on failure. */
+  function validateToken(candidate) {
+    return api("/api/health", false)
+      .then(function (res) {
+        if (!res.ok) throw { kind: "unreachable" };
+        return fetch("/api/live", {
+          headers: { Authorization: "Bearer " + candidate },
+          cache: "no-store",
+        });
+      })
+      .then(function (res) {
+        if (res.status === 401) throw { kind: "invalid" };
+        if (!res.ok) throw { kind: "unreachable" };
+        return null; // success
+      })
+      .catch(function (e) {
+        if (e && e.kind === "invalid") return "That token was not accepted. Check it and try again.";
+        if (e && e.kind === "unreachable") return "Could not reach the hub. Is it running?";
+        return "Could not reach the hub. Check your connection.";
+      });
+  }
+
+  function onConnectSubmit(e) {
+    e.preventDefault();
+    var candidate = (tokenInput.value || "").trim();
+    showError("");
+    if (!candidate) {
+      showError("Enter a token to connect.");
+      return;
+    }
+    setBusy(true);
+    validateToken(candidate).then(function (err) {
+      setBusy(false);
+      if (err) {
+        showError(err);
+        return;
+      }
+      token = candidate;
+      try { localStorage.setItem(TOKEN_KEY, token); } catch (_) {}
+      enterApp();
+    });
+  }
+
+  // ---- app lifecycle --------------------------------------------------------
+
+  function enterApp() {
+    connectWrap.style.display = "none";
+    app.classList.add("on");
+    app.setAttribute("aria-hidden", "false");
+    setConnState("ok", "Connected");
+    // immediate first paint, then poll
+    poll();
+    startPolling();
+  }
+
+  function disconnect() {
+    stopPolling();
+    closeViewer();
+    token = null;
+    lastLiveRaw = null;
+    lastArtsRaw = null;
+    try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+    tokenInput.value = "";
+    showError("");
+    setBusy(false);
+    app.classList.remove("on");
+    app.setAttribute("aria-hidden", "true");
+    connectWrap.style.display = "grid";
+    tokenInput.focus();
+  }
+
+  /** A 401 mid-session: token went stale. Bounce to connect with a message. */
+  function bounceToConnect() {
+    stopPolling();
+    closeViewer();
+    token = null;
+    lastLiveRaw = null;
+    lastArtsRaw = null;
+    try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+    app.classList.remove("on");
+    app.setAttribute("aria-hidden", "true");
+    connectWrap.style.display = "grid";
+    showError("Your session expired. Reconnect with your token.");
+    tokenInput.focus();
+  }
+
+  function setConnState(kind, text) {
+    connStatus.textContent = text;
+    if (kind === "reconnecting") {
+      connStatus.classList.add("reconnecting");
+      connDot.classList.add("stale");
+    } else {
+      connStatus.classList.remove("reconnecting");
+      connDot.classList.remove("stale");
+    }
+  }
+
+  // ---- polling --------------------------------------------------------------
+
+  function startPolling() {
+    stopPolling();
+    pollTimer = window.setInterval(poll, POLL_MS);
+  }
+  function stopPolling() {
+    if (pollTimer !== null) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  /** One poll cycle: fetch live + artifacts in parallel. A 401 on either bounces
+   *  to the connect screen; a network error flips to a calm "reconnecting" state
+   *  while leaving the last-known content on screen. */
+  function poll() {
+    if (!token) return;
+    var liveReq = api("/api/live", true);
+    var artsReq = api("/api/artifacts", true);
+
+    Promise.all([
+      liveReq.then(handleStatus).then(function (txt) { return { ok: true, txt: txt }; })
+             .catch(function (e) { return { ok: false, err: e }; }),
+      artsReq.then(handleStatus).then(function (txt) { return { ok: true, txt: txt }; })
+             .catch(function (e) { return { ok: false, err: e }; }),
+    ]).then(function (results) {
+      var live = results[0], arts = results[1];
+
+      // Any 401 → session is dead. Bounce once.
+      if ((!live.ok && live.err === "unauthorized") || (!arts.ok && arts.err === "unauthorized")) {
+        bounceToConnect();
+        return;
+      }
+
+      // Any other failure (network drop, transient HTTP error) means we couldn't
+      // get fresh data — show a calm "reconnecting" state and keep retrying,
+      // leaving the last-known content on screen.
+      if (!live.ok || !arts.ok) {
+        setConnState("reconnecting", "Reconnecting…");
+      } else {
+        setConnState("ok", "Connected");
+      }
+
+      if (live.ok) renderLive(live.txt);
+      if (arts.ok) renderArtifacts(arts.txt);
+    });
+  }
+
+  /** Normalize a fetch Response: throw "unauthorized" / "network" / "http",
+   *  else resolve to the raw text body. */
+  function handleStatus(res) {
+    if (res.status === 401) return Promise.reject("unauthorized");
+    if (!res.ok) return Promise.reject("http");
+    return res.text();
+  }
+
+  // ---- live rendering -------------------------------------------------------
+
+  function renderLive(raw) {
+    if (raw === lastLiveRaw) return; // unchanged — don't disturb the view
+    lastLiveRaw = raw;
+
+    var state;
+    try { state = JSON.parse(raw); } catch (_) { state = {}; }
+    if (!state || typeof state !== "object") state = {};
+
+    crossFade(liveCard, function () { fillLive(state); });
+  }
+
+  function fillLive(state) {
+    liveCard.replaceChildren();
+
+    var hasContent = state.working || (state.where && state.where.length) || (state.next && state.next.length);
+    if (!hasContent) {
+      var empty = document.createElement("div");
+      empty.className = "live-empty";
+      empty.textContent = "No live state yet.";
+      liveCard.appendChild(empty);
+      return;
+    }
+
+    // header: project + updated
+    var head = document.createElement("div");
+    head.className = "live-head";
+    var proj = document.createElement("div");
+    proj.className = "live-project";
+    proj.textContent = state.project ? String(state.project) : "";
+    var upd = document.createElement("div");
+    upd.className = "live-updated";
+    upd.textContent = relTime(state.updated_ms);
+    head.appendChild(proj);
+    head.appendChild(upd);
+    liveCard.appendChild(head);
+
+    // working hero
+    if (state.working) {
+      var h = document.createElement("h2");
+      h.className = "live-working";
+      h.textContent = String(state.working);
+      liveCard.appendChild(h);
+    }
+
+    // where[]
+    if (Array.isArray(state.where) && state.where.length) {
+      liveCard.appendChild(sectionLabel("Where we are"));
+      var ul = document.createElement("ul");
+      ul.className = "live-where";
+      state.where.forEach(function (line) {
+        var li = document.createElement("li");
+        li.textContent = String(line);
+        ul.appendChild(li);
+      });
+      liveCard.appendChild(ul);
+    }
+
+    // next[]
+    if (Array.isArray(state.next) && state.next.length) {
+      liveCard.appendChild(sectionLabel("Next"));
+      var wrap = document.createElement("div");
+      wrap.className = "live-next";
+      state.next.forEach(function (item) {
+        if (item && typeof item === "object") wrap.appendChild(nextCard(item));
+      });
+      liveCard.appendChild(wrap);
+    }
+  }
+
+  function sectionLabel(text) {
+    var el = document.createElement("div");
+    el.className = "live-section";
+    el.textContent = text;
+    return el;
+  }
+
+  var KNOWN_KINDS = { decision: 1, todo: 1, blocked: 1 };
+
+  function nextCard(item) {
+    var kind = typeof item.kind === "string" ? item.kind : "";
+    var normKind = KNOWN_KINDS[kind] ? kind : "";
+
+    var card = document.createElement("div");
+    card.className = "next-item";
+    if (normKind) card.setAttribute("data-kind", normKind);
+
+    var main = document.createElement("div");
+    main.className = "next-main";
+    var title = document.createElement("div");
+    title.className = "next-title";
+    title.textContent = item.title ? String(item.title) : "(untitled)";
+    main.appendChild(title);
+    if (item.sub) {
+      var sub = document.createElement("div");
+      sub.className = "next-sub";
+      sub.textContent = String(item.sub);
+      main.appendChild(sub);
+    }
+    card.appendChild(main);
+
+    if (kind) {
+      var chip = document.createElement("span");
+      chip.className = "next-chip";
+      if (normKind) chip.setAttribute("data-kind", normKind);
+      chip.textContent = kind;
+      card.appendChild(chip);
+    }
+    return card;
+  }
+
+  // ---- artifact list --------------------------------------------------------
+
+  function renderArtifacts(raw) {
+    if (raw === lastArtsRaw) return;
+    lastArtsRaw = raw;
+
+    var list;
+    try { list = JSON.parse(raw); } catch (_) { list = []; }
+    if (!Array.isArray(list)) list = [];
+
+    crossFade(artsList, function () { fillArtifacts(list); });
+  }
+
+  function fillArtifacts(list) {
+    artsList.replaceChildren();
+
+    if (!list.length) {
+      var empty = document.createElement("div");
+      empty.className = "arts-empty";
+      empty.textContent = "No artifacts published yet.";
+      artsList.appendChild(empty);
+      return;
+    }
+
+    list.forEach(function (a) {
+      if (!a || typeof a !== "object" || !a.slug) return;
+      artsList.appendChild(artifactRow(a));
+    });
+  }
+
+  function artifactRow(a) {
+    var row = document.createElement("button");
+    row.type = "button";
+    row.className = "art-row";
+
+    var title = document.createElement("div");
+    title.className = "art-title";
+    title.textContent = a.title ? String(a.title) : String(a.slug);
+    row.appendChild(title);
+
+    var subText = a.summary || a.subject;
+    if (subText) {
+      var sub = document.createElement("div");
+      sub.className = "art-sub";
+      sub.textContent = String(subText);
+      row.appendChild(sub);
+    }
+
+    var meta = document.createElement("div");
+    meta.className = "art-meta";
+    if (a.project) {
+      var proj = document.createElement("span");
+      proj.className = "proj";
+      proj.textContent = String(a.project);
+      meta.appendChild(proj);
+      meta.appendChild(sepDot());
+    }
+    var when = document.createElement("span");
+    when.textContent = relTime(a.modified_ms) || "";
+    meta.appendChild(when);
+    row.appendChild(meta);
+
+    row.addEventListener("click", function () {
+      openArtifact(a.slug, a.title || a.slug);
+    });
+    return row;
+  }
+
+  function sepDot() {
+    var s = document.createElement("span");
+    s.className = "sep";
+    s.textContent = "·";
+    return s;
+  }
+
+  // ---- artifact viewer ------------------------------------------------------
+
+  function openArtifact(slug, title) {
+    viewerOpen = true;
+    viewerTitle.textContent = String(title || slug);
+    viewerFrame.srcdoc = ""; // clear any prior content
+    viewerLoading.hidden = false;
+    viewer.classList.add("on");
+    document.body.style.overflow = "hidden";
+
+    // Fetch the raw HTML with the bearer header and inject via srcdoc into a
+    // sandboxed (allow-scripts, NOT allow-same-origin) iframe — opaque origin,
+    // so the artifact's own JS can't touch the hub.
+    api("/api/artifacts/" + encodeURIComponent(slug), true)
+      .then(function (res) {
+        if (res.status === 401) { bounceToConnect(); return null; }
+        if (!res.ok) throw new Error("http " + res.status);
+        return res.text();
+      })
+      .then(function (html) {
+        if (html == null) return; // bounced
+        if (!viewerOpen) return;   // user closed before load finished
+        viewerFrame.srcdoc = html;
+        viewerLoading.hidden = true;
+      })
+      .catch(function () {
+        if (!viewerOpen) return;
+        viewerLoading.textContent = "Could not load this artifact.";
+      });
+  }
+
+  function closeViewer() {
+    if (!viewerOpen && !viewer.classList.contains("on")) return;
+    viewerOpen = false;
+    viewer.classList.remove("on");
+    viewerFrame.srcdoc = "";
+    viewerLoading.hidden = false;
+    viewerLoading.textContent = "Loading artifact…";
+    document.body.style.overflow = "";
+  }
+
+  // ---- wiring ---------------------------------------------------------------
+
+  connectForm.addEventListener("submit", onConnectSubmit);
+  disconnectBtn.addEventListener("click", disconnect);
+  viewerBack.addEventListener("click", closeViewer);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && viewerOpen) closeViewer();
+  });
+
+  // ---- boot -----------------------------------------------------------------
+
+  function boot() {
+    var saved = null;
+    try { saved = localStorage.getItem(TOKEN_KEY); } catch (_) {}
+    if (saved && saved.trim()) {
+      // Trust the stored token optimistically: enter the app and let the first
+      // poll validate it (a 401 bounces back to connect with a message).
+      token = saved.trim();
+      connectWrap.style.display = "none";
+      app.classList.add("on");
+      app.setAttribute("aria-hidden", "false");
+      setConnState("ok", "Connecting…");
+      poll();
+      startPolling();
+    } else {
+      tokenInput.focus();
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

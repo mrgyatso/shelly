@@ -29,6 +29,10 @@ tauri-plugin-autostart = "2"
 tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Remote-hub client (pull live-state + artifacts from a user-configured hub).
+# rustls so there's no system-OpenSSL dependency; blocking client runs on the
+# pull-loop's own std thread.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 # Compiled in all builds but only REGISTERED under #[cfg(debug_assertions)] in
 # lib.rs (Cargo can't gate deps on debug_assertions). Lets the hypothesi
 # tauri-mcp-server drive the dev build (screenshots / DOM / IPC) for headless

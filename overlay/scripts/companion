@@ -24,6 +24,7 @@ SCRIPT_DIR=$(cd "$(dirname "$SELF")" && pwd)
 # anything else must be intercepted here before we exec it.
 case "$1" in
   doctor) exec "$SCRIPT_DIR/companion-doctor" ;;
+  hub) shift; exec "$SCRIPT_DIR/companion-hub" "$@" ;;
 esac
 
 CANDIDATES="/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay
