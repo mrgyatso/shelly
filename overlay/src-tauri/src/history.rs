@@ -129,6 +129,13 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
     if stem.starts_with('_') {
         return None;
     }
+    // `home.html` is the agent-authored Hub dashboard, not a one-off artifact.
+    // It lives in the artifacts dir (so its JS runs in asset: scope) but must
+    // not surface as a tile OR in the History HUD — both read `list_artifacts`,
+    // so this one skip covers both.
+    if stem == "home" {
+        return None;
+    }
 
     let meta = std::fs::metadata(path).ok()?;
     let modified_ms = meta
@@ -185,6 +192,20 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
         .collect();
     entries.sort_by_key(|e| std::cmp::Reverse(e.modified_ms));
     entries
+}
+
+/// Resolve the agent-authored Hub dashboard (`home.html`), if one exists. The
+/// Board loads it full-bleed at L0; `None` ⇒ the native fallback. It MUST live in
+/// the artifacts dir (so it's in `asset:` scope and its navigate buttons' JS
+/// runs), which is exactly the first of [`artifact_dirs`], so we reuse that and
+/// return the first existing `home.html`.
+#[tauri::command]
+pub fn resolve_home() -> Option<String> {
+    artifact_dirs()
+        .iter()
+        .map(|d| d.join("home.html"))
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 /// Re-open an artifact as a normal panel and dismiss the HUD. The HUD is hidden

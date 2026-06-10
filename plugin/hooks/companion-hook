@@ -27,6 +27,12 @@ command -v companion >/dev/null 2>&1 || exit 0
 fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log((JSON.parse(d).tool_input||{}).file_path||"")}catch(e){}})' 2>/dev/null)
 
 case "$fp" in
+  "$ARTIFACTS_DIR"/home.html)
+    # The agent-authored Hub dashboard. It lives in the artifacts dir so its
+    # navigate buttons' JS runs (asset: scope), but it is NOT a one-off panel —
+    # the Board hosts it at L0 — so re-authoring it must pop no floating panel.
+    # This arm sits ABOVE the *.html arm because `case` matches top-down.
+    ;;
   "$ARTIFACTS_DIR"/*.html)
     nohup companion open "$fp" >/dev/null 2>&1 &
     ;;

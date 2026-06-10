@@ -109,9 +109,11 @@ pub fn run() {
             layout::notify_fit,
             history::list_artifacts,
             history::reopen_artifact,
+            history::resolve_home,
             live::read_live,
             live::read_all_live,
             windows::set_board_fullscreen,
+            windows::open_history,
             hub::read_live_from_hub,
             hub::hub_config_get,
             hub::hub_config_set,
@@ -134,6 +136,45 @@ pub fn run() {
             // so the user can type. Terminal stays the front app the whole time.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            // Minimal app + Edit menu so ⌘V/⌘C/⌘X/⌘A/⌘Z route to the focused
+            // textarea inside an interactive artifact's iframe. A borderless
+            // Accessory-policy app has no main menu by default, so AppKit had no
+            // `paste:` key equivalent to dispatch — typing worked (key-window
+            // focus is fixed by the CompanionKeyPanel subclass) but paste didn't.
+            // The menu stays invisible (Accessory hides the bar); performKeyEquivalent
+            // walks the main menu regardless.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
+                let h = app.handle();
+                let app_menu = Submenu::with_items(
+                    h,
+                    "Companion",
+                    true,
+                    &[
+                        &PredefinedMenuItem::hide(h, None)?,
+                        &PredefinedMenuItem::separator(h)?,
+                        &PredefinedMenuItem::quit(h, None)?,
+                    ],
+                )?;
+                let edit_menu = Submenu::with_items(
+                    h,
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(h, None)?,
+                        &PredefinedMenuItem::redo(h, None)?,
+                        &PredefinedMenuItem::separator(h)?,
+                        &PredefinedMenuItem::cut(h, None)?,
+                        &PredefinedMenuItem::copy(h, None)?,
+                        &PredefinedMenuItem::paste(h, None)?,
+                        &PredefinedMenuItem::select_all(h, None)?,
+                    ],
+                )?;
+                let menu = Menu::with_items(h, &[&app_menu, &edit_menu])?;
+                app.set_menu(menu)?;
+            }
 
             // First-launch: this very process may carry `open <path>`.
             // (single-instance only fires for *subsequent* invocations.)
@@ -218,14 +259,18 @@ pub fn run() {
             crate::layout::start_follow_poll(app.handle().clone());
 
             // Register as a Login Item so the overlay autostarts after every
-            // reboot — fixes the "nothing pops after a reboot because the
-            // daemon isn't running yet" issue. Idempotent (safe to call when
-            // already enabled). Failure here must not block the daemon, so we
-            // swallow errors (the user can still launch the app manually).
+            // reboot. Only enable when NOT already enabled: an unconditional
+            // enable() re-registers the LaunchAgent on every launch, and macOS
+            // posts a "<app> is now allowed in the background" notification each
+            // time the registration changes — spamming the banner. Failure must
+            // not block the daemon, so we swallow errors.
             #[cfg(desktop)]
             {
                 use tauri_plugin_autostart::ManagerExt;
-                let _ = app.autolaunch().enable();
+                let autolaunch = app.autolaunch();
+                if !autolaunch.is_enabled().unwrap_or(false) {
+                    let _ = autolaunch.enable();
+                }
             }
 
             Ok(())

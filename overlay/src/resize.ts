@@ -45,6 +45,23 @@ interface SubmitMessage {
   text: string;
 }
 
+/** A Board navigation request from a full-bleed Hub iframe (or any artifact).
+ *  `to` is one of: "hub", "sessions", `session:<slug>`, `artifact:<path>`.
+ *  Treated as UNTRUSTED by the board.ts listener (validated before acting). */
+export interface NavigateMessage {
+  source: "companion-artifact";
+  kind: "navigate";
+  to: string;
+}
+
+/** Type guard for a NavigateMessage. Exported so board.ts can wire its own
+ *  listener (the Board must never feed these to fit()/resize the window). */
+export function isNavigateMessage(d: unknown): d is NavigateMessage {
+  if (!d || typeof d !== "object") return false;
+  const m = d as Record<string, unknown>;
+  return m.source === "companion-artifact" && m.kind === "navigate" && typeof m.to === "string";
+}
+
 let raf = 0;
 let lastTarget: Size | null = null;
 let gotReport = false;

@@ -103,6 +103,13 @@ pub fn open_artifact_window(app: &AppHandle, path: String) {
     crate::macos_panel::order_front_without_activating(&win);
 }
 
+/// Frontend-callable wrapper to open the History HUD — used by the Board's
+/// "View all in History →" affordance (a capped L2 session links the rest here).
+#[tauri::command]
+pub fn open_history(app: AppHandle) {
+    open_history_window(&app);
+}
+
 /// Open — or toggle — the single history HUD window. Centered and larger than an
 /// artifact panel, it's a mouse-driven picker rather than a content panel, so it
 /// is deliberately left OUT of the column layout: we never call `record_open`,
@@ -197,7 +204,10 @@ pub fn open_board_window(app: &AppHandle) {
     }
 
     if let Some(win) = app.get_webview_window(BOARD_LABEL) {
-        crate::macos_panel::order_front_without_activating(&win);
+        // Focal surface: show + focus (activates the app + makes it key) so its
+        // keyboard nav works — not the ghost-panel order-front.
+        let _ = win.show();
+        let _ = win.set_focus();
         return;
     }
 
@@ -223,8 +233,11 @@ pub fn open_board_window(app: &AppHandle) {
             }
         };
 
-    crate::macos_panel::make_nonactivating_panel(&win);
-    crate::macos_panel::order_front_without_activating(&win);
+    // Focal "Board = app window" treatment (key-capable, activating) so spatial
+    // keyboard nav works — NOT the non-activating ghost-panel treatment.
+    crate::macos_panel::make_board_window(&win);
+    let _ = win.show();
+    let _ = win.set_focus();
 }
 
 /// Toggle the Board between windowed and "maximized to its current monitor".
