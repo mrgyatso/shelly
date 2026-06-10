@@ -662,6 +662,21 @@ body:hover .controls { opacity: 1; pointer-events: auto; }
   color: var(--ink);
 }
 .board-count { font-size: 11.5px; color: var(--ink-faint); }
+.board-tools { display: flex; align-items: center; gap: 8px; }
+.board-fullscreen {
+  appearance: none;
+  border: 1px solid var(--hair);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.13s, border-color 0.13s, color 0.13s;
+}
+.board-fullscreen:hover { border-color: rgba(25, 25, 25, 0.22); color: var(--ink); }
+.board-fullscreen.on { background: var(--clay); border-color: var(--clay); color: #fff; }
 #board-close {
   appearance: none;
   border: none;
@@ -684,43 +699,171 @@ body:hover .controls { opacity: 1; pointer-events: auto; }
 }
 .board-status[hidden] { display: none; }
 
-.board-grid {
+/* One horizontal track of per-agent panes (the confirmed mockup: a lane per
+   connected agent, scrolled horizontally). */
+.board-panes {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 14px;
+  display: flex;
+  gap: 16px;
   padding: 16px;
-  align-content: start;
+  align-items: flex-start;
 }
 
-.tile {
+/* A pane = one agent: its live-state header + that agent's artifacts. */
+.pane {
+  flex: 0 0 auto;
+  width: 360px;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
-  min-height: 240px;
+  background: var(--paper-sunk);
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.pane-head {
+  flex: 0 0 auto;
+  padding: 12px 14px 14px;
+  border-bottom: 1px solid var(--hair);
+}
+.pane-prov {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+.pane-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--clay);
+  box-shadow: 0 0 0 0 rgba(204, 120, 92, 0.4);
+  animation: pane-pulse 2.6s ease-out infinite;
+}
+.pane-source {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+}
+@keyframes pane-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(204, 120, 92, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(204, 120, 92, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(204, 120, 92, 0); }
+}
+
+/* The live-state region, cross-faded on update (mirrors live.ts). */
+.pane-live {
+  opacity: 1;
+  transition: opacity 0.18s ease;
+}
+.pane-live.fading { opacity: 0; }
+.pane-idle { font-size: 12px; color: var(--ink-faint); }
+
+.pane-working {
+  font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.pane-section {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  margin: 12px 0 5px;
+}
+.pane-where {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pane-where li {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  padding-left: 11px;
+  position: relative;
+}
+.pane-where li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 4px;
+  height: 1px;
+  background: var(--ink-faint);
+}
+.pane-next { display: flex; flex-direction: column; gap: 6px; }
+.pane-item {
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  padding: 7px 9px;
+}
+.pane-item-title { font-size: 12px; font-weight: 500; color: var(--ink); line-height: 1.35; }
+.pane-item-sub { font-size: 11px; color: var(--ink-soft); margin-top: 2px; line-height: 1.35; }
+.pane-chip {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--clay);
+  border: 1px solid rgba(204, 120, 92, 0.35);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+/* That agent's artifacts, stacked under its live header. */
+.pane-tiles {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+.pane-empty { font-size: 11.5px; color: var(--ink-faint); padding: 4px 0; }
+
+/* One resizable artifact tile. width/height are set inline by the drag handle;
+   these are the defaults. */
+.tile {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 260px;
+  min-width: 220px;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
   background: var(--paper);
   border: 1px solid var(--hair);
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 1px 2px rgba(25, 25, 25, 0.04);
-  transition: box-shadow 0.15s, transform 0.15s;
+  transition: box-shadow 0.15s;
 }
-.tile:hover {
-  box-shadow: 0 4px 14px rgba(25, 25, 25, 0.09);
-  transform: translateY(-1px);
-}
+.tile:hover { box-shadow: 0 4px 14px rgba(25, 25, 25, 0.09); }
 .tile-head {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 9px 12px;
+  padding: 8px 11px;
   border-bottom: 1px solid var(--hair);
   background: var(--paper-sunk);
 }
 .tile-title {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink);
   white-space: nowrap;
@@ -728,7 +871,7 @@ body:hover .controls { opacity: 1; pointer-events: auto; }
   text-overflow: ellipsis;
 }
 .tile-sub {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--ink-faint);
   white-space: nowrap;
   overflow: hidden;
@@ -745,8 +888,24 @@ body:hover .controls { opacity: 1; pointer-events: auto; }
   border: 0;
   display: block;
 }
+/* The resize gripper — a sibling of the iframe (not under it), so a cross-origin
+   tile can't swallow the drag. */
+.tile-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background:
+    linear-gradient(135deg, transparent 0 50%, var(--ink-faint) 50% 60%, transparent 60% 70%, var(--ink-faint) 70% 80%, transparent 80%);
+  opacity: 0.5;
+}
+.tile-resize:hover { opacity: 0.9; }
 
 @media (prefers-reduced-motion: reduce) {
   .tile { transition: none; }
-  .tile:hover { transform: none; }
+  .pane-live { transition: none; }
+  .pane-dot { animation: none; }
 }

@@ -77,13 +77,76 @@ pub fn read_live() -> String {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    match serde_json::from_str::<serde_json::Value>(&raw) {
+    inject_updated_ms(&raw, updated_ms)
+}
+
+/// One agent's live-state, tagged with the slug of the file it came from. The
+/// Board renders one pane per entry (its header = the live state, its body =
+/// that source's artifacts).
+#[derive(serde::Serialize)]
+pub struct LiveSource {
+    /// The file's slug (basename without `.json`) — the source id panes group by.
+    pub source: String,
+    /// The file's contents with `updated_ms` injected (same shape `read_live`
+    /// returns), or the raw text if it didn't parse.
+    pub json: String,
+}
+
+/// EVERY `live/<slug>.json`, one entry per connected agent, sorted by slug for a
+/// stable pane order (so a poll never reshuffles the Board). Generalizes
+/// [`read_live`] (which returns only the newest) for the Board's per-agent panes.
+/// Returns a `Vec` (never a `Result`) so a single unreadable file can't sink the
+/// whole Board.
+#[tauri::command]
+pub fn read_all_live() -> Vec<LiveSource> {
+    let dir = match live_dir() {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+    let mut out: Vec<LiveSource> = Vec::new();
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let source = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let updated_ms = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        out.push(LiveSource {
+            source,
+            json: inject_updated_ms(&raw, updated_ms),
+        });
+    }
+    out.sort_by(|a, b| a.source.cmp(&b.source));
+    out
+}
+
+/// Inject `updated_ms` into a live-state JSON object, returning the serialized
+/// string. A malformed file is returned verbatim so it still surfaces as the
+/// render fallback rather than being dropped.
+fn inject_updated_ms(raw: &str, updated_ms: u64) -> String {
+    match serde_json::from_str::<serde_json::Value>(raw) {
         Ok(mut v) => {
             if let Some(obj) = v.as_object_mut() {
                 obj.insert("updated_ms".into(), serde_json::json!(updated_ms));
             }
             v.to_string()
         }
-        Err(_) => raw,
+        Err(_) => raw.to_string(),
     }
 }

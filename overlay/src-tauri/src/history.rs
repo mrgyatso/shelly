@@ -30,15 +30,21 @@ pub struct ArtifactEntry {
     /// Last-modified time as epoch milliseconds — drives the date label + sort.
     pub modified_ms: u64,
     pub size_bytes: u64,
+    /// Raw `project` from the `companion-meta` block — the artifact's source
+    /// (often a path like `~/claude-code-companion`). The Board groups artifacts
+    /// into per-agent panes by matching this against each pane's source slug.
+    pub project: Option<String>,
 }
 
-/// The subset of the `companion-meta` JSON block the HUD surfaces. Other fields
-/// (files, project, branch, created) are for the feedback payload, not the card,
+/// The subset of the `companion-meta` JSON block the HUD + Board surface. Other
+/// fields (files, branch, created) are for the feedback payload, not the card,
 /// so serde simply ignores them.
 #[derive(serde::Deserialize)]
 struct CompanionMeta {
     subject: Option<String>,
     summary: Option<String>,
+    /// The artifact's source — used by the Board to route it to a pane.
+    project: Option<String>,
 }
 
 /// Candidate artifact directories, most-authoritative first.
@@ -140,9 +146,9 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
         .and_then(extract_title)
         .unwrap_or_else(|| humanize_filename(stem));
     let cmeta = head.as_deref().and_then(extract_meta);
-    let (subject, summary) = match cmeta {
-        Some(m) => (m.subject, m.summary),
-        None => (None, None),
+    let (subject, summary, project) = match cmeta {
+        Some(m) => (m.subject, m.summary, m.project),
+        None => (None, None, None),
     };
 
     Some(ArtifactEntry {
@@ -152,6 +158,7 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
         summary,
         modified_ms,
         size_bytes: meta.len(),
+        project,
     })
 }
 

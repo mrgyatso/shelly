@@ -52,10 +52,13 @@
           <span class="board-mark">The Board</span>
           <span id="board-count" class="board-count"></span>
         </div>
-        <button id="board-close" title="Hide">✕</button>
+        <div class="board-tools">
+          <button id="board-fullscreen" class="board-fullscreen" title="Toggle full screen">Full screen</button>
+          <button id="board-close" title="Hide">✕</button>
+        </div>
       </header>
       <div id="board-status" class="board-status" hidden></div>
-      <div id="board-grid" class="board-grid"></div>
+      <div id="board-panes" class="board-panes"></div>
     </div>
 
     <!-- History HUD (⌘8). Hidden by default; history.ts reveals it only on the

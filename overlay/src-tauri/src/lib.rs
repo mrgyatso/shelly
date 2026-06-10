@@ -110,6 +110,8 @@ pub fn run() {
             history::list_artifacts,
             history::reopen_artifact,
             live::read_live,
+            live::read_all_live,
+            windows::set_board_fullscreen,
             hub::read_live_from_hub,
             hub::hub_config_get,
             hub::hub_config_set,

@@ -9,8 +9,17 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
+};
+
+/// The Board's pre-fullscreen frame (physical px), saved so the fullscreen
+/// toggle can restore the window to exactly where the user had it. `None` =
+/// currently windowed.
+static BOARD_PRIOR_FRAME: Mutex<Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>> =
+    Mutex::new(None);
 
 /// Initial panel size before the artifact reports its own fit size.
 const PANEL_W: f64 = 460.0;
@@ -179,6 +188,14 @@ pub fn open_live_window(app: &AppHandle) {
 /// artifact panel to host a grid of tiles. Re-invoking just re-reveals the
 /// existing window without rebuilding it.
 pub fn open_board_window(app: &AppHandle) {
+    // The Board absorbs the live surface: its per-agent panes already show every
+    // agent's live-state header, so the separate always-on `live_main` window
+    // would just double-show it. Hide it (not close — the daemon keeps writing
+    // its files; the Board reads the same data) whenever the Board comes up.
+    if let Some(live) = app.get_webview_window(LIVE_LABEL) {
+        let _ = live.hide();
+    }
+
     if let Some(win) = app.get_webview_window(BOARD_LABEL) {
         crate::macos_panel::order_front_without_activating(&win);
         return;
@@ -208,6 +225,54 @@ pub fn open_board_window(app: &AppHandle) {
 
     crate::macos_panel::make_nonactivating_panel(&win);
     crate::macos_panel::order_front_without_activating(&win);
+}
+
+/// Toggle the Board between windowed and "maximized to its current monitor".
+///
+/// We deliberately do NOT use native macOS fullscreen (`set_fullscreen(true)`):
+/// that forces a Space switch and activates the app, which would steal terminal
+/// focus from the non-activating Board panel. Instead we resize/position the
+/// window to fill the monitor it's currently on (saving the prior frame to
+/// restore on toggle-off), which keeps the panel non-activating. Returns the new
+/// state (`true` = now full-screen) so the frontend can update its toggle label.
+#[tauri::command]
+pub fn set_board_fullscreen(app: AppHandle, on: bool) -> bool {
+    let win = match app.get_webview_window(BOARD_LABEL) {
+        Some(w) => w,
+        None => return false,
+    };
+    let mut prior = match BOARD_PRIOR_FRAME.lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+
+    if on {
+        // Already full-screen — nothing to do.
+        if prior.is_some() {
+            return true;
+        }
+        let monitor = match win.current_monitor() {
+            Ok(Some(m)) => m,
+            _ => return false,
+        };
+        // Save the windowed frame (physical px) so we can put it back exactly.
+        if let (Ok(pos), Ok(size)) = (win.outer_position(), win.inner_size()) {
+            *prior = Some((pos, size));
+        }
+        // current_monitor() returns physical px, which is exactly what the
+        // Physical* setters consume — no scale-factor math needed.
+        let _ = win.set_position(*monitor.position());
+        let _ = win.set_size(*monitor.size());
+        crate::macos_panel::order_front_without_activating(&win);
+        true
+    } else {
+        if let Some((pos, size)) = prior.take() {
+            let _ = win.set_position(pos);
+            let _ = win.set_size(size);
+        }
+        crate::macos_panel::order_front_without_activating(&win);
+        false
+    }
 }
 
 /// Raise every panel without activating (the no-arg `companion` invocation).
