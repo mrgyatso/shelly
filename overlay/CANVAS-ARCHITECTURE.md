@@ -125,6 +125,13 @@ Each tile's `✓/✎/✗` Submit must return to **that tile's source agent**.
   per-agent content. (Compositor-friendly transforms/opacity; reduced-motion aware.)
 - **P3 — Make it the only surface.** Route *all* artifacts into the Board; retire the
   floating one-off panels; the pill becomes the collapsed Board; peek-on-update.
+  **Absorb the live surface (Zach's call):** the always-on live pane (`working`/`where`/`next`
+  from `~/.claude/companion/live/*.json`) becomes a **persistent "now" element inside the
+  Board** (e.g. a pinned header tile) — the separate `live_main` window is retired, so there's
+  one surface, not two. The `companion-consider` Stop hook + `live/*.json` writes can keep
+  feeding it (the Board reads the same files); the only change is *where* it renders. This can
+  ride in P3 or be split to a parallel agent — it touches `live.ts`/`live.rs` + the Board's
+  layout, not the hub.
 - **P4 — Per-tile response routing.** Clipboard-tagged-by-source first; then the auto-route
   (hub return path / terminal-write).
 - **P5 (later) — Composition protocol.** A tile hosts multiple agent-composed regions
