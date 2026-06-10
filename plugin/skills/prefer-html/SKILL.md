@@ -986,6 +986,60 @@ about without leaving the overlay.
 Default OFF for: pills, single-card status flips, decision artifacts (use the
 review form instead), anything where the user isn't reading prose.
 
+## Copyable handoff blocks (paste-this-elsewhere content)
+
+When an artifact contains content the user is meant to **copy verbatim and paste
+somewhere else** — an integration brief to hand another agent ("paste this to Hermes"),
+a prompt, a config/code snippet, a handoff note, an onboarding blurb — give it a **Copy
+button**, never leave them to hand-select. This is a first-class capability of the
+surface: a Companion artifact can deliver ready-to-paste handoffs for the user's *other*
+agents/tools, so "onboard this agent" becomes "open the card → Copy → paste."
+
+Mark the copyable element `data-copy` and pair a `data-copy-btn` button with it (same
+container, or point at it with `data-copy-target="#id"`). The artifact runs in a sandboxed
+iframe, so use the helper below — it tries `navigator.clipboard` then falls back to a
+range-select + `execCommand("copy")` (which works for user-initiated copies even in the
+sandbox). Supports multiple blocks per artifact.
+
+```html
+<div class="copy-block">
+  <button type="button" data-copy-btn>Copy</button>
+  <pre data-copy>the exact text to copy…</pre>
+</div>
+```
+
+```html
+<script>
+(function () {
+  document.querySelectorAll("[data-copy-btn]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var sel = btn.getAttribute("data-copy-target");
+      var target = sel ? document.querySelector(sel)
+                       : (btn.closest(".copy-block") || btn.parentElement).querySelector("[data-copy]");
+      if (!target) return;
+      var text = target.innerText;
+      var done = function () { var p = btn.dataset.label || btn.textContent; btn.dataset.label = p;
+        btn.textContent = "Copied ✓"; clearTimeout(btn._t);
+        btn._t = setTimeout(function () { btn.textContent = btn.dataset.label; }, 1600); };
+      function fallback() {
+        try { var r = document.createRange(); r.selectNodeContents(target);
+          var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+          document.execCommand("copy"); s.removeAllRanges(); done();
+        } catch (e) { btn.textContent = "Select + ⌘C"; }
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(fallback);
+      } else { fallback(); }
+    });
+  });
+})();
+</script>
+```
+
+This is independent of the `data-companion-submit` helper (which routes feedback to the
+agent) — a Copy button copies to the *system clipboard for the user*, so the two coexist
+freely in one artifact.
+
 ## Surfacing or re-showing an existing artifact
 
 Writing a new `.html` into the artifacts dir is what pops the overlay. But the auto-pop only
