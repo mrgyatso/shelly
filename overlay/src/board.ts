@@ -9,12 +9,23 @@
 // "unsourced" pane. The Board absorbs the live surface: panes ARE the live
 // state, refreshed on the same poll cadence as live.ts.
 //
-// Render discipline (CANVAS-ARCHITECTURE.md): every artifact tile loads via the
-// `asset:` protocol (loadArtifactInto), never srcdoc, so its inline JS runs and
-// its buttons stay live. Tiles are built ONCE on open; the poll only re-renders
-// changed pane *headers*, never touching the artifact iframes (a reload would
-// flicker, lose scroll, and re-run their JS). Each tile is individually
-// resizable (a drag handle on a wrapper around the iframe).
+// Render discipline (CANVAS-ARCHITECTURE.md): tiles are LAZY-MOUNTED for
+// performance. By default a tile is a cheap static thumbnail — the artifact's
+// HTML injected via `iframe.srcdoc` and scaled down (like the history HUD). Under
+// the overlay CSP `script-src 'self'`, srcdoc's inline JS does NOT run, so a
+// thumbnail has no observers, no animations, no continuous compositing → near-zero
+// CPU. Only when a tile is CLICKED (focused) is it promoted to a LIVE `asset:`
+// iframe (loadArtifactInto), whose JS runs and whose ✓/✎/✗ buttons work. We cap
+// the number of concurrent live tiles (LRU): promoting past the cap demotes the
+// least-recently-focused live tile back to a thumbnail, killing its JS/compositing.
+// Net: at idle the Board is all static thumbnails (0 live) → a fraction of the CPU
+// of mounting every artifact live.
+//
+// One stable <iframe> per tile for its whole life — we flip its state (srcdoc
+// thumbnail ⇄ asset: live), never swap the element. wireResize captures the
+// iframe in a closure; replacing it would break resize. Tiles are built ONCE on
+// open; the poll only re-renders changed pane *headers*, never the iframes. Each
+// tile is individually resizable (a drag handle on a wrapper around the iframe).
 //
 // Deferred to P2: keyboard nav / quick-switcher / focus-to-expand, and dynamic
 // add/remove of panes mid-session (arrival-reveal). This builds the static set
@@ -59,11 +70,24 @@ const UNSOURCED = "__unsourced__";
 const POLL_MS = 1200;
 /** Cross-fade duration for a header content swap (matches the CSS transition). */
 const FADE_MS = 180;
+/** Logical width a thumbnail iframe renders at before being scaled to the tile. */
+const THUMB_VIEWPORT_W = 1200;
+/** Max concurrent LIVE (asset:) tiles; the rest stay cheap static thumbnails. */
+const MAX_LIVE_TILES = 3;
 
 const win = getCurrentWebviewWindow();
 
 /** Last-rendered live JSON per source, so a poll only re-renders what changed. */
 const lastJsonBySource = new Map<string, string>();
+/** Cache of artifact HTML so demote→re-promote (and re-mount) doesn't re-read. */
+const htmlCache = new Map<string, string>();
+/** Currently-live tiles in focus order (front = least-recently-focused = LRU). */
+const liveTiles: HTMLElement[] = [];
+/** Observes which tiles are on-screen so only visible thumbnails are mounted —
+ *  off-screen tiles are torn down to a cheap placeholder (history-HUD discipline,
+ *  adapted to the Board's 2D scroll). `rootMargin` adds hysteresis so a tiny
+ *  scroll doesn't thrash mount/unmount. */
+let tileObserver: IntersectionObserver | null = null;
 /** Whether the Board is currently maximized to its monitor. */
 let isFullscreen = false;
 
@@ -109,6 +133,14 @@ export async function initBoard(): Promise<void> {
     return;
   }
   status.setAttribute("hidden", "");
+
+  // Gate thumbnail mounting on visibility: only tiles in (or near) the viewport
+  // hold a live srcdoc; off-screen tiles are torn down. With many artifacts this
+  // is the difference between compositing ~10 documents and ~100+ at idle.
+  tileObserver = new IntersectionObserver(onTileVisibility, {
+    root: panes,
+    rootMargin: "300px 0px", // mount a little before a tile scrolls in (hysteresis)
+  });
 
   // Stable pane order: live sources (already slug-sorted by Rust), then the
   // unsourced catch-all last. Built ONCE — the poll only updates headers.
@@ -308,7 +340,7 @@ function nextCard(item: NextItem): HTMLElement {
   return card;
 }
 
-// ---- artifact tile (resizable; asset:-loaded) -------------------------------
+// ---- artifact tile (resizable; lazy-mounted thumbnail ⇄ live) ---------------
 
 function buildTile(entry: ArtifactEntry): HTMLElement {
   // The resizable wrapper. `resize: both` is on this wrapper, not the iframe —
@@ -316,7 +348,7 @@ function buildTile(entry: ArtifactEntry): HTMLElement {
   // so a dedicated drag handle (below) drives the resize and the iframe gets
   // `pointer-events: none` only while dragging.
   const tile = document.createElement("div");
-  tile.className = "tile";
+  tile.className = "tile"; // not .is-live → thumbnail (pointer-transparent iframe)
   tile.dataset.path = entry.path;
 
   const head = document.createElement("div");
@@ -338,6 +370,7 @@ function buildTile(entry: ArtifactEntry): HTMLElement {
   iframe.className = "tile-frame";
   iframe.setAttribute("sandbox", "allow-scripts");
   iframe.setAttribute("referrerpolicy", "no-referrer");
+  iframe.tabIndex = -1;
   body.append(iframe);
 
   const handle = document.createElement("div");
@@ -347,12 +380,120 @@ function buildTile(entry: ArtifactEntry): HTMLElement {
 
   tile.append(head, body, handle);
 
-  loadArtifactInto(entry.path, iframe).catch((e) => {
-    console.error("loadArtifactInto failed", entry.path, e);
-    title.textContent = `Could not load ${entry.title}`;
+  // Default to a cheap static thumbnail — but only mount it when on-screen.
+  // Off-screen tiles stay empty placeholders (the observer mounts/unmounts as
+  // they scroll), so idle cost scales with visible tiles, not total artifacts.
+  tileObserver?.observe(tile);
+
+  // Click anywhere on a not-yet-live tile → promote it to a live asset: iframe.
+  // The thumbnail iframe is pointer-transparent (CSS), so the click reaches the
+  // tile; once live, `.is-live .tile-frame` re-enables pointer events so the
+  // artifact's own buttons work and further clicks pass through to it.
+  tile.addEventListener("click", () => {
+    if (!tile.classList.contains("is-live")) void promoteTile(tile, iframe);
   });
 
   return tile;
+}
+
+/** Render the artifact as a scaled-down static `srcdoc` snapshot (history-HUD
+ *  recipe). Inline JS won't run under the overlay CSP → cheap static thumbnail. */
+async function mountThumbnail(tile: HTMLElement, iframe: HTMLIFrameElement): Promise<void> {
+  const path = tile.dataset.path;
+  if (!path) return;
+
+  let html = htmlCache.get(path);
+  if (html === undefined) {
+    try {
+      html = await invoke<string>("read_artifact", { path });
+      htmlCache.set(path, html);
+    } catch (e) {
+      console.error("read_artifact failed", path, e);
+      return;
+    }
+  }
+  // The tile may have been promoted/hidden while we awaited the read.
+  if (tile.classList.contains("is-live") || !tile.dataset.visible) return;
+  if (iframe.hasAttribute("srcdoc")) return; // already mounted
+
+  const body = iframe.parentElement as HTMLElement;
+  const scale = body.clientWidth / THUMB_VIEWPORT_W || 0.25;
+  iframe.removeAttribute("src");
+  iframe.style.width = `${THUMB_VIEWPORT_W}px`;
+  iframe.style.height = `${Math.round((body.clientHeight || 220) / scale)}px`;
+  iframe.style.transform = `scale(${scale})`;
+  iframe.srcdoc = html;
+}
+
+/** Mount/unmount thumbnails as tiles scroll in and out of the viewport. Live
+ *  tiles are left alone (they're capped by the LRU and the user may scroll back
+ *  to a running one); only the thumbnail layer is gated. */
+function onTileVisibility(entries: IntersectionObserverEntry[]): void {
+  for (const entry of entries) {
+    const tile = entry.target as HTMLElement;
+    if (entry.isIntersecting) {
+      tile.dataset.visible = "1";
+      if (!tile.classList.contains("is-live")) {
+        const iframe = tile.querySelector(".tile-frame") as HTMLIFrameElement | null;
+        if (iframe) void mountThumbnail(tile, iframe);
+      }
+    } else {
+      delete tile.dataset.visible;
+      if (!tile.classList.contains("is-live")) unmountThumbnail(tile);
+    }
+  }
+}
+
+/** Tear a thumbnail back down to an empty placeholder — drops its layout/layer
+ *  so an off-screen tile costs nothing. */
+function unmountThumbnail(tile: HTMLElement): void {
+  const iframe = tile.querySelector(".tile-frame") as HTMLIFrameElement | null;
+  if (!iframe) return;
+  iframe.removeAttribute("srcdoc");
+  iframe.style.width = "";
+  iframe.style.height = "";
+  iframe.style.transform = "";
+}
+
+/** Promote a tile to a LIVE `asset:` iframe so its JS runs and buttons work.
+ *  Enforces the live-tile cap (LRU): demotes the least-recently-focused live
+ *  tile if we're at the cap before adding this one. */
+async function promoteTile(tile: HTMLElement, iframe: HTMLIFrameElement): Promise<void> {
+  // Already tracked? just move it to most-recently-focused.
+  const existing = liveTiles.indexOf(tile);
+  if (existing !== -1) liveTiles.splice(existing, 1);
+
+  // Enforce the cap before promoting a new live tile.
+  while (liveTiles.length >= MAX_LIVE_TILES) {
+    const lru = liveTiles.shift();
+    if (lru) demoteTile(lru);
+  }
+
+  liveTiles.push(tile);
+  tile.classList.add("is-live");
+
+  // Clear the thumbnail's scale/sizing so .tile-frame fills the body 100%×100%.
+  iframe.style.width = "";
+  iframe.style.height = "";
+  iframe.style.transform = "";
+
+  const path = tile.dataset.path;
+  if (!path) return;
+  await loadArtifactInto(path, iframe).catch((e) => {
+    console.error("loadArtifactInto failed", path, e);
+  });
+}
+
+/** Demote a live tile back to a static thumbnail — clearing `src`/`srcdoc` tears
+ *  down the live document, killing its JS/observers/compositing → CPU drops. Only
+ *  re-mount a thumbnail if the tile is on-screen; otherwise leave it an empty
+ *  placeholder (the observer mounts it when it scrolls back in). */
+function demoteTile(tile: HTMLElement): void {
+  tile.classList.remove("is-live");
+  const iframe = tile.querySelector(".tile-frame") as HTMLIFrameElement | null;
+  if (!iframe) return;
+  iframe.removeAttribute("src");
+  if (tile.dataset.visible) void mountThumbnail(tile, iframe);
 }
 
 /** Drag the bottom-right handle to resize one tile. The iframe is made

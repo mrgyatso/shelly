@@ -878,16 +878,32 @@ body:hover .controls { opacity: 1; pointer-events: auto; }
   text-overflow: ellipsis;
 }
 .tile-body {
+  position: relative;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   background: #fff;
 }
+/* Thumbnail (default) state: the iframe renders at THUMB_VIEWPORT_W and is scaled
+   down via an inline transform (set in JS), anchored to the top-left. It is
+   pointer-transparent so a click reaches the tile and promotes it. */
 .tile-frame {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
   border: 0;
   display: block;
+  transform-origin: top left;
+  pointer-events: none;
 }
+/* Live (promoted) state: the iframe fills the body and takes pointer events so
+   the artifact's own ✓/✎/✗ buttons work. */
+.tile.is-live .tile-frame {
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+}
+.tile:not(.is-live) { cursor: pointer; }
 /* The resize gripper — a sibling of the iframe (not under it), so a cross-origin
    tile can't swallow the drag. */
 .tile-resize {
