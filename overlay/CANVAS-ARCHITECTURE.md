@@ -159,6 +159,10 @@ call); the tile iframes are cross-origin/sandboxed so you can inspect the Board 
 reach inside a tile's iframe; kill the installed daemon (`pkill -x companion-overlay`) before
 `npm run tauri dev` (single-instance forwards otherwise).
 
+**IMPORTANT — restore the user's overlay when you finish.** Killing the installed daemon for
+`tauri dev` closes the overlay the user is actively using. When done verifying, relaunch it:
+`open "/Applications/Companion Overlay.app"`. Never leave the user with no overlay running.
+
 ## Definition of done (P0–P2, the demoable core)
 A beautiful Board (collapsible to a pill) holds several live, interactive artifact tiles
 grouped by source; you keyboard-navigate to any tile, expand it with a seamless transition,
