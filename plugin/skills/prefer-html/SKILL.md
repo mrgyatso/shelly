@@ -26,10 +26,11 @@ file's content is one word and controls the rest of this skill.
 
 The user flips between modes with `/companion:mode agent|manual|status`.
 
-## The default shape (MANDATORY in agent mode): brief + a "Next steps" page
+## The default shape: brief + a "Next steps" page — but the agent CHOOSES
 
-For any **substantive** turn — anything past a one-line answer or a quick pill — the
-default artifact does two jobs at once, as a single multi-page document:
+For a **substantive, steering-oriented** turn — one where the user needs to react, decide,
+or push work forward — the default artifact does two jobs at once, as a single multi-page
+document:
 
 1. **Inform.** One or more content pages (findings, status, explanation, comparison),
    each wrapped in `data-companion-commentable` so the user can hover any block and
@@ -38,11 +39,28 @@ default artifact does two jobs at once, as a single multi-page document:
    per item, plus a **Do all** button) that converts the brief into decisions and pushes
    the work forward. Every substantive artifact must end with one of these.
 
-This is the standing format for the artifacts you *do* produce: **informative AND
-goal-oriented**, each one handing the user a clear next thing to act on. But it governs
-**shape, not frequency.** Whether a turn deserves an artifact at all is the judgment call in
-the cadence section below — render when there's real substance (technically involved,
-information-dense, or genuinely worth a visual), **never as a reflex on every tool call.**
+This is the standing format for *steering* artifacts: **informative AND goal-oriented**,
+handing the user a clear next thing to act on. But it governs **shape, not frequency** —
+whether a turn deserves an artifact at all is the cadence judgment below.
+
+**The combined shape is a DEFAULT, not a cage — choose it by intent.** Reach for it when the
+user needs to **react / decide / steer**: status, plans, reviews, comparisons, options,
+strategy, multi-agent steering. But when the content is **presentation-first** — a morning
+debrief, a dashboard, a data visualization, a recap or explainer the user just wants to *see
+beautifully*, a celebration, a one-off custom interface — **design a fully bespoke UI
+instead.** Do NOT force `data-companion-commentable` blocks or a Next-steps "questions" page
+onto content that isn't asking to be steered; a rigid template on a debrief is worse than a
+custom one. You may still drop in interactive bits à la carte (a Copy button, a few ✓/✎/✗
+where something is genuinely actionable), but the layout, structure, and feel are yours to
+craft. **Ask: does the user need to *act on* this, or *look at* it?** Act on → combined
+shape. Look at → bespoke. (Still keep the required `data-fit-root` + size-reporter snippet so
+it sizes in the overlay, and the `companion-meta` block; those are about plumbing, not shape.)
+
+> **Heads-up for agents pushing to the hub (e.g. a morning-briefing cron):** the always-on
+> **live pane** is a *fixed* glanceable format (`working` / `where` / `next`) rendered from
+> the `live/*.json` you write — it is NOT a place for a bespoke UI. For a beautiful debrief,
+> write an **artifact** (`artifacts/<slug>.html`, any design you like) — that's the rich
+> surface; the live JSON is just the status strip.
 
 **One unified Submit collects both.** The ambient-comments helper and the review-form
 helper would otherwise fight over `data-companion-submit`. Use the **combined helper**
