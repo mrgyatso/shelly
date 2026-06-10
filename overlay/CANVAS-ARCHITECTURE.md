@@ -114,13 +114,15 @@ Each tile's `✓/✎/✗` Submit must return to **that tile's source agent**.
   hook or hub pull) lands in its source's group; provenance label; small per-source history.
 - **P2 — Navigation + iOS polish.** Keyboard navigation (move/focus/back + fuzzy
   quick-switcher), focus-to-expand with seamless transitions, the organization system.
-- **P2.5 — "Good morning" / arrival scene (a headline delight moment).** When you open the
-  Board after being away (e.g. first open of the day), it's not a cold checklist: a warm
-  animated welcome (a "good morning" hero) that then **fades the overnight/new artifacts in**
-  as tiles — the things your agents prepared while you were gone, waiting for you. The Board
-  knows which tiles are *new since last seen* (arrival state) and reveals them with a staggered
-  fade/transition. This is the experiential, presentation-first face of the Board — bespoke,
-  animated, not a template. (Compositor-friendly transforms/opacity; reduced-motion aware.)
+- **P2.5 — Arrival reveal (Board provides the transition; the *content* is the agent's).**
+  When you open the Board after being away, new tiles **fade/stagger in** — the Board tracks
+  which artifacts are *new since last seen* and reveals them smoothly. **Important division of
+  labor (Zach's call):** the Board only provides the generic reveal/transition surface — the
+  actual **"good morning" dashboard is each agent's own HTML artifact.** Hermes (and every
+  other agent) crafts a *unique animated good-morning* for its user (see `hub/PUBLISHING.md`),
+  which simply shows up as one of the revealed tiles. Do NOT build a hardcoded good-morning
+  scene into the Board — keep the Board a generic, beautiful host; the bespoke welcome is
+  per-agent content. (Compositor-friendly transforms/opacity; reduced-motion aware.)
 - **P3 — Make it the only surface.** Route *all* artifacts into the Board; retire the
   floating one-off panels; the pill becomes the collapsed Board; peek-on-update.
 - **P4 — Per-tile response routing.** Clipboard-tagged-by-source first; then the auto-route

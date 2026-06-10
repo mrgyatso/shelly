@@ -42,6 +42,13 @@ The hub serves two things straight off disk, from a data dir (default
    ```
    The filename stem is the slug (`artifacts/morning-briefing.html` → `morning-briefing`).
 
+   **Design it however fits — it's a full HTML canvas, not a checklist.** A briefing,
+   a report, a dashboard, an animated "good morning" — craft a unique, polished UI with
+   your own layout, type, and motion; make it *yours*. Only add interactive review
+   controls (`✓/✎/✗` + a Submit button) **à la carte**, for the few items the user should
+   actually respond to — never force a rigid template onto a presentation-first artifact.
+   The morning dashboard is yours to make distinctive for your user.
+
 ---
 
 ## Option A — colocated (you run on the hub machine) — works today
