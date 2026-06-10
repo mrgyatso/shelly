@@ -131,6 +131,47 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            // Wire a minimal app + Edit menu so the standard editing key
+            // equivalents (⌘V paste, ⌘C copy, ⌘X cut, ⌘A select-all, ⌘Z undo)
+            // are routed to the first responder — the focused textarea inside an
+            // interactive artifact's iframe. A borderless Accessory-policy app has
+            // NO main menu by default, so AppKit had no `paste:` key equivalent to
+            // dispatch ⌘V down the responder chain: typing worked (key-window
+            // focus is fixed by the CompanionKeyPanel subclass) but paste did not.
+            // The menu need not be visible (Accessory hides the menu bar) —
+            // `performKeyEquivalent:` walks the main menu regardless.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
+                let h = app.handle();
+                let app_menu = Submenu::with_items(
+                    h,
+                    "Companion",
+                    true,
+                    &[
+                        &PredefinedMenuItem::hide(h, None)?,
+                        &PredefinedMenuItem::separator(h)?,
+                        &PredefinedMenuItem::quit(h, None)?,
+                    ],
+                )?;
+                let edit_menu = Submenu::with_items(
+                    h,
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(h, None)?,
+                        &PredefinedMenuItem::redo(h, None)?,
+                        &PredefinedMenuItem::separator(h)?,
+                        &PredefinedMenuItem::cut(h, None)?,
+                        &PredefinedMenuItem::copy(h, None)?,
+                        &PredefinedMenuItem::paste(h, None)?,
+                        &PredefinedMenuItem::select_all(h, None)?,
+                    ],
+                )?;
+                let menu = Menu::with_items(h, &[&app_menu, &edit_menu])?;
+                app.set_menu(menu)?;
+            }
+
             // First-launch: this very process may carry `open <path>`.
             // (single-instance only fires for *subsequent* invocations.)
             let args: Vec<String> = std::env::args().collect();
@@ -212,13 +253,20 @@ pub fn run() {
 
             // Register as a Login Item so the overlay autostarts after every
             // reboot — fixes the "nothing pops after a reboot because the
-            // daemon isn't running yet" issue. Idempotent (safe to call when
-            // already enabled). Failure here must not block the daemon, so we
-            // swallow errors (the user can still launch the app manually).
+            // daemon isn't running yet" issue. Only enable when NOT already
+            // enabled: calling `enable()` unconditionally re-registers the
+            // LaunchAgent on every launch, and macOS posts a "<app> is now
+            // allowed to run in the background" notification each time the
+            // background-item registration changes — so an unguarded enable
+            // spams that banner on every relaunch. Failure must not block the
+            // daemon, so we swallow errors (the user can still launch manually).
             #[cfg(desktop)]
             {
                 use tauri_plugin_autostart::ManagerExt;
-                let _ = app.autolaunch().enable();
+                let autolaunch = app.autolaunch();
+                if !autolaunch.is_enabled().unwrap_or(false) {
+                    let _ = autolaunch.enable();
+                }
             }
 
             Ok(())
