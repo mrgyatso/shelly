@@ -23,6 +23,17 @@ makes that real.
 4. **Board ≠ Workspace for v1.** Share the source-routing seed; converge later (a tile/lane
    could embed a terminal — the Workspace — down the road). Keep separate for now.
 5. **Response routing is phased** (see below): v1 clipboard-tagged; later auto-routes.
+6. **CONFIRMED 2026-06-09 — the surface is per-agent PANES, full-screen.** The Board is one
+   full-screen (ideally a 2nd monitor; click to full-screen), always-live surface. **Each
+   connected agent gets its own pane.** A pane = that agent's **own live-state** (its
+   `working`/`where`/`next` from its own `live/<source>.json`, refreshed every hook-stop) +
+   **that agent's artifacts**, grouped under it. Artifacts inside a pane are **individually
+   resizable**. So the Board *is* the live surface (the old single live pane dissolves — every
+   agent's live state is its pane header). **Option A** (live-state + artifacts only) is what
+   we build. **Option B — embedding each agent's actual scrolling terminal/TUI in its pane —
+   is SAVED for a later exploration** (it converges with the parked Workspace on
+   `wip/workspace-tabbed-terminal`: PTYs + focus + type-into-terminal). Do not build B now;
+   keep the door open.
 
 ## What the Board is
 
@@ -110,8 +121,16 @@ Each tile's `✓/✎/✗` Submit must return to **that tile's source agent**.
   each an iframe rendering an artifact via `artifact-view.ts`. Prove: multi-iframe grid,
   per-tile interactivity (buttons work), no terminal-focus theft, `asset:` JS runs. (Isolated;
   doesn't touch the existing panel path yet.)
-- **P1 — Source-routed tiles.** Generalize `route_artifact` so an incoming artifact (local
-  hook or hub pull) lands in its source's group; provenance label; small per-source history.
+- **P1 — Per-agent panes (the confirmed mockup; this is the "feels like the vision" milestone).**
+  Read **every** `~/.claude/companion/live/<source>.json` (not just the newest — generalize
+  `live.rs::read_live` to return all) → render **one pane per agent**, each with that agent's
+  live-state header (`working`/`where`/`next`, refreshed on the existing poll/every hook-stop)
+  and **that agent's artifacts grouped under it** (match an artifact's `project`/source to a
+  pane). Artifacts inside a pane are **individually resizable** (drag a corner). Add a
+  **full-screen toggle** (click → the Board takes the whole monitor). This **absorbs the live
+  surface** — once panes show live state, the separate `live_main` window is retired.
+  Generalize `route_artifact` (session→source) so new artifacts land in the right pane.
+  (Defer keyboard-nav / quick-switcher polish to P2; ship the panes + resize + full-screen first.)
 - **P2 — Navigation + iOS polish.** Keyboard navigation (move/focus/back + fuzzy
   quick-switcher), focus-to-expand with seamless transitions, the organization system.
 - **P2.5 — Arrival reveal (Board provides the transition; the *content* is the agent's).**
