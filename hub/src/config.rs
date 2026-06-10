@@ -14,6 +14,10 @@ pub struct Config {
     pub live_dir: PathBuf,
     /// Shared bearer token required on every `/api/*` request (except health).
     pub token: String,
+    /// Address to bind. Default `0.0.0.0` (all interfaces). Set
+    /// `COMPANION_HUB_BIND` to a specific IP — e.g. your Tailscale IP — so the
+    /// hub is reachable only over that interface (the tailnet), not the LAN.
+    pub bind: String,
     /// TCP port to bind.
     pub port: u16,
     /// Directory of the static web UI served at `/`.
@@ -55,6 +59,12 @@ impl Config {
             .and_then(|p| p.trim().parse().ok())
             .unwrap_or(8787);
 
+        let bind = std::env::var("COMPANION_HUB_BIND")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+
         let webui_dir = std::env::var_os("COMPANION_HUB_WEBUI_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(default_webui_dir);
@@ -65,6 +75,7 @@ impl Config {
             artifacts_dir,
             live_dir,
             token,
+            bind,
             port,
             webui_dir,
         })

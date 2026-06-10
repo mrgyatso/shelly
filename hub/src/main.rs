@@ -38,8 +38,9 @@ async fn main() {
     };
 
     println!(
-        "companion-hub v{} — binding 0.0.0.0:{}",
+        "companion-hub v{} — binding {}:{}",
         env!("CARGO_PKG_VERSION"),
+        cfg.bind,
         cfg.port
     );
     println!("  artifacts: {}", cfg.artifacts_dir.display());
@@ -65,7 +66,7 @@ async fn main() {
         .fallback_service(ServeDir::new(&cfg.webui_dir).fallback(ServeFile::new(webui_index)))
         .with_state(cfg.clone());
 
-    let listener = match tokio::net::TcpListener::bind(("0.0.0.0", cfg.port)).await {
+    let listener = match tokio::net::TcpListener::bind((cfg.bind.as_str(), cfg.port)).await {
         Ok(l) => l,
         Err(e) => {
             eprintln!("companion-hub: failed to bind port {}: {e}", cfg.port);
