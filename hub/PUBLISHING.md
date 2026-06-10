@@ -42,6 +42,31 @@ The hub serves two things straight off disk, from a data dir (default
    ```
    The filename stem is the slug (`artifacts/morning-briefing.html` → `morning-briefing`).
 
+   **Design it however fits — it's a full HTML canvas, not a checklist.** A briefing,
+   a report, a dashboard, an animated "good morning" — craft a unique, polished UI with
+   your own layout, type, and motion; make it *yours*. Only add interactive review
+   controls (`✓/✎/✗` + a Submit button) **à la carte**, for the few items the user should
+   actually respond to — never force a rigid template onto a presentation-first artifact.
+   The morning dashboard is yours to make distinctive for your user.
+
+   **REQUIRED — sizing (get this wrong and it renders thin/tall and flickers).** The overlay
+   sizes the window to your *content*, which your artifact must self-report. So: wrap your UI
+   in one `<main data-fit-root>` with a **DEFINITE width** — `width: 680px` (pick what fits) —
+   **never `max-width`, `width:100%`, `width:auto`, or `vw`** (those make the measured width
+   oscillate → a resize feedback loop → the thin/tall flicker). Let height flow. Then include
+   this snippet once at the end of `<body>`:
+   ```html
+   <script>
+   (function () {
+     var el = document.querySelector("[data-fit-root]") || document.body;
+     var post = function () { parent.postMessage({ source: "companion-artifact", kind: "size",
+       w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
+     if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+     addEventListener("load", post); post();
+   })();
+   </script>
+   ```
+
 ---
 
 ## Option A — colocated (you run on the hub machine) — works today

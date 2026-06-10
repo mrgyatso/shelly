@@ -23,6 +23,17 @@ makes that real.
 4. **Board ≠ Workspace for v1.** Share the source-routing seed; converge later (a tile/lane
    could embed a terminal — the Workspace — down the road). Keep separate for now.
 5. **Response routing is phased** (see below): v1 clipboard-tagged; later auto-routes.
+6. **CONFIRMED 2026-06-09 — the surface is per-agent PANES, full-screen.** The Board is one
+   full-screen (ideally a 2nd monitor; click to full-screen), always-live surface. **Each
+   connected agent gets its own pane.** A pane = that agent's **own live-state** (its
+   `working`/`where`/`next` from its own `live/<source>.json`, refreshed every hook-stop) +
+   **that agent's artifacts**, grouped under it. Artifacts inside a pane are **individually
+   resizable**. So the Board *is* the live surface (the old single live pane dissolves — every
+   agent's live state is its pane header). **Option A** (live-state + artifacts only) is what
+   we build. **Option B — embedding each agent's actual scrolling terminal/TUI in its pane —
+   is SAVED for a later exploration** (it converges with the parked Workspace on
+   `wip/workspace-tabbed-terminal`: PTYs + focus + type-into-terminal). Do not build B now;
+   keep the door open.
 
 ## What the Board is
 
@@ -110,12 +121,36 @@ Each tile's `✓/✎/✗` Submit must return to **that tile's source agent**.
   each an iframe rendering an artifact via `artifact-view.ts`. Prove: multi-iframe grid,
   per-tile interactivity (buttons work), no terminal-focus theft, `asset:` JS runs. (Isolated;
   doesn't touch the existing panel path yet.)
-- **P1 — Source-routed tiles.** Generalize `route_artifact` so an incoming artifact (local
-  hook or hub pull) lands in its source's group; provenance label; small per-source history.
+- **P1 — Per-agent panes (the confirmed mockup; this is the "feels like the vision" milestone).**
+  Read **every** `~/.claude/companion/live/<source>.json` (not just the newest — generalize
+  `live.rs::read_live` to return all) → render **one pane per agent**, each with that agent's
+  live-state header (`working`/`where`/`next`, refreshed on the existing poll/every hook-stop)
+  and **that agent's artifacts grouped under it** (match an artifact's `project`/source to a
+  pane). Artifacts inside a pane are **individually resizable** (drag a corner). Add a
+  **full-screen toggle** (click → the Board takes the whole monitor). This **absorbs the live
+  surface** — once panes show live state, the separate `live_main` window is retired.
+  Generalize `route_artifact` (session→source) so new artifacts land in the right pane.
+  (Defer keyboard-nav / quick-switcher polish to P2; ship the panes + resize + full-screen first.)
 - **P2 — Navigation + iOS polish.** Keyboard navigation (move/focus/back + fuzzy
   quick-switcher), focus-to-expand with seamless transitions, the organization system.
+- **P2.5 — Arrival reveal (Board provides the transition; the *content* is the agent's).**
+  When you open the Board after being away, new tiles **fade/stagger in** — the Board tracks
+  which artifacts are *new since last seen* and reveals them smoothly. **Important division of
+  labor (Zach's call):** the Board only provides the generic reveal/transition surface — the
+  actual **"good morning" dashboard is each agent's own HTML artifact.** Hermes (and every
+  other agent) crafts a *unique animated good-morning* for its user (see `hub/PUBLISHING.md`),
+  which simply shows up as one of the revealed tiles. Do NOT build a hardcoded good-morning
+  scene into the Board — keep the Board a generic, beautiful host; the bespoke welcome is
+  per-agent content. (Compositor-friendly transforms/opacity; reduced-motion aware.)
 - **P3 — Make it the only surface.** Route *all* artifacts into the Board; retire the
   floating one-off panels; the pill becomes the collapsed Board; peek-on-update.
+  **Absorb the live surface (Zach's call):** the always-on live pane (`working`/`where`/`next`
+  from `~/.claude/companion/live/*.json`) becomes a **persistent "now" element inside the
+  Board** (e.g. a pinned header tile) — the separate `live_main` window is retired, so there's
+  one surface, not two. The `companion-consider` Stop hook + `live/*.json` writes can keep
+  feeding it (the Board reads the same files); the only change is *where* it renders. This can
+  ride in P3 or be split to a parallel agent — it touches `live.ts`/`live.rs` + the Board's
+  layout, not the hub.
 - **P4 — Per-tile response routing.** Clipboard-tagged-by-source first; then the auto-route
   (hub return path / terminal-write).
 - **P5 (later) — Composition protocol.** A tile hosts multiple agent-composed regions
@@ -149,6 +184,10 @@ promises from `webview_execute_js` (stash async results on `window.__x`, read th
 call); the tile iframes are cross-origin/sandboxed so you can inspect the Board window but not
 reach inside a tile's iframe; kill the installed daemon (`pkill -x companion-overlay`) before
 `npm run tauri dev` (single-instance forwards otherwise).
+
+**IMPORTANT — restore the user's overlay when you finish.** Killing the installed daemon for
+`tauri dev` closes the overlay the user is actively using. When done verifying, relaunch it:
+`open "/Applications/Companion Overlay.app"`. Never leave the user with no overlay running.
 
 ## Definition of done (P0–P2, the demoable core)
 A beautiful Board (collapsible to a pill) holds several live, interactive artifact tiles
