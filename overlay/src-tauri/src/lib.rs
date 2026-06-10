@@ -79,6 +79,8 @@ pub fn run() {
                         windows::open_history_window(&handle);
                     } else if args.iter().any(|a| a == "live") {
                         windows::open_live_window(&handle);
+                    } else if args.iter().any(|a| a == "board") {
+                        windows::open_board_window(&handle);
                     } else if let Some(path) = artifact::parse_open_args(&args, Some(&cwd)) {
                         windows::open_artifact_window(&handle, path);
                     } else {
@@ -143,6 +145,9 @@ pub fn run() {
             } else if args.iter().any(|a| a == "live") {
                 let handle = app.handle().clone();
                 guard(move || windows::open_live_window(&handle));
+            } else if args.iter().any(|a| a == "board") {
+                let handle = app.handle().clone();
+                guard(move || windows::open_board_window(&handle));
             } else if let Some(path) = artifact::parse_open_args(&args, cwd.as_deref()) {
                 let handle = app.handle().clone();
                 guard(move || windows::open_artifact_window(&handle, path));

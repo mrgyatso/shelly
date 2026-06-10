@@ -25,6 +25,11 @@ pub const HISTORY_LABEL: &str = "hist_main";
 /// The single always-on live surface window. Fixed label so `companion live`
 /// always finds the one instance to create-or-raise.
 pub const LIVE_LABEL: &str = "live_main";
+/// The single Board window — the multi-agent steering canvas (grid of artifact
+/// tiles). Fixed label so `companion board` always finds the one instance to
+/// create-or-raise. P0: a new, isolated surface that does not replace the
+/// floating one-off panels yet.
+pub const BOARD_LABEL: &str = "board_main";
 
 /// Deterministic, label-safe id for an artifact path. `DefaultHasher::new()` is
 /// seedless, so the same path maps to the same label for the life of the process
@@ -168,12 +173,49 @@ pub fn open_live_window(app: &AppHandle) {
     crate::macos_panel::order_front_without_activating(&win);
 }
 
+/// Open — or, if already up, raise — the single Board window. Like the HUD and
+/// live surface it's deliberately left OUT of the column layout (no
+/// `record_open`): the Board does its own internal grid layout. Larger than an
+/// artifact panel to host a grid of tiles. Re-invoking just re-reveals the
+/// existing window without rebuilding it.
+pub fn open_board_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(BOARD_LABEL) {
+        crate::macos_panel::order_front_without_activating(&win);
+        return;
+    }
+
+    let win =
+        match WebviewWindowBuilder::new(app, BOARD_LABEL, WebviewUrl::App("index.html".into()))
+            .title("Companion Board")
+            .inner_size(1000.0, 700.0)
+            .min_inner_size(560.0, 400.0)
+            .decorations(false)
+            .transparent(true)
+            .resizable(true)
+            .shadow(true)
+            .always_on_top(true)
+            .center()
+            .visible(false)
+            .initialization_script("window.__BOARD_MODE__ = true;")
+            .build()
+        {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[overlay] failed to create board window: {e}");
+                return;
+            }
+        };
+
+    crate::macos_panel::make_nonactivating_panel(&win);
+    crate::macos_panel::order_front_without_activating(&win);
+}
+
 /// Raise every panel without activating (the no-arg `companion` invocation).
 /// The HUD and live surface are excluded — each is driven by its own trigger,
 /// never swept up with the artifact panels.
 pub fn raise_all(app: &AppHandle) {
     for win in app.webview_windows().values() {
-        if win.label() == HISTORY_LABEL || win.label() == LIVE_LABEL {
+        if win.label() == HISTORY_LABEL || win.label() == LIVE_LABEL || win.label() == BOARD_LABEL {
             continue;
         }
         crate::macos_panel::order_front_without_activating(win);
@@ -185,8 +227,9 @@ pub fn raise_all(app: &AppHandle) {
 pub fn toggle_all(app: &AppHandle) {
     let wins = app.webview_windows();
     let panels = || {
-        wins.values()
-            .filter(|w| w.label() != HISTORY_LABEL && w.label() != LIVE_LABEL)
+        wins.values().filter(|w| {
+            w.label() != HISTORY_LABEL && w.label() != LIVE_LABEL && w.label() != BOARD_LABEL
+        })
     };
     let any_visible = panels().any(|w| w.is_visible().unwrap_or(false));
     for win in panels() {

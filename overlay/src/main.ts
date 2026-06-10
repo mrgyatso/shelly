@@ -11,6 +11,8 @@ declare global {
     __HISTORY_MODE__?: boolean;
     /** Set on the live surface window so the same bundle renders the live pane. */
     __LIVE_MODE__?: boolean;
+    /** Set on the board window so the same bundle renders the grid of tiles. */
+    __BOARD_MODE__?: boolean;
   }
 }
 
@@ -87,6 +89,8 @@ if (window.__LIVE_MODE__) {
   void import("./live").then((m) => m.initLive());
 } else if (window.__HISTORY_MODE__) {
   void import("./history").then((m) => m.initHistory());
+} else if (window.__BOARD_MODE__) {
+  void import("./board").then((m) => m.initBoard());
 } else {
   document.getElementById("refresh")?.addEventListener("click", () => {
     if (current) void loadArtifact(current);

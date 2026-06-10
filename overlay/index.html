@@ -44,6 +44,20 @@
       </footer>
     </div>
 
+    <!-- The Board (companion board). Hidden by default; board.ts reveals it only
+         on the board_main window and fills #board-grid with live artifact tiles. -->
+    <div id="board" class="board" hidden>
+      <header class="board-bar" data-tauri-drag-region>
+        <div class="board-ident">
+          <span class="board-mark">The Board</span>
+          <span id="board-count" class="board-count"></span>
+        </div>
+        <button id="board-close" title="Hide">✕</button>
+      </header>
+      <div id="board-status" class="board-status" hidden></div>
+      <div id="board-grid" class="board-grid"></div>
+    </div>
+
     <!-- History HUD (⌘8). Hidden by default; history.ts reveals it only on the
          hist_main window and fills #history-grid with artifact preview cards. -->
     <div id="history" class="history" hidden>
