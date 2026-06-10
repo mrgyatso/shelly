@@ -11,162 +11,239 @@ Companion is a **steering tool for multi-agent work**: you run ~5 agents and oft
 reacting to its specific sentences (💬) and items (✓/✎/✗). The Board is the surface that
 makes that real.
 
-**Decisions (from Zach's review of the architecture plan):**
-1. **The Board is a NEW window, and *all* artifacts live in it.** No more floating
-   one-off panels — every artifact (single or multi-agent, local or hub-pulled) is a tile
-   in the Board. The current per-artifact `NSPanel` column is replaced by this.
-2. **Grid layout, polished, iOS-feel.** Not a plain vertical column — a responsive grid of
-   tiles with **seamless, iOS-smooth transitions** and a **very good organization +
-   navigation system**: you can reach **any artifact from the keyboard**, fast.
-3. **The pill is the collapsed Board.** Collapsed = a small beautiful pill; expand = the
-   Board. (The old pill brief's vision folds in here.)
-4. **Board ≠ Workspace for v1.** Share the source-routing seed; converge later (a tile/lane
-   could embed a terminal — the Workspace — down the road). Keep separate for now.
-5. **Response routing is phased** (see below): v1 clipboard-tagged; later auto-routes.
-6. **CONFIRMED 2026-06-09 — the surface is per-agent PANES, full-screen.** The Board is one
-   full-screen (ideally a 2nd monitor; click to full-screen), always-live surface. **Each
-   connected agent gets its own pane.** A pane = that agent's **own live-state** (its
-   `working`/`where`/`next` from its own `live/<source>.json`, refreshed every hook-stop) +
-   **that agent's artifacts**, grouped under it. Artifacts inside a pane are **individually
-   resizable**. So the Board *is* the live surface (the old single live pane dissolves — every
-   agent's live state is its pane header). **Option A** (live-state + artifacts only) is what
-   we build. **Option B — embedding each agent's actual scrolling terminal/TUI in its pane —
-   is SAVED for a later exploration** (it converges with the parked Workspace on
-   `wip/workspace-tabbed-terminal`: PTYs + focus + type-into-terminal). Do not build B now;
-   keep the door open.
+**Decisions (locked with Zach; the convergence + form-split decisions below supersede the
+earlier "Board ≠ Workspace" / "Option A only" framing):**
+
+1. **CONVERGENCE — a Board pane *is* a Workspace terminal session.** Each connected agent's
+   pane is **that agent's embedded REAL terminal/PTY** (the Workspace) with **that session's
+   artifacts grouped under it**. This **supersedes** the old "Board ≠ Workspace for v1"
+   decision and the old "embedding the terminal is Option B, saved for later — do not build
+   it now." Embedding the terminal **is the direction now.** The parked Workspace WIP
+   (`wip/workspace-tabbed-terminal`: PTYs via `portable-pty`, xterm.js, bracketed-paste
+   write-into-terminal) is the **seed we build on**, not a someday exploration.
+
+2. **FORM SPLIT — pill = ambient overlay, Board = focal app window.** This is the key
+   architectural change. The **collapsed pill** stays an ambient, **non-activating `NSPanel`
+   overlay** (the wedge: an artifact or notification appears over whatever you're doing with
+   **zero focus theft**). The **expanded Board** becomes a **normal, focusable app window** —
+   a destination you go to. **Do NOT build the full-screen Board as a non-activating panel.**
+   A focal surface is *allowed* to take focus, so building it as a real app window sheds most
+   of the `NSPanel`/FFI fragility (the focus-trio, `becomesKeyOnlyIfNeeded`, key-window
+   subclassing) the project has fought. The rationale, in one line: **the fragility was never
+   about being an overlay — it was about making the big focal surface pretend to be a ghost.**
+   So: pill = overlay (ambient), Board = app window (focal). The just-shipped macOS menu work
+   (⌘V Edit menu) is **step one** of the Board being a proper app — keep building it out.
+
+3. **TRIAGE IS THE HEADLINE — "which agent needs me," not a render-wall.** The organizing
+   principle is *triage*, not five equal live dashboards lit up at once. **One main artifact
+   in focus + fast keyboard navigation** to the other sessions and their artifacts. The
+   per-pane live state's `next: [{kind: blocked|decision|todo}]` is **the triage signal** and
+   is the *point of the surface* — you scan it to decide who to attend to next, then jump.
+   The old "5 live tiles at once" framing is demoted; navigation/triage is central, not a
+   later polish pass.
+
+4. **STEERING LOOP — bracketed-paste closes it only for live PTYs; async-remote still needs
+   the hub return path.** Writing into a session's PTY (bracketed-paste) closes the loop for
+   **live LOCAL or SSH'd terminals**. The **async-remote case** — a finished cron run or
+   morning brief that has **no live PTY** — still needs the **hub return path**: a return
+   endpoint or file that the agent's *next* run reads. This is a **separate, required piece**;
+   the Workspace/PTY path does **not** cover it. (See Response routing.)
+
+5. **The pill is the collapsed Board.** Collapsed = the small beautiful ambient pill; expand =
+   the focal Board window. (The old pill brief's design language folds in here.)
+
+6. **Response routing is phased** (see below): v1 clipboard-tagged-by-source; later auto-routes
+   (live PTY → terminal-write; async-remote → hub return path).
 
 ## What the Board is
 
-One always-present surface (collapsed to a **pill**, expandable to the full **Board**) that
-holds **every** artifact as a tile, organized by **source** (the agent/session that produced
-it), navigable like a polished iOS home screen:
+Two forms of one surface. **Collapsed**, it's an ambient **pill** (non-activating overlay)
+that peeks/badges when an agent needs you. **Expanded**, it's a focal **app window** organized
+around a single question — **which agent needs me right now** — with one session in focus and
+everything else a keystroke away:
 
 ```
-┌──────────────────────────── The Board (expanded) ───────────────────────────┐
-│  ▲ hermes            ▲ claude-session-2        ▲ cron / other                │
-│  ┌────────┐ ┌──────┐  ┌────────┐ ┌────────┐     ┌────────┐                    │
-│  │ tile   │ │ tile │  │ tile   │ │ tile   │     │ tile   │   ← each tile =    │
-│  │ (live  │ │      │  │        │ │        │     │        │     one artifact   │
-│  │ iframe)│ │      │  │        │ │        │     │        │     (sandboxed)    │
-│  └────────┘ └──────┘  └────────┘ └────────┘     └────────┘                    │
-│   grouped by source · grid · keyboard-navigable · iOS transitions             │
-└────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────── The Board (expanded — a focal app window) ──────────┐
+│ ┌─ sessions ────────┐  ┌──────────── focus: claude-session-2 ─────────────┐ │
+│ │ ● hermes   ⬤decide │  │  ┌─────────────────────────────────────────────┐ │ │
+│ │ ▸ claude-2 ⬤block  │  │  │  embedded REAL terminal (PTY / xterm.js)    │ │ │
+│ │   cron     ·todo   │  │  │  …live scrolling session…                   │ │ │
+│ │   ssh-box  ·idle   │  │  └─────────────────────────────────────────────┘ │ │
+│ │                    │  │  ┌──────────┐ ┌──────────┐  ← this session's     │ │
+│ │  ↑ triage rail:    │  │  │ artifact │ │ artifact │    artifacts, grouped │ │
+│ │  next.kind sorts   │  │  │  (asset: │ │          │    under its terminal │ │
+│ │  who needs me      │  │  │  iframe) │ │          │                       │ │
+│ └────────────────────┘  │  └──────────┘ └──────────┘                       │ │
+│   ⌘K quick-switch · ↑↓ jump sessions · → into artifacts · Enter focus       │ │
+└──────────────────────────────────────────────────────────────────────────────┘
         collapse ▼                                   ▲ expand (click / shortcut)
-                          ●  pill (collapsed)
+              ●  pill (ambient non-activating overlay — the wedge)
 ```
 
-- **Tile** = one artifact, rendered live in a sandboxed iframe (via the existing
-  `artifact-view.ts` path → `asset:` protocol → its JS runs → buttons work).
-- **Group/lane** = a source (agent/session). Tiles are organized by who produced them, so
-  steering ~5 agents means scanning ~5 groups.
-- **Focus** = expand one tile to full interactive size; the rest recede (iOS-style).
-- **Navigation** = keyboard-first: arrow/Tab to move between tiles + groups, Enter to focus,
-  Esc to back out, a quick-switcher (⌘K-style) to jump to any artifact by name/source.
+- **Session pane** = one connected agent = **its embedded real terminal/PTY** (the Workspace)
+  **plus that session's artifacts** grouped under it. Each artifact renders live in a
+  sandboxed iframe (via `artifact-view.ts` → `asset:` protocol → its JS runs → buttons work).
+- **Triage rail** = the list of sessions, sorted/badged by each one's live-state
+  `next.kind` (`blocked` > `decision` > `todo`). This is the **point of the surface**: scan
+  the rail, see who needs you, jump there. Steering ~5 agents is *triage*, not staring at
+  five live walls.
+- **Focus** = exactly one session pane is the focal one (its terminal is live + interactive);
+  the others are lightweight rail entries showing only their live-state header. Promote a rail
+  entry to focus and its terminal/artifacts come alive.
+- **Navigation** = keyboard-first: ↑↓ move between sessions in the rail, → step into a
+  session's artifacts, Enter to focus/expand, Esc to back out, a ⌘K quick-switcher to jump to
+  any session or artifact by name/source.
 
 ## Architecture
 
-- **Window model.** A single new **non-activating Board panel** (reuse `macos_panel.rs`'s
-  Accessory + `becomesKeyOnlyIfNeeded` + key-panel-subclass trio) so it floats without
-  stealing terminal focus, yet can take key focus when you click into a tile's textarea.
-  Tiles are **internal DOM regions** (iframes), not OS windows. This replaces the
-  one-window-per-artifact model in `windows.rs`/`layout.rs`.
-- **Tile/source model.** Each artifact is tagged with a **source id** and routed to that
-  source's group. Generalize `route_artifact(path, session)` (the Workspace seed) from
-  *session→tab* to *source→Board-group*. Sources: a local hook's `$COMPANION_SESSION`, or a
-  hub artifact's `project`/source field. Keep a small per-source history (the history HUD
-  already enumerates artifacts — fold it in).
-- **Render path (reuse, don't reinvent).** Each tile iframe loads via
+- **Two-window model (the form split).** **Two** surfaces, not one panel:
+  - **The pill** stays a **non-activating `NSPanel` overlay** — keep `macos_panel.rs`'s
+    Accessory + `becomesKeyOnlyIfNeeded` + key-panel-subclass trio *here, and only here.*
+    The pill is the wedge: it peeks/badges over whatever you're doing with **zero focus
+    theft**. This is the one surface where the FFI fragility is justified, because it must
+    stay a ghost.
+  - **The Board** is a **normal, focusable app window** — `WindowBuilder` with standard
+    activation, allowed to take focus. **Do not** reuse the non-activating trio for it. A
+    focal destination *should* take focus when you go to it, which is exactly why building it
+    as a real app window sheds the focus-trio fragility the project has fought. The macOS
+    menu work (⌘V Edit menu, already shipped) is step one of the Board being a proper app;
+    continue down that path (standard window chrome, menu, activation, full-screen).
+  - This replaces the one-window-per-artifact model in `windows.rs`/`layout.rs`.
+- **Session/PTY model (the convergence).** A pane **is** a session = an embedded real
+  terminal/PTY + that session's artifacts. Build on the `wip/workspace-tabbed-terminal` seed
+  (`portable-pty` + xterm.js + bracketed-paste). Generalize `route_artifact(path, session)`
+  from *session→tab* to *session→Board-pane* so each artifact lands under its session's
+  terminal. Session ids come from a local hook's `$COMPANION_SESSION` or a hub artifact's
+  `project`/source field. (Async-remote sources with no live PTY still get a pane — just
+  with live-state + artifacts and no terminal; see Response routing for their return path.)
+- **Render path (reuse, don't reinvent).** Each artifact iframe loads via
   `artifact-view.ts::loadArtifactInto` → `asset:` protocol. **The asset-scope fix matters:**
-  tiles must load via `asset://` (real origin) so their inline JS runs; never `srcdoc`
+  artifacts must load via `asset://` (real origin) so their inline JS runs; never `srcdoc`
   (CSP blocks JS → dead buttons). All artifacts already live under
   `~/.claude/companion/{artifacts,remote}` which is in the asset scope.
-- **Layout / grid.** Responsive grid of tiles, grouped by source. Compositor-friendly
-  transitions only (`transform`/`opacity`) for the iOS feel; honor `prefers-reduced-motion`.
-- **Navigation.** Keyboard model: move focus across tiles/groups, Enter to expand a tile,
-  Esc to collapse, a fuzzy quick-switcher to jump to any artifact. This is the "very good
-  organization + navigation" bar — treat it as a headline feature, not an afterthought.
+- **Triage-first layout.** Not a grid of N equal live panes. A **triage rail** of sessions
+  (sorted/badged by `next.kind`) + **one focal session** whose terminal + artifacts are live.
+  Only the focal session runs a live PTY/xterm; the rest are lightweight live-state headers
+  until promoted. Compositor-friendly transitions only (`transform`/`opacity`) for the iOS
+  feel; honor `prefers-reduced-motion`.
+- **Navigation = the headline.** Keyboard model: ↑↓ across the triage rail, → into a
+  session's artifacts, Enter to focus, Esc to back out, a fuzzy ⌘K quick-switcher to jump to
+  any session or artifact. This *is* "which agent needs me" — treat triage + navigation as
+  the central feature, not a later polish pass.
 - **Pill.** Collapsed Board = a small paper/clay pill (see the absorbed pill brief's design
-  language + `overlay/LIVE_UI_BRIEF.md`). It peeks/badges when a tile updates; expand → Board.
-- **Provenance.** Every tile/group shows which agent/person it came from (a load-bearing
+  language + `overlay/LIVE_UI_BRIEF.md`). It peeks/badges when a session needs you (a new
+  artifact, or a `next.kind` flips to `blocked`/`decision`); expand → the focal Board window.
+- **Provenance.** Every session/artifact shows which agent/person it came from (a load-bearing
   trust signal for the eventual collaboration network).
 
-### Response routing (per tile) — phased
-Each tile's `✓/✎/✗` Submit must return to **that tile's source agent**.
-- **v1 — clipboard-tagged:** compile the response tagged with the source; copy to the system
-  clipboard; user pastes into that agent. (Reuse today's submit→clipboard path; add the tag.)
-- **Later — auto-route by source:** *remote* agents (e.g. Hermes) get the response via the
-  **hub return path** (a return endpoint the agent reads); *local* PTY agents (a terminal
-  Claude, the Workspace) get a **terminal-write** (bracketed-paste → PTY, from the
-  `feat/direct-agent-feedback` spike on `wip/workspace-tabbed-terminal`).
+### Response routing (per session) — phased
+Each artifact's `✓/✎/✗` Submit must return to **that session's agent**. The cut is **whether
+the session has a live PTY**, not whether it's local vs remote (an SSH'd terminal is remote
+*and* has a live PTY):
+- **v1 — clipboard-tagged-by-source:** compile the response tagged with the source; copy to
+  the system clipboard; user pastes into that agent. (Reuse today's submit→clipboard path;
+  add the tag.)
+- **Later — auto-route, two distinct paths:**
+  - **Live PTY (local OR SSH'd terminal)** → **terminal-write**: bracketed-paste straight into
+    that session's PTY (from the `feat/direct-agent-feedback` spike on
+    `wip/workspace-tabbed-terminal`). This closes the loop in-place.
+  - **Async-remote, NO live PTY (a finished cron / morning brief)** → **hub return path**: a
+    return endpoint or file the agent's **next run reads**. This is a **separate required
+    piece** — the PTY/terminal-write path cannot reach an agent that isn't currently running,
+    so it does **not** cover the async case. Build the hub return path explicitly.
 
 ## The hard parts (where the risk is)
-- **Focus vs non-activating** — the Board needs key focus for typing into a tile, but must
-  never steal terminal focus. Historically the most delicate area; reuse the panels' proven
-  trio, do not reinvent.
-- **N live iframes** — performance/memory with many simultaneous tiles. Lazy-mount tiles
-  outside the viewport; the history HUD already renders scaled `srcdoc` thumbnails for
-  off-screen artifacts — use that for un-focused tiles, promote to a live `asset:` iframe on
-  focus.
-- **Render discipline** — every *focused/live* tile loads via `asset:` (JS runs). The
-  `srcdoc`/CSP dead-button trap must not reappear for interactive tiles.
-- **iOS-quality polish** — the transitions/keyboard-nav are the headline; budget real time
-  for feel. Test breakpoints (multi-monitor, the Board on a secondary screen — note the
-  existing `layout.rs` only knew the primary monitor; the Board must be monitor-aware).
-- **Don't regress the overlay mid-migration** — build the Board as a new surface first;
-  flip artifacts over to it once it's solid; keep the daemon usable throughout.
+- **The form split, done right** — the pill keeps the non-activating trio; the Board sheds it.
+  The risk is *not* the old "Board needs key focus but must never steal terminal focus" — that
+  tension dissolves the moment the Board is a real app window that's *allowed* to take focus.
+  The fragility was never about being an overlay; it was about making the big focal surface
+  pretend to be a ghost. So the discipline is: **keep the `NSPanel` trio scoped to the pill,
+  and resist the temptation to make the Board non-activating "for consistency."**
+- **Convergence × triage = the load-bearing performance call.** A pane being a real embedded
+  terminal means N panes would be N live PTYs + xterm instances — *heavier* than the old
+  N-live-iframes worry. **Triage is the resolution:** only the **focal** session runs a live
+  PTY/xterm + live `asset:` artifact iframes; every other session is a lightweight live-state
+  header in the triage rail (its terminal/artifacts mount on promotion). Without this, the
+  convergence and triage decisions read as incompatible — make the focal-only-is-live rule
+  explicit in the layout.
+- **Render discipline** — every *focused/live* artifact loads via `asset:` (JS runs). The
+  `srcdoc`/CSP dead-button trap must not reappear. For off-screen/un-focused artifacts the
+  history HUD's scaled `srcdoc` thumbnails are fine (no interactivity needed there); promote
+  to a live `asset:` iframe on focus.
+- **iOS-quality polish** — the triage rail, the transitions, and keyboard-nav are the
+  headline; budget real time for feel. Test breakpoints (multi-monitor, the Board on a
+  secondary screen — note the existing `layout.rs` only knew the primary monitor; the Board
+  must be monitor-aware). A focal app window makes standard fullscreen/zoom straightforward.
+- **Don't regress the overlay mid-migration** — build the Board (and the pill split) as new
+  surfaces first; flip artifacts over once solid; keep the daemon usable throughout.
 
 ## Feature tree
 
-- **P0 — Board shell.** New non-activating Board panel that statically hosts a few tiles,
-  each an iframe rendering an artifact via `artifact-view.ts`. Prove: multi-iframe grid,
-  per-tile interactivity (buttons work), no terminal-focus theft, `asset:` JS runs. (Isolated;
-  doesn't touch the existing panel path yet.)
-- **P1 — Per-agent panes (the confirmed mockup; this is the "feels like the vision" milestone).**
-  Read **every** `~/.claude/companion/live/<source>.json` (not just the newest — generalize
-  `live.rs::read_live` to return all) → render **one pane per agent**, each with that agent's
-  live-state header (`working`/`where`/`next`, refreshed on the existing poll/every hook-stop)
-  and **that agent's artifacts grouped under it** (match an artifact's `project`/source to a
-  pane). Artifacts inside a pane are **individually resizable** (drag a corner). Add a
-  **full-screen toggle** (click → the Board takes the whole monitor). This **absorbs the live
-  surface** — once panes show live state, the separate `live_main` window is retired.
-  Generalize `route_artifact` (session→source) so new artifacts land in the right pane.
-  (Defer keyboard-nav / quick-switcher polish to P2; ship the panes + resize + full-screen first.)
-- **P2 — Navigation + iOS polish.** Keyboard navigation (move/focus/back + fuzzy
-  quick-switcher), focus-to-expand with seamless transitions, the organization system.
-- **P2.5 — Arrival reveal (Board provides the transition; the *content* is the agent's).**
-  When you open the Board after being away, new tiles **fade/stagger in** — the Board tracks
-  which artifacts are *new since last seen* and reveals them smoothly. **Important division of
-  labor (Zach's call):** the Board only provides the generic reveal/transition surface — the
-  actual **"good morning" dashboard is each agent's own HTML artifact.** Hermes (and every
-  other agent) crafts a *unique animated good-morning* for its user (see `hub/PUBLISHING.md`),
-  which simply shows up as one of the revealed tiles. Do NOT build a hardcoded good-morning
-  scene into the Board — keep the Board a generic, beautiful host; the bespoke welcome is
-  per-agent content. (Compositor-friendly transforms/opacity; reduced-motion aware.)
-- **P3 — Make it the only surface.** Route *all* artifacts into the Board; retire the
-  floating one-off panels; the pill becomes the collapsed Board; peek-on-update.
-  **Absorb the live surface (Zach's call):** the always-on live pane (`working`/`where`/`next`
-  from `~/.claude/companion/live/*.json`) becomes a **persistent "now" element inside the
-  Board** (e.g. a pinned header tile) — the separate `live_main` window is retired, so there's
-  one surface, not two. The `companion-consider` Stop hook + `live/*.json` writes can keep
-  feeding it (the Board reads the same files); the only change is *where* it renders. This can
-  ride in P3 or be split to a parallel agent — it touches `live.ts`/`live.rs` + the Board's
-  layout, not the hub.
-- **P4 — Per-tile response routing.** Clipboard-tagged-by-source first; then the auto-route
-  (hub return path / terminal-write).
-- **P5 (later) — Composition protocol.** A tile hosts multiple agent-composed regions
+- **P0 — Board shell as a focal app window.** New **focusable app window** (`WindowBuilder`,
+  standard activation — **not** the non-activating panel) that hosts a focal area + a side
+  rail, with the focal area statically rendering one or two artifact iframes via
+  `artifact-view.ts`. Prove: it's a real app window (takes focus cleanly, standard chrome +
+  the ⌘V Edit menu), per-artifact interactivity (buttons work), `asset:` JS runs. The pill
+  stays the existing non-activating panel, untouched. (Isolated; doesn't touch the existing
+  artifact-panel path yet.)
+- **P1 — Triage rail (the "which agent needs me" milestone; this is what makes it *feel* like
+  the vision).** Read **every** `~/.claude/companion/live/<source>.json` (not just the newest
+  — generalize `live.rs::read_live` to return all) → render the **triage rail**: one entry per
+  session showing its live-state header (`working`/`where`/`next`) and **badged/sorted by
+  `next.kind`** (`blocked` > `decision` > `todo`). Selecting a rail entry makes that session
+  **focal**: its artifacts (matched by `project`/source) render live in the focal area.
+  Generalize `route_artifact` (session→source) so new artifacts land under the right session.
+  This **absorbs the live surface** — once the rail shows live state, the separate `live_main`
+  window is retired. (Terminal embedding comes in P3; ship the rail + focal artifacts first.)
+- **P2 — Navigation + keyboard triage (central, not polish).** Keyboard model: ↑↓ across the
+  rail, → into a session's artifacts, Enter to focus, Esc to back out, a fuzzy ⌘K
+  quick-switcher to jump to any session/artifact. Seamless focus-to-expand transitions. This
+  is the headline interaction — the surface lives or dies on how fast you can answer "who
+  needs me, jump there."
+- **P3 — Embed the terminal (the convergence).** Make the **focal** session pane an embedded
+  **real terminal/PTY** (the Workspace), with that session's artifacts grouped beneath it.
+  Build on the `wip/workspace-tabbed-terminal` seed (`portable-pty` + xterm.js). **Only the
+  focal session runs a live PTY** (triage keeps it to one); rail entries stay lightweight
+  until promoted. This is the heaviest piece and the core of the converged design.
+- **P3.5 — Arrival reveal (Board provides the transition; the *content* is the agent's).**
+  When you open the Board after being away, new artifacts **fade/stagger in** — the Board
+  tracks which are *new since last seen* and reveals them smoothly. **Division of labor
+  (Zach's call):** the Board provides only the generic reveal/transition surface — the actual
+  **"good morning" dashboard is each agent's own HTML artifact.** Hermes (and every other
+  agent) crafts a *unique animated good-morning* (see `hub/PUBLISHING.md`) that simply shows
+  up as a revealed artifact. Do NOT hardcode a good-morning scene into the Board — keep it a
+  generic, beautiful host. (Compositor-friendly transforms/opacity; reduced-motion aware.)
+- **P4 — Per-session response routing.** Clipboard-tagged-by-source first; then the
+  auto-route, **two distinct paths**: **live PTY (local OR SSH)** → terminal-write
+  (bracketed-paste into the focal session's PTY); **async-remote with no live PTY (cron /
+  morning brief)** → the **hub return path** (return endpoint/file the agent's next run reads).
+  The hub return path is a separate required build — the PTY path can't reach a non-running
+  agent.
+- **P5 (later) — Composition protocol.** A pane hosts multiple agent-composed regions
   (artifact + media + form); the artifact `postMessage` protocol extends to a region/layout
   protocol — the real "compositor."
 
 ## Critical files / reuse
-- New: a `board` window in `windows.rs` (model it on `open_live_window`/`open_history_window`),
-  a frontend `overlay/src/board.ts` (the grid/nav/tiles), board styles.
-- Reuse: `artifact-view.ts` (`loadArtifactInto` per tile); `route_artifact` (generalize
-  session→source); `macos_panel.rs` (non-activating panel); `history.rs` (enumerate artifacts
-  + `srcdoc` thumbnails for off-screen tiles); `layout.rs` (monitor-awareness, but the Board
-  does internal layout); the hub pull (remote tiles); `live.ts`/`LIVE_UI_BRIEF.md` (paper
-  aesthetic); the Workspace per-session routing on `wip/workspace-tabbed-terminal` (the seed).
+- New: a `board` **focusable app window** in `windows.rs` (a standard `WindowBuilder` with
+  normal activation — **not** modeled on the non-activating `open_live_window`; do extend the
+  ⌘V Edit menu work into the Board's app menu); a frontend `overlay/src/board.ts` (the triage
+  rail / nav / focal area); board styles.
+- **Primary build-on — `wip/workspace-tabbed-terminal`** (the Workspace seed): `portable-pty`
+  PTYs, xterm.js, bracketed-paste write-into-terminal, and its per-session `route_artifact`.
+  The convergence *is* porting this in, so treat it as a foundation, not a reference. The
+  `feat/direct-agent-feedback` spike (session-threading → per-session artifact routing) feeds
+  P4's terminal-write.
+- Reuse: `artifact-view.ts` (`loadArtifactInto` per artifact); `route_artifact` (generalize
+  session→Board-pane); `macos_panel.rs` (non-activating panel — **scoped to the pill only**,
+  the Board does NOT use it); `history.rs` (enumerate artifacts + `srcdoc` thumbnails for
+  off-screen artifacts); `layout.rs` (monitor-awareness, but the Board does internal layout);
+  the hub pull (remote sessions); `live.rs`/`live.ts`/`LIVE_UI_BRIEF.md` (read-all-sources +
+  paper aesthetic for the rail).
 - The **asset-scope fix** in `tauri.conf.json` (`$HOME/.claude/companion/**`) is load-bearing
-  — tiles must load via `asset:`.
+  — artifacts must load via `asset:`.
+- New for P4's async case: a **hub return path** (return endpoint/file under the hub) so a
+  finished cron/brief agent reads its steering response on its next run. This lives in the hub
+  data layer, coordinate with the hub work.
 
 ## Coordination
 This is the **presentation layer**; the in-flight hub work is the **data layer**
@@ -190,7 +267,10 @@ reach inside a tile's iframe; kill the installed daemon (`pkill -x companion-ove
 `open "/Applications/Companion Overlay.app"`. Never leave the user with no overlay running.
 
 ## Definition of done (P0–P2, the demoable core)
-A beautiful Board (collapsible to a pill) holds several live, interactive artifact tiles
-grouped by source; you keyboard-navigate to any tile, expand it with a seamless transition,
-steer it (✓/✎/✗ work), and collapse back — no terminal-focus theft, iOS-smooth, on a
-secondary monitor too.
+A beautiful **focal Board app window** (collapsible to the ambient pill) shows a **triage
+rail** of sessions sorted/badged by `next.kind`, so you can see at a glance **which agent
+needs you**; you keyboard-navigate (↑↓ / → / Enter / ⌘K) to focus any session, its artifacts
+render live (`asset:` JS runs, ✓/✎/✗ steering works), and you back out with a seamless
+transition. The Board takes focus cleanly as a real app window (no focus-trio gymnastics); the
+pill stays the ambient non-activating overlay. iOS-smooth, on a secondary monitor too.
+**(Terminal embedding lands in P3; per-session response auto-routing in P4.)**
