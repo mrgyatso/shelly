@@ -33,6 +33,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
 import { isNavigateMessage } from "./resize";
 import {
@@ -1658,16 +1659,31 @@ function wireControls(): void {
 }
 
 /**
- * Listen for navigate messages from a full-bleed Hub iframe (or any artifact).
- * Its OWN listener — NOT initFit (which resizes the window; the Hub is full-bleed
- * and must never drive a resize). `size`/`submit` are ignored here. Payloads are
- * UNTRUSTED: `session:<slug>` must be a known live source; `artifact:<path>` must
- * pass `artifact_in_scope` before we drill to it.
+ * Listen for messages from artifact/Hub iframes inside the Board. Its OWN listener
+ * — NOT initFit (which resizes the window; the Hub is full-bleed and must never
+ * drive a resize). Handles `navigate` (drill the Board) and `submit` (an artifact's
+ * ✓/✎/✗ review → clipboard, so the user can respond from inside the Board); `size`
+ * is ignored. Payloads are UNTRUSTED: `session:<slug>` must be a known live source;
+ * `artifact:<path>` must pass `artifact_in_scope` before we drill to it.
  */
 function wireNavigate(): void {
   window.addEventListener("message", (e: MessageEvent) => {
-    if (!isNavigateMessage(e.data)) return;
-    navigateTo(e.data.to);
+    const d = e.data;
+    if (isNavigateMessage(d)) {
+      navigateTo(d.to);
+      return;
+    }
+    // An artifact opened in the Board (its focus view, or a live tile) posts its
+    // compiled review here. Route it to the clipboard, tagged with the focused
+    // artifact's path, so a Board artifact is actually answerable (⌘V to paste).
+    if (
+      d &&
+      d.source === "companion-artifact" &&
+      d.kind === "submit" &&
+      typeof d.text === "string"
+    ) {
+      void handleSubmit(d.text, focusPath ?? undefined);
+    }
   });
 }
 
