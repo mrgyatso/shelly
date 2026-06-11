@@ -36,21 +36,18 @@ if [ "$(cat "$MODE_FILE" 2>/dev/null)" = "manual" ]; then
   exit 0
 fi
 
-# Pull transcript_path + cwd out of the payload.
+# Pull transcript_path + cwd + session_id out of the payload.
 transcript=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).transcript_path||"")}catch(e){}})')
 cwd=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||process.cwd())}catch(e){console.log(process.cwd())}})')
+session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})')
 
-# Derive a STABLE per-session key. Prefer the git repo root's basename, so
-# cd-ing into a subdir mid-session (e.g. src-tauri) doesn't fragment the surface
-# across several files; fall back to the cwd basename outside a repo. slug
-# sanitizes it to a filename-safe token; project is the human-readable name.
-root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
-[ -n "$root" ] || root="$cwd"
-project=$(basename "$root" 2>/dev/null)
-[ -n "$project" ] || project="session"
-slug=$(printf '%s' "$project" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-\{1,\}/-/g; s/^-//; s/-$//')
-[ -n "$slug" ] || slug="session"
-live_path="${HOME}/.claude/companion/live/${slug}.json"
+# Derive the per-INSTANCE live path (slug--shortid). Shared with the SessionStart
+# / SessionEnd hooks so all three agree. slug = git-root basename (so cd-ing into
+# a subdir doesn't fragment the surface); shortid = first 8 of session_id, which
+# disambiguates two agents in the same repo. project is the human-readable name.
+line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
+live_path=$(printf '%s' "$line" | cut -f1)
+project=$(printf '%s' "$line" | cut -f2)
 
 # Guard 3 — classify the current turn from the transcript. Walk backward to the
 # human message that started this turn; collect assistant tool_use along the way.

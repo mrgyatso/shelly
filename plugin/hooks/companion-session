@@ -1,0 +1,52 @@
+#!/usr/bin/env sh
+# companion-session — Claude Code SessionStart hook.
+#
+# Hands this session its per-INSTANCE Companion live path and seeds the roster:
+#   1. derive live/<slug>--<shortid>.json (shared with companion-consider),
+#   2. write an initial stub there if absent, so the instance shows on the Board
+#      roster before its first Stop (skip-if-exists keeps resume/compact idempotent),
+#   3. inject the path into the session context so the agent writes the right file
+#      from turn 1 (no self-computed slug — the old scheme collided per repo),
+#   4. prune live/*.json older than 7 days so crashed sessions don't pile up.
+#
+# Liveness is mtime-based (the overlay archives a file untouched for ~30 min), so
+# the 7-day prune is far below any live-but-idle instance and only sweeps the dead.
+
+PRUNE_DAYS=7
+
+payload=$(cat)
+
+cwd=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||process.cwd())}catch(e){console.log(process.cwd())}})')
+session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})')
+
+line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
+live_path=$(printf '%s' "$line" | cut -f1)
+project=$(printf '%s' "$line" | cut -f2)
+
+live_dir=$(dirname "$live_path")
+mkdir -p "$live_dir" 2>/dev/null
+
+# 1. Seed an initial stub if this instance has no file yet (resume/compact reuse
+#    the same session_id, so they find the existing file and leave it untouched).
+if [ ! -f "$live_path" ]; then
+  LIVE_PATH="$live_path" PROJECT="$project" node -e '
+    const fs=require("fs");
+    const stub={working:"Session started",where:[],next:[],project:process.env.PROJECT};
+    try { fs.writeFileSync(process.env.LIVE_PATH, JSON.stringify(stub)); } catch (e) {}
+  ' 2>/dev/null
+fi
+
+# 2. Prune dead live files (mtime older than PRUNE_DAYS) so the roster's archive
+#    list doesn't grow unbounded across crashed/abandoned sessions.
+find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exec rm -f {} + 2>/dev/null
+
+# 3. Tell the agent its live path for the rest of the session.
+LIVE_PATH="$live_path" node -e '
+  const p=process.env.LIVE_PATH;
+  const ctx=`Companion live surface: rewrite your live state to ${p} on each work turn `+
+    `(the Board roster reads it). Shape: {"working":"…","where":["…"],`+
+    `"next":[{"title":"…","sub":"…","kind":"decision|todo|blocked"}],"project":"…"}. `+
+    `Use exactly this path — it is keyed to this session instance.`;
+  process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:ctx}}));
+'
+exit 0

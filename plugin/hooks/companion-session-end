@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+# companion-session-end — Claude Code SessionEnd hook (best-effort).
+#
+# Drops this instance's live file when the session ends cleanly, so a finished
+# agent leaves the Board roster immediately instead of waiting out the ~30 min
+# mtime-staleness window. SessionEnd is NOT guaranteed to fire (crashes, kill -9),
+# so this is only an optimization — mtime staleness + the SessionStart prune are
+# the real backstops. Never blocks.
+
+payload=$(cat)
+
+cwd=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||process.cwd())}catch(e){console.log(process.cwd())}})')
+session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})')
+
+line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
+live_path=$(printf '%s' "$line" | cut -f1)
+
+rm -f "$live_path" 2>/dev/null
+exit 0
