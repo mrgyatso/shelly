@@ -81,8 +81,11 @@ pub fn run() {
                         windows::open_live_window(&handle);
                     } else if args.iter().any(|a| a == "board") {
                         windows::open_board_window(&handle);
-                    } else if let Some(path) = artifact::parse_open_args(&args, Some(&cwd)) {
-                        windows::open_artifact_window(&handle, path);
+                    } else if artifact::parse_open_args(&args, Some(&cwd)).is_some() {
+                        // `companion open <artifact>` no longer spawns a standalone
+                        // window — the Board is the single surface and ingests the
+                        // artifact; just bring the shell forward.
+                        windows::open_board_window(&handle);
                     } else {
                         windows::raise_all(&handle);
                     }
@@ -189,9 +192,12 @@ pub fn run() {
             } else if args.iter().any(|a| a == "board") {
                 let handle = app.handle().clone();
                 guard(move || windows::open_board_window(&handle));
-            } else if let Some(path) = artifact::parse_open_args(&args, cwd.as_deref()) {
+            } else if artifact::parse_open_args(&args, cwd.as_deref()).is_some() {
+                // `companion open <artifact>` brings up the Board (the single
+                // surface), never a standalone window. The always-on board open
+                // below also covers this; kept explicit for clarity.
                 let handle = app.handle().clone();
-                guard(move || windows::open_artifact_window(&handle, path));
+                guard(move || windows::open_board_window(&handle));
             }
 
             // Always-on: bring up the Board on every launch, regardless of any
@@ -364,8 +370,10 @@ pub fn run() {
                         } else {
                             artifact::parse_open_args(&["x".to_string(), u.to_string()], None)
                         };
-                        if let Some(p) = path {
-                            windows::open_artifact_window(app_handle, p);
+                        // A Finder open / `companion://` URL surfaces the Board
+                        // (the single surface), never a standalone artifact window.
+                        if path.is_some() {
+                            windows::open_board_window(app_handle);
                         }
                     }
                 }
