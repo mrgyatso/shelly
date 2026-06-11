@@ -149,6 +149,20 @@ let focusFrame: HTMLIFrameElement | null = null;
 let focusPath: string | null = null;
 let arrivalPlayed = false;
 
+// ---- live artifact ingestion + unread ---------------------------------------
+// The poll loop re-reads list_artifacts(); a new artifact is routed to its
+// session (matched by companion-meta.project basename), shown live if that
+// session is on screen, or flagged UNREAD on its card + a global Board badge.
+
+/** Every artifact path we've ever seen — seeded at init so existing files aren't "new". */
+const knownPaths = new Set<string>();
+/** Unread (arrived-while-away) artifact paths, per source slug. */
+const unreadBySource = new Map<string, Set<string>>();
+/** Signature of the last-seen artifact set (path:mtime) — a cheap poll no-op guard. */
+let lastArtifactSig = "";
+/** Sources whose L2 rebuild is deferred because the focus overlay is open. */
+const pendingIngest = new Set<string>();
+
 // DOM handles (resolved in initBoard).
 let panesEl: HTMLElement;
 let boardEl: HTMLElement;
@@ -206,6 +220,9 @@ export async function initBoard(): Promise<void> {
   // Seed each header with the live state we just read, then keep all levels
   // current with one poll loop (it branches on the current view).
   for (const s of allSources) lastJsonBySource.set(s.source, s.json);
+  // Seed the artifact baseline so only files written AFTER open count as new.
+  for (const a of allArtifacts) knownPaths.add(a.path);
+  lastArtifactSig = artifactSig(allArtifacts);
   window.setInterval(() => void pollLive(), POLL_MS);
 
   // Land on L0 (the Hub) — agent-authored home.html if present, else native.
@@ -230,6 +247,8 @@ async function goHub(): Promise<void> {
   showLevel("hub");
   renderGreeting(freshCount(), allSources.length);
   await renderHub();
+  // Once the dashboard iframe is loaded, hand it the current unread counts.
+  updateGlobalUnread();
 }
 
 /** Enter L1 — the native, light Sessions picker. */
@@ -349,6 +368,15 @@ function buildSessionCard(source: string, count: number): HTMLElement {
   card.className = "session-card";
   card.dataset.source = source;
 
+  const unread = unreadCount(source);
+  if (unread > 0) {
+    const badge = document.createElement("span");
+    badge.className = "session-unread";
+    badge.textContent = unread > 9 ? "9+" : String(unread);
+    badge.title = `${unread} new artifact${unread === 1 ? "" : "s"} since you last looked`;
+    card.append(badge);
+  }
+
   const idRow = document.createElement("div");
   idRow.className = "pane-id";
   const mark = document.createElement("span");
@@ -395,6 +423,10 @@ function buildSessionCard(source: string, count: number): HTMLElement {
 
 /** Enter L2: build the single scoped pane, seed spans, observe, render. */
 function enterSession(source: string): void {
+  // Viewing a session clears its unread (the user is now seeing its artifacts).
+  clearUnread(source);
+  pendingIngest.delete(source);
+  updateGlobalUnread();
   const grouped = groupArtifacts();
   const scoped = (grouped.get(source) ?? []).slice(0, MAX_SESSION_TILES);
   const pane = buildSessionPane(source, scoped);
@@ -1137,6 +1169,13 @@ function closeFocus(): void {
     focusFrame = null;
     focusPath = null;
     if (tile) tile.style.visibility = "visible";
+    // Flush any session rebuild we deferred while the overlay was open.
+    if (pendingIngest.size) {
+      const v = currentView();
+      const due = v.level === "session" && pendingIngest.has(v.source) ? v.source : null;
+      pendingIngest.clear();
+      if (due) ingestIntoSession(due);
+    }
   };
 
   if (!card || document.visibilityState !== "visible" || prefersReducedMotion()) {
@@ -1223,6 +1262,173 @@ async function pollLive(): Promise<void> {
     else if (view.level === "sessions") updateSessionCard(s.source, s.json);
     // L0 Hub: no live-refresh of the dashboard (R2 — re-resolves on entry only).
   }
+
+  // Live artifact ingestion: re-read the artifact set and act only when it
+  // actually changed (the common case is an unchanged signature → cheap no-op).
+  let artifacts: ArtifactEntry[];
+  try {
+    artifacts = await invoke<ArtifactEntry[]>("list_artifacts");
+  } catch (e) {
+    console.error("list_artifacts failed", e);
+    return;
+  }
+  const sig = artifactSig(artifacts);
+  if (sig !== lastArtifactSig) {
+    lastArtifactSig = sig;
+    ingestArtifacts(artifacts);
+  }
+}
+
+// ---- live artifact ingestion ------------------------------------------------
+
+/** A cheap fingerprint of the artifact set — path + mtime, so a rewrite (same
+ *  path, new mtime) registers as a change too. */
+function artifactSig(arts: ArtifactEntry[]): string {
+  return arts.map((a) => `${a.path}:${a.modified_ms}`).join("|");
+}
+
+/** The source slug an artifact belongs to (a known live source, else UNSOURCED).
+ *  Mirrors groupArtifacts()/navigateToArtifact() so routing always agrees. */
+function sourceForArtifact(a: ArtifactEntry): string {
+  const slug = projectSlug(a.project);
+  return slug && allSources.some((s) => s.source === slug) ? slug : UNSOURCED;
+}
+
+function addUnread(source: string, path: string): void {
+  let set = unreadBySource.get(source);
+  if (!set) {
+    set = new Set();
+    unreadBySource.set(source, set);
+  }
+  set.add(path);
+}
+function unreadCount(source: string): number {
+  return unreadBySource.get(source)?.size ?? 0;
+}
+function clearUnread(source: string): void {
+  unreadBySource.delete(source);
+}
+function totalUnread(): number {
+  let n = 0;
+  for (const set of unreadBySource.values()) n += set.size;
+  return n;
+}
+
+/**
+ * Reconcile a fresh artifact list against what we've seen: route NEW artifacts
+ * to their session (unread unless that session is on screen), prune deleted
+ * ones, then refresh whatever level is showing.
+ */
+function ingestArtifacts(artifacts: ArtifactEntry[]): void {
+  const present = new Set(artifacts.map((a) => a.path));
+  const newOnes = artifacts.filter((a) => !knownPaths.has(a.path));
+  allArtifacts = artifacts;
+  for (const a of artifacts) knownPaths.add(a.path);
+
+  // Drop deleted artifacts from the known + unread sets so a stale badge can't
+  // outlive its file.
+  for (const p of [...knownPaths]) if (!present.has(p)) knownPaths.delete(p);
+  for (const [src, set] of unreadBySource) {
+    for (const p of [...set]) if (!present.has(p)) set.delete(p);
+    if (set.size === 0) unreadBySource.delete(src);
+  }
+
+  const view = currentView();
+  const viewing = view.level === "session" ? view.source : null;
+  for (const a of newOnes) {
+    const src = sourceForArtifact(a);
+    // An artifact for the session you're looking at ingests live (already "read");
+    // any other session's gets flagged unread.
+    if (src !== viewing) addUnread(src, a.path);
+  }
+
+  if (view.level === "sessions") renderSessions();
+  else if (view.level === "session") ingestIntoSession(view.source);
+  updateGlobalUnread();
+}
+
+/** Refresh the on-screen L2 session IF its membership changed — preserving
+ *  scroll + selection, deferring while the focus overlay is open, and animating
+ *  only the newly-arrived tiles. A pure rewrite (same membership) is left alone
+ *  so streaming work never yanks the surface out from under the reader. */
+function ingestIntoSession(source: string): void {
+  const scoped = (groupArtifacts().get(source) ?? []).slice(0, MAX_SESSION_TILES);
+  const nextPaths = scoped.map((a) => a.path);
+  const curPaths = (panes[0]?.tiles ?? []).map((t) => t.path);
+  if (sameSet(nextPaths, curPaths)) return; // membership unchanged → no tear-down
+
+  // A rebuild discards every tile element, which would strand the FLIP overlay's
+  // target. Defer until closeFocus() flushes it.
+  if (focusPath !== null) {
+    pendingIngest.add(source);
+    return;
+  }
+  const arrivals = new Set(nextPaths.filter((p) => !curPaths.includes(p)));
+  rebuildSession(source, scoped, arrivals);
+}
+
+/** Re-lay the L2 pane for `source`, keeping the reader in place. */
+function rebuildSession(source: string, scoped: ArtifactEntry[], arrivals: Set<string>): void {
+  const keepScroll = scrollEl.scrollTop;
+  const keepSelected = selected;
+  const pane = buildSessionPane(source, scoped);
+  panes = [pane];
+  for (const t of pane.tiles) if (!spans.has(t.path)) spans.set(t.path, { c: t.cspan, r: t.rspan });
+  numCols = columnCount(boardEl.clientWidth || 1000);
+  renderPanes();
+  renderViewAll(groupArtifacts().get(source)?.length ?? 0);
+  scrollEl.scrollTop = keepScroll;
+  if (keepSelected && pane.tiles.some((t) => t.path === keepSelected)) selectTile(keepSelected);
+  if (arrivals.size) playArrivalFor(arrivals);
+}
+
+/** Order-independent set equality for two path lists. */
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const s = new Set(a);
+  for (const x of b) if (!s.has(x)) return false;
+  return true;
+}
+
+/** Stagger-reveal just the named tiles (used when artifacts ingest mid-session). */
+function playArrivalFor(paths: Set<string>): void {
+  if (prefersReducedMotion()) return;
+  const nodes = [...paths]
+    .map((p) => panesEl.querySelector<HTMLElement>(`[data-aid="${cssEsc(p)}"]`))
+    .filter((n): n is HTMLElement => n !== null);
+  nodes.forEach((el, i) => {
+    el.animate(
+      [
+        { opacity: 0, transform: "translateY(16px) scale(0.985)" },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 660, delay: i * 95, easing: "cubic-bezier(0.22,1,0.36,1)", fill: "both" },
+    );
+  });
+}
+
+/** Sync the global Board unread badge + notify a cooperative L0 dashboard. */
+function updateGlobalUnread(): void {
+  const total = totalUnread();
+  const btn = document.getElementById("board-unread");
+  const count = document.getElementById("board-unread-count");
+  if (btn) btn.toggleAttribute("hidden", total === 0);
+  if (count) count.textContent = total > 99 ? "99+" : String(total);
+  postUnreadToHub();
+}
+
+/** Post unread counts into the full-bleed home.html iframe (L0 only). A
+ *  cooperative dashboard can render them; others simply ignore the message. */
+function postUnreadToHub(): void {
+  if (currentView().level !== "hub") return;
+  const frame = document.getElementById("hub-frame") as HTMLIFrameElement | null;
+  if (!frame || frame.hasAttribute("hidden") || !frame.contentWindow) return;
+  const counts: Record<string, number> = {};
+  for (const [src, set] of unreadBySource) counts[src] = set.size;
+  frame.contentWindow.postMessage(
+    { source: "companion", kind: "unread", total: totalUnread(), counts },
+    "*",
+  );
 }
 
 /** Live-update an L1 Sessions card's status dot + line (no `pane-status-` ids here). */
@@ -1349,6 +1555,7 @@ function wireControls(): void {
   document.getElementById("board-pill")?.addEventListener("click", hidePill);
   document.getElementById("board-fullscreen")?.addEventListener("click", toggleFullscreen);
   document.getElementById("board-back")?.addEventListener("click", goBack);
+  document.getElementById("board-unread")?.addEventListener("click", goSessions);
   document.getElementById("hub-sessions-btn")?.addEventListener("click", goSessions);
   scrimEl?.addEventListener("click", closeFocus);
 }
