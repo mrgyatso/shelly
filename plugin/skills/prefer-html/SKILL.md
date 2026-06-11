@@ -1094,6 +1094,184 @@ Make it look designed (this is onboarding), and keep the required `data-fit-root
 snippet so it sizes correctly. This is also the perfect smoke test: if the page pops in the
 overlay, the whole skill → write → hook → overlay path works end to end.
 
+## The L0 dashboard (`home.html`) + the modular top bar
+
+The Board (`companion board`) opens to an **L0 hub** that an agent fully authors: write a
+self-contained dashboard to the **reserved slug** `home.html` in the artifacts dir
+(`~/.claude/companion/artifacts/home.html`). The Board loads it **full-bleed** as the L0
+surface — it does NOT auto-pop as a panel (the hook skips it), and you re-see it by opening
+the Board, not via `companion open`. Think of it as a **daily dashboard**: regenerate it for
+whatever the user is actually working on that day — what needs them, what's running, the one
+thing that matters most.
+
+### The top bar is the Board's, themed by you (`companion-bar` block)
+
+The Board renders a persistent top bar across the whole surface. At L0 it is **themed and
+filled by your dashboard** so it matches your design; the **mandatory control cluster**
+(back / full-screen / collapse / close) is always rendered by the Board — you never draw or
+declare those, they can't go missing. You compose the bar's *content + colors* via a JSON
+block in `home.html`'s `<head>`:
+
+```html
+<script type="application/json" id="companion-bar">
+{
+  "bg": "#efe9df", "fg": "#201b15", "accent": "#b0552f",
+  "font": "Newsreader",
+  "left":   [{ "type": "title", "text": "Tuesday triage" }],
+  "center": [{ "type": "clock" }],
+  "right":  [{ "type": "badge", "text": "3 need you", "tone": "accent" }]
+}
+</script>
+```
+
+- **Theme keys:** `bg`, `fg`, `accent` (hex), `font` (`"Newsreader"` | `"Inter"` |
+  `"JetBrains Mono"`). **Set `bg`/`fg` to match your dashboard body** — the bar lives outside
+  your iframe, so it can't inherit your CSS; if you don't pass colors it won't match.
+- **Slots:** `left`, `center`, `right` — arrays of items the Board renders + wires:
+  - `{"type":"title","text":"…"}` — display title (uses `font`)
+  - `{"type":"clock"}` — live HH:MM, Board-updated
+  - `{"type":"badge","text":"…","tone":"accent"|"default"}` — a pill (e.g. a count)
+  - `{"type":"text","text":"…"}` — muted label
+  - `{"type":"link","text":"…","to":"sessions"|"session:<src>"|"hub"|"artifact:<path>"}` —
+    navigates the Board
+- **Rule:** if you set `companion-bar`, **do NOT draw your own header in the body** — the
+  Board's bar is your header. Start the body at the content.
+
+Without a `companion-bar` block the Board shows its native greeting. The theming applies at
+**L0 only**; L1 (sessions) and L2 (one session) use native chrome.
+
+### Navigation from inside the dashboard
+
+Any element can drive the Board by posting a navigate message to the parent — this is how
+the dashboard links to sessions, and how it stays *inside* the Board (no separate windows):
+
+```js
+parent.postMessage({ source: "companion-artifact", kind: "navigate",
+  to: "session:scalp-defense" }, "*");   // or "sessions" | "hub" | "artifact:<abs-path>"
+```
+
+### Editorial, NOT a grid (read this before you lay it out)
+
+The single most common failure here is defaulting to a **uniform card grid** — N equal tiles,
+equal spacing, no hierarchy. Don't. A dashboard with a point of view reads like an editorial
+front page, not a spreadsheet:
+
+- **Give the one thing that matters most real weight** — large type, a hero block — and let
+  the rest recede. Scale contrast *is* the triage.
+- **Use a list, not cards, for "the rest."** Rows with a thin colored rule carry a roster far
+  better than a wall of identical boxes.
+- **Vary rhythm** — whitespace, asymmetry, a center of gravity. Uniform padding everywhere is
+  the tell of a template.
+- Idle / low-priority items collapse to **chips or a single line**, not full cards.
+
+(This applies to any artifact, but dashboards are where the grid reflex is strongest — see
+the design-quality rules: *default card grids with uniform spacing and no hierarchy* are
+explicitly banned.) Pair this with the bundled fonts below — real type is half of looking
+intentional.
+
+## Bundled assets (fonts, D3, GSAP)
+
+Three libraries are bundled in `~/.claude/companion/vendor/` and accessible via `asset:`.
+Use them instead of CDN links — the artifact sandbox blocks external URLs.
+
+### Fonts
+
+```html
+<link rel="stylesheet" href="asset://localhost/Users/gyatso/.claude/companion/vendor/fonts.css">
+```
+
+Loads three variable fonts:
+
+| Family | Style | Weights | Use for |
+|--------|-------|---------|---------|
+| `Inter` | normal | 100–900 | UI text, body, labels |
+| `Newsreader` | normal + italic | 200–800 | Headings, editorial, pull quotes |
+| `JetBrains Mono` | normal | 100–800 | Code, monospace labels, data |
+
+```css
+/* after loading fonts.css, reference them normally */
+font-family: 'Inter', ui-sans-serif, sans-serif;
+font-family: 'Newsreader', ui-serif, serif;
+font-family: 'JetBrains Mono', ui-monospace, monospace;
+
+/* variable font weight axis — any value 100–900 works */
+font-weight: 350;   /* lighter Inter body */
+font-weight: 650;   /* medium-bold heading */
+```
+
+### D3 (data visualization)
+
+```html
+<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/d3.min.js"></script>
+```
+
+Full D3 v7. Use for charts, graphs, force layouts, geographic projections, data transforms.
+The `d3` global is available after the script loads.
+
+```html
+<svg id="chart"></svg>
+<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/d3.min.js"></script>
+<script>
+  var data = [4, 8, 15, 16, 23, 42];
+  var svg = d3.select("#chart").attr("width", 400).attr("height", 120);
+  svg.selectAll("rect")
+    .data(data).enter().append("rect")
+    .attr("x", function(d, i) { return i * 60; })
+    .attr("y", function(d) { return 120 - d * 2; })
+    .attr("width", 50).attr("height", function(d) { return d * 2; })
+    .attr("fill", "#6366f1");
+</script>
+```
+
+### GSAP (animation)
+
+```html
+<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/gsap.min.js"></script>
+<!-- optional: scroll-triggered animation -->
+<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/ScrollTrigger.min.js"></script>
+```
+
+GSAP 3 core + ScrollTrigger. The `gsap` global is available after the script loads.
+
+```html
+<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/gsap.min.js"></script>
+<script>
+  // animate in on load
+  gsap.from(".card", { opacity: 0, y: 20, duration: 0.5, stagger: 0.08, ease: "power2.out" });
+
+  // timeline
+  var tl = gsap.timeline();
+  tl.from(".title", { opacity: 0, y: -10, duration: 0.4 })
+    .from(".body",  { opacity: 0,          duration: 0.3 }, "-=0.1");
+</script>
+```
+
+With ScrollTrigger (register first):
+```js
+gsap.registerPlugin(ScrollTrigger);
+gsap.from(".section", {
+  scrollTrigger: { trigger: ".section", start: "top 80%" },
+  opacity: 0, y: 30, duration: 0.6
+});
+```
+
+### Loading order
+
+Always load scripts before your inline `<script>` that uses them. Fonts load async
+(they're `font-display: swap`) so layout won't block. Recommended order:
+
+```html
+<head>
+  <link rel="stylesheet" href="asset://localhost/Users/gyatso/.claude/companion/vendor/fonts.css">
+</head>
+<body>
+  <!-- content -->
+  <script src="asset://localhost/Users/gyatso/.claude/companion/vendor/d3.min.js"></script>
+  <script src="asset://localhost/Users/gyatso/.claude/companion/vendor/gsap.min.js"></script>
+  <script>/* your code here */</script>
+</body>
+```
+
 ## Verify it's wired
 
 Run `/companion:doctor` (or `companion doctor` in a shell) — it renders a health panel in
