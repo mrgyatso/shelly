@@ -76,6 +76,14 @@
             <div id="board-hello" class="hello">Good morning.</div>
             <div id="board-sub" class="sub"></div>
           </div>
+          <!-- Agent-composed bar (L0 only). Rendered from home.html's
+               `companion-bar` JSON block: themes colors + fills left/center/right
+               slots. The mandatory control cluster below always renders. -->
+          <div id="board-bar-custom" class="bar-custom" hidden>
+            <div class="bar-zone bar-left"></div>
+            <div class="bar-zone bar-center"></div>
+            <div class="bar-zone bar-right"></div>
+          </div>
           <div class="board-controls">
             <span id="board-clock" class="clock"></span>
             <button id="board-back" class="ctl" title="Back (esc)" hidden>

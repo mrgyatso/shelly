@@ -235,6 +235,7 @@ async function goHub(): Promise<void> {
 /** Enter L1 — the native, light Sessions picker. */
 function goSessions(): void {
   leaveSession();
+  applyBar(null); // native chrome for native views; clear any L0 theming
   if (currentView().level !== "sessions") viewStack.push({ level: "sessions" });
   showLevel("sessions");
   renderSessions();
@@ -245,6 +246,7 @@ function goSessions(): void {
  *  rather than stacking duplicates, so back-nav stays one level up. */
 function goSession(source: string): void {
   leaveSession();
+  applyBar(null); // native chrome for native views; clear any L0 theming
   if (currentView().level === "session") viewStack.pop();
   viewStack.push({ level: "session", source });
   showLevel("session");
@@ -285,10 +287,20 @@ async function renderHub(): Promise<void> {
   if (home && frame) {
     fallback?.setAttribute("hidden", "");
     frame.removeAttribute("hidden");
+    // Theme the top bar from home.html's `companion-bar` block (if present).
+    let spec: BarSpec | null = null;
+    try {
+      const html = await invoke<string>("read_artifact", { path: home });
+      spec = parseBarSpec(html);
+    } catch {
+      spec = null;
+    }
+    applyBar(spec);
     // Full-bleed: load the authored dashboard; never feed it to fit()/resize.
     await loadArtifactInto(home, frame).catch((e) => console.error("hub load failed", e));
   } else {
     frame?.setAttribute("hidden", "");
+    applyBar(null);
     renderHubFallback();
   }
 }
@@ -602,6 +614,151 @@ function startClock(): void {
   };
   tick();
   window.setInterval(tick, 30_000);
+}
+
+// ---- agent-composed bar (L0) ------------------------------------------------
+// home.html may carry a `companion-bar` JSON block that themes the Board's top
+// bar and fills its left/center/right slots, so the bar matches that day's
+// dashboard. The mandatory control cluster (back/fullscreen/collapse/close)
+// always renders regardless — agents compose CONTENT, never the controls.
+
+interface BarItem {
+  type: "title" | "clock" | "text" | "badge" | "link";
+  text?: string;
+  tone?: "accent" | "default";
+  to?: string; // for link → a navigate target (e.g. "sessions", "session:x")
+}
+interface BarSpec {
+  bg?: string;
+  fg?: string;
+  accent?: string;
+  font?: "Newsreader" | "Inter" | "JetBrains Mono" | string;
+  left?: BarItem[];
+  center?: BarItem[];
+  right?: BarItem[];
+}
+
+const FONT_STACK: Record<string, string> = {
+  Newsreader: "'Newsreader', Georgia, serif",
+  Inter: "'Inter', system-ui, sans-serif",
+  "JetBrains Mono": "'JetBrains Mono', ui-monospace, monospace",
+};
+
+/** Extract the `companion-bar` JSON block from raw home.html, or null. */
+function parseBarSpec(html: string): BarSpec | null {
+  const m = html.match(
+    /<script[^>]*id=["']companion-bar["'][^>]*>([\s\S]*?)<\/script>/i,
+  );
+  if (!m) return null;
+  try {
+    return JSON.parse(m[1].trim()) as BarSpec;
+  } catch {
+    return null;
+  }
+}
+
+function barItemEl(item: BarItem): HTMLElement | null {
+  switch (item.type) {
+    case "title": {
+      const e = document.createElement("div");
+      e.className = "bar-item-title";
+      e.textContent = item.text || "";
+      return e;
+    }
+    case "clock": {
+      const e = document.createElement("span");
+      e.className = "bar-item-clock";
+      return e; // filled by the bar clock ticker
+    }
+    case "text": {
+      const e = document.createElement("span");
+      e.className = "bar-item-text";
+      e.textContent = item.text || "";
+      return e;
+    }
+    case "badge": {
+      const e = document.createElement("span");
+      e.className = "bar-item-badge" + (item.tone === "accent" ? " accent" : "");
+      e.textContent = item.text || "";
+      return e;
+    }
+    case "link": {
+      const e = document.createElement("button");
+      e.className = "bar-item-link";
+      e.textContent = item.text || "";
+      if (item.to) e.addEventListener("click", () => navigateTo(item.to as string));
+      return e;
+    }
+    default:
+      return null;
+  }
+}
+
+let barClockTimer: number | null = null;
+
+/** Theme + fill the top bar from a spec, or restore the native greeting (null). */
+function applyBar(spec: BarSpec | null): void {
+  const top = document.querySelector(".board-top") as HTMLElement | null;
+  const custom = document.getElementById("board-bar-custom");
+  if (!top || !custom) return;
+
+  if (barClockTimer !== null) {
+    window.clearInterval(barClockTimer);
+    barClockTimer = null;
+  }
+
+  if (!spec) {
+    top.classList.remove("themed");
+    top.style.removeProperty("--bar-bg");
+    top.style.removeProperty("--bar-fg");
+    top.style.removeProperty("--bar-accent");
+    top.style.removeProperty("--bar-font");
+    custom.setAttribute("hidden", "");
+    return;
+  }
+
+  top.classList.add("themed");
+  if (spec.bg) top.style.setProperty("--bar-bg", spec.bg);
+  if (spec.fg) top.style.setProperty("--bar-fg", spec.fg);
+  if (spec.accent) top.style.setProperty("--bar-accent", spec.accent);
+  if (spec.font) top.style.setProperty("--bar-font", FONT_STACK[spec.font] || spec.font);
+
+  const fill = (sel: string, items?: BarItem[]) => {
+    const zone = custom.querySelector(sel) as HTMLElement | null;
+    if (!zone) return;
+    zone.replaceChildren();
+    (items || []).forEach((it) => {
+      const el = barItemEl(it);
+      if (el) zone.appendChild(el);
+    });
+  };
+  fill(".bar-left", spec.left);
+  fill(".bar-center", spec.center);
+  fill(".bar-right", spec.right);
+  custom.removeAttribute("hidden");
+
+  // Live clock for any `clock` items.
+  const clocks = custom.querySelectorAll<HTMLElement>(".bar-item-clock");
+  if (clocks.length) {
+    const tick = () => {
+      const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+      clocks.forEach((c) => (c.textContent = t));
+    };
+    tick();
+    barClockTimer = window.setInterval(tick, 30_000);
+  }
+}
+
+/** Route a navigate target string (shared by bar links + postMessage). */
+function navigateTo(to: string): void {
+  if (to === "hub") void goHub();
+  else if (to === "sessions") goSessions();
+  else if (to.startsWith("session:")) {
+    const slug = to.slice("session:".length);
+    if (slug === UNSOURCED || allSources.some((s) => s.source === slug)) goSession(slug);
+  } else if (to.startsWith("artifact:")) {
+    void navigateToArtifact(to.slice("artifact:".length));
+  }
 }
 
 // ---- render panes (masonry) -------------------------------------------------
@@ -1206,16 +1363,7 @@ function wireControls(): void {
 function wireNavigate(): void {
   window.addEventListener("message", (e: MessageEvent) => {
     if (!isNavigateMessage(e.data)) return;
-    const to = e.data.to;
-    if (to === "hub") void goHub();
-    else if (to === "sessions") goSessions();
-    else if (to.startsWith("session:")) {
-      const slug = to.slice("session:".length);
-      if (slug === UNSOURCED || allSources.some((s) => s.source === slug)) goSession(slug);
-      else console.warn("navigate: unknown session", slug);
-    } else if (to.startsWith("artifact:")) {
-      void navigateToArtifact(to.slice("artifact:".length));
-    }
+    navigateTo(e.data.to);
   });
 }
 

@@ -196,13 +196,14 @@ pub fn run() {
                 guard(move || windows::open_artifact_window(&handle, path));
             }
 
-            // Always-on: bring up the live surface on every launch, regardless of
-            // any artifact/history arg above. Idempotent (open_live_window raises
-            // the existing window if it's already up), so the `live` arg path and
-            // this can't double-create it.
+            // Always-on: bring up the Board on every launch, regardless of any
+            // artifact/history arg above. The Board is the single primary surface
+            // (the live-state data lives in its session cards). Idempotent
+            // (open_board_window raises the existing window if it's already up),
+            // so the `board` arg path and this can't double-create it.
             {
                 let handle = app.handle().clone();
-                guard(move || windows::open_live_window(&handle));
+                guard(move || windows::open_board_window(&handle));
             }
             // Background remote-hub pull loop: if `~/.claude/companion/hub.json`
             // points at a hub, download its new artifacts into `remote/` (so the
