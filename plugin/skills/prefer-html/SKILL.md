@@ -1134,8 +1134,8 @@ block in `home.html`'s `<head>`:
   - `{"type":"clock"}` — live HH:MM, Board-updated
   - `{"type":"badge","text":"…","tone":"accent"|"default"}` — a pill (e.g. a count)
   - `{"type":"text","text":"…"}` — muted label
-  - `{"type":"link","text":"…","to":"sessions"|"session:<src>"|"hub"|"artifact:<path>"}` —
-    navigates the Board
+  - `{"type":"link","text":"…","to":"sessions"|"unit:<key>"|"hub"|"artifact:<path>"}` —
+    navigates the Board (`session:<src>` still works as a back-compat alias → its unit)
 - **Rule:** if you set `companion-bar`, **do NOT draw your own header in the body** — the
   Board's bar is your header. Start the body at the content.
 
@@ -1149,7 +1149,7 @@ the dashboard links to sessions, and how it stays *inside* the Board (no separat
 
 ```js
 parent.postMessage({ source: "companion-artifact", kind: "navigate",
-  to: "session:scalp-defense" }, "*");   // or "sessions" | "hub" | "artifact:<abs-path>"
+  to: "unit:scalp-defense" }, "*");   // or "sessions" | "hub" | "artifact:<abs-path>"
 ```
 
 ### Editorial, NOT a grid (read this before you lay it out)
@@ -1165,6 +1165,29 @@ front page, not a spreadsheet:
 - **Vary rhythm** — whitespace, asymmetry, a center of gravity. Uniform padding everywhere is
   the tell of a template.
 - Idle / low-priority items collapse to **chips or a single line**, not full cards.
+
+### The L2 unit home (`home.<unit_key>.html`) — a durable per-project digest
+
+`home.html` is the cross-project L0 hub. One level deeper, each **unit** (a project/git repo,
+or a bare non-repo session) has its OWN durable home: write it to the reserved slug
+**`home.<unit_key>.html`** in the same artifacts dir (e.g.
+`~/.claude/companion/artifacts/home.canvas-board.html`). The Board loads it **full-width at the
+top of the unit's L2 view** (NOT full-viewport — the Board stacks your digest above live
+**lanes** and a **history** list, so size your content to flow, not to fill a screen).
+
+- **`unit_key`** is handed to you at session start (the `companion-session` hook injects it
+  alongside the live-surface path) and is written into your live JSON. Use it verbatim as the
+  filename suffix — it's the same key the Board groups sessions by.
+- Same mechanics as `home.html`: a `companion-bar` block themes the top bar at L2 too; the
+  `navigate` protocol works; include the `data-fit-root` + size-reporter snippet.
+- It's a **digest**, not a dashboard-of-everything: "where this project's work stands now" —
+  current focus, open decisions, what shipped, what's next. It **grows across sessions** (read
+  the existing file, regenerate it richer), so it's the project's living memory on the Board.
+- It is **optional**: when absent, the Board's native L2 (lanes + history) is already a complete
+  home, so author one only when a curated digest adds real signal.
+- **Concurrency:** two agents in one repo share one `home.<unit_key>.html` — last-writer-wins is
+  fine (it's slow, curated, read-then-regenerate content; the fast-changing per-agent state
+  lives in the lane files, not here). Don't try to lock it.
 
 (This applies to any artifact, but dashboards are where the grid reflex is strongest — see
 the design-quality rules: *default card grids with uniform spacing and no hierarchy* are
