@@ -129,11 +129,14 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
     if stem.starts_with('_') {
         return None;
     }
-    // `home.html` is the agent-authored Hub dashboard, not a one-off artifact.
-    // It lives in the artifacts dir (so its JS runs in asset: scope) but must
-    // not surface as a tile OR in the History HUD — both read `list_artifacts`,
-    // so this one skip covers both.
-    if stem == "home" {
+    // `home.html` is the agent-authored L0 Hub dashboard, and `home.<unit>.html`
+    // are the per-unit L2 home digests — agent-authored reserved surfaces, not
+    // one-off artifacts. They live in the artifacts dir (so their JS runs in
+    // asset: scope) but must not surface as a history row in ANY unit. Both the
+    // History HUD and the Board's history list read `list_artifacts`, so this one
+    // skip covers both. (file_stem strips only `.html`, so `home.<unit>.html`
+    // yields stem `home.<unit>` → caught by the prefix.)
+    if stem == "home" || stem.starts_with("home.") {
         return None;
     }
 
@@ -204,6 +207,29 @@ pub fn resolve_home() -> Option<String> {
     artifact_dirs()
         .iter()
         .map(|d| d.join("home.html"))
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Resolve a UNIT's home digest (`home.<unit_key>.html`), if the agent has
+/// authored one. The Board loads it full-bleed at L2 when you enter the unit;
+/// `None` ⇒ the native fallback (lanes + history alone). Mirrors [`resolve_home`]
+/// — same reserved-slug family, same artifacts-dir scope requirement.
+#[tauri::command]
+pub fn resolve_unit_home(unit_key: String) -> Option<String> {
+    // unit_key comes from the live JSON / hook; keep it filename-safe so it can't
+    // escape the artifacts dir.
+    let safe: String = unit_key
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .collect();
+    if safe.is_empty() {
+        return None;
+    }
+    let name = format!("home.{safe}.html");
+    artifact_dirs()
+        .iter()
+        .map(|d| d.join(&name))
         .find(|p| p.is_file())
         .map(|p| p.to_string_lossy().into_owned())
 }

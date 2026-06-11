@@ -113,6 +113,7 @@ pub fn run() {
             history::list_artifacts,
             history::reopen_artifact,
             history::resolve_home,
+            history::resolve_unit_home,
             live::read_live,
             live::read_all_live,
             windows::set_board_fullscreen,
