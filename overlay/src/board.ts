@@ -70,6 +70,8 @@ interface LiveState {
   where?: string[];
   next?: NextItem[];
   project?: string;
+  /** File mtime, injected by read_all_live — drives liveness (LIVENESS_MS). */
+  updated_ms?: number;
 }
 
 type StatusLevel = "wait" | "busy" | "ok" | "idle";
@@ -106,6 +108,10 @@ const POLL_MS = 1200;
 const MAX_LIVE_TILES = 3;
 /** Cap how many tiles an L2 session shows; the rest live in the History HUD. */
 const MAX_SESSION_TILES = 12;
+/** An instance whose live file hasn't been touched within this window is "stale"
+ *  — it drops off the live roster into the reversible Archived toggle. Liveness
+ *  is mtime-based (SessionEnd can't be trusted), so this is the source of truth. */
+const LIVENESS_MS = 30 * 60 * 1000;
 /** An artifact modified within this window counts as "arrived overnight" (fresh). */
 const FRESH_WINDOW_MS = 12 * 60 * 60 * 1000;
 /** Default bento span for a real artifact (the demo's hero tiles are 2×2). */
@@ -142,6 +148,8 @@ let allSources: LiveSource[] = [];
 let allArtifacts: ArtifactEntry[] = [];
 
 let isFullscreen = false;
+/** Whether the L1 roster's stale (archived) instances are revealed. */
+let showArchived = false;
 let numCols = 4;
 let selected: string | null = null;
 /** The focus/expand overlay's dedicated live iframe (outside the tile LRU). */
@@ -339,25 +347,56 @@ function renderHubFallback(): void {
 
 // ---- L1 Sessions picker -----------------------------------------------------
 
-/** Render the light native picker: one status-only card per source. No iframes. */
+/** Render the light native picker: one status-only card per LIVE instance, with
+ *  stale instances tucked behind a reversible "Archived" toggle. No iframes. */
 function renderSessions(): void {
   const grid = document.getElementById("board-sessions-grid");
   const sub = document.getElementById("sessions-sub");
   if (!grid) return;
   const grouped = groupArtifacts();
+  const now = Date.now();
+
+  const live: LiveSource[] = [];
+  const stale: LiveSource[] = [];
+  for (const s of allSources) (isLiveSource(s, now) ? live : stale).push(s);
 
   const cards: HTMLElement[] = [];
-  for (const s of allSources) {
+  for (const s of live) {
     cards.push(buildSessionCard(s.source, grouped.get(s.source)?.length ?? 0));
   }
   const unsourced = grouped.get(UNSOURCED)?.length ?? 0;
   if (unsourced) cards.push(buildSessionCard(UNSOURCED, unsourced));
 
+  // Stale instances aren't deleted (disk cleanup is the 7-day SessionStart prune)
+  // — they collapse behind a one-click toggle so the roster shows only live work.
+  if (stale.length) {
+    cards.push(buildArchivedToggle(stale.length));
+    if (showArchived) {
+      for (const s of stale) {
+        const card = buildSessionCard(s.source, grouped.get(s.source)?.length ?? 0);
+        card.classList.add("archived");
+        cards.push(card);
+      }
+    }
+  }
+
   if (sub) {
-    const n = allSources.length;
-    sub.textContent = `${n} agent${n === 1 ? "" : "s"} · ${allArtifacts.length} artifact${allArtifacts.length === 1 ? "" : "s"}`;
+    const n = live.length;
+    sub.textContent = `${n} live agent${n === 1 ? "" : "s"} · ${allArtifacts.length} artifact${allArtifacts.length === 1 ? "" : "s"}`;
   }
   grid.replaceChildren(...cards);
+}
+
+/** The "Archived (N)" pill that reveals/hides stale instances on the roster. */
+function buildArchivedToggle(n: number): HTMLElement {
+  const btn = document.createElement("button");
+  btn.className = "session-archived-toggle";
+  btn.textContent = showArchived ? `Hide archived (${n})` : `Archived (${n})`;
+  btn.addEventListener("click", () => {
+    showArchived = !showArchived;
+    renderSessions();
+  });
+  return btn;
 }
 
 /** One Session picker card — reuses the L2 header model (mark/name/prov/status). */
@@ -392,6 +431,18 @@ function buildSessionCard(source: string, count: number): HTMLElement {
   prov.textContent = pane.prov;
   who.append(name, prov);
   idRow.append(mark, who);
+
+  // Instance disambiguator: two agents in one repo share a project name, so a
+  // small #shortid chip tells the cards apart (the working line is the primary
+  // signal). UNSOURCED has no instance, so no chip.
+  const sid = source === UNSOURCED ? "" : shortIdOf(source);
+  if (sid) {
+    const chip = document.createElement("span");
+    chip.className = "session-id-chip";
+    chip.textContent = `#${sid}`;
+    chip.title = `instance ${sid}`;
+    idRow.append(chip);
+  }
 
   card.append(idRow);
   // The Unsourced card has no live state — its only fact is the artifact count
@@ -481,13 +532,11 @@ function renderViewAll(total: number): void {
  * Newest-first within each group.
  */
 function groupArtifacts(): Map<string, ArtifactEntry[]> {
-  const slugs = new Set(allSources.map((s) => s.source));
   const grouped = new Map<string, ArtifactEntry[]>();
   for (const s of allSources) grouped.set(s.source, []);
   grouped.set(UNSOURCED, []);
   for (const art of allArtifacts) {
-    const slug = projectSlug(art.project);
-    grouped.get(slug && slugs.has(slug) ? slug : UNSOURCED)?.push(art);
+    grouped.get(sourceForArtifact(art))?.push(art);
   }
   for (const list of grouped.values()) list.sort((a, b) => b.modified_ms - a.modified_ms);
   return grouped;
@@ -600,6 +649,47 @@ function projectSlug(project?: string | null): string | null {
   const trimmed = project.replace(/\/+$/, "");
   const base = trimmed.split("/").pop() || trimmed;
   return base || null;
+}
+
+/** A source stem is `<slug>--<shortid>` (the live file basename). The slug
+ *  sanitizer collapses runs of `-`, so a slug never contains `--`; split on the
+ *  FIRST `--` to recover the per-instance shortid. */
+function shortIdOf(source: string): string {
+  const i = source.indexOf("--");
+  return i >= 0 ? source.slice(i + 2) : "";
+}
+
+/** The project-match key for a source — the basename of its live `project`
+ *  field, falling back to the stem's slug prefix. Artifacts carry only a project
+ *  (not the instance id), so two instances of one repo share a key; routing
+ *  treats that as ambiguous (see sourceForArtifact). */
+function sourceProjectKey(s: LiveSource): string {
+  let project: string | undefined;
+  try {
+    project = (JSON.parse(s.json) as LiveState).project ?? undefined;
+  } catch {
+    /* fall back to the stem */
+  }
+  const fromJson = projectSlug(project);
+  if (fromJson) return fromJson;
+  const i = s.source.indexOf("--");
+  return i >= 0 ? s.source.slice(0, i) : s.source;
+}
+
+/** File mtime injected by read_all_live; 0 if unparseable. */
+function sourceUpdatedMs(s: LiveSource): number {
+  try {
+    return (JSON.parse(s.json) as LiveState).updated_ms ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** A source is LIVE if its file was touched within LIVENESS_MS; else it's stale
+ *  (archived). Computed fresh on each renderSessions, so it's correct on entry. */
+function isLiveSource(s: LiveSource, now: number): boolean {
+  const u = sourceUpdatedMs(s);
+  return u > 0 && now - u < LIVENESS_MS;
 }
 
 /** Escape, then turn **runs** into <b> (used in the mono status line). */
@@ -1287,11 +1377,18 @@ function artifactSig(arts: ArtifactEntry[]): string {
   return arts.map((a) => `${a.path}:${a.modified_ms}`).join("|");
 }
 
-/** The source slug an artifact belongs to (a known live source, else UNSOURCED).
- *  Mirrors groupArtifacts()/navigateToArtifact() so routing always agrees. */
+/** The source an artifact belongs to (its live instance, else UNSOURCED). The
+ *  single routing authority — groupArtifacts() and navigateToArtifact() both call
+ *  it, so routing always agrees. An artifact is tagged only with a `project`, not
+ *  an instance id, so it routes to the UNIQUE live instance of that project; if
+ *  two instances of one repo are live, that's ambiguous → UNSOURCED. (Precise
+ *  per-instance routing waits for the living-hub phase, where each instance
+ *  authors one hub stamped with its id.) */
 function sourceForArtifact(a: ArtifactEntry): string {
-  const slug = projectSlug(a.project);
-  return slug && allSources.some((s) => s.source === slug) ? slug : UNSOURCED;
+  const key = projectSlug(a.project);
+  if (!key) return UNSOURCED;
+  const matches = allSources.filter((s) => sourceProjectKey(s) === key);
+  return matches.length === 1 ? matches[0].source : UNSOURCED;
 }
 
 function addUnread(source: string, path: string): void {
@@ -1588,8 +1685,7 @@ async function navigateToArtifact(path: string): Promise<void> {
     return;
   }
   const art = allArtifacts.find((a) => a.path === path);
-  const slug = art ? projectSlug(art.project) : null;
-  const source = slug && allSources.some((s) => s.source === slug) ? slug : UNSOURCED;
+  const source = art ? sourceForArtifact(art) : UNSOURCED;
   goSession(source);
   // Focus the requested tile once the session has laid out.
   requestAnimationFrame(() => {

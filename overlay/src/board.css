@@ -379,6 +379,41 @@
   border-top: 1px solid var(--line-2);
 }
 
+/* Per-instance id chip (tiebreaker when two cards share a project name). */
+.session-id-chip {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  background: var(--line-2);
+  border-radius: 5px;
+  padding: 2px 5px;
+  line-height: 1;
+}
+
+/* "Archived (N)" toggle — spans the grid as its own row. */
+.session-archived-toggle {
+  grid-column: 1 / -1;
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  cursor: pointer;
+  padding: 4px 2px;
+  transition: color 0.15s var(--ease);
+}
+.session-archived-toggle:hover { color: var(--ink); }
+
+/* A revealed stale instance reads as dimmed until it writes again. */
+.session-card.archived { opacity: 0.55; }
+.session-card.archived:hover { opacity: 1; }
+
 /* Unread (arrived-while-away) count, top-right of the session card. */
 .session-unread {
   position: absolute;
