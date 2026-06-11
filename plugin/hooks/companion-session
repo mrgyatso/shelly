@@ -22,16 +22,22 @@ session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",
 line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
 live_path=$(printf '%s' "$line" | cut -f1)
 project=$(printf '%s' "$line" | cut -f2)
+is_repo=$(printf '%s' "$line" | cut -f4)
+unit_key=$(printf '%s' "$line" | cut -f5)
+digest_path="${HOME}/.claude/companion/artifacts/home.${unit_key}.html"
 
 live_dir=$(dirname "$live_path")
 mkdir -p "$live_dir" 2>/dev/null
 
 # 1. Seed an initial stub if this instance has no file yet (resume/compact reuse
 #    the same session_id, so they find the existing file and leave it untouched).
+#    is_repo + unit_key let the Board group sessions into a per-UNIT home; the
+#    agent is asked (below) to preserve them when it rewrites this file.
 if [ ! -f "$live_path" ]; then
-  LIVE_PATH="$live_path" PROJECT="$project" node -e '
+  LIVE_PATH="$live_path" PROJECT="$project" IS_REPO="$is_repo" UNIT_KEY="$unit_key" node -e '
     const fs=require("fs");
-    const stub={working:"Session started",where:[],next:[],project:process.env.PROJECT};
+    const stub={working:"Session started",where:[],next:[],project:process.env.PROJECT,
+      is_repo:process.env.IS_REPO==="1",unit_key:process.env.UNIT_KEY};
     try { fs.writeFileSync(process.env.LIVE_PATH, JSON.stringify(stub)); } catch (e) {}
   ' 2>/dev/null
 fi
@@ -40,13 +46,20 @@ fi
 #    list doesn't grow unbounded across crashed/abandoned sessions.
 find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exec rm -f {} + 2>/dev/null
 
-# 3. Tell the agent its live path for the rest of the session.
-LIVE_PATH="$live_path" node -e '
-  const p=process.env.LIVE_PATH;
+# 3. Tell the agent its live path + its per-unit digest for the rest of the session.
+LIVE_PATH="$live_path" DIGEST_PATH="$digest_path" node -e '
+  const p=process.env.LIVE_PATH, dg=process.env.DIGEST_PATH;
   const ctx=`Companion live surface: rewrite your live state to ${p} on each work turn `+
     `(the Board roster reads it). Shape: {"working":"…","where":["…"],`+
-    `"next":[{"title":"…","sub":"…","kind":"decision|todo|blocked"}],"project":"…"}. `+
-    `Use exactly this path — it is keyed to this session instance.`;
+    `"next":[{"title":"…","sub":"…","kind":"decision|todo|blocked"}],"project":"…",`+
+    `"is_repo":<bool>,"unit_key":"…"}. Use exactly this path — it is keyed to this `+
+    `session instance — and PRESERVE the is_repo + unit_key fields verbatim (the Board `+
+    `groups sessions into a per-unit home by them).\n`+
+    `Companion unit home (optional, recommended): the durable "home" page for this unit on the `+
+    `Board is ${dg}. Author and grow it as a living document of where this work stands — a `+
+    `full-document HTML artifact following the prefer-html home convention (data-fit-root, `+
+    `companion-bar, navigate protocol). The Board shows it full-bleed when you enter this unit; `+
+    `when it is absent the Board falls back to a native home, so it is optional but high-value.`;
   process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:ctx}}));
 '
 exit 0

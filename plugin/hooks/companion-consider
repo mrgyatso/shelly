@@ -48,6 +48,8 @@ session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",
 line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
 live_path=$(printf '%s' "$line" | cut -f1)
 project=$(printf '%s' "$line" | cut -f2)
+is_repo=$(printf '%s' "$line" | cut -f4)
+unit_key=$(printf '%s' "$line" | cut -f5)
 
 # Guard 3 — classify the current turn from the transcript. Walk backward to the
 # human message that started this turn; collect assistant tool_use along the way.
@@ -88,9 +90,10 @@ fi
 
 # Worked this turn but the live surface is stale — nudge to refresh it. Emit the
 # decision JSON via node so the dynamic path is escaped correctly.
-LIVE_PATH="$live_path" PROJECT="$project" node -e '
+LIVE_PATH="$live_path" PROJECT="$project" IS_REPO="$is_repo" UNIT_KEY="$unit_key" node -e '
   const p=process.env.LIVE_PATH, proj=process.env.PROJECT;
-  const reason=`Companion: you did real work this turn but didn'\''t refresh the live surface. If the current state changed — what you'\''re working on, where things stand, or the next decisions — rewrite ${p} as {"working": "…", "where": ["…"], "next": [{"title": "…", "sub": "…", "kind": "decision|todo|blocked"}], "project": "${proj}"} so the always-on pane reflects it. If nothing meaningful changed, just end the turn. Don'\''t narrate that you considered this. (Backstop only — it fires when a work turn skipped the live update.)`;
+  const isRepo=process.env.IS_REPO==="1", unit=process.env.UNIT_KEY;
+  const reason=`Companion: you did real work this turn but didn'\''t refresh the live surface. If the current state changed — what you'\''re working on, where things stand, or the next decisions — rewrite ${p} as {"working": "…", "where": ["…"], "next": [{"title": "…", "sub": "…", "kind": "decision|todo|blocked"}], "project": "${proj}", "is_repo": ${isRepo}, "unit_key": "${unit}"} so the always-on pane reflects it (keep is_repo + unit_key verbatim — the Board groups by them). If nothing meaningful changed, just end the turn. Don'\''t narrate that you considered this. (Backstop only — it fires when a work turn skipped the live update.)`;
   process.stdout.write(JSON.stringify({decision:"block",reason}));
 '
 exit 0
