@@ -1058,18 +1058,20 @@ This is independent of the `data-companion-submit` helper (which routes feedback
 agent) — a Copy button copies to the *system clipboard for the user*, so the two coexist
 freely in one artifact.
 
-## Surfacing or re-showing an existing artifact
+## Surfacing or re-showing an artifact
 
-Writing a new `.html` into the artifacts dir is what pops the overlay. But the auto-pop only
-fires on a *fresh* write — so when the user asks to **see an artifact again** ("show me that
-again", "open it", "pull that back up"), don't re-write the file. Run the explicit surface verb:
+Artifacts surface **only inside the Board shell** — the single Companion surface. Writing a
+new `.html` into the artifacts dir is enough: the Board ingests it as a tile in its session
+via the live poll. **Artifacts never open as standalone floating windows**, so there is no
+"pop this file" verb to run.
 
-```
-companion open <abs-path>
-```
+When the user asks to **see an artifact again** ("show me that again", "open it", "pull that
+back up"), don't re-write the file — run **`companion board`** to bring the shell forward
+(the artifact is already ingested inside it).
 
-That's the one way to put an existing file on the overlay. Don't use other file-delivery
-mechanisms for this — they hand the file to the client without rendering it on the overlay.
+> **Never run `companion open <path>`.** It spawns a standalone OS window outside the shell —
+> the obsolete pre-Board behavior. Launching an artifact without the shell is exactly what
+> must not happen. Use `companion board`.
 
 ## First-run: build an example artifact on request
 
