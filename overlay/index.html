@@ -139,13 +139,17 @@
           <div id="board-sessions-grid" class="sessions-grid"></div>
         </div>
 
-        <div id="board-scroll" class="panes-scroll" hidden>
-          <div id="board-panes" class="panes"></div>
+        <!-- L2 Unit home. A unit groups all live sessions of a project (or a bare
+             non-repo session). Layered: a full-bleed agent-authored DIGEST
+             (home.<unit>.html), a horizontal strip of live LANES (one per active
+             session, its working/where/next), and a readable text HISTORY. -->
+        <div id="board-unit" class="board-unit" hidden>
+          <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+          <div id="unit-lanes" class="unit-lanes"></div>
+          <div id="unit-history" class="unit-history"></div>
         </div>
 
         <div class="kbd-hint">
-          <span><kbd>↑↓←→</kbd> move</span>
-          <span><kbd>↵</kbd> expand</span>
           <span><kbd>esc</kbd> back</span>
           <span><kbd>F</kbd> full screen</span>
         </div>
