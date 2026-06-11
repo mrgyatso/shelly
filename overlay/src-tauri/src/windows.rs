@@ -220,7 +220,9 @@ pub fn open_board_window(app: &AppHandle) {
             .transparent(true)
             .resizable(true)
             .shadow(true)
-            .always_on_top(true)
+            // The Board is a normal app window now: it layers like any other window
+            // (can be covered, click-outside backgrounds it), NOT pinned above all.
+            .always_on_top(false)
             .center()
             .visible(false)
             .initialization_script("window.__BOARD_MODE__ = true;")

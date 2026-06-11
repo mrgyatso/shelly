@@ -120,22 +120,20 @@ pub fn run() {
             hub::hub_test_connection
         ])
         .setup(|app| {
-            // Accessory activation policy: no Dock icon, no Cmd-Tab — like
-            // Prohibited — but the app CAN become active when a control needs
-            // key focus (a text field click in an interactive review artifact).
+            // Regular activation policy: the Board is a normal app now — it gets a
+            // Dock icon and a Cmd-Tab entry, lives on one Space, and the menu bar
+            // shows when active.
             //
-            // Earlier this was `Prohibited` to guarantee no focus theft, but
-            // that also made it impossible for ANY window to become key, which
-            // broke typing into iframe textareas. The standard floating-palette
-            // pattern (Xcode's Documentation viewer, Finder's Get Info) uses
-            // Accessory + non-activating NSPanel + `becomesKeyOnlyIfNeeded` +
-            // the private `_setPreventsActivation:` call we already do in
-            // `macos_panel.rs`. That trio gives us: the panel pops / drags /
-            // gets clicked without making the app active OR taking key, but
-            // clicking specifically on a text input DOES make the panel key
-            // so the user can type. Terminal stays the front app the whole time.
+            // This does NOT make the pill / ghost panels steal terminal focus: that
+            // is enforced separately in `macos_panel.rs` by the non-activating-panel
+            // treatment (the `NonactivatingPanel` mask + `becomesKeyOnlyIfNeeded` +
+            // the private `_setPreventsActivation:` call) — independent of the app's
+            // activation policy. So those panels still pop / drag / get clicked
+            // without making the app key, while clicking a text input still makes the
+            // panel key so the user can type. The earlier `Accessory` (and before it
+            // `Prohibited`) choices were about hiding the Dock icon, not about focus.
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            app.set_activation_policy(tauri::ActivationPolicy::Regular);
 
             // Minimal app + Edit menu so ⌘V/⌘C/⌘X/⌘A/⌘Z route to the focused
             // textarea inside an interactive artifact's iframe. A borderless
