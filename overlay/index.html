@@ -137,12 +137,12 @@
         </div>
 
         <!-- L2 Unit home. A unit groups all live sessions of a project (or a bare
-             non-repo session). Layered: a full-bleed agent-authored DIGEST
-             (home.<unit>.html), a horizontal strip of live LANES (one per active
-             session, its working/where/next), and a readable text HISTORY. -->
+             non-repo session). The HERO is the unit's lead surface — the
+             agent-authored DIGEST (home.<unit>.html) if present, else the unit's
+             most recent artifact — shown large at the top, with a readable text
+             HISTORY of the unit's artifacts below it. -->
         <div id="board-unit" class="board-unit" hidden>
           <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
-          <div id="unit-lanes" class="unit-lanes"></div>
           <div id="unit-history" class="unit-history"></div>
         </div>
 

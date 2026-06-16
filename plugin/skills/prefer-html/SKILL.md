@@ -1171,9 +1171,9 @@ front page, not a spreadsheet:
 `home.html` is the cross-project L0 hub. One level deeper, each **unit** (a project/git repo,
 or a bare non-repo session) has its OWN durable home: write it to the reserved slug
 **`home.<unit_key>.html`** in the same artifacts dir (e.g.
-`~/.claude/companion/artifacts/home.canvas-board.html`). The Board loads it **full-width at the
-top of the unit's L2 view** (NOT full-viewport — the Board stacks your digest above live
-**lanes** and a **history** list, so size your content to flow, not to fill a screen).
+`~/.claude/companion/artifacts/home.canvas-board.html`). The Board loads it as the unit's
+**HERO** — shown large at the top of the L2 view, above a readable **history** list of the
+unit's artifacts (size your content to flow; the hero is tall but not the whole screen).
 
 - **`unit_key`** is handed to you at session start (the `companion-session` hook injects it
   alongside the live-surface path) and is written into your live JSON. Use it verbatim as the
@@ -1183,11 +1183,11 @@ top of the unit's L2 view** (NOT full-viewport — the Board stacks your digest 
 - It's a **digest**, not a dashboard-of-everything: "where this project's work stands now" —
   current focus, open decisions, what shipped, what's next. It **grows across sessions** (read
   the existing file, regenerate it richer), so it's the project's living memory on the Board.
-- It is **optional**: when absent, the Board's native L2 (lanes + history) is already a complete
-  home, so author one only when a curated digest adds real signal.
+- It is **optional**: when absent, the Board falls back to showing the unit's most recent
+  artifact as the hero (with history below), so author one only when a curated digest adds
+  real signal over "just show my latest artifact."
 - **Concurrency:** two agents in one repo share one `home.<unit_key>.html` — last-writer-wins is
-  fine (it's slow, curated, read-then-regenerate content; the fast-changing per-agent state
-  lives in the lane files, not here). Don't try to lock it.
+  fine (it's slow, curated, read-then-regenerate content). Don't try to lock it.
 
 (This applies to any artifact, but dashboards are where the grid reflex is strongest — see
 the design-quality rules: *default card grids with uniform spacing and no hierarchy* are

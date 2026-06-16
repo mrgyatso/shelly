@@ -726,7 +726,8 @@
 }
 
 /* =========================================================================
-   L2 UNIT HOME — agent-authored digest (bounded) + live lanes + text history
+   L2 UNIT HOME — a large HERO (agent digest, else the unit's latest artifact)
+   over a readable text history
    ========================================================================= */
 .board-unit {
   position: relative;
@@ -743,13 +744,13 @@
 }
 .board-unit[hidden] { display: none; }
 
-/* The digest is full-WIDTH at the top, NOT full-viewport — lanes + history sit
-   below it. The id selector overrides .hub-frame's height:100% (correct only at
-   L0, where the dashboard owns the whole surface). */
+/* The HERO is the unit's lead surface — large at the top, with history below.
+   The id selector overrides .hub-frame's height:100% (full-bleed only at L0,
+   where the dashboard owns the whole surface). */
 #unit-digest {
   flex: 0 0 auto;
   width: 100%;
-  height: min(58vh, 680px);
+  height: min(74vh, 860px);
   border: 0;
   border-radius: var(--radius-card);
   box-shadow: var(--sh-art);
@@ -759,70 +760,7 @@
 }
 #unit-digest[hidden] { display: none; }
 
-/* Live lanes — a horizontal strip, one card per active session in the unit. */
-.unit-lanes {
-  flex: 0 0 auto;
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scrollbar-width: thin;
-}
-.unit-lanes[hidden] { display: none; }
-.lane {
-  flex: 0 0 auto;
-  width: 340px;
-  max-height: 560px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: var(--card);
-  border-radius: var(--radius-card);
-  box-shadow: var(--sh-art);
-  outline: 1px solid var(--line-2);
-  outline-offset: -1px;
-  padding: 15px 16px;
-  overflow: hidden;
-}
-.lane-head { display: flex; flex-direction: column; gap: 8px; }
-.lane-rule { height: 1px; background: var(--line); }
-.lane-body { overflow-y: auto; min-height: 0; }
-.lane-arts { display: flex; flex-direction: column; gap: 2px; }
-.lane-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line-2);
-}
-.lane-count {
-  flex: 1 1 auto;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-.lane-doall, .lane-submit {
-  font-family: var(--mono);
-  font-size: 11px;
-  border-radius: 8px;
-  padding: 5px 11px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--ink-2);
-  cursor: pointer;
-  transition: background 0.16s, color 0.16s, border-color 0.16s;
-}
-.lane-doall:hover { background: var(--sunk); color: var(--ink); }
-.lane-submit.ready {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: oklch(0.99 0.01 70);
-}
-
-/* A clickable artifact row — lane in-flight rows + the history list share it. */
+/* A clickable artifact row — the history list uses it. */
 .art-row {
   display: flex;
   align-items: baseline;
@@ -867,9 +805,6 @@
   color: var(--ink-4);
   font-variant-numeric: tabular-nums;
 }
-.lane-arts .art-row { padding: 6px 8px; }
-.lane-arts .art-row-title { font-size: 12.5px; }
-
 /* History — the unit's durable artifact list. */
 .unit-history { flex: 0 0 auto; display: flex; flex-direction: column; }
 .history-head {

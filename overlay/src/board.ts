@@ -27,7 +27,6 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
 import { isNavigateMessage } from "./resize";
-import { renderLiveState, type LiveState as LiveStateBody } from "./live-render";
 
 interface ArtifactEntry {
   path: string;
@@ -68,7 +67,7 @@ interface LiveState {
 
 type StatusLevel = "wait" | "busy" | "ok" | "idle";
 
-/** Header fields for one source — shared by L1 unit cards and L2 lanes. */
+/** Header fields for one source — used by L1 unit cards. */
 interface PaneHead {
   source: string;
   name: string;
@@ -140,7 +139,6 @@ let hubEl: HTMLElement;
 let sessionsEl: HTMLElement;
 let unitEl: HTMLElement;
 let digestEl: HTMLIFrameElement;
-let lanesEl: HTMLElement;
 let historyEl: HTMLElement;
 
 export async function initBoard(): Promise<void> {
@@ -152,13 +150,12 @@ export async function initBoard(): Promise<void> {
   const sessions = document.getElementById("board-sessions");
   const unit = document.getElementById("board-unit");
   const digest = document.getElementById("unit-digest") as HTMLIFrameElement | null;
-  const lanes = document.getElementById("unit-lanes");
   const history = document.getElementById("unit-history");
   // The single-artifact / other surfaces share this bundle — hide them.
   document.getElementById("frame")?.setAttribute("hidden", "");
   document.getElementById("empty")?.setAttribute("hidden", "");
   document.getElementById("controls")?.setAttribute("hidden", "");
-  if (!stage || !board || !scrim || !status || !hub || !sessions || !unit || !digest || !lanes || !history) return;
+  if (!stage || !board || !scrim || !status || !hub || !sessions || !unit || !digest || !history) return;
 
   stageEl = stage;
   boardEl = board;
@@ -167,14 +164,12 @@ export async function initBoard(): Promise<void> {
   sessionsEl = sessions;
   unitEl = unit;
   digestEl = digest;
-  lanesEl = lanes;
   historyEl = history;
   stage.removeAttribute("hidden");
 
   wireControls();
   wireKeyboard();
   wireNavigate();
-  wireLaneActions();
   wireHistoryClicks();
   wireScrollGating();
   startClock();
@@ -233,7 +228,7 @@ function goSessions(): void {
 /** Enter L2 — one unit's home. Replace rather than stack if already at a unit
  *  (e.g. an artifact-navigate across units), so back-nav stays one level up. */
 function goUnit(unitKey: string): void {
-  leaveUnit(); // clears prior theming; renderDigest re-themes if this unit authored a home
+  leaveUnit(); // clears prior theming; renderHero re-themes if this unit authored a home
   if (currentView().level === "unit") viewStack.pop();
   viewStack.push({ level: "unit", unitKey });
   showLevel("unit");
@@ -325,13 +320,6 @@ function unitKeyOfSlug(slug: string): string {
   return s ? unitKeyOf(s) : slug;
 }
 
-/** All live sources belonging to a unit, freshest first. */
-function sourcesInUnit(unitKey: string): LiveSource[] {
-  return allSources
-    .filter((s) => unitKeyOf(s) === unitKey)
-    .sort((a, b) => sourceUpdatedMs(b) - sourceUpdatedMs(a));
-}
-
 /** Bucket every live source by its unit. */
 function groupSourcesByUnit(): Map<string, LiveSource[]> {
   const m = new Map<string, LiveSource[]>();
@@ -343,12 +331,10 @@ function groupSourcesByUnit(): Map<string, LiveSource[]> {
 }
 
 /**
- * The UNIT an artifact belongs to. Unlike sourceForArtifact (which can't pick
- * between two same-repo instances and so returns UNSOURCED), a unit CAN claim an
- * ambiguous artifact: for a repo the unit key IS the project slug, so two agents
- * in one repo share one unit and the artifact lands there. Falls back to the
- * unique non-repo instance's unit, else UNSOURCED. This is what makes the
- * "≥2 live in one repo → all artifacts dumped in Unsourced" bug go away.
+ * The UNIT an artifact belongs to — the single routing authority. An artifact
+ * carries only a `project`. For a repo the unit key IS the project slug, so two
+ * agents in one repo share one unit and the artifact lands there (no ambiguity).
+ * Falls back to the unique non-repo instance's unit, else UNSOURCED.
  */
 function unitForArtifact(a: ArtifactEntry): string {
   const key = projectSlug(a.project);
@@ -506,25 +492,23 @@ function buildUnitCard(unitKey: string, sources: LiveSource[], artCount: number,
   return card;
 }
 
-// ---- L2 unit home (digest + lanes + history) --------------------------------
+// ---- L2 unit home (hero + history) ------------------------------------------
 
-/** Enter L2: clear the unit's unread, resolve its digest, render lanes + history. */
+/** Enter L2: clear the unit's unread, render its hero surface + history. */
 function enterUnit(unitKey: string): void {
   clearUnread(unitKey);
   pendingIngest.delete(unitKey);
   updateGlobalUnread();
   focusPath = null;
-  void renderDigest(unitKey);
-  renderLanes(unitKey);
+  void renderHero(unitKey);
   renderHistory(unitKey);
 }
 
-/** Tear down L2 state when leaving a unit. Clears any L2 digest bar theming so a
- *  themed unit can't leak its bar onto the native L1/L0 chrome (renderDigest /
+/** Tear down L2 state when leaving a unit. Clears any L2 hero bar theming so a
+ *  themed unit can't leak its bar onto the native L1/L0 chrome (renderHero /
  *  renderHub re-apply when they're entered). */
 function leaveUnit(): void {
   closeFocus();
-  lanesEl?.replaceChildren();
   historyEl?.replaceChildren();
   digestEl?.setAttribute("hidden", "");
   applyBar(null);
@@ -532,12 +516,14 @@ function leaveUnit(): void {
 }
 
 /**
- * The unit's DIGEST — a durable, agent-authored `home.<unit_key>.html`. Loaded
- * full-WIDTH at the top of the unit home (NOT full-viewport; lanes + history sit
- * below it). Absent ⇒ the iframe is hidden and lanes + history carry the unit
- * entirely. Progressive enhancement, exactly like the L0 Hub.
+ * The unit's HERO — its lead surface, shown large at the top of the unit home
+ * (history sits below). Prefers the durable, agent-authored digest
+ * `home.<unit_key>.html`; absent ⇒ falls back to the unit's most recent
+ * artifact, so opening a unit always lands on its latest work at full size.
+ * An empty unit (no digest, no artifacts) ⇒ the iframe is hidden and history
+ * carries its empty state. Progressive enhancement, exactly like the L0 Hub.
  */
-async function renderDigest(unitKey: string): Promise<void> {
+async function renderHero(unitKey: string): Promise<void> {
   let home: string | null = null;
   if (unitKey !== UNSOURCED) {
     try {
@@ -553,116 +539,34 @@ async function renderDigest(unitKey: string): Promise<void> {
   if (home) {
     digestEl.removeAttribute("hidden");
     applyBar(await barSpecFor(home));
-    await loadArtifactInto(home, digestEl).catch((e) => console.error("digest load failed", e));
+    await loadArtifactInto(home, digestEl).catch((e) => console.error("hero digest load failed", e));
+    return;
+  }
+
+  // No digest — lead with the unit's most recent artifact.
+  applyBar(null);
+  const arts = groupArtifactsByUnit().get(unitKey) ?? [];
+  const latest = arts.reduce<ArtifactEntry | null>(
+    (best, a) => (best === null || a.modified_ms > best.modified_ms ? a : best),
+    null,
+  );
+  if (latest) {
+    digestEl.removeAttribute("hidden");
+    await loadArtifactInto(latest.path, digestEl).catch((e) =>
+      console.error("hero artifact load failed", e),
+    );
   } else {
     digestEl.setAttribute("hidden", "");
-    applyBar(null);
   }
 }
 
-/** Render the live LANES — one per source in the unit, freshest first. */
-function renderLanes(unitKey: string): void {
-  const sources = sourcesInUnit(unitKey);
-  lanesEl.replaceChildren(...sources.map(buildLane));
-  lanesEl.toggleAttribute("hidden", sources.length === 0);
-}
-
-/** Replace a single lane in place (a source's live state changed). */
-function rebuildLane(source: string): void {
-  const s = allSources.find((x) => x.source === source);
-  if (!s) return;
-  const old = lanesEl.querySelector(`.lane[data-source="${cssEsc(source)}"]`);
-  if (old) old.replaceWith(buildLane(s));
-}
-
-/** One lane: header + live working/where/next (✓/✎/✗) + the source's in-flight
- *  (fresh) artifacts as clickable rows + a submit footer when decisions exist. */
-function buildLane(s: LiveSource): HTMLElement {
-  const head = makeHead(s);
-  const state = parseState(s.json);
-
-  const lane = document.createElement("div");
-  lane.className = "lane";
-  lane.dataset.source = s.source;
-  lane.dataset.working = state.working || "Live";
-
-  // Header (reuses the L1/pane header model: mark + name/prov + status dot/line).
-  const idRow = document.createElement("div");
-  idRow.className = "pane-id";
-  const mark = document.createElement("span");
-  mark.className = "agent-mark" + (head.isCloud ? " cloud" : "");
-  mark.textContent = head.mark;
-  const who = document.createElement("div");
-  who.className = "who";
-  const name = document.createElement("div");
-  name.className = "name";
-  name.textContent = head.name;
-  const prov = document.createElement("div");
-  prov.className = "prov";
-  prov.textContent = head.prov;
-  who.append(name, prov);
-  idRow.append(mark, who);
-
-  const statusRow = document.createElement("div");
-  statusRow.className = "pane-status";
-  const dot = document.createElement("span");
-  dot.className = "status-dot " + head.level;
-  const stext = document.createElement("span");
-  stext.className = "status-text";
-  stext.innerHTML = head.statusHtml;
-  statusRow.append(dot, stext);
-
-  const headEl = document.createElement("div");
-  headEl.className = "lane-head";
-  headEl.append(idRow, statusRow);
-
-  const rule = document.createElement("div");
-  rule.className = "lane-rule";
-
-  const body = document.createElement("div");
-  body.className = "lane-body";
-  body.appendChild(renderLiveState(state as LiveStateBody));
-
-  lane.append(headEl, rule, body);
-
-  // In-flight artifacts (fresh, authored by this source) as quiet rows.
-  const now = Date.now();
-  const inflight = allArtifacts
-    .filter((a) => sourceForArtifact(a) === s.source && now - a.modified_ms < FRESH_WINDOW_MS)
-    .sort((a, b) => b.modified_ms - a.modified_ms);
-  if (inflight.length) {
-    const arts = document.createElement("div");
-    arts.className = "lane-arts";
-    for (const a of inflight) arts.appendChild(buildArtRow(a, true));
-    lane.append(arts);
-  }
-
-  // Submit footer only when there are decisions to make.
-  if ((state.next?.length ?? 0) > 0) {
-    const foot = document.createElement("div");
-    foot.className = "lane-foot";
-    const count = document.createElement("span");
-    count.className = "lane-count";
-    count.textContent = "nothing marked";
-    const doall = document.createElement("button");
-    doall.className = "lane-doall";
-    doall.textContent = "Do all";
-    const submit = document.createElement("button");
-    submit.className = "lane-submit";
-    submit.textContent = "Submit → ⌘V";
-    foot.append(count, doall, submit);
-    lane.append(foot);
-  }
-  return lane;
-}
-
-/** A clickable artifact row (lane in-flight rows + history rows share this). */
-function buildArtRow(a: ArtifactEntry, inflight: boolean): HTMLElement {
+/** A clickable artifact row — the history list. */
+function buildArtRow(a: ArtifactEntry): HTMLElement {
   const row = document.createElement("div");
-  row.className = inflight ? "art-row inflight" : "art-row";
+  row.className = "art-row";
   row.dataset.artPath = a.path;
 
-  if (!inflight && Date.now() - a.modified_ms < FRESH_WINDOW_MS) {
+  if (Date.now() - a.modified_ms < FRESH_WINDOW_MS) {
     const d = document.createElement("span");
     d.className = "art-row-dot";
     row.append(d);
@@ -706,83 +610,9 @@ function renderHistory(unitKey: string): void {
     empty.textContent = "No artifacts yet — they'll appear here as agents author them.";
     frag.append(empty);
   } else {
-    for (const a of arts) frag.append(buildArtRow(a, false));
+    for (const a of arts) frag.append(buildArtRow(a));
   }
   historyEl.replaceChildren(frag);
-}
-
-// ---- lane decisions (scoped to a single lane) -------------------------------
-
-/** One delegated listener for all lanes (lanes are rebuilt; this survives). */
-function wireLaneActions(): void {
-  lanesEl.addEventListener("click", (e) => {
-    const t = e.target as HTMLElement;
-    const lane = t.closest(".lane") as HTMLElement | null;
-    if (!lane) return;
-
-    const artRow = t.closest("[data-art-path]") as HTMLElement | null;
-    if (artRow?.dataset.artPath) {
-      void openReader(artRow.dataset.artPath);
-      return;
-    }
-    const actBtn = t.closest("[data-action]") as HTMLElement | null;
-    if (actBtn) {
-      const card = actBtn.closest(".live-item") as HTMLElement | null;
-      if (card) toggleLaneItem(card, actBtn.dataset.action as string, lane);
-      return;
-    }
-    if (t.closest(".lane-doall")) {
-      lane.querySelectorAll<HTMLElement>(".live-item").forEach((card) => {
-        card.dataset.state = "approve";
-        const ta = card.querySelector(".live-comment") as HTMLElement | null;
-        if (ta) ta.hidden = true;
-      });
-      refreshLane(lane);
-      return;
-    }
-    if (t.closest(".lane-submit")) void laneSubmit(lane);
-  });
-}
-
-/** Toggle a lane item's ✓/✎/✗ state (mirrors live.ts; scoped to its lane). */
-function toggleLaneItem(card: HTMLElement, action: string, lane: HTMLElement): void {
-  const ta = card.querySelector(".live-comment") as HTMLTextAreaElement | null;
-  if (card.dataset.state === action) {
-    delete card.dataset.state;
-    if (ta) ta.hidden = true;
-  } else {
-    card.dataset.state = action;
-    if (ta) {
-      ta.hidden = action !== "comment";
-      if (action === "comment") setTimeout(() => ta.focus(), 0);
-    }
-  }
-  refreshLane(lane);
-}
-
-/** Update a lane's marked-count label + submit-ready state. */
-function refreshLane(lane: HTMLElement): void {
-  const n = lane.querySelectorAll(".live-item[data-state]").length;
-  const count = lane.querySelector(".lane-count");
-  if (count) count.textContent = n ? `${n} decision${n === 1 ? "" : "s"}` : "nothing marked";
-  lane.querySelector(".lane-submit")?.classList.toggle("ready", n > 0);
-}
-
-/** Compile a lane's marked decisions to clipboard prose (live.ts's format). */
-async function laneSubmit(lane: HTMLElement): Promise<void> {
-  const items = Array.from(lane.querySelectorAll<HTMLElement>(".live-item[data-state]"));
-  if (!items.length) return;
-  const verb: Record<string, string> = { approve: "✓ Do it:", reject: "✗ Skip:", comment: "✎ Note:" };
-  const lines = ["[Companion live]", `Re: ${lane.dataset.working || "Live"}`, "", "— Decisions —", ""];
-  for (const card of items) {
-    const state = card.dataset.state as string;
-    lines.push(`${verb[state]} ${card.dataset.label || "(unlabeled)"}`);
-    if (state === "comment") {
-      const ta = card.querySelector(".live-comment") as HTMLTextAreaElement | null;
-      if (ta && ta.value.trim()) ta.value.trim().split("\n").forEach((l) => lines.push(`    ${l}`));
-    }
-  }
-  await handleSubmit(lines.join("\n"));
 }
 
 // ---- history clicks ---------------------------------------------------------
@@ -795,17 +625,6 @@ function wireHistoryClicks(): void {
 }
 
 // ---- data → header ----------------------------------------------------------
-
-/** The source an artifact belongs to (its live instance, else UNSOURCED). The
- *  single routing authority. An artifact carries only a `project`, so it routes
- *  to the UNIQUE live instance of that project; if two instances of one repo are
- *  live, that's ambiguous → UNSOURCED. (Unit-level history reunites them.) */
-function sourceForArtifact(a: ArtifactEntry): string {
-  const key = projectSlug(a.project);
-  if (!key) return UNSOURCED;
-  const matches = allSources.filter((s) => sourceProjectKey(s) === key);
-  return matches.length === 1 ? matches[0].source : UNSOURCED;
-}
 
 /** Total fresh (in-flight) artifacts across all sources — for the L0 greeting. */
 function freshCount(): number {
@@ -1121,7 +940,7 @@ function navigateTo(to: string): void {
  * Open an artifact full-SURFACE over the Board — the fix for "can't open an
  * artifact fully." A scrim + an inset:0 card with its OWN live iframe (kept out
  * of any pooling) whose JS + ✓/✎/✗ run; submit routes through wireNavigate via
- * `focusPath`. Open-by-path, so lanes, history, and navigate links all reuse it.
+ * `focusPath`. Open-by-path, so history and navigate links all reuse it.
  */
 async function openReader(path: string): Promise<void> {
   if (focusPath) return;
@@ -1187,13 +1006,10 @@ async function pollLive(): Promise<void> {
     changed.push(s.source);
   }
   if (changed.length) {
+    // L1 refreshes its unit cards' live status. L2 (hero + history) is
+    // artifact-driven, not live-state-driven, so it ignores live changes; the
+    // L0 Hub re-resolves on entry only.
     if (view.level === "sessions") renderUnits();
-    else if (view.level === "unit") {
-      for (const src of changed) {
-        if (unitKeyOfSlug(src) === view.unitKey) rebuildLane(src);
-      }
-    }
-    // L0 Hub: no live-refresh (re-resolves on entry only).
   }
 
   // Live artifact ingestion — act only when the set actually changed.
@@ -1264,16 +1080,16 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
   updateGlobalUnread();
 }
 
-/** Refresh the on-screen unit's HISTORY when its artifact set changed. Lanes'
- *  in-flight rows refresh on the next live-state tick (rebuildLane), so a rebuild
- *  here would needlessly drop any in-progress lane marks — history-only. Deferred
- *  while the reader overlay is open. */
+/** Refresh the on-screen unit's HERO + HISTORY when its artifact set changed (a
+ *  new artifact may now be the freshest, so the hero re-resolves too). Preserves
+ *  scroll. Deferred while the reader overlay is open. */
 function ingestIntoUnit(unitKey: string): void {
   if (focusPath !== null) {
     pendingIngest.add(unitKey);
     return;
   }
   const keep = unitEl.scrollTop;
+  void renderHero(unitKey); // a newer artifact may have arrived → refresh the lead surface
   renderHistory(unitKey);
   unitEl.scrollTop = keep;
 }
@@ -1480,6 +1296,3 @@ function setStatus(el: HTMLElement, text: string): void {
 }
 
 /** Escape a path for use inside a CSS attribute selector. */
-function cssEsc(s: string): string {
-  return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&");
-}
