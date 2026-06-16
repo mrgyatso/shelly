@@ -13,6 +13,8 @@ declare global {
     __LIVE_MODE__?: boolean;
     /** Set on the board window so the same bundle renders the grid of tiles. */
     __BOARD_MODE__?: boolean;
+    /** Set on the menu-bar popover window so the same bundle renders the roster. */
+    __POPOVER_MODE__?: boolean;
   }
 }
 
@@ -91,6 +93,8 @@ if (window.__LIVE_MODE__) {
   void import("./history").then((m) => m.initHistory());
 } else if (window.__BOARD_MODE__) {
   void import("./board").then((m) => m.initBoard());
+} else if (window.__POPOVER_MODE__) {
+  void import("./popover").then((m) => m.initPopover());
 } else {
   document.getElementById("refresh")?.addEventListener("click", () => {
     if (current) void loadArtifact(current);

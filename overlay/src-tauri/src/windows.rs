@@ -12,7 +12,8 @@ use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
 };
 
 /// The Board's pre-fullscreen frame (physical px), saved so the fullscreen
@@ -39,6 +40,11 @@ pub const LIVE_LABEL: &str = "live_main";
 /// create-or-raise. P0: a new, isolated surface that does not replace the
 /// floating one-off panels yet.
 pub const BOARD_LABEL: &str = "board_main";
+/// The menu-bar popover — a small roster panel dropped from the status item.
+/// Fixed label so the tray click always toggles the one instance.
+pub const POPOVER_LABEL: &str = "popover_main";
+const POPOVER_W: f64 = 340.0;
+const POPOVER_H: f64 = 460.0;
 
 /// Deterministic, label-safe id for an artifact path. `DefaultHasher::new()` is
 /// seedless, so the same path maps to the same label for the life of the process
@@ -240,6 +246,87 @@ pub fn open_board_window(app: &AppHandle) {
     crate::macos_panel::make_board_window(&win);
     let _ = win.show();
     let _ = win.set_focus();
+}
+
+/// Open the Board from another window (e.g. a popover row click). A thin command
+/// wrapper around [`open_board_window`] so the frontend can summon the focal
+/// surface.
+#[tauri::command]
+pub fn show_board(app: AppHandle) {
+    open_board_window(&app);
+}
+
+/// Toggle the menu-bar popover — the lightweight roster glance summoned from the
+/// status item. It is a key-capable window (so it dismisses on blur, native
+/// menu-bar behaviour) created lazily on first open and shown/hidden thereafter.
+/// Positioned under the menu bar (top-right for now; icon-precise alignment TBD).
+pub fn toggle_popover(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(POPOVER_LABEL) {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+        } else {
+            position_popover(&win);
+            let _ = win.emit("popover:refresh", ());
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
+        return;
+    }
+
+    let win =
+        match WebviewWindowBuilder::new(app, POPOVER_LABEL, WebviewUrl::App("index.html".into()))
+            .title("Companion")
+            .inner_size(POPOVER_W, POPOVER_H)
+            .decorations(false)
+            .transparent(true)
+            .resizable(false)
+            .shadow(true)
+            .always_on_top(true)
+            .visible(false)
+            .initialization_script("window.__POPOVER_MODE__ = true;")
+            .build()
+        {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[overlay] failed to create popover window: {e}");
+                return;
+            }
+        };
+
+    // Dismiss on blur — clicking anywhere outside (the terminal, the Board) hides
+    // the popover, the way a native menu-bar dropdown behaves.
+    let handle = app.clone();
+    win.on_window_event(move |event| {
+        if let tauri::WindowEvent::Focused(false) = event {
+            if let Some(w) = handle.get_webview_window(POPOVER_LABEL) {
+                let _ = w.hide();
+            }
+        }
+    });
+
+    // Key-capable + activating so it can take focus (and thus blur to dismiss).
+    // Clicking the status item is an explicit gesture, so brief activation is
+    // expected — this is NOT the non-activating ghost-panel treatment.
+    crate::macos_panel::make_board_window(&win);
+    position_popover(&win);
+    let _ = win.show();
+    let _ = win.set_focus();
+}
+
+/// Park the popover at the top-right of the primary monitor, just under the menu
+/// bar. (Icon-precise alignment from the tray rect is a follow-up.)
+fn position_popover(win: &WebviewWindow) {
+    if let Ok(Some(mon)) = win.primary_monitor() {
+        let pos = mon.position();
+        let size = mon.size();
+        let scale = mon.scale_factor();
+        let w = (POPOVER_W * scale).round() as i32;
+        let margin = (10.0 * scale).round() as i32;
+        let menubar = (38.0 * scale).round() as i32;
+        let x = pos.x + size.width as i32 - w - margin;
+        let y = pos.y + menubar;
+        let _ = win.set_position(PhysicalPosition::new(x, y));
+    }
 }
 
 /// Toggle the Board between windowed and "maximized to its current monitor".

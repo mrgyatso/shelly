@@ -1117,74 +1117,16 @@ function postUnreadToHub(): void {
   );
 }
 
-// ---- pill (collapsed state) -------------------------------------------------
-
-function showPill(): void {
-  const pill = document.getElementById("board-pill");
-  if (!pill) return;
-  closeFocus();
-  boardEl.setAttribute("hidden", "");
-  pill.removeAttribute("hidden");
-
-  const summary = allSources.map(sourceSummary);
-  const line1 = document.getElementById("pill-line1");
-  const line2 = document.getElementById("pill-line2");
-  const orbs = document.getElementById("pill-orbs");
-  const waiting = summary.find((s) => s.level === "wait");
-  if (line1) {
-    line1.innerHTML = waiting
-      ? `${escapeHtml(waiting.name)} <b>needs your review</b>`
-      : "All agents nominal";
-  }
-  const fresh = freshCount();
-  if (line2) {
-    line2.textContent = `${summary.length} agents · ${fresh} new · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`;
-  }
-  if (orbs) {
-    orbs.replaceChildren();
-    for (const s of summary) {
-      const orb = document.createElement("span");
-      orb.className = "pill-orb";
-      orb.style.background = orbColor(s.level);
-      orbs.append(orb);
-    }
-  }
-}
-
-function sourceSummary(s: LiveSource): { name: string; level: StatusLevel } {
-  const state = parseState(s.json);
-  return {
-    name: state.project || s.source,
-    level: levelFromKind(state.next?.[0]?.kind),
-  };
-}
-
-function hidePill(): void {
-  document.getElementById("board-pill")?.setAttribute("hidden", "");
-  boardEl.removeAttribute("hidden");
-}
-
-function orbColor(level: StatusLevel): string {
-  switch (level) {
-    case "wait":
-      return "var(--accent)";
-    case "busy":
-      return "var(--busy)";
-    case "ok":
-      return "var(--ok)";
-    default:
-      return "var(--idle)";
-  }
-}
-
 // ---- controls + keyboard ----------------------------------------------------
 
 function wireControls(): void {
   document.getElementById("board-close")?.addEventListener("click", () => {
     win.hide().catch((e) => console.error("board hide failed", e));
   });
-  document.getElementById("board-collapse")?.addEventListener("click", showPill);
-  document.getElementById("board-pill")?.addEventListener("click", hidePill);
+  // Collapse = hide to the menu bar (the status item is the ambient presence now).
+  document.getElementById("board-collapse")?.addEventListener("click", () => {
+    win.hide().catch((e) => console.error("board hide failed", e));
+  });
   document.getElementById("board-fullscreen")?.addEventListener("click", toggleFullscreen);
   document.getElementById("board-back")?.addEventListener("click", goBack);
   document.getElementById("board-unread")?.addEventListener("click", goSessions);
@@ -1249,14 +1191,6 @@ function toggleFullscreen(): void {
 
 function wireKeyboard(): void {
   window.addEventListener("keydown", (e: KeyboardEvent) => {
-    const pillShown = !document.getElementById("board-pill")?.hasAttribute("hidden");
-    if (pillShown) {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        hidePill();
-      }
-      return;
-    }
     if (focusPath) {
       if (e.key === "Escape") {
         e.preventDefault();

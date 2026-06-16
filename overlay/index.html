@@ -33,6 +33,10 @@
       <span class="check">✓</span> Copied &mdash; <kbd>⌘V</kbd> in terminal
     </div>
 
+    <!-- Menu-bar popover. Hidden by default; popover.ts reveals it only on the
+         popover_main window and renders the live-agent roster. -->
+    <div id="popover" class="popover-panel" hidden></div>
+
     <!-- Always-on live surface. Hidden by default; live.ts reveals it only on the
          live_main window and renders the current state from live.json in place. -->
     <div id="live" class="live" hidden>
@@ -61,15 +65,6 @@
          tiles). board.ts rewires every id below. -->
     <div id="board-stage" class="stage" hidden>
       <!-- collapsed ambient pill (Board's collapsed state) -->
-      <div id="board-pill" class="pill paper-tex" role="button" tabindex="0" hidden>
-        <div class="pill-logo">C</div>
-        <div class="pill-body">
-          <div id="pill-line1" class="pill-line1"></div>
-          <div id="pill-line2" class="pill-line2"></div>
-        </div>
-        <div id="pill-orbs" class="pill-orbs"></div>
-      </div>
-
       <div id="board" class="board paper-tex">
         <div class="board-top" data-tauri-drag-region>
           <div class="greeting">

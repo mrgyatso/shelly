@@ -47,7 +47,9 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                crate::windows::open_board_window(tray.app_handle());
+                // Left-click toggles the roster popover (the lightweight glance);
+                // the Board opens from inside it or via the right-click menu.
+                crate::windows::toggle_popover(tray.app_handle());
             }
         });
 
