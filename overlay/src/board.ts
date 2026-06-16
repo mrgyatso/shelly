@@ -37,6 +37,10 @@ interface ArtifactEntry {
   size_bytes: number;
   /** Raw companion-meta.project (often a path like `~/foo`); matched by basename. */
   project?: string | null;
+  /** AUTHORITATIVE unit key, written at create time by the companion-hook from the
+   *  writing session's live file (keyed on session_id, not the volatile cwd). When
+   *  present it routes the artifact directly; project is then display-only. */
+  unit_key?: string | null;
 }
 
 interface LiveSource {
@@ -84,7 +88,7 @@ const UNSOURCED = "__unsourced__";
 const POLL_MS = 1200;
 /** An instance whose live file hasn't been touched within this window is "stale"
  *  — it drops off the live roster into the reversible Archived toggle. */
-const LIVENESS_MS = 30 * 60 * 1000;
+const LIVENESS_MS = 2 * 60 * 60 * 1000;
 /** An artifact modified within this window counts as in-flight / fresh. */
 const FRESH_WINDOW_MS = 12 * 60 * 60 * 1000;
 
@@ -337,6 +341,12 @@ function groupSourcesByUnit(): Map<string, LiveSource[]> {
  * Falls back to the unique non-repo instance's unit, else UNSOURCED.
  */
 function unitForArtifact(a: ArtifactEntry): string {
+  // Authoritative: the hook stamped the writing session's unit key at create time
+  // (keyed on session_id). This is immune to the project-slug ambiguity below
+  // (stale live files, two dirs sharing a basename) and to a volatile cwd.
+  if (a.unit_key) return a.unit_key;
+  // Fallback for un-indexed artifacts (hub/offsite/cron, or pre-hook): match by
+  // the model-stamped project. Display-only metadata, kept only as a fallback.
   const key = projectSlug(a.project);
   if (!key) return UNSOURCED;
   // A repo unit's key === its project slug (the hook sets unit_key = slug). If any

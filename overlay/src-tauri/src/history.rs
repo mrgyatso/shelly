@@ -34,6 +34,11 @@ pub struct ArtifactEntry {
     /// (often a path like `~/claude-code-companion`). The Board groups artifacts
     /// into per-agent panes by matching this against each pane's source slug.
     pub project: Option<String>,
+    /// AUTHORITATIVE unit key, written at create time by the companion-hook (keyed
+    /// on the writing session's `session_id`, resolved from its live file — not the
+    /// volatile cwd). Present ⇒ the Board routes by it directly and `project` is
+    /// display-only; absent ⇒ the Board falls back to project-slug matching.
+    pub unit_key: Option<String>,
 }
 
 /// The subset of the `companion-meta` JSON block the HUD + Board surface. Other
@@ -169,7 +174,36 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
         modified_ms,
         size_bytes: meta.len(),
         project,
+        // Attached after the fact in `list_artifacts` from the index, so a single
+        // index read covers the whole listing rather than re-reading per file.
+        unit_key: None,
     })
+}
+
+/// The hook-written routing index: `basename → unit_key`. Lives next to the live
+/// dir at `~/.claude/companion/artifact-index.json`, shape
+/// `{ "<name>.html": { "unit_key": "...", "shortid": "...", "ts": ... }, ... }`.
+/// Returns an empty map on any failure — routing then falls back to project-slug.
+fn load_artifact_index() -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let Some(home) = std::env::var_os("HOME") else {
+        return map;
+    };
+    let path = Path::new(&home).join(".claude/companion/artifact-index.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return map;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return map;
+    };
+    if let Some(obj) = json.as_object() {
+        for (name, entry) in obj {
+            if let Some(unit) = entry.get("unit_key").and_then(|v| v.as_str()) {
+                map.insert(name.clone(), unit.to_string());
+            }
+        }
+    }
+    map
 }
 
 /// Read up to `limit` bytes of a file as lossy UTF-8. `None` on read failure.
@@ -193,6 +227,15 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
         .filter_map(|e| e.ok())
         .filter_map(|e| entry_from_path(&e.path()))
         .collect();
+    // Attach the authoritative unit key (one index read for the whole listing).
+    let index = load_artifact_index();
+    if !index.is_empty() {
+        for e in &mut entries {
+            if let Some(name) = Path::new(&e.path).file_name().and_then(|s| s.to_str()) {
+                e.unit_key = index.get(name).cloned();
+            }
+        }
+    }
     entries.sort_by_key(|e| std::cmp::Reverse(e.modified_ms));
     entries
 }
