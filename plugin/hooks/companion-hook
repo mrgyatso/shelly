@@ -31,6 +31,12 @@ fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c)
 # (via list_artifacts / the live poll). Re-show an artifact explicitly with
 # `companion open <path>` if you ever need a standalone panel.
 case "$fp" in
+  "$ARTIFACTS_DIR"/home.html)
+    # The agent-authored Hub dashboard. It lives in the artifacts dir so its
+    # navigate buttons' JS runs (asset: scope), but it is NOT a one-off panel —
+    # the Board hosts it at L0 — so re-authoring it must pop no floating panel.
+    # This arm sits ABOVE the *.html arm because `case` matches top-down.
+    ;;
   "$ARTIFACTS_DIR"/*.html)
     : # no-op
     ;;

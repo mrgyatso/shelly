@@ -8,13 +8,14 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 const TOAST_VISIBLE_MS = 1500;
 let toastTimer = 0;
 
-export async function handleSubmit(text: string): Promise<void> {
+export async function handleSubmit(text: string, artifactPath?: string): Promise<void> {
   try {
     // Append the artifact's own file path so pasted feedback is self-identifying
     // — the agent can Read that file for full context even for an old artifact
-    // re-opened from history. The sandboxed iframe can't see its own path, but
-    // this overlay window can (Rust injects it as __ARTIFACT_PATH__ at build).
-    const path = window.__ARTIFACT_PATH__;
+    // re-opened from history. A standalone panel knows its path via the injected
+    // __ARTIFACT_PATH__; the Board passes the focused artifact's path explicitly
+    // (its iframes are sandboxed and can't see their own path).
+    const path = artifactPath ?? window.__ARTIFACT_PATH__;
     const payload = path ? `${text}\n\n— Companion artifact: ${path} —` : text;
     await writeText(payload);
     showCopiedToast();

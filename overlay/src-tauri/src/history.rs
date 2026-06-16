@@ -30,15 +30,21 @@ pub struct ArtifactEntry {
     /// Last-modified time as epoch milliseconds — drives the date label + sort.
     pub modified_ms: u64,
     pub size_bytes: u64,
+    /// Raw `project` from the `companion-meta` block — the artifact's source
+    /// (often a path like `~/claude-code-companion`). The Board groups artifacts
+    /// into per-agent panes by matching this against each pane's source slug.
+    pub project: Option<String>,
 }
 
-/// The subset of the `companion-meta` JSON block the HUD surfaces. Other fields
-/// (files, project, branch, created) are for the feedback payload, not the card,
+/// The subset of the `companion-meta` JSON block the HUD + Board surface. Other
+/// fields (files, branch, created) are for the feedback payload, not the card,
 /// so serde simply ignores them.
 #[derive(serde::Deserialize)]
 struct CompanionMeta {
     subject: Option<String>,
     summary: Option<String>,
+    /// The artifact's source — used by the Board to route it to a pane.
+    project: Option<String>,
 }
 
 /// Candidate artifact directories, most-authoritative first.
@@ -123,6 +129,16 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
     if stem.starts_with('_') {
         return None;
     }
+    // `home.html` is the agent-authored L0 Hub dashboard, and `home.<unit>.html`
+    // are the per-unit L2 home digests — agent-authored reserved surfaces, not
+    // one-off artifacts. They live in the artifacts dir (so their JS runs in
+    // asset: scope) but must not surface as a history row in ANY unit. Both the
+    // History HUD and the Board's history list read `list_artifacts`, so this one
+    // skip covers both. (file_stem strips only `.html`, so `home.<unit>.html`
+    // yields stem `home.<unit>` → caught by the prefix.)
+    if stem == "home" || stem.starts_with("home.") {
+        return None;
+    }
 
     let meta = std::fs::metadata(path).ok()?;
     let modified_ms = meta
@@ -140,9 +156,9 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
         .and_then(extract_title)
         .unwrap_or_else(|| humanize_filename(stem));
     let cmeta = head.as_deref().and_then(extract_meta);
-    let (subject, summary) = match cmeta {
-        Some(m) => (m.subject, m.summary),
-        None => (None, None),
+    let (subject, summary, project) = match cmeta {
+        Some(m) => (m.subject, m.summary, m.project),
+        None => (None, None, None),
     };
 
     Some(ArtifactEntry {
@@ -152,6 +168,7 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
         summary,
         modified_ms,
         size_bytes: meta.len(),
+        project,
     })
 }
 
@@ -178,6 +195,43 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
         .collect();
     entries.sort_by_key(|e| std::cmp::Reverse(e.modified_ms));
     entries
+}
+
+/// Resolve the agent-authored Hub dashboard (`home.html`), if one exists. The
+/// Board loads it full-bleed at L0; `None` ⇒ the native fallback. It MUST live in
+/// the artifacts dir (so it's in `asset:` scope and its navigate buttons' JS
+/// runs), which is exactly the first of [`artifact_dirs`], so we reuse that and
+/// return the first existing `home.html`.
+#[tauri::command]
+pub fn resolve_home() -> Option<String> {
+    artifact_dirs()
+        .iter()
+        .map(|d| d.join("home.html"))
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Resolve a UNIT's home digest (`home.<unit_key>.html`), if the agent has
+/// authored one. The Board loads it full-bleed at L2 when you enter the unit;
+/// `None` ⇒ the native fallback (lanes + history alone). Mirrors [`resolve_home`]
+/// — same reserved-slug family, same artifacts-dir scope requirement.
+#[tauri::command]
+pub fn resolve_unit_home(unit_key: String) -> Option<String> {
+    // unit_key comes from the live JSON / hook; keep it filename-safe so it can't
+    // escape the artifacts dir.
+    let safe: String = unit_key
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .collect();
+    if safe.is_empty() {
+        return None;
+    }
+    let name = format!("home.{safe}.html");
+    artifact_dirs()
+        .iter()
+        .map(|d| d.join(&name))
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 /// Re-open an artifact as a normal panel and dismiss the HUD. The HUD is hidden

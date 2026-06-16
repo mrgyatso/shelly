@@ -16,23 +16,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-
-interface NextItem {
-  title: string;
-  sub?: string;
-  /** Free-form tag shown as a chip, e.g. "decision" | "todo" | "blocked". */
-  kind?: string;
-}
-
-interface LiveState {
-  working?: string;
-  where?: string[];
-  next?: NextItem[];
-  /** Display name of the session/project this surface reflects (cwd basename). */
-  project?: string;
-}
-
-type Action = "approve" | "comment" | "reject";
+import { renderLiveState, type LiveState, type Action } from "./live-render";
 
 /** How often to re-read the live file. It's tiny; a calm cadence is plenty. */
 const POLL_MS = 1200;
@@ -139,106 +123,14 @@ function render(raw: string): void {
 
   setProject(state.project || "");
   currentWorking = state.working || "Live";
-  const frag = document.createDocumentFragment();
-
-  if (state.working) {
-    const h = document.createElement("h1");
-    h.className = "live-working";
-    h.textContent = state.working;
-    frag.appendChild(h);
-  }
-
-  if (state.where?.length) {
-    frag.appendChild(sectionLabel("Where we are"));
-    const ul = document.createElement("ul");
-    ul.className = "live-where";
-    for (const line of state.where) {
-      const li = document.createElement("li");
-      li.textContent = line;
-      ul.appendChild(li);
-    }
-    frag.appendChild(ul);
-  }
-
   const next = state.next ?? [];
-  if (next.length) {
-    frag.appendChild(sectionLabel("Next"));
-    const list = document.createElement("div");
-    list.className = "live-next";
-    next.forEach((item) => list.appendChild(nextCard(item)));
-    frag.appendChild(list);
-  }
 
-  swapBody(frag, () => {
+  swapBody(renderLiveState(state), () => {
     // Footer (the submit bar) only when there are decisions to make.
     if (next.length) foot?.removeAttribute("hidden");
     else hideFoot();
     refresh();
   });
-}
-
-function sectionLabel(text: string): HTMLElement {
-  const el = document.createElement("div");
-  el.className = "live-section";
-  el.textContent = text;
-  return el;
-}
-
-function nextCard(item: NextItem): HTMLElement {
-  const card = document.createElement("div");
-  card.className = "live-item";
-  card.dataset.label = item.title;
-
-  const row = document.createElement("div");
-  row.className = "live-item-row";
-
-  const main = document.createElement("div");
-  main.className = "live-item-main";
-  const title = document.createElement("div");
-  title.className = "live-item-title";
-  title.textContent = item.title;
-  main.appendChild(title);
-  if (item.sub) {
-    const sub = document.createElement("div");
-    sub.className = "live-item-sub";
-    sub.textContent = item.sub;
-    main.appendChild(sub);
-  }
-  row.appendChild(main);
-
-  if (item.kind) {
-    const chip = document.createElement("span");
-    chip.className = "live-chip";
-    chip.textContent = item.kind;
-    main.appendChild(chip);
-  }
-
-  const actions = document.createElement("div");
-  actions.className = "live-actions";
-  actions.append(
-    actBtn("approve", "✓", "Do it"),
-    actBtn("comment", "✎", "Note"),
-    actBtn("reject", "✗", "Skip"),
-  );
-  row.appendChild(actions);
-  card.appendChild(row);
-
-  const ta = document.createElement("textarea");
-  ta.className = "live-comment";
-  ta.placeholder = "What to clarify, or a note…";
-  ta.hidden = true;
-  card.appendChild(ta);
-
-  return card;
-}
-
-function actBtn(action: Action, glyph: string, label: string): HTMLButtonElement {
-  const b = document.createElement("button");
-  b.className = `live-act act-${action}`;
-  b.dataset.action = action;
-  b.title = label;
-  b.textContent = glyph;
-  return b;
 }
 
 // ---- decisions: state lives on the DOM (data-state per card) ----------------

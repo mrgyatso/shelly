@@ -9,8 +9,17 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
+};
+
+/// The Board's pre-fullscreen frame (physical px), saved so the fullscreen
+/// toggle can restore the window to exactly where the user had it. `None` =
+/// currently windowed.
+static BOARD_PRIOR_FRAME: Mutex<Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>> =
+    Mutex::new(None);
 
 /// Initial panel size before the artifact reports its own fit size.
 const PANEL_W: f64 = 460.0;
@@ -25,6 +34,11 @@ pub const HISTORY_LABEL: &str = "hist_main";
 /// The single always-on live surface window. Fixed label so `companion live`
 /// always finds the one instance to create-or-raise.
 pub const LIVE_LABEL: &str = "live_main";
+/// The single Board window — the multi-agent steering canvas (grid of artifact
+/// tiles). Fixed label so `companion board` always finds the one instance to
+/// create-or-raise. P0: a new, isolated surface that does not replace the
+/// floating one-off panels yet.
+pub const BOARD_LABEL: &str = "board_main";
 
 /// Deterministic, label-safe id for an artifact path. `DefaultHasher::new()` is
 /// seedless, so the same path maps to the same label for the life of the process
@@ -87,6 +101,13 @@ pub fn open_artifact_window(app: &AppHandle, path: String) {
     // hidden here, so `apply_moves` snaps it into its slot before we reveal it.
     crate::layout::arrange(app, true);
     crate::macos_panel::order_front_without_activating(&win);
+}
+
+/// Frontend-callable wrapper to open the History HUD — used by the Board's
+/// "View all in History →" affordance (a capped L2 session links the rest here).
+#[tauri::command]
+pub fn open_history(app: AppHandle) {
+    open_history_window(&app);
 }
 
 /// Open — or toggle — the single history HUD window. Centered and larger than an
@@ -168,12 +189,113 @@ pub fn open_live_window(app: &AppHandle) {
     crate::macos_panel::order_front_without_activating(&win);
 }
 
+/// Open — or, if already up, raise — the single Board window. Like the HUD and
+/// live surface it's deliberately left OUT of the column layout (no
+/// `record_open`): the Board does its own internal grid layout. Larger than an
+/// artifact panel to host a grid of tiles. Re-invoking just re-reveals the
+/// existing window without rebuilding it.
+pub fn open_board_window(app: &AppHandle) {
+    // The Board absorbs the live surface: its per-agent panes already show every
+    // agent's live-state header, so the separate always-on `live_main` window
+    // would just double-show it. Hide it (not close — the daemon keeps writing
+    // its files; the Board reads the same data) whenever the Board comes up.
+    if let Some(live) = app.get_webview_window(LIVE_LABEL) {
+        let _ = live.hide();
+    }
+
+    if let Some(win) = app.get_webview_window(BOARD_LABEL) {
+        // Focal surface: show + focus (activates the app + makes it key) so its
+        // keyboard nav works — not the ghost-panel order-front.
+        let _ = win.show();
+        let _ = win.set_focus();
+        return;
+    }
+
+    let win =
+        match WebviewWindowBuilder::new(app, BOARD_LABEL, WebviewUrl::App("index.html".into()))
+            .title("Companion Board")
+            .inner_size(1000.0, 700.0)
+            .min_inner_size(560.0, 400.0)
+            .decorations(false)
+            .transparent(true)
+            .resizable(true)
+            .shadow(true)
+            // The Board is a normal app window now: it layers like any other window
+            // (can be covered, click-outside backgrounds it), NOT pinned above all.
+            .always_on_top(false)
+            .center()
+            .visible(false)
+            .initialization_script("window.__BOARD_MODE__ = true;")
+            .build()
+        {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[overlay] failed to create board window: {e}");
+                return;
+            }
+        };
+
+    // Focal "Board = app window" treatment (key-capable, activating) so spatial
+    // keyboard nav works — NOT the non-activating ghost-panel treatment.
+    crate::macos_panel::make_board_window(&win);
+    let _ = win.show();
+    let _ = win.set_focus();
+}
+
+/// Toggle the Board between windowed and "maximized to its current monitor".
+///
+/// We deliberately do NOT use native macOS fullscreen (`set_fullscreen(true)`):
+/// that forces a Space switch and activates the app, which would steal terminal
+/// focus from the non-activating Board panel. Instead we resize/position the
+/// window to fill the monitor it's currently on (saving the prior frame to
+/// restore on toggle-off), which keeps the panel non-activating. Returns the new
+/// state (`true` = now full-screen) so the frontend can update its toggle label.
+#[tauri::command]
+pub fn set_board_fullscreen(app: AppHandle, on: bool) -> bool {
+    let win = match app.get_webview_window(BOARD_LABEL) {
+        Some(w) => w,
+        None => return false,
+    };
+    let mut prior = match BOARD_PRIOR_FRAME.lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+
+    if on {
+        // Already full-screen — nothing to do.
+        if prior.is_some() {
+            return true;
+        }
+        let monitor = match win.current_monitor() {
+            Ok(Some(m)) => m,
+            _ => return false,
+        };
+        // Save the windowed frame (physical px) so we can put it back exactly.
+        if let (Ok(pos), Ok(size)) = (win.outer_position(), win.inner_size()) {
+            *prior = Some((pos, size));
+        }
+        // current_monitor() returns physical px, which is exactly what the
+        // Physical* setters consume — no scale-factor math needed.
+        let _ = win.set_position(*monitor.position());
+        let _ = win.set_size(*monitor.size());
+        crate::macos_panel::order_front_without_activating(&win);
+        true
+    } else {
+        if let Some((pos, size)) = prior.take() {
+            let _ = win.set_position(pos);
+            let _ = win.set_size(size);
+        }
+        crate::macos_panel::order_front_without_activating(&win);
+        false
+    }
+}
+
 /// Raise every panel without activating (the no-arg `companion` invocation).
 /// The HUD and live surface are excluded — each is driven by its own trigger,
 /// never swept up with the artifact panels.
 pub fn raise_all(app: &AppHandle) {
     for win in app.webview_windows().values() {
-        if win.label() == HISTORY_LABEL || win.label() == LIVE_LABEL {
+        if win.label() == HISTORY_LABEL || win.label() == LIVE_LABEL || win.label() == BOARD_LABEL {
             continue;
         }
         crate::macos_panel::order_front_without_activating(win);
@@ -185,8 +307,9 @@ pub fn raise_all(app: &AppHandle) {
 pub fn toggle_all(app: &AppHandle) {
     let wins = app.webview_windows();
     let panels = || {
-        wins.values()
-            .filter(|w| w.label() != HISTORY_LABEL && w.label() != LIVE_LABEL)
+        wins.values().filter(|w| {
+            w.label() != HISTORY_LABEL && w.label() != LIVE_LABEL && w.label() != BOARD_LABEL
+        })
     };
     let any_visible = panels().any(|w| w.is_visible().unwrap_or(false));
     for win in panels() {

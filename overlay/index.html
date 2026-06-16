@@ -3,7 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The Board's serif greeting + mono chrome. Loaded from Google Fonts (no
+         @fontsource packages in node_modules). Tradeoff: needs network on first
+         paint; falls back to Georgia / system mono offline. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=Spline+Sans+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/board.css" />
     <title>Companion Overlay</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
@@ -42,6 +52,107 @@
         <button id="live-doall" class="live-doall">Do all</button>
         <button id="live-submit" class="live-submit">Submit → ⌘V</button>
       </footer>
+    </div>
+
+    <!-- The Board (companion board). Hidden by default; board.ts reveals it only
+         on the board_main window. A dark letterboxing STAGE holds a warm paper
+         BOARD surface: a serif greeting, minimal floating controls, and a
+         horizontal masonry of per-agent panes (each a bento of real artifact
+         tiles). board.ts rewires every id below. -->
+    <div id="board-stage" class="stage" hidden>
+      <!-- collapsed ambient pill (Board's collapsed state) -->
+      <div id="board-pill" class="pill paper-tex" role="button" tabindex="0" hidden>
+        <div class="pill-logo">C</div>
+        <div class="pill-body">
+          <div id="pill-line1" class="pill-line1"></div>
+          <div id="pill-line2" class="pill-line2"></div>
+        </div>
+        <div id="pill-orbs" class="pill-orbs"></div>
+      </div>
+
+      <div id="board" class="board paper-tex">
+        <div class="board-top" data-tauri-drag-region>
+          <div class="greeting">
+            <div id="board-hello" class="hello">Good morning.</div>
+            <div id="board-sub" class="sub"></div>
+          </div>
+          <!-- Agent-composed bar (L0 only). Rendered from home.html's
+               `companion-bar` JSON block: themes colors + fills left/center/right
+               slots. The mandatory control cluster below always renders. -->
+          <div id="board-bar-custom" class="bar-custom" hidden>
+            <div class="bar-zone bar-left"></div>
+            <div class="bar-zone bar-center"></div>
+            <div class="bar-zone bar-right"></div>
+          </div>
+          <div class="board-controls">
+            <span id="board-clock" class="clock"></span>
+            <button id="board-unread" class="ctl unread-badge" title="New artifacts — view sessions" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+              <span id="board-unread-count" class="unread-count">0</span>
+            </button>
+            <button id="board-back" class="ctl" title="Back (esc)" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button id="board-collapse" class="ctl" title="Collapse to pill">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="9" width="16" height="6" rx="3"/></svg>
+            </button>
+            <button id="board-fullscreen" class="ctl" title="Full screen (F)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 4H5a1 1 0 00-1 1v4M15 4h4a1 1 0 011 1v4M9 20H5a1 1 0 01-1-1v-4M15 20h4a1 1 0 001-1v-4"/></svg>
+            </button>
+            <button id="board-close" class="ctl" title="Hide">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="board-status" class="board-status" hidden></div>
+
+        <div id="board-empty" class="board-empty-hero" hidden>
+          <div class="eh-mark">C</div>
+          <div class="eh-title">The board is quiet.</div>
+          <div class="eh-sub">Agents will fill this space as they wake.</div>
+        </div>
+
+        <!-- L0 Hub. A full-bleed agent-authored dashboard (home.html) loads into
+             #hub-frame; when none exists board.ts reveals #hub-fallback instead. -->
+        <div id="board-hub" class="board-hub" hidden>
+          <iframe id="hub-frame" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer" hidden></iframe>
+          <div id="hub-fallback" class="hub-fallback" hidden>
+            <div class="hub-hello" id="hub-hello"></div>
+            <div class="hub-hint">
+              Compose your dashboard with <kbd>/companion:dashboard</kbd>
+            </div>
+            <button id="hub-sessions-btn" class="hub-cta"></button>
+          </div>
+        </div>
+
+        <!-- L1 Sessions picker. A light native grid of one card per live source —
+             status only, NO artifact iframes. board.ts fills #board-sessions-grid. -->
+        <div id="board-sessions" class="board-sessions" hidden>
+          <div class="sessions-head">
+            <div class="sessions-title">Sessions</div>
+            <div id="sessions-sub" class="sessions-sub"></div>
+          </div>
+          <div id="board-sessions-grid" class="sessions-grid"></div>
+        </div>
+
+        <!-- L2 Unit home. A unit groups all live sessions of a project (or a bare
+             non-repo session). Layered: a full-bleed agent-authored DIGEST
+             (home.<unit>.html), a horizontal strip of live LANES (one per active
+             session, its working/where/next), and a readable text HISTORY. -->
+        <div id="board-unit" class="board-unit" hidden>
+          <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+          <div id="unit-lanes" class="unit-lanes"></div>
+          <div id="unit-history" class="unit-history"></div>
+        </div>
+
+        <div class="kbd-hint">
+          <span><kbd>esc</kbd> back</span>
+          <span><kbd>F</kbd> full screen</span>
+        </div>
+
+        <div id="board-scrim" class="focus-scrim"></div>
+      </div>
     </div>
 
     <!-- History HUD (⌘8). Hidden by default; history.ts reveals it only on the

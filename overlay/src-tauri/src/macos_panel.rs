@@ -161,6 +161,41 @@ mod imp {
         }
     }
 
+    /// The Board is the **focal** surface (unlike the ghost panels). Its spatial
+    /// keyboard nav (↑↓←→ / Tab / Enter / F) only works if the Board is the key
+    /// window of the *active* app — i.e. clicking it must make Companion frontmost
+    /// and route keystrokes to the Board. We still reclass to `CompanionKeyPanel`
+    /// because the window is borderless (a borderless `NSWindow` returns NO for
+    /// `canBecomeKeyWindow`). But unlike `make_nonactivating_panel` we do NOT set
+    /// the `NonactivatingPanel` mask and we set `becomesKeyOnlyIfNeeded(false)`, so
+    /// ANY click — not just a text field — makes the Board key and activates the
+    /// app. Pair with `show()` + `set_focus()` at the call site to focus on open.
+    pub fn make_board_window(window: &WebviewWindow) {
+        let Ok(ptr) = window.ns_window() else { return };
+        if ptr.is_null() {
+            return;
+        }
+        let cls: *const AnyClass = key_panel_class();
+        // SAFETY: identical invariants to `make_nonactivating_panel` — `ptr` is the
+        // live NSWindow, this runs on the main thread, and CompanionKeyPanel ⊂
+        // NSPanel ⊂ NSWindow responds to every selector used here.
+        unsafe {
+            let old_class = object_setClass(ptr, cls.cast());
+            let _ = ORIGINAL_CLASS.set(old_class as usize);
+            let panel: &NSPanel = &*(ptr as *const NSPanel);
+            panel.setReleasedWhenClosed(false);
+            // Resizable reinforces `canBecomeKeyWindow`; deliberately NO
+            // `NonactivatingPanel` — the Board is allowed to activate + own focus.
+            panel.setStyleMask(panel.styleMask() | NSWindowStyleMask::Resizable);
+            // Become key on ANY click (not only text fields) so keyboard nav works.
+            panel.setBecomesKeyOnlyIfNeeded(false);
+            panel.setCollectionBehavior(
+                NSWindowCollectionBehavior::CanJoinAllSpaces
+                    | NSWindowCollectionBehavior::FullScreenAuxiliary,
+            );
+        }
+    }
+
     /// Reclass the window's NSWindow BACK to the class tao created it with, to be
     /// called right before the window tears down (on `CloseRequested`). We reclass
     /// each window to `NSPanel` via `object_setClass`, but `NSPanel` and tao's own
@@ -221,6 +256,11 @@ mod imp {
     use tauri::WebviewWindow;
 
     pub fn make_nonactivating_panel(_window: &WebviewWindow) {}
+
+    pub fn make_board_window(window: &WebviewWindow) {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 
     pub fn restore_original_class(_window: &WebviewWindow) {}
 

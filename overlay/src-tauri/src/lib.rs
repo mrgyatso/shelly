@@ -79,8 +79,13 @@ pub fn run() {
                         windows::open_history_window(&handle);
                     } else if args.iter().any(|a| a == "live") {
                         windows::open_live_window(&handle);
-                    } else if let Some(path) = artifact::parse_open_args(&args, Some(&cwd)) {
-                        windows::open_artifact_window(&handle, path);
+                    } else if args.iter().any(|a| a == "board") {
+                        windows::open_board_window(&handle);
+                    } else if artifact::parse_open_args(&args, Some(&cwd)).is_some() {
+                        // `companion open <artifact>` no longer spawns a standalone
+                        // window — the Board is the single surface and ingests the
+                        // artifact; just bring the shell forward.
+                        windows::open_board_window(&handle);
                     } else {
                         windows::raise_all(&handle);
                     }
@@ -107,29 +112,71 @@ pub fn run() {
             layout::notify_fit,
             history::list_artifacts,
             history::reopen_artifact,
+            history::resolve_home,
+            history::resolve_unit_home,
             live::read_live,
+            live::read_all_live,
+            windows::set_board_fullscreen,
+            windows::open_history,
             hub::read_live_from_hub,
             hub::hub_config_get,
             hub::hub_config_set,
             hub::hub_test_connection
         ])
         .setup(|app| {
-            // Accessory activation policy: no Dock icon, no Cmd-Tab — like
-            // Prohibited — but the app CAN become active when a control needs
-            // key focus (a text field click in an interactive review artifact).
+            // Regular activation policy: the Board is a normal app now — it gets a
+            // Dock icon and a Cmd-Tab entry, lives on one Space, and the menu bar
+            // shows when active.
             //
-            // Earlier this was `Prohibited` to guarantee no focus theft, but
-            // that also made it impossible for ANY window to become key, which
-            // broke typing into iframe textareas. The standard floating-palette
-            // pattern (Xcode's Documentation viewer, Finder's Get Info) uses
-            // Accessory + non-activating NSPanel + `becomesKeyOnlyIfNeeded` +
-            // the private `_setPreventsActivation:` call we already do in
-            // `macos_panel.rs`. That trio gives us: the panel pops / drags /
-            // gets clicked without making the app active OR taking key, but
-            // clicking specifically on a text input DOES make the panel key
-            // so the user can type. Terminal stays the front app the whole time.
+            // This does NOT make the pill / ghost panels steal terminal focus: that
+            // is enforced separately in `macos_panel.rs` by the non-activating-panel
+            // treatment (the `NonactivatingPanel` mask + `becomesKeyOnlyIfNeeded` +
+            // the private `_setPreventsActivation:` call) — independent of the app's
+            // activation policy. So those panels still pop / drag / get clicked
+            // without making the app key, while clicking a text input still makes the
+            // panel key so the user can type. The earlier `Accessory` (and before it
+            // `Prohibited`) choices were about hiding the Dock icon, not about focus.
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            app.set_activation_policy(tauri::ActivationPolicy::Regular);
+
+            // Minimal app + Edit menu so ⌘V/⌘C/⌘X/⌘A/⌘Z route to the focused
+            // textarea inside an interactive artifact's iframe. A borderless
+            // Accessory-policy app has no main menu by default, so AppKit had no
+            // `paste:` key equivalent to dispatch — typing worked (key-window
+            // focus is fixed by the CompanionKeyPanel subclass) but paste didn't.
+            // The menu stays invisible (Accessory hides the bar); performKeyEquivalent
+            // walks the main menu regardless.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
+                let h = app.handle();
+                let app_menu = Submenu::with_items(
+                    h,
+                    "Companion",
+                    true,
+                    &[
+                        &PredefinedMenuItem::hide(h, None)?,
+                        &PredefinedMenuItem::separator(h)?,
+                        &PredefinedMenuItem::quit(h, None)?,
+                    ],
+                )?;
+                let edit_menu = Submenu::with_items(
+                    h,
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(h, None)?,
+                        &PredefinedMenuItem::redo(h, None)?,
+                        &PredefinedMenuItem::separator(h)?,
+                        &PredefinedMenuItem::cut(h, None)?,
+                        &PredefinedMenuItem::copy(h, None)?,
+                        &PredefinedMenuItem::paste(h, None)?,
+                        &PredefinedMenuItem::select_all(h, None)?,
+                    ],
+                )?;
+                let menu = Menu::with_items(h, &[&app_menu, &edit_menu])?;
+                app.set_menu(menu)?;
+            }
 
             // Wire a minimal app + Edit menu so the standard editing key
             // equivalents (⌘V paste, ⌘C copy, ⌘X cut, ⌘A select-all, ⌘Z undo)
@@ -184,18 +231,25 @@ pub fn run() {
             } else if args.iter().any(|a| a == "live") {
                 let handle = app.handle().clone();
                 guard(move || windows::open_live_window(&handle));
-            } else if let Some(path) = artifact::parse_open_args(&args, cwd.as_deref()) {
+            } else if args.iter().any(|a| a == "board") {
                 let handle = app.handle().clone();
-                guard(move || windows::open_artifact_window(&handle, path));
+                guard(move || windows::open_board_window(&handle));
+            } else if artifact::parse_open_args(&args, cwd.as_deref()).is_some() {
+                // `companion open <artifact>` brings up the Board (the single
+                // surface), never a standalone window. The always-on board open
+                // below also covers this; kept explicit for clarity.
+                let handle = app.handle().clone();
+                guard(move || windows::open_board_window(&handle));
             }
 
-            // Always-on: bring up the live surface on every launch, regardless of
-            // any artifact/history arg above. Idempotent (open_live_window raises
-            // the existing window if it's already up), so the `live` arg path and
-            // this can't double-create it.
+            // Always-on: bring up the Board on every launch, regardless of any
+            // artifact/history arg above. The Board is the single primary surface
+            // (the live-state data lives in its session cards). Idempotent
+            // (open_board_window raises the existing window if it's already up),
+            // so the `board` arg path and this can't double-create it.
             {
                 let handle = app.handle().clone();
-                guard(move || windows::open_live_window(&handle));
+                guard(move || windows::open_board_window(&handle));
             }
             // Background remote-hub pull loop: if `~/.claude/companion/hub.json`
             // points at a hub, download its new artifacts into `remote/` (so the
@@ -361,8 +415,10 @@ pub fn run() {
                         } else {
                             artifact::parse_open_args(&["x".to_string(), u.to_string()], None)
                         };
-                        if let Some(p) = path {
-                            windows::open_artifact_window(app_handle, p);
+                        // A Finder open / `companion://` URL surfaces the Board
+                        // (the single surface), never a standalone artifact window.
+                        if path.is_some() {
+                            windows::open_board_window(app_handle);
                         }
                     }
                 }
