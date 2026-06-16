@@ -811,6 +811,25 @@
    MENU-BAR POPOVER — the roster glance dropped from the status item
    ========================================================================= */
 .popover-panel {
+  /* The board palette lives on `.stage`, which this window doesn't have — so
+     define the tokens this surface needs locally (else var() yields nothing and
+     the panel renders transparent). Values mirror `.stage`. */
+  --paper-h: 60;
+  --paper-c: 0.014;
+  --clay: #cc785c;
+  --accent: var(--clay);
+  --card: oklch(0.988 calc(var(--paper-c) * 0.5) var(--paper-h));
+  --sunk: oklch(0.925 var(--paper-c) var(--paper-h));
+  --ink: oklch(0.265 0.012 55);
+  --ink-3: oklch(0.6 0.01 55);
+  --ink-4: oklch(0.72 0.008 55);
+  --line: oklch(0.265 0.012 55 / 0.1);
+  --line-2: oklch(0.265 0.012 55 / 0.055);
+  --idle: oklch(0.7 0.006 55);
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --mono: "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --ui-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+
   position: fixed;
   inset: 8px; /* transparent gutter for the CSS shadow + rounded corners */
   display: flex;

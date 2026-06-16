@@ -260,12 +260,12 @@ pub fn show_board(app: AppHandle) {
 /// status item. It is a key-capable window (so it dismisses on blur, native
 /// menu-bar behaviour) created lazily on first open and shown/hidden thereafter.
 /// Positioned under the menu bar (top-right for now; icon-precise alignment TBD).
-pub fn toggle_popover(app: &AppHandle) {
+pub fn toggle_popover(app: &AppHandle, anchor: Option<(f64, f64)>) {
     if let Some(win) = app.get_webview_window(POPOVER_LABEL) {
         if win.is_visible().unwrap_or(false) {
             let _ = win.hide();
         } else {
-            position_popover(&win);
+            position_popover(&win, anchor);
             let _ = win.emit("popover:refresh", ());
             let _ = win.show();
             let _ = win.set_focus();
@@ -308,25 +308,52 @@ pub fn toggle_popover(app: &AppHandle) {
     // Clicking the status item is an explicit gesture, so brief activation is
     // expected — this is NOT the non-activating ghost-panel treatment.
     crate::macos_panel::make_board_window(&win);
-    position_popover(&win);
+    position_popover(&win, anchor);
     let _ = win.show();
     let _ = win.set_focus();
 }
 
-/// Park the popover at the top-right of the primary monitor, just under the menu
-/// bar. (Icon-precise alignment from the tray rect is a follow-up.)
-fn position_popover(win: &WebviewWindow) {
-    if let Ok(Some(mon)) = win.primary_monitor() {
-        let pos = mon.position();
-        let size = mon.size();
-        let scale = mon.scale_factor();
-        let w = (POPOVER_W * scale).round() as i32;
-        let margin = (10.0 * scale).round() as i32;
-        let menubar = (38.0 * scale).round() as i32;
-        let x = pos.x + size.width as i32 - w - margin;
-        let y = pos.y + menubar;
-        let _ = win.set_position(PhysicalPosition::new(x, y));
+/// Place the popover under the menu-bar icon. `anchor` is the click position in
+/// physical screen coords (from the tray event); the popover hangs down-left from
+/// it like a menu. Falls back to the top-right of the primary monitor when no
+/// anchor is available (e.g. a programmatic open).
+fn position_popover(win: &WebviewWindow, anchor: Option<(f64, f64)>) {
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let w = (POPOVER_W * scale).round() as i32;
+
+    let (mut x, y) = match anchor {
+        Some((ax, ay)) => {
+            // Right edge of the popover sits a touch right of the click; it drops
+            // just below the menu bar.
+            let x = ax.round() as i32 - w + (20.0 * scale).round() as i32;
+            let y = ay.round() as i32 + (8.0 * scale).round() as i32;
+            (x, y)
+        }
+        None => {
+            if let Ok(Some(mon)) = win.primary_monitor() {
+                let pos = mon.position();
+                let size = mon.size();
+                let margin = (10.0 * scale).round() as i32;
+                let menubar = (38.0 * scale).round() as i32;
+                (pos.x + size.width as i32 - w - margin, pos.y + menubar)
+            } else {
+                (40, 40)
+            }
+        }
+    };
+
+    // Keep it on-screen (don't run off the left edge).
+    let left_bound = win
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| m.position().x + (8.0 * scale).round() as i32)
+        .unwrap_or(8);
+    if x < left_bound {
+        x = left_bound;
     }
+
+    let _ = win.set_position(PhysicalPosition::new(x, y));
 }
 
 /// Toggle the Board between windowed and "maximized to its current monitor".

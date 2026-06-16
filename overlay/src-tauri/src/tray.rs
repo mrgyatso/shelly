@@ -44,12 +44,14 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
+                position,
                 ..
             } = event
             {
                 // Left-click toggles the roster popover (the lightweight glance);
-                // the Board opens from inside it or via the right-click menu.
-                crate::windows::toggle_popover(tray.app_handle());
+                // the Board opens from inside it or via the right-click menu. The
+                // click position anchors the popover under the icon.
+                crate::windows::toggle_popover(tray.app_handle(), Some((position.x, position.y)));
             }
         });
 
