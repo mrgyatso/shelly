@@ -4,6 +4,7 @@ mod hub;
 mod layout;
 mod live;
 mod macos_panel;
+mod tray;
 mod windows;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -321,6 +322,13 @@ pub fn run() {
                 if !autolaunch.is_enabled().unwrap_or(false) {
                     let _ = autolaunch.enable();
                 }
+            }
+
+            // Menu-bar status item — the always-present native anchor: a
+            // glanceable "needs you" count + click-to-open-Board. Failure must
+            // not block the daemon.
+            if let Err(e) = crate::tray::init_tray(app.handle()) {
+                eprintln!("tray init failed: {e}");
             }
 
             Ok(())
