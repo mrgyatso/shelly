@@ -22,6 +22,13 @@ use tauri::{
 static BOARD_PRIOR_FRAME: Mutex<Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>> =
     Mutex::new(None);
 
+/// A pending deep-link target (a live-source slug) the Board should navigate to
+/// the moment it opens — e.g. a menu-bar popover row click that wants to land on
+/// that session's unit, not the Hub. The frontend drains it via
+/// [`take_board_nav_target`] (on a fresh window's init) or in response to the
+/// `board:navigate` event (an already-open window). Either path clears it.
+static BOARD_NAV_TARGET: Mutex<Option<String>> = Mutex::new(None);
+
 /// Initial panel size before the artifact reports its own fit size.
 const PANEL_W: f64 = 460.0;
 const PANEL_H: f64 = 640.0;
@@ -250,10 +257,29 @@ pub fn open_board_window(app: &AppHandle) {
 
 /// Open the Board from another window (e.g. a popover row click). A thin command
 /// wrapper around [`open_board_window`] so the frontend can summon the focal
-/// surface.
+/// surface. An optional `target` (a live-source slug) deep-links the Board to
+/// that session's unit instead of landing on the Hub.
 #[tauri::command]
-pub fn show_board(app: AppHandle) {
+pub fn show_board(app: AppHandle, target: Option<String>) {
+    if let Some(t) = target {
+        if let Ok(mut g) = BOARD_NAV_TARGET.lock() {
+            *g = Some(t.clone());
+        }
+        // If the Board is already up, its listener is registered — ping it. A
+        // fresh window misses this event but drains the stored target on init.
+        if let Some(win) = app.get_webview_window(BOARD_LABEL) {
+            let _ = win.emit("board:navigate", t);
+        }
+    }
     open_board_window(&app);
+}
+
+/// Drain the pending deep-link target (returns + clears it). The Board calls
+/// this on init and on the `board:navigate` event; whichever fires first wins,
+/// the other gets `None`.
+#[tauri::command]
+pub fn take_board_nav_target() -> Option<String> {
+    BOARD_NAV_TARGET.lock().ok().and_then(|mut g| g.take())
 }
 
 /// Toggle the menu-bar popover — the lightweight roster glance summoned from the

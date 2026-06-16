@@ -109,7 +109,7 @@ async function render(): Promise<void> {
   const foot = document.createElement("button");
   foot.className = "pop-open";
   foot.innerHTML = `<span>Open Board</span><span class="pop-arrow">→</span>`;
-  foot.addEventListener("click", openBoard);
+  foot.addEventListener("click", () => void openBoard());
   frag.append(foot);
 
   rootEl.replaceChildren(frag);
@@ -118,7 +118,8 @@ async function render(): Promise<void> {
 function buildRow(source: string, state: ParsedState): HTMLElement {
   const row = document.createElement("button");
   row.className = "pop-row" + (needsYou(state) ? " needs" : "");
-  row.addEventListener("click", openBoard);
+  // Deep-link: land on this session's unit (L2), not the Hub.
+  row.addEventListener("click", () => void openBoard(source));
 
   const dot = document.createElement("span");
   dot.className = "pop-dot";
@@ -137,9 +138,9 @@ function buildRow(source: string, state: ParsedState): HTMLElement {
   return row;
 }
 
-async function openBoard(): Promise<void> {
+async function openBoard(target?: string): Promise<void> {
   try {
-    await invoke("show_board");
+    await invoke("show_board", target ? { target } : {});
   } catch (e) {
     console.error("show_board failed", e);
   }

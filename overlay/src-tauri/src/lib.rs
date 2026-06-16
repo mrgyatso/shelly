@@ -119,6 +119,7 @@ pub fn run() {
             live::read_all_live,
             windows::set_board_fullscreen,
             windows::show_board,
+            windows::take_board_nav_target,
             windows::open_history,
             hub::read_live_from_hub,
             hub::hub_config_get,

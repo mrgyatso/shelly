@@ -23,6 +23,7 @@
 // history a quiet layer behind it.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
@@ -199,6 +200,21 @@ export async function initBoard(): Promise<void> {
 
   // Land on L0 (the Hub) — agent-authored home.html if present, else native.
   await goHub();
+
+  // A popover row click stores a deep-link target; drain it (fresh window). An
+  // already-open Board catches the same target via the `board:navigate` event.
+  void listen("board:navigate", () => void applyNavTarget());
+  void applyNavTarget();
+}
+
+/** Drain any pending deep-link target (Rust-side), routing to its unit (L2). */
+async function applyNavTarget(): Promise<void> {
+  try {
+    const target = await invoke<string | null>("take_board_nav_target");
+    if (target) navigateTo("session:" + target);
+  } catch (e) {
+    console.error("applyNavTarget failed", e);
+  }
 }
 
 // ---- view router ------------------------------------------------------------
@@ -285,7 +301,7 @@ function renderHubFallback(): void {
   const fallback = document.getElementById("hub-fallback");
   const hello = document.getElementById("hub-hello");
   const cta = document.getElementById("hub-sessions-btn");
-  if (hello) hello.innerHTML = `${timeGreeting()}, <em>there.</em>`;
+  if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
   if (cta) {
     const n = allSources.length;
     cta.textContent = n ? `View ${n} session${n === 1 ? "" : "s"} →` : "View sessions →";
@@ -765,7 +781,7 @@ function relTime(ms: number): string {
 function renderGreeting(fresh: number, agents: number): void {
   const hello = document.getElementById("board-hello");
   const sub = document.getElementById("board-sub");
-  if (hello) hello.innerHTML = `${timeGreeting()}, <em>there.</em>`;
+  if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
   if (sub) {
     sub.innerHTML = agents === 0
       ? "No agents running"
@@ -881,6 +897,7 @@ let barClockTimer: number | null = null;
 function applyBar(spec: BarSpec | null): void {
   const top = document.querySelector(".board-top") as HTMLElement | null;
   const custom = document.getElementById("board-bar-custom");
+  const greeting = top?.querySelector(".greeting") as HTMLElement | null;
   if (!top || !custom) return;
 
   if (barClockTimer !== null) {
@@ -895,8 +912,13 @@ function applyBar(spec: BarSpec | null): void {
     top.style.removeProperty("--bar-accent");
     top.style.removeProperty("--bar-font");
     custom.setAttribute("hidden", "");
+    greeting?.removeAttribute("hidden"); // native greeting owns the bar again
     return;
   }
+
+  // An agent-composed bar takes over the top region — hide the native greeting
+  // so its title doesn't duplicate / collide with the agent's.
+  greeting?.setAttribute("hidden", "");
 
   top.classList.add("themed");
   if (spec.bg) top.style.setProperty("--bar-bg", spec.bg);
