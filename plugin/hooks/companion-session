@@ -42,6 +42,40 @@ if [ ! -f "$live_path" ]; then
   ' 2>/dev/null
 fi
 
+stem=$(basename "$live_path" .json)
+
+# 1b. If this session was spawned BY the Board (it injects COMPANION_SESSION=<tabId>
+#     into the claude it owns; the hook inherits it), bind this session's live-file
+#     stem (<slug>--<shortid>) -> tabId in owned-sessions.json. The Board reads this
+#     sidecar (via live.rs) to match the terminal it spawned to the live source this
+#     session produces — agent-proof + Board-owned, mirroring companion-index.cjs.
+#     Written every start (outside the first-run guard) so resume/compact re-bind.
+if [ -n "$COMPANION_SESSION" ]; then
+  STEM="$stem" TAB="$COMPANION_SESSION" OWNED="${HOME}/.claude/companion/owned-sessions.json" node -e '
+    const fs=require("fs");
+    const p=process.env.OWNED;
+    let m={};
+    try { m=JSON.parse(fs.readFileSync(p,"utf8"))||{}; } catch (e) {}
+    m[process.env.STEM]=process.env.TAB;
+    try { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p); } catch (e) {}
+  ' 2>/dev/null
+fi
+
+# 1c. Record this session's project ROOT (gitroot, else cwd) keyed by its live-file
+#     stem in session-dirs.json — a Board-owned, agent-proof sidecar the Board reads
+#     (via live.rs) to resolve a unit's absolute directory, so "+ session in this
+#     project" knows where to spawn. Written for EVERY session (external too).
+root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
+[ -n "$root" ] || root="$cwd"
+STEM="$stem" ROOT="$root" DIRS="${HOME}/.claude/companion/session-dirs.json" node -e '
+  const fs=require("fs");
+  const p=process.env.DIRS;
+  let m={};
+  try { m=JSON.parse(fs.readFileSync(p,"utf8"))||{}; } catch (e) {}
+  m[process.env.STEM]=process.env.ROOT;
+  try { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p); } catch (e) {}
+' 2>/dev/null
+
 # 2. Prune dead live files (mtime older than PRUNE_DAYS) so the roster's archive
 #    list doesn't grow unbounded across crashed/abandoned sessions.
 find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exec rm -f {} + 2>/dev/null

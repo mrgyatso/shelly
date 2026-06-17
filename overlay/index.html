@@ -81,6 +81,9 @@
           </div>
           <div class="board-controls">
             <span id="board-clock" class="clock"></span>
+            <button id="board-newsession" class="ctl" title="New claude session">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
             <button id="board-unread" class="ctl unread-badge" title="New artifacts — view sessions" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
               <span id="board-unread-count" class="unread-count">0</span>
@@ -139,6 +142,10 @@
         <div id="board-unit" class="board-unit" hidden>
           <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
           <div id="unit-history" class="unit-history"></div>
+          <!-- Per-session embedded terminals (the real claude TUI the Board owns).
+               owned-terminals.ts mounts one div per session here; mounts persist
+               across navigation (hidden, never disposed) so PTYs stay alive. -->
+          <div id="unit-terminals" class="unit-terminals" hidden></div>
         </div>
 
         <div class="kbd-hint">

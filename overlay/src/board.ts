@@ -28,6 +28,16 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
 import { isNavigateMessage } from "./resize";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import {
+  initOwnedTerminals,
+  spawnOwnedSession,
+  reconcileBindings,
+  showOwnedTerminals,
+  hideOwnedTerminals,
+  unitHasOwnedTerminal,
+  ownedUnits,
+} from "./owned-terminals";
 
 interface ArtifactEntry {
   path: string;
@@ -42,6 +52,9 @@ interface ArtifactEntry {
    *  writing session's live file (keyed on session_id, not the volatile cwd). When
    *  present it routes the artifact directly; project is then display-only. */
   unit_key?: string | null;
+  /** The writing session's source slug — lets a ✓/✎/✗ answer go to the EXACT
+   *  owned session that produced this artifact. */
+  source?: string | null;
 }
 
 interface LiveSource {
@@ -68,6 +81,13 @@ interface LiveState {
   /** Emitted by the hook: the AUTHORITATIVE unit key (slug for a repo,
    *  slug--shortid for a bare session). The digest filename keys off this. */
   unit_key?: string;
+  /** Injected by read_all_live from owned-sessions.json: the tabId of the
+   *  Board-owned PTY that spawned this session (absent for external sessions).
+   *  Lets the Board bind its embedded terminal to this live source. */
+  companion_session?: string;
+  /** Injected by read_all_live from session-dirs.json: this session's absolute
+   *  project root, so "+ session in this project" knows where to spawn. */
+  unit_dir?: string;
 }
 
 type StatusLevel = "wait" | "busy" | "ok" | "idle";
@@ -113,6 +133,9 @@ const lastJsonBySource = new Map<string, string>();
 /** Raw data read once in initBoard; the router re-scopes it per view. */
 let allSources: LiveSource[] = [];
 let allArtifacts: ArtifactEntry[] = [];
+/** A "+ New session" terminal awaiting its first live source, so pollLive can
+ *  navigate to its unit once it correlates. */
+let pendingNavTab: string | null = null;
 
 let isFullscreen = false;
 /** Whether the L1 roster's stale (archived) units are revealed. */
@@ -170,7 +193,15 @@ export async function initBoard(): Promise<void> {
   unitEl = unit;
   digestEl = digest;
   historyEl = history;
+  const terminalsSlot = document.getElementById("unit-terminals");
+  if (terminalsSlot) initOwnedTerminals(terminalsSlot, { resolveDir: unitDirOf });
   stage.removeAttribute("hidden");
+
+  // Dev/test hook: drive `window.__spawnOwned('<abs dir>')` from the MCP bridge to
+  // spawn a Board-owned claude headlessly (the native folder picker can't be
+  // driven headlessly). Harmless in production; remove before the public release.
+  (window as unknown as { __spawnOwned?: (cwd: string) => Promise<string> }).__spawnOwned =
+    spawnOwnedSession;
 
   wireControls();
   wireKeyboard();
@@ -205,6 +236,32 @@ export async function initBoard(): Promise<void> {
   // already-open Board catches the same target via the `board:navigate` event.
   void listen("board:navigate", () => void applyNavTarget());
   void applyNavTarget();
+}
+
+/** "+ New session": pick a folder, spawn a Board-owned claude there, and jump to
+ *  its unit once it correlates (pendingNavTab, handled in pollLive). */
+async function newGlobalSession(): Promise<void> {
+  let dir: string | null = null;
+  try {
+    const picked = await openDialog({ directory: true, title: "Start a claude session in…" });
+    dir = typeof picked === "string" ? picked : null;
+  } catch (e) {
+    console.error("folder picker failed", e);
+    return;
+  }
+  if (!dir) return;
+  // Show the terminal IMMEDIATELY under a provisional unit (the picked dir's
+  // basename — which equals the real unit_key for a repo root) and navigate to
+  // it. claude's first-run trust prompt blocks SessionStart, so correlation
+  // can't happen until the user answers it — they must SEE the terminal first.
+  // When it does correlate, pollLive re-navigates to the real unit (pendingNavTab).
+  const provisional = dir.split("/").filter(Boolean).pop() || dir;
+  try {
+    pendingNavTab = await spawnOwnedSession(dir, provisional);
+    goUnit(provisional);
+  } catch (e) {
+    console.error("spawnOwnedSession failed", e);
+  }
 }
 
 /** Drain any pending deep-link target (Rust-side), routing to its unit (L2). */
@@ -333,6 +390,18 @@ function unitKeyOf(s: LiveSource): string {
   return sourceProjectKey(s);
 }
 
+/** The absolute project dir for a unit — the `unit_dir` of any live source that
+ *  belongs to it (all sessions in a repo unit share the same root). null when no
+ *  source carries it (e.g. a pre-hook session), which disables "+ session". */
+function unitDirOf(unitKey: string): string | null {
+  for (const s of allSources) {
+    if (unitKeyOf(s) !== unitKey) continue;
+    const dir = parseState(s.json).unit_dir;
+    if (dir) return dir;
+  }
+  return null;
+}
+
 /** unitKeyOf for a source slug (looks it up); falls back to the slug itself. */
 function unitKeyOfSlug(slug: string): string {
   if (slug === UNSOURCED) return UNSOURCED;
@@ -410,6 +479,19 @@ function renderUnits(): void {
     (sources.some((s) => isLiveSource(s, now)) ? liveUnits : staleUnits).push(unit);
   }
 
+  // A Board-owned terminal is the Board's OWN state — its unit must stay in the
+  // live roster even when the agent's live file is gone (SessionEnd deletes it),
+  // so a session you launched here is always reachable. Promote any owned unit
+  // into the live set (creating an empty entry if it has no live source at all).
+  for (const ou of ownedUnits()) {
+    if (!byUnit.has(ou)) byUnit.set(ou, []);
+    if (!liveUnits.includes(ou)) {
+      const si = staleUnits.indexOf(ou);
+      if (si >= 0) staleUnits.splice(si, 1);
+      liveUnits.push(ou);
+    }
+  }
+
   const cards: HTMLElement[] = [];
   let liveCount = 0;
   for (const unit of liveUnits) {
@@ -456,7 +538,8 @@ function buildArchivedToggle(n: number): HTMLElement {
  *  than one agent runs in the unit, unread summed across its sources. */
 function buildUnitCard(unitKey: string, sources: LiveSource[], artCount: number, now: number): HTMLElement {
   const liveN = sources.filter((s) => isLiveSource(s, now)).length;
-  const head = sources[0] ? makeHead(sources[0]) : unsourcedHead(artCount);
+  const owned = unitHasOwnedTerminal(unitKey);
+  const head = sources[0] ? makeHead(sources[0]) : owned ? ownedHead() : unsourcedHead(artCount);
 
   const card = document.createElement("button");
   card.className = "session-card";
@@ -496,6 +579,14 @@ function buildUnitCard(unitKey: string, sources: LiveSource[], artCount: number,
     chip.title = `${liveN} agents active in this unit`;
     idRow.append(chip);
   }
+  // Board-owned terminal here — mark it so launched sessions are findable.
+  if (owned) {
+    const chip = document.createElement("span");
+    chip.className = "session-term-chip";
+    chip.textContent = "▸ terminal";
+    chip.title = "A claude session you launched from the Board runs here";
+    idRow.append(chip);
+  }
   card.append(idRow);
 
   if (unitKey !== UNSOURCED) {
@@ -528,6 +619,9 @@ function enterUnit(unitKey: string): void {
   focusPath = null;
   void renderHero(unitKey);
   renderHistory(unitKey);
+  // Reveal this unit's Board-owned terminals (if any); their PTYs were already
+  // running, mounted off-screen — this just shows + fits them.
+  showOwnedTerminals(unitKey);
 }
 
 /** Tear down L2 state when leaving a unit. Clears any L2 hero bar theming so a
@@ -539,6 +633,9 @@ function leaveUnit(): void {
   digestEl?.setAttribute("hidden", "");
   applyBar(null);
   focusPath = null;
+  // Hide (NEVER dispose) the owned terminals — their PTYs must stay alive across
+  // navigation. The mounts persist in #unit-terminals; only visibility changes.
+  hideOwnedTerminals();
 }
 
 /**
@@ -668,6 +765,20 @@ function unsourcedHead(count: number): PaneHead {
     isCloud: false,
     level: "idle",
     statusHtml: `${count} artifact${count === 1 ? "" : "s"} with no live agent`,
+  };
+}
+
+/** Head for a Board-owned unit whose agent live file is gone (the session ended
+ *  but its terminal is still here). Reads as a terminal, not an orphan. */
+function ownedHead(): PaneHead {
+  return {
+    source: "",
+    name: "claude session",
+    prov: "BOARD TERMINAL",
+    mark: "›",
+    isCloud: false,
+    level: "ok",
+    statusHtml: "Launched from the Board",
   };
 }
 
@@ -1030,6 +1141,29 @@ async function pollLive(): Promise<void> {
     return;
   }
   allSources = sources;
+
+  // Correlate Board-owned terminals to the live sources their spawned claude
+  // produced: companion_session (a tabId, injected by read_all_live) → unit_key.
+  const sessionToUnit = new Map<string, string>();
+  for (const s of sources) {
+    const cs = parseState(s.json).companion_session;
+    if (cs) sessionToUnit.set(cs, unitKeyOf(s));
+  }
+  const newlyBound = reconcileBindings(sessionToUnit);
+  if (newlyBound.length) {
+    const v = currentView();
+    // A globally-launched ("+ New session") terminal: jump to its unit the moment
+    // it goes live, so the user lands on the session they just opened.
+    const pend = pendingNavTab && newlyBound.find((b) => b.tabId === pendingNavTab);
+    if (pend) {
+      pendingNavTab = null;
+      goUnit(pend.unitKey);
+    } else if (v.level === "unit") {
+      // A binding adopted while viewing a unit: reveal it in place.
+      showOwnedTerminals(v.unitKey);
+    }
+  }
+
   const view = currentView();
   const changed: string[] = [];
   for (const s of sources) {
@@ -1160,6 +1294,7 @@ function wireControls(): void {
     win.hide().catch((e) => console.error("board hide failed", e));
   });
   document.getElementById("board-fullscreen")?.addEventListener("click", toggleFullscreen);
+  document.getElementById("board-newsession")?.addEventListener("click", () => void newGlobalSession());
   document.getElementById("board-back")?.addEventListener("click", goBack);
   document.getElementById("board-unread")?.addEventListener("click", goSessions);
   document.getElementById("hub-sessions-btn")?.addEventListener("click", goSessions);
@@ -1185,9 +1320,31 @@ function wireNavigate(): void {
       d.kind === "submit" &&
       typeof d.text === "string"
     ) {
-      void handleSubmit(d.text, focusPath ?? undefined);
+      // If this artifact was produced by a Board-owned session, write the
+      // compiled ✓/✎/✗ answer STRAIGHT into that session's PTY (no clipboard,
+      // no ⌘V). Otherwise fall back to the clipboard path.
+      const tabId = focusPath ? ownedTabForArtifact(focusPath) : null;
+      if (tabId) {
+        const payload = `${d.text}\n\n— Companion artifact: ${focusPath} —`;
+        void invoke("submit_pty", { tabId, text: payload }).catch((e) => {
+          console.error("submit_pty failed; clipboard fallback", e);
+          void handleSubmit(d.text, focusPath ?? undefined);
+        });
+      } else {
+        void handleSubmit(d.text, focusPath ?? undefined);
+      }
     }
   });
+}
+
+/** The Board-owned PTY tabId that produced `path`, or null when the artifact came
+ *  from an external session. Resolves artifact → its source slug → that live
+ *  source's companion_session (the owning tabId). */
+function ownedTabForArtifact(path: string): string | null {
+  const art = allArtifacts.find((a) => a.path === path);
+  if (!art?.source) return null;
+  const src = allSources.find((s) => s.source === art.source);
+  return src ? parseState(src.json).companion_session ?? null : null;
 }
 
 /** Validate an artifact path is in scope, then open it in the reader (drilling

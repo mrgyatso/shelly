@@ -16,4 +16,21 @@ line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
 live_path=$(printf '%s' "$line" | cut -f1)
 
 rm -f "$live_path" 2>/dev/null
+
+# Also drop this session's stem from the Board-owned sidecars so they don't
+# accumulate stale entries across launched sessions (best-effort).
+stem=$(basename "$live_path" .json)
+STEM="$stem" node -e '
+  const fs=require("fs");
+  for (const f of ["owned-sessions.json","session-dirs.json"]) {
+    const p=`${process.env.HOME}/.claude/companion/${f}`;
+    try {
+      const m=JSON.parse(fs.readFileSync(p,"utf8"));
+      if (m && Object.prototype.hasOwnProperty.call(m, process.env.STEM)) {
+        delete m[process.env.STEM];
+        const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p);
+      }
+    } catch (e) {}
+  }
+' 2>/dev/null
 exit 0

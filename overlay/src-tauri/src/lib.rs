@@ -4,6 +4,7 @@ mod hub;
 mod layout;
 mod live;
 mod macos_panel;
+mod pty;
 mod tray;
 mod windows;
 
@@ -65,6 +66,7 @@ pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .manage(layout::LayoutState::default())
+        .manage(pty::PtyState::default())
         // single-instance first so a forwarded `companion open …` exits fast.
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             // This callback fires on the plugin's socket-listener thread, but
@@ -95,6 +97,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
+        // Native folder picker for "+ New session" (where to spawn `claude`).
+        .plugin(tauri_plugin_dialog::init())
         // Lets interactive review artifacts write their compiled prose to the
         // system clipboard via the plugin's JS API (writeText). Only write is
         // permitted in capabilities; we never read the user's clipboard.
@@ -121,6 +125,11 @@ pub fn run() {
             windows::show_board,
             windows::take_board_nav_target,
             windows::open_history,
+            pty::spawn_pty,
+            pty::write_pty,
+            pty::submit_pty,
+            pty::resize_pty,
+            pty::close_pty,
             hub::read_live_from_hub,
             hub::hub_config_get,
             hub::hub_config_set,

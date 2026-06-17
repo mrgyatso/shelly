@@ -693,6 +693,126 @@
 }
 #unit-digest[hidden] { display: none; }
 
+/* Per-session embedded terminal panel — the real `claude` TUI the Board owns.
+   A dark "sunken" inset in the paper chrome: a header bar (always visible, with a
+   collapse button) above a body the terminal renders into. Collapsing hides the
+   body (PTY keeps running); the body has a definite height so xterm has a real
+   box to fit into (fitting a 0-height box reflows claude to ~5 cols). */
+.unit-terminals {
+  flex: 0 0 auto;
+  width: 100%;
+  border-radius: var(--radius-card);
+  background: #1d1b19;
+  box-shadow: var(--sh-art);
+  outline: 1px solid var(--line-2);
+  outline-offset: -1px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.unit-terminals[hidden] { display: none; }
+
+.term-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  color: #e9e4da;
+  font: 600 12px/1 "JetBrains Mono", ui-monospace, monospace;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.unit-terminals.collapsed .term-head { border-bottom: 0; }
+.term-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2e7d52;
+  flex: 0 0 auto;
+}
+/* Output arrived while collapsed — pulse the dot in the clay accent so you know
+   the tucked-away session is doing something. Cleared on expand/show. */
+.term-dot.pulsing {
+  background: #cc785c;
+  animation: term-dot-pulse 1.5s ease-out infinite;
+}
+@keyframes term-dot-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(204, 120, 92, 0.5); }
+  70% { box-shadow: 0 0 0 7px rgba(204, 120, 92, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(204, 120, 92, 0); }
+}
+.term-title { flex: 1 1 auto; letter-spacing: 0.01em; }
+.term-act {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e9e4da;
+  cursor: pointer;
+  font: 600 11px/1 "JetBrains Mono", ui-monospace, monospace;
+  padding: 5px 9px;
+  border-radius: 6px;
+  transition: background 0.14s, border-color 0.14s, opacity 0.14s;
+}
+.term-act:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.28); }
+.term-act:disabled { opacity: 0.4; cursor: default; }
+.term-act[hidden] { display: none; }
+.term-new { color: #cc785c; border-color: rgba(204, 120, 92, 0.45); }
+.term-close { padding: 5px 8px; }
+.term-collapse {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: #cc785c;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 5px;
+  transition: background 0.14s;
+}
+.term-collapse:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* Session switcher — one pill per owned session in this unit (shown only >1). */
+.term-pills {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+.term-pills[hidden] { display: none; }
+.term-pill {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  color: #b9b2a6;
+  cursor: pointer;
+  font: 600 11px/1 "JetBrains Mono", ui-monospace, monospace;
+  padding: 5px 10px;
+  border-radius: 999px;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.term-pill:hover { background: rgba(255, 255, 255, 0.12); color: #e9e4da; }
+.term-pill.active { background: rgba(204, 120, 92, 0.22); color: #f0d8cd; border-color: rgba(204, 120, 92, 0.5); }
+.term-pill.exited { opacity: 0.5; }
+
+.term-body {
+  flex: 1 1 auto;
+  position: relative;
+  height: min(58vh, 600px);
+}
+.term-body[hidden] { display: none; }
+
+/* One session's terminal mount — fills the body; xterm renders into it. Only the
+   bound, visible one is shown; the rest are hidden (PTYs keep running, scrollback
+   preserved). */
+.term-mount {
+  position: absolute;
+  inset: 0;
+  padding: 8px;
+}
+.term-mount[hidden] { display: none; }
+
 /* A clickable artifact row — the history list uses it. */
 .art-row {
   display: flex;
@@ -767,6 +887,20 @@
   letter-spacing: 0.02em;
   color: var(--accent);
   background: oklch(from var(--accent) l c h / 0.12);
+  border-radius: 5px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+/* Board-owned terminal marker on a session card. */
+.session-term-chip {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #e9e4da;
+  background: #1d1b19;
   border-radius: 5px;
   padding: 2px 6px;
   line-height: 1;

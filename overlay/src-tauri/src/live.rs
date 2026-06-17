@@ -33,6 +33,39 @@ fn legacy_live_path() -> Option<PathBuf> {
     companion_dir().map(|d| d.join("live.json"))
 }
 
+/// Board-written sidecar mapping a live-source stem (`<slug>--<shortid>`) → the
+/// `tabId` of the Board-owned PTY that spawned that session. The SessionStart
+/// hook (`companion-session`) writes it when `COMPANION_SESSION` is in env. The
+/// Board reads it (injected per source by `read_all_live`) to match its embedded
+/// terminal to the live source the spawned `claude` produces. Agent-proof: the
+/// agent never writes this file, so its turn-by-turn live rewrites can't lose the
+/// binding. Re-read every poll so a fresh bind is picked up within ~1 poll.
+fn owned_sessions() -> std::collections::HashMap<String, String> {
+    let path = match companion_dir() {
+        Some(d) => d.join("owned-sessions.json"),
+        None => return std::collections::HashMap::new(),
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Board-owned sidecar mapping a live-source stem → that session's absolute
+/// project root (gitroot or cwd), written by `companion-session` for every
+/// session. The Board reads it (injected per source as `unit_dir`) to resolve a
+/// unit's directory for "+ session in this project". Agent-proof.
+fn session_dirs() -> std::collections::HashMap<String, String> {
+    let path = match companion_dir() {
+        Some(d) => d.join("session-dirs.json"),
+        None => return std::collections::HashMap::new(),
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
 /// The most-recently-modified `*.json` under the per-session dir, if any.
 fn newest_live_file() -> Option<PathBuf> {
     let dir = live_dir()?;
@@ -77,7 +110,7 @@ pub fn read_live() -> String {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    inject_updated_ms(&raw, updated_ms)
+    inject_fields(&raw, updated_ms, None, None)
 }
 
 /// One agent's live-state, tagged with the slug of the file it came from. The
@@ -104,6 +137,8 @@ pub fn read_all_live() -> Vec<LiveSource> {
         None => return Vec::new(),
     };
     let mut out: Vec<LiveSource> = Vec::new();
+    let owned = owned_sessions();
+    let dirs = session_dirs();
     let entries = match std::fs::read_dir(&dir) {
         Ok(e) => e,
         Err(_) => return Vec::new(),
@@ -127,26 +162,75 @@ pub fn read_all_live() -> Vec<LiveSource> {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
+        let companion_session = owned.get(&source).map(|s| s.as_str());
+        let unit_dir = dirs.get(&source).map(|s| s.as_str());
         out.push(LiveSource {
+            json: inject_fields(&raw, updated_ms, companion_session, unit_dir),
             source,
-            json: inject_updated_ms(&raw, updated_ms),
         });
     }
     out.sort_by(|a, b| a.source.cmp(&b.source));
     out
 }
 
-/// Inject `updated_ms` into a live-state JSON object, returning the serialized
-/// string. A malformed file is returned verbatim so it still surfaces as the
-/// render fallback rather than being dropped.
-fn inject_updated_ms(raw: &str, updated_ms: u64) -> String {
+/// Inject `updated_ms` (and, for Board-owned sessions, `companion_session`) into
+/// a live-state JSON object, returning the serialized string. A malformed file is
+/// returned verbatim so it still surfaces as the render fallback rather than being
+/// dropped.
+fn inject_fields(
+    raw: &str,
+    updated_ms: u64,
+    companion_session: Option<&str>,
+    unit_dir: Option<&str>,
+) -> String {
     match serde_json::from_str::<serde_json::Value>(raw) {
         Ok(mut v) => {
             if let Some(obj) = v.as_object_mut() {
                 obj.insert("updated_ms".into(), serde_json::json!(updated_ms));
+                if let Some(cs) = companion_session {
+                    obj.insert("companion_session".into(), serde_json::json!(cs));
+                }
+                if let Some(dir) = unit_dir {
+                    obj.insert("unit_dir".into(), serde_json::json!(dir));
+                }
             }
             v.to_string()
         }
         Err(_) => raw.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn injects_companion_session_and_dir_when_owned() {
+        let out = inject_fields(
+            r#"{"working":"x","unit_key":"repo"}"#,
+            42,
+            Some("board-3"),
+            Some("/Users/me/repo"),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["companion_session"], "board-3");
+        assert_eq!(v["unit_dir"], "/Users/me/repo");
+        assert_eq!(v["updated_ms"], 42);
+        assert_eq!(v["unit_key"], "repo"); // existing fields preserved
+    }
+
+    #[test]
+    fn omits_optional_fields_when_external() {
+        let out = inject_fields(r#"{"working":"x"}"#, 7, None, None);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(v.get("companion_session").is_none());
+        assert!(v.get("unit_dir").is_none());
+        assert_eq!(v["updated_ms"], 7);
+    }
+
+    #[test]
+    fn malformed_passes_through_verbatim() {
+        let out = inject_fields("not json", 1, Some("board-1"), None);
+        assert_eq!(out, "not json");
     }
 }

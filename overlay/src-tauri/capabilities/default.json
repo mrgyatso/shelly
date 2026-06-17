@@ -17,6 +17,7 @@
     "core:window:allow-current-monitor",
     "opener:default",
     "deep-link:default",
-    "clipboard-manager:allow-write-text"
+    "clipboard-manager:allow-write-text",
+    "dialog:allow-open"
   ]
 }

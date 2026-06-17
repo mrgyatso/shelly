@@ -39,6 +39,10 @@ pub struct ArtifactEntry {
     /// volatile cwd). Present ⇒ the Board routes by it directly and `project` is
     /// display-only; absent ⇒ the Board falls back to project-slug matching.
     pub unit_key: Option<String>,
+    /// The writing session's source slug (`<slug>--<shortid>`), from the routing
+    /// index. Lets the Board send an artifact's ✓/✎/✗ answer to the EXACT session
+    /// that produced it (a unit can hold several owned sessions).
+    pub source: Option<String>,
 }
 
 /// The subset of the `companion-meta` JSON block the HUD + Board surface. Other
@@ -177,14 +181,15 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
         // Attached after the fact in `list_artifacts` from the index, so a single
         // index read covers the whole listing rather than re-reading per file.
         unit_key: None,
+        source: None,
     })
 }
 
-/// The hook-written routing index: `basename → unit_key`. Lives next to the live
-/// dir at `~/.claude/companion/artifact-index.json`, shape
-/// `{ "<name>.html": { "unit_key": "...", "shortid": "...", "ts": ... }, ... }`.
+/// The hook-written routing index: `basename → (unit_key, source)`. Lives next to
+/// the live dir at `~/.claude/companion/artifact-index.json`, shape
+/// `{ "<name>.html": { "unit_key": "...", "shortid": "...", "source": "...", "ts": ... }, ... }`.
 /// Returns an empty map on any failure — routing then falls back to project-slug.
-fn load_artifact_index() -> std::collections::HashMap<String, String> {
+fn load_artifact_index() -> std::collections::HashMap<String, (String, Option<String>)> {
     let mut map = std::collections::HashMap::new();
     let Some(home) = std::env::var_os("HOME") else {
         return map;
@@ -199,7 +204,11 @@ fn load_artifact_index() -> std::collections::HashMap<String, String> {
     if let Some(obj) = json.as_object() {
         for (name, entry) in obj {
             if let Some(unit) = entry.get("unit_key").and_then(|v| v.as_str()) {
-                map.insert(name.clone(), unit.to_string());
+                let source = entry
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                map.insert(name.clone(), (unit.to_string(), source));
             }
         }
     }
@@ -232,7 +241,10 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
     if !index.is_empty() {
         for e in &mut entries {
             if let Some(name) = Path::new(&e.path).file_name().and_then(|s| s.to_str()) {
-                e.unit_key = index.get(name).cloned();
+                if let Some((unit, source)) = index.get(name) {
+                    e.unit_key = Some(unit.clone());
+                    e.source = source.clone();
+                }
             }
         }
     }
