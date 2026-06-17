@@ -11,7 +11,13 @@
 // live file, and freeze its authoritative `unit_key` into the index. Freezing
 // means the grouping survives the session ending (the live file going away).
 //
-// Index shape: { "<basename>.html": { unit_key, shortid, source, ts }, ... }
+// Index shape: { "<abs-path>.html": { unit_key, shortid, source, ts }, ... }
+// Keyed by the ABSOLUTE artifact path (not basename) so two artifacts that share
+// a filename across scan dirs — e.g. ~/.claude/companion/artifacts vs
+// ~/codeviz/public/artifacts — can't collide and mis-route. The Rust reader
+// (history.rs list_artifacts) looks up by full path, falling back to basename
+// for entries written by older hooks. Use a LEXICAL resolve (not realpath): the
+// reader scans dirs without resolving symlinks, so keys must match literally.
 // On any failure we exit 0 without writing — routing then falls back to the
 // model-stamped project (display-only), so a broken index can never lose work.
 
@@ -21,7 +27,7 @@ const path = require("path");
 const [artifactPath, liveDir, indexPath] = process.argv.slice(2);
 if (!artifactPath || !liveDir || !indexPath) process.exit(0);
 
-const base = path.basename(artifactPath);
+const key = path.resolve(artifactPath);
 const shortid = (process.env.SID || "").slice(0, 8).replace(/[^A-Za-z0-9]/g, "-");
 if (!shortid) process.exit(0);
 
@@ -47,7 +53,7 @@ let index = {};
 try {
   index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {};
 } catch (_) {}
-index[base] = { unit_key: unitKey, shortid, source, ts: Date.now() };
+index[key] = { unit_key: unitKey, shortid, source, ts: Date.now() };
 
 // Atomic write (temp + rename) so a concurrent reader never sees a partial file.
 try {

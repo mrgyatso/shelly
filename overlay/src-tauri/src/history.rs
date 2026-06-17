@@ -185,9 +185,10 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
     })
 }
 
-/// The hook-written routing index: `basename → (unit_key, source)`. Lives next to
+/// The hook-written routing index: `abs-path → (unit_key, source)`. Lives next to
 /// the live dir at `~/.claude/companion/artifact-index.json`, shape
-/// `{ "<name>.html": { "unit_key": "...", "shortid": "...", "source": "...", "ts": ... }, ... }`.
+/// `{ "<abs-path>.html": { "unit_key": "...", "shortid": "...", "source": "...", "ts": ... }, ... }`.
+/// (Older entries may still be keyed by basename; `list_artifacts` falls back to that.)
 /// Returns an empty map on any failure — routing then falls back to project-slug.
 fn load_artifact_index() -> std::collections::HashMap<String, (String, Option<String>)> {
     let mut map = std::collections::HashMap::new();
@@ -237,14 +238,20 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
         .filter_map(|e| entry_from_path(&e.path()))
         .collect();
     // Attach the authoritative unit key (one index read for the whole listing).
+    // Prefer an exact full-path match — the hook keys on the absolute path, so two
+    // artifacts that share a filename across scan dirs can't collide. Fall back to
+    // a basename match for entries written by an older (basename-keyed) hook.
     let index = load_artifact_index();
     if !index.is_empty() {
         for e in &mut entries {
-            if let Some(name) = Path::new(&e.path).file_name().and_then(|s| s.to_str()) {
-                if let Some((unit, source)) = index.get(name) {
-                    e.unit_key = Some(unit.clone());
-                    e.source = source.clone();
-                }
+            let by_path = index.get(&e.path);
+            let by_name = Path::new(&e.path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .and_then(|n| index.get(n));
+            if let Some((unit, source)) = by_path.or(by_name) {
+                e.unit_key = Some(unit.clone());
+                e.source = source.clone();
             }
         }
     }
