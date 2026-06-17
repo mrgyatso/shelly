@@ -96,6 +96,10 @@ fn needs_you_count() -> usize {
                 Ok(v) => v,
                 Err(_) => return false,
             };
+            // A manually-closed session is off the roster — never count it.
+            if v.get("dismissed").and_then(|d| d.as_bool()) == Some(true) {
+                return false;
+            }
             // Live = touched within the window (absent updated_ms ⇒ treat as live).
             let live = v
                 .get("updated_ms")

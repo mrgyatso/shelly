@@ -66,35 +66,47 @@ pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .manage(layout::LayoutState::default())
-        .manage(pty::PtyState::default())
-        // single-instance first so a forwarded `companion open …` exits fast.
-        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            // This callback fires on the plugin's socket-listener thread, but
-            // creating a window (WebviewWindowBuilder::build / NSPanel reclass)
-            // MUST happen on the main thread or AppKit aborts and kills the
-            // primary process. Hop to the main thread first.
-            let handle = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                guard(|| {
-                    // `companion history` toggles the HUD (a keybind-free trigger,
-                    // useful when ⌘8 is swallowed e.g. over remote desktop).
-                    if args.iter().any(|a| a == "history") {
-                        windows::open_history_window(&handle);
-                    } else if args.iter().any(|a| a == "live") {
-                        windows::open_live_window(&handle);
-                    } else if args.iter().any(|a| a == "board") {
-                        windows::open_board_window(&handle);
-                    } else if artifact::parse_open_args(&args, Some(&cwd)).is_some() {
-                        // `companion open <artifact>` no longer spawns a standalone
-                        // window — the Board is the single surface and ingests the
-                        // artifact; just bring the shell forward.
-                        windows::open_board_window(&handle);
-                    } else {
-                        windows::raise_all(&handle);
-                    }
+        .manage(pty::PtyState::default());
+
+    // Single-instance ONLY in release. In a debug build we deliberately skip it so
+    // `npm run tauri dev` runs as a SECOND instance ALONGSIDE the installed release
+    // — keep your stable app up for real work, iterate on the dev build, and never
+    // have to close the whole app to rebuild/test. (Release still forwards a second
+    // `companion …` invocation to the running instance, as before.)
+    #[cfg(not(debug_assertions))]
+    {
+        builder = builder
+            // single-instance first so a forwarded `companion open …` exits fast.
+            .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+                // This callback fires on the plugin's socket-listener thread, but
+                // creating a window (WebviewWindowBuilder::build / NSPanel reclass)
+                // MUST happen on the main thread or AppKit aborts and kills the
+                // primary process. Hop to the main thread first.
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    guard(|| {
+                        // `companion history` toggles the HUD (a keybind-free trigger,
+                        // useful when ⌘8 is swallowed e.g. over remote desktop).
+                        if args.iter().any(|a| a == "history") {
+                            windows::open_history_window(&handle);
+                        } else if args.iter().any(|a| a == "live") {
+                            windows::open_live_window(&handle);
+                        } else if args.iter().any(|a| a == "board") {
+                            windows::open_board_window(&handle);
+                        } else if artifact::parse_open_args(&args, Some(&cwd)).is_some() {
+                            // `companion open <artifact>` no longer spawns a standalone
+                            // window — the Board is the single surface and ingests the
+                            // artifact; just bring the shell forward.
+                            windows::open_board_window(&handle);
+                        } else {
+                            windows::raise_all(&handle);
+                        }
+                    });
                 });
-            });
-        }))
+            }));
+    }
+
+    builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         // Native folder picker for "+ New session" (where to spawn `claude`).
@@ -121,6 +133,10 @@ pub fn run() {
             history::resolve_unit_home,
             live::read_live,
             live::read_all_live,
+            live::dismiss_session,
+            live::restore_session,
+            live::read_unit_names,
+            live::set_unit_name,
             windows::set_board_fullscreen,
             windows::show_board,
             windows::take_board_nav_target,

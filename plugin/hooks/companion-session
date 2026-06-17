@@ -76,6 +76,24 @@ STEM="$stem" ROOT="$root" DIRS="${HOME}/.claude/companion/session-dirs.json" nod
   try { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p); } catch (e) {}
 ' 2>/dev/null
 
+# 1d. Record this session's FULL session_id keyed by stem in session-ids.json
+#     (the stem only carries the 8-char shortid, which can't drive `claude
+#     --resume`). The Board injects it per source so a session closed off the
+#     roster can be REJOINED via `claude --resume <id>`. Agent-proof sidecar.
+#     GUARDED on COMPANION_SESSION (same as 1b): only sessions the Board OWNS get
+#     a resume id, so "has session_id" cleanly means "was Board-launched" — an
+#     external session's restore just un-hides, never spawns a duplicate claude.
+if [ -n "$COMPANION_SESSION" ] && [ -n "$session_id" ]; then
+  STEM="$stem" SID="$session_id" IDS="${HOME}/.claude/companion/session-ids.json" node -e '
+    const fs=require("fs");
+    const p=process.env.IDS;
+    let m={};
+    try { m=JSON.parse(fs.readFileSync(p,"utf8"))||{}; } catch (e) {}
+    m[process.env.STEM]=process.env.SID;
+    try { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p); } catch (e) {}
+  ' 2>/dev/null
+fi
+
 # 2. Prune dead live files (mtime older than PRUNE_DAYS) so the roster's archive
 #    list doesn't grow unbounded across crashed/abandoned sessions.
 find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exec rm -f {} + 2>/dev/null

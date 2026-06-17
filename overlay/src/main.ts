@@ -87,6 +87,21 @@ async function loadArtifact(path: string): Promise<void> {
 // The history HUD reuses this same bundle. When flagged, render the grid and
 // skip all the single-artifact wiring below (fit-reporter, controls, listeners).
 // Dynamic import keeps the HUD code out of the artifact panels' boot path.
+// DEV marker — only the `tauri dev` instance (Vite dev server) sets this; the
+// release build is production Vite (false). Lets you tell the dev Board apart from
+// your stable one when both are open. Fixed, click-through, ignored in release.
+if (import.meta.env.DEV) {
+  const badge = document.createElement("div");
+  badge.textContent = "DEV";
+  badge.style.cssText =
+    "position:fixed;top:6px;right:8px;z-index:2147483647;pointer-events:none;" +
+    "font:700 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;" +
+    "color:#fff;background:#b0552f;padding:3px 7px;border-radius:6px;" +
+    "box-shadow:0 2px 8px rgba(0,0,0,.35);";
+  addEventListener("DOMContentLoaded", () => document.body.appendChild(badge));
+  if (document.body) document.body.appendChild(badge);
+}
+
 if (window.__LIVE_MODE__) {
   void import("./live").then((m) => m.initLive());
 } else if (window.__HISTORY_MODE__) {

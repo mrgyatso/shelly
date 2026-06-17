@@ -414,6 +414,85 @@
 .session-card.archived { opacity: 0.55; }
 .session-card.archived:hover { opacity: 1; }
 
+/* Close (×) a session off the roster — hidden until the card is hovered, so it
+ * doesn't clutter the calm roster. Top-right, clear of the status text. */
+.session-close {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s var(--ease), background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.session-card:hover .session-close { opacity: 1; }
+.session-close:hover { background: var(--line-2); color: var(--ink); }
+/* When a card also shows an unread badge, tuck the × just left of it. */
+.session-card:has(.session-unread) .session-close { right: 34px; }
+
+/* ✎ Rename — sits just left of the × (offsets by the same +24px when unread). */
+.session-rename {
+  position: absolute;
+  top: 9px;
+  right: 34px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s var(--ease), background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.session-card:hover .session-rename { opacity: 1; }
+.session-rename:hover { background: var(--line-2); color: var(--ink); }
+.session-card:has(.session-unread) .session-rename { right: 58px; }
+
+/* The floating name editor (appended to <body>, positioned over the card name so
+   it isn't nested in the card <button>). */
+.name-edit {
+  position: fixed;
+  z-index: 50;
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  padding: 4px 8px;
+  outline: none;
+  box-shadow: 0 10px 26px -16px rgba(40, 30, 20, 0.6);
+}
+
+/* The "⟲ Rejoin / Restore" affordance on an archived, manually-closed card. */
+.session-card.restorable { cursor: pointer; }
+.session-restore {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--line-2);
+  color: var(--ink-3, var(--ink-4));
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+}
+.session-card.restorable:hover .session-restore { background: var(--accent); color: var(--board); }
+
 /* Unread (arrived-while-away) count, top-right of the session card. */
 .session-unread {
   position: absolute;
@@ -667,23 +746,56 @@
   z-index: 2;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden; /* fixed layout: the terminal + drawer scroll internally, not the unit */
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
   padding: 8px 26px 26px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
 }
 .board-unit[hidden] { display: none; }
 
-/* The HERO is the unit's lead surface — large at the top, with history below.
-   The id selector overrides .hub-frame's height:100% (full-bleed only at L0,
-   where the dashboard owns the whole surface). */
+/* L2 toolbar — a thin paper strip carrying the history-drawer toggle (☰) and the
+   hero collapse toggle. The mandatory Board controls live in the top bar; these are
+   L2-scoped surface controls. */
+.unit-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 7; /* stay above the drawer (z6) + scrim (z5) so ☰ can toggle it closed */
+}
+.unit-tool-btn {
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  font: 600 12px/1 "JetBrains Mono", ui-monospace, monospace;
+  padding: 7px 11px;
+  border-radius: 8px;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.unit-tool-btn:hover { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.unit-tool-btn[hidden] { display: none; }
+.board-unit.history-open #unit-hist-toggle { background: var(--ink); color: var(--card); border-color: var(--ink); }
+
+/* Stacked surfaces: compact hero over the primary terminal. Fills the unit; the
+   terminal flexes to take whatever the hero leaves. */
+.unit-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The HERO is now a COMPACT lead surface above the primary terminal (was a 74vh
+   slab). Collapse it (hero toggle) to give the terminal the whole pane. The id
+   selector overrides .hub-frame's height:100% (full-bleed only at L0). */
 #unit-digest {
   flex: 0 0 auto;
   width: 100%;
-  height: min(74vh, 860px);
+  height: clamp(140px, 32vh, 380px);
   border: 0;
   border-radius: var(--radius-card);
   box-shadow: var(--sh-art);
@@ -692,6 +804,15 @@
   background: var(--card);
 }
 #unit-digest[hidden] { display: none; }
+/* Hero collapsed → terminal owns the full height. */
+.board-unit.hero-collapsed #unit-digest { display: none; }
+/* Terminal collapsed → its (header-only) bar drops to the BOTTOM and the hero grows
+   to fill the whole pane above it, so the artifact takes the remaining window. */
+.unit-main:has(.unit-terminals.collapsed) #unit-digest {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
 
 /* Per-session embedded terminal panel — the real `claude` TUI the Board owns.
    A dark "sunken" inset in the paper chrome: a header bar (always visible, with a
@@ -699,7 +820,8 @@
    body (PTY keeps running); the body has a definite height so xterm has a real
    box to fit into (fitting a 0-height box reflows claude to ~5 cols). */
 .unit-terminals {
-  flex: 0 0 auto;
+  flex: 1 1 auto; /* PRIMARY surface — takes the height the compact hero leaves */
+  min-height: 0;
   width: 100%;
   border-radius: var(--radius-card);
   background: #1d1b19;
@@ -711,6 +833,9 @@
   flex-direction: column;
 }
 .unit-terminals[hidden] { display: none; }
+/* Terminal collapsed (header-only) → the hero takes the pane. With both collapsed,
+   only the two header strips remain. */
+.unit-terminals.collapsed { flex: 0 0 auto; }
 
 .term-head {
   flex: 0 0 auto;
@@ -799,7 +924,7 @@
 .term-body {
   flex: 1 1 auto;
   position: relative;
-  height: min(58vh, 600px);
+  min-height: 0; /* fills the primary panel; terminal.ts ResizeObserver refits on change */
 }
 .term-body[hidden] { display: none; }
 
@@ -858,8 +983,42 @@
   color: var(--ink-4);
   font-variant-numeric: tabular-nums;
 }
-/* History — the unit's durable artifact list. */
-.unit-history { flex: 0 0 auto; display: flex; flex-direction: column; }
+/* History — the unit's durable artifact list, now an off-canvas DRAWER (claude.ai
+   chat-list style): slides in from the left over the surface, dismissed by the
+   scrim, ✕, or opening an artifact. Toggled by ☰ (.history-open on .board-unit). */
+.unit-history {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(320px, 82%);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  padding: 52px 14px 18px; /* top clearance so the head clears the L2 toolbar row */
+  background: var(--card);
+  border-right: 1px solid var(--line-2);
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  box-shadow: 18px 0 44px -28px rgba(40, 30, 20, 0.6);
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  transform: translateX(-104%);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.board-unit.history-open .unit-history { transform: translateX(0); }
+
+/* Dismiss scrim behind the drawer. */
+.unit-history-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: oklch(0.2 0.01 55 / 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.board-unit.history-open .unit-history-scrim { opacity: 1; pointer-events: auto; }
 .history-head {
   font-family: var(--mono);
   font-size: 10px;

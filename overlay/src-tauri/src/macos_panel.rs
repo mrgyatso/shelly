@@ -189,8 +189,16 @@ mod imp {
             panel.setStyleMask(panel.styleMask() | NSWindowStyleMask::Resizable);
             // Become key on ANY click (not only text fields) so keyboard nav works.
             panel.setBecomesKeyOnlyIfNeeded(false);
+            // The Board is a FOCAL app window, not an ambient ghost — it must NOT
+            // squat on every Space and both displays (the "it's always there"
+            // complaint). `MoveToActiveSpace` makes it behave like a normal app
+            // window: it lives on one Space and comes to whichever Space is active
+            // when you summon it (tray → Open Board, Cmd-Tab). `FullScreenAuxiliary`
+            // is kept so it can still overlay a full-screen terminal when summoned.
+            // (The ghost panels in `make_nonactivating_panel` keep CanJoinAllSpaces —
+            // they are genuinely ambient.)
             panel.setCollectionBehavior(
-                NSWindowCollectionBehavior::CanJoinAllSpaces
+                NSWindowCollectionBehavior::MoveToActiveSpace
                     | NSWindowCollectionBehavior::FullScreenAuxiliary,
             );
         }

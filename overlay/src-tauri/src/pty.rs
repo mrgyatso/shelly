@@ -153,9 +153,28 @@ fn shell_quote(path: &str) -> String {
     format!("'{}'", path.replace('\'', "'\\''"))
 }
 
-/// Spawn a `claude` PTY for `tab_id`. Wrapped in a login shell (`$SHELL -l -c
-/// 'exec <claude>'`) so the agent — and the PostToolUse hook it launches —
-/// inherit a full login PATH, while still running the exact detected binary.
+/// The `-c` script the spawn shell runs: launch `claude`, then — when it exits
+/// (e.g. the user Ctrl-C's out of it) — `exec` a fresh interactive login shell so
+/// the terminal stays usable instead of dying. The spawn shell itself runs
+/// interactively (`-i`, see `spawn_pty`) so job control places `claude` in its own
+/// foreground process group; Ctrl-C from the tty then reaches `claude` alone and
+/// never tears down the surrounding shell. The `;` (not `&&`) drops to the shell
+/// regardless of how `claude` exited.
+fn claude_then_shell_script(claude: &str, shell: &str, resume: Option<&str>) -> String {
+    let launch = match resume {
+        // Rejoin a specific prior session by its full id (used when reopening a
+        // session that was closed off the Board roster).
+        Some(id) => format!("{} --resume {}", shell_quote(claude), shell_quote(id)),
+        None => shell_quote(claude),
+    };
+    format!("{}; exec {} -i -l", launch, shell_quote(shell))
+}
+
+/// Spawn a `claude` PTY for `tab_id`. The PTY runs an interactive login shell
+/// (`$SHELL -i -l -c '<claude>; exec $SHELL -i -l'`): the agent — and the
+/// PostToolUse hook it launches — inherit a full login PATH; `-i` enables job
+/// control so Ctrl-C reaches `claude` alone; and when `claude` exits the terminal
+/// drops into a live shell instead of dying. See `claude_then_shell_script`.
 #[tauri::command]
 pub async fn spawn_pty(
     app: AppHandle,
@@ -164,6 +183,7 @@ pub async fn spawn_pty(
     rows: u16,
     cols: u16,
     cwd: Option<String>,
+    resume: Option<String>,
 ) -> Result<(), String> {
     let claude = find_claude().ok_or_else(|| {
         "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"
@@ -182,9 +202,10 @@ pub async fn spawn_pty(
 
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
     let mut cmd = CommandBuilder::new(&shell);
+    cmd.arg("-i");
     cmd.arg("-l");
     cmd.arg("-c");
-    cmd.arg(format!("exec {}", shell_quote(&claude)));
+    cmd.arg(claude_then_shell_script(&claude, &shell, resume.as_deref()));
     inject_env(&mut cmd, &tab_id);
     // Run in the requested directory (a unit's project dir, chosen at spawn),
     // falling back to HOME when none was supplied.
@@ -278,9 +299,24 @@ pub async fn resize_pty(
 
 /// Kill and forget a tab's PTY. Dropping the master makes the reader thread see
 /// EOF and emit `pty-exit-<tabId>`, which ends it.
+///
+/// The tracked child is the login **shell** wrapper (`$SHELL -i -l -c 'claude;
+/// exec $SHELL'`); `claude` runs as that shell's child in its OWN foreground
+/// process group (job control via `-i`). So SIGKILLing the shell alone would
+/// ORPHAN `claude` — it would keep running (the "balloon"). To actually end the
+/// session we SIGHUP the shell's children first (claude sees "terminal hung up"
+/// and exits, reaping its own MCP/hook children), THEN kill the shell wrapper.
+/// Dropping the master at scope end is a second SIGHUP backstop.
 #[tauri::command]
 pub async fn close_pty(state: State<'_, PtyState>, tab_id: String) -> Result<(), String> {
     if let Some(mut session) = lock(&state)?.remove(&tab_id) {
+        if let Some(pid) = session.child.process_id() {
+            // Hang up claude BEFORE killing the shell, so it isn't reparented to
+            // launchd (ppid→1) and lost to us first. Best-effort, dependency-free.
+            let _ = std::process::Command::new("pkill")
+                .args(["-HUP", "-P", &pid.to_string()])
+                .status();
+        }
         let _ = session.child.kill();
     }
     Ok(())
@@ -302,6 +338,28 @@ mod tests {
         assert!(s.starts_with("\x1b[200~"));
         assert!(s.ends_with("\x1b[201~\r"));
         assert!(s.contains("hi\nthere"));
+    }
+
+    #[test]
+    fn launch_script_runs_claude_then_drops_to_shell() {
+        let s = claude_then_shell_script("/usr/bin/claude", "/bin/zsh", None);
+        // claude runs first (quoted), so a path with spaces can't word-split.
+        assert!(s.starts_with("'/usr/bin/claude';"), "got: {s}");
+        // then exec a fresh interactive login shell — no wrapper left lingering.
+        assert!(s.contains("exec '/bin/zsh' -i -l"), "got: {s}");
+        // `;` not `&&` — drop to the shell however claude exited.
+        assert!(!s.contains("&&"), "got: {s}");
+    }
+
+    #[test]
+    fn launch_script_resumes_a_session_when_given_an_id() {
+        let s = claude_then_shell_script("/usr/bin/claude", "/bin/zsh", Some("sess-42"));
+        // resume the exact prior session, id quoted so it can't word-split.
+        assert!(
+            s.starts_with("'/usr/bin/claude' --resume 'sess-42';"),
+            "got: {s}"
+        );
+        assert!(s.contains("exec '/bin/zsh' -i -l"), "got: {s}");
     }
 
     #[test]

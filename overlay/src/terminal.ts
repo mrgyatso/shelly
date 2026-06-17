@@ -15,6 +15,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
 const win = getCurrentWebviewWindow();
@@ -44,6 +45,9 @@ export interface TerminalHandle {
 export interface CreateTerminalOptions {
   /** Directory to spawn `claude` in (a unit's project dir). Defaults to HOME. */
   cwd?: string;
+  /** Full session id to rejoin via `claude --resume <id>` (reopening a closed
+   *  Board session). Omit for a fresh session. */
+  resume?: string;
   /** Called when the PTY exits (the child died or was killed). */
   onExit?: () => void;
   /** Called when output arrives while the terminal is hidden — for an activity
@@ -75,8 +79,29 @@ export async function createTerminal(
   term.loadAddon(fitAddon);
   term.open(mount);
 
+  // GPU renderer. The default DOM renderer repaints terminal rows as DOM nodes
+  // on every write/keystroke — on the translucent overlay window that compositing
+  // is heavy enough to starve input during `claude`'s boot output storm. WebGL
+  // offloads to the GPU and fixes the dropped-keystroke stutter. Loaded lazily on
+  // first real layout: acquiring a WebGL context against a hidden 0×0 mount can
+  // come up degraded, so we wait until the terminal is actually shown. A context
+  // loss disposes the addon and xterm silently falls back to the DOM renderer.
+  let webglTried = false;
+  const ensureWebgl = () => {
+    if (webglTried || !isLaidOut(mount)) return;
+    webglTried = true;
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      term.loadAddon(webgl);
+    } catch {
+      // No GPU context available; stay on the DOM renderer.
+    }
+  };
+
   const fit = () => {
     if (!isLaidOut(mount)) return; // never fit a hidden / zero-size terminal
+    ensureWebgl();
     try {
       fitAddon.fit();
     } catch {
@@ -91,7 +116,9 @@ export async function createTerminal(
     if (!isLaidOut(mount)) opts.onActivity?.();
   });
   const unlistenExit = await win.listen<string>(`pty-exit-${tabId}`, () => {
-    term.write("\r\n\x1b[2m— claude exited —\x1b[0m\r\n");
+    // The PTY only reaches EOF when the whole shell session ends — Ctrl-C'ing out
+    // of `claude` drops into a live shell (see pty.rs), it doesn't end the PTY.
+    term.write("\r\n\x1b[2m— session ended —\x1b[0m\r\n");
     opts.onExit?.();
   });
 
@@ -127,7 +154,7 @@ export async function createTerminal(
     cols = term.cols;
   }
   try {
-    await invoke("spawn_pty", { tabId, rows, cols, cwd: opts.cwd ?? null });
+    await invoke("spawn_pty", { tabId, rows, cols, cwd: opts.cwd ?? null, resume: opts.resume ?? null });
   } catch (e) {
     term.write(`\r\n\x1b[31m${String(e)}\x1b[0m\r\n`);
   }

@@ -61,6 +61,11 @@ let collapsed = false;
 /** The unit currently shown at L2 (drives "+ session" cwd + which terminal shows). */
 let currentUnit: string | null = null;
 let seq = 0;
+/** A per-process tag so two coexisting overlay instances (e.g. your stable app +
+ *  a `tauri dev` build sharing one ~/.claude/companion) never mint the same tabId
+ *  — owned-sessions.json is keyed stem→tabId, so a shared `board-1` would cross-
+ *  bind sessions between the two apps. 4 random chars is plenty to disambiguate. */
+const INSTANCE = Math.random().toString(36).slice(2, 6);
 
 /** Build the panel chrome inside the L2 `#unit-terminals` slot. Call once. */
 export function initOwnedTerminals(slot: HTMLElement, opts: OwnedTerminalsOpts): void {
@@ -111,10 +116,14 @@ export function initOwnedTerminals(slot: HTMLElement, opts: OwnedTerminalsOpts):
 /** Spawn a Board-owned `claude` in `cwd`. Returns the tabId. `provisionalUnit`
  *  shows it immediately under that unit (launched from inside an L2 unit);
  *  otherwise it stays unbound until `reconcileBindings` adopts it. */
-export async function spawnOwnedSession(cwd: string, provisionalUnit?: string): Promise<string> {
+export async function spawnOwnedSession(
+  cwd: string,
+  provisionalUnit?: string,
+  resume?: string,
+): Promise<string> {
   if (!bodyEl) throw new Error("owned terminals not initialized");
   seq += 1;
-  const tabId = `board-${seq}`;
+  const tabId = `board-${INSTANCE}-${seq}`;
   const mount = document.createElement("div");
   mount.className = "term-mount";
   mount.dataset.tab = tabId;
@@ -131,6 +140,7 @@ export async function spawnOwnedSession(cwd: string, provisionalUnit?: string): 
   terminals.set(tabId, owned);
   owned.handle = await createTerminal(tabId, mount, {
     cwd,
+    resume,
     onExit: () => {
       owned.exited = true;
       if (owned.unitKey === currentUnit) refreshHeader();
@@ -197,6 +207,26 @@ export function hideOwnedTerminals(): void {
 export function unitHasOwnedTerminal(unitKey: string): boolean {
   for (const t of terminals.values()) if (t.unitKey === unitKey) return true;
   return false;
+}
+
+/** A live owned-terminal tabId for `unitKey` (the shown one if any, else the
+ *  first), or null. Lets an artifact's Submit route into the session's terminal
+ *  even when the precise owning session can't be resolved from the artifact. */
+export function ownedTabForUnit(unitKey: string): string | null {
+  const shown = shownForUnit(unitKey);
+  if (shown && !shown.exited) return shown.tabId;
+  for (const t of terminals.values()) if (t.unitKey === unitKey && !t.exited) return t.tabId;
+  return null;
+}
+
+/** End (kill the PTY of) every owned terminal in `unitKey`. Used when closing a
+ *  unit off the roster so a Board-launched `claude` can't keep running in the
+ *  background. The session stays REJOINABLE via `claude --resume` — its session
+ *  id is preserved in the (now-dismissed) live source. */
+export function endOwnedTerminalsForUnit(unitKey: string): void {
+  for (const t of [...terminals.values()]) {
+    if (t.unitKey === unitKey) closeOwnedTerminal(t.tabId);
+  }
 }
 
 /** Distinct unit keys that currently have a (non-disposed) owned terminal. The

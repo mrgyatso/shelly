@@ -37,6 +37,8 @@ import {
   hideOwnedTerminals,
   unitHasOwnedTerminal,
   ownedUnits,
+  ownedTabForUnit,
+  endOwnedTerminalsForUnit,
 } from "./owned-terminals";
 
 interface ArtifactEntry {
@@ -88,6 +90,12 @@ interface LiveState {
   /** Injected by read_all_live from session-dirs.json: this session's absolute
    *  project root, so "+ session in this project" knows where to spawn. */
   unit_dir?: string;
+  /** Injected by read_all_live when the user has manually closed this session off
+   *  the roster (see dismissed.json). Sticky override of mtime-freshness. */
+  dismissed?: boolean;
+  /** Injected by read_all_live from session-ids.json: the FULL Claude Code
+   *  session id, so a closed Board session can be rejoined via `claude --resume`. */
+  session_id?: string;
 }
 
 type StatusLevel = "wait" | "busy" | "ok" | "idle";
@@ -168,6 +176,10 @@ let sessionsEl: HTMLElement;
 let unitEl: HTMLElement;
 let digestEl: HTMLIFrameElement;
 let historyEl: HTMLElement;
+let histToggleEl: HTMLElement | null = null;
+let heroToggleEl: HTMLElement | null = null;
+/** User-assigned unit display names (unit_key → name), from unit-names.json. */
+const unitNames = new Map<string, string>();
 
 export async function initBoard(): Promise<void> {
   const stage = document.getElementById("board-stage");
@@ -207,6 +219,7 @@ export async function initBoard(): Promise<void> {
   wireKeyboard();
   wireNavigate();
   wireHistoryClicks();
+  wireUnitChrome();
   wireScrollGating();
   startClock();
 
@@ -223,6 +236,13 @@ export async function initBoard(): Promise<void> {
     return;
   }
   status.setAttribute("hidden", "");
+
+  try {
+    const names = await invoke<Record<string, string>>("read_unit_names");
+    for (const [k, v] of Object.entries(names)) unitNames.set(k, v);
+  } catch (e) {
+    console.error("read_unit_names failed", e);
+  }
 
   for (const s of allSources) lastJsonBySource.set(s.source, s.json);
   for (const a of allArtifacts) knownPaths.add(a.path);
@@ -457,6 +477,8 @@ function groupArtifactsByUnit(): Map<string, ArtifactEntry[]> {
 /** A display name for a unit — the project name of its freshest source. */
 function unitName(unitKey: string, sources: LiveSource[]): string {
   if (unitKey === UNSOURCED) return "Unsourced";
+  const custom = unitNames.get(unitKey);
+  if (custom) return custom; // user-assigned name wins over the folder/slug label
   const fresh = sources[0];
   return fresh ? (parseState(fresh.json).project || unitKey) : unitKey;
 }
@@ -484,6 +506,11 @@ function renderUnits(): void {
   // so a session you launched here is always reachable. Promote any owned unit
   // into the live set (creating an empty entry if it has no live source at all).
   for (const ou of ownedUnits()) {
+    // A unit the user closed stays archived even if it still has an owned
+    // terminal entry — the dismiss flag wins over owned-promotion (else closing
+    // the sessions you most want gone would silently no-op).
+    const srcs = byUnit.get(ou) ?? [];
+    if (srcs.length > 0 && srcs.every(isDismissed)) continue;
     if (!byUnit.has(ou)) byUnit.set(ou, []);
     if (!liveUnits.includes(ou)) {
       const si = staleUnits.indexOf(ou);
@@ -508,7 +535,7 @@ function renderUnits(): void {
     cards.push(buildArchivedToggle(staleUnits.length));
     if (showArchived) {
       for (const unit of staleUnits) {
-        const card = buildUnitCard(unit, byUnit.get(unit) ?? [], artsByUnit.get(unit)?.length ?? 0, now);
+        const card = buildUnitCard(unit, byUnit.get(unit) ?? [], artsByUnit.get(unit)?.length ?? 0, now, true);
         card.classList.add("archived");
         cards.push(card);
       }
@@ -536,10 +563,17 @@ function buildArchivedToggle(n: number): HTMLElement {
 
 /** One unit card — header from the freshest source, a "N live" chip when more
  *  than one agent runs in the unit, unread summed across its sources. */
-function buildUnitCard(unitKey: string, sources: LiveSource[], artCount: number, now: number): HTMLElement {
+function buildUnitCard(
+  unitKey: string,
+  sources: LiveSource[],
+  artCount: number,
+  now: number,
+  archived = false,
+): HTMLElement {
   const liveN = sources.filter((s) => isLiveSource(s, now)).length;
   const owned = unitHasOwnedTerminal(unitKey);
   const head = sources[0] ? makeHead(sources[0]) : owned ? ownedHead() : unsourcedHead(artCount);
+  const dismissed = sources.some(isDismissed);
 
   const card = document.createElement("button");
   card.className = "session-card";
@@ -605,8 +639,165 @@ function buildUnitCard(unitKey: string, sources: LiveSource[], artCount: number,
   foot.className = "session-foot";
   foot.textContent = `${artCount} artifact${artCount === 1 ? "" : "s"}`;
   card.append(foot);
-  card.addEventListener("click", () => goUnit(unitKey));
+
+  if (archived && dismissed) {
+    // A manually-closed unit: clicking it restores (rejoins a Board session via
+    // `claude --resume`, or just un-hides an external one). It does NOT drill in.
+    const canRejoin = sources.some((s) => sourceCanRejoin(s));
+    card.classList.add("restorable");
+    card.title = canRejoin ? "Rejoin this session" : "Restore to the live roster";
+    card.append(restorePill(canRejoin));
+    card.addEventListener("click", () => void restoreUnit(unitKey, sources));
+  } else if (unitKey !== UNSOURCED) {
+    // Live (or naturally-stale) card: drill in, with ✎ rename + × close affordances.
+    card.append(renameButton(unitKey));
+    card.append(closeButton(unitKey, sources));
+    card.addEventListener("click", () => goUnit(unitKey));
+  } else {
+    card.addEventListener("click", () => goUnit(unitKey));
+  }
   return card;
+}
+
+/** A source we can rejoin via `claude --resume` — a closed Board session that
+ *  recorded its full session id and project dir. */
+function sourceCanRejoin(s: LiveSource): boolean {
+  const st = parseState(s.json);
+  return Boolean(st.session_id && st.unit_dir);
+}
+
+/** The small "Restore" / "Rejoin" affordance shown on an archived closed card. */
+function restorePill(canRejoin: boolean): HTMLElement {
+  const pill = document.createElement("span");
+  pill.className = "session-restore";
+  pill.textContent = canRejoin ? "⟲ Rejoin" : "⟲ Restore";
+  return pill;
+}
+
+/** The × that closes a unit off the live roster. A <span> (the card is a button;
+ *  nested buttons are invalid) — stops propagation so it doesn't drill in. */
+function closeButton(unitKey: string, sources: LiveSource[]): HTMLElement {
+  const x = document.createElement("span");
+  x.className = "session-close";
+  x.textContent = "✕";
+  x.title = "Close this session off the roster";
+  x.setAttribute("role", "button");
+  x.addEventListener("click", (e) => {
+    e.stopPropagation();
+    void closeUnit(unitKey, sources);
+  });
+  return x;
+}
+
+/** The ✎ on a live unit card — rename the session/unit to anything you want. */
+function renameButton(unitKey: string): HTMLElement {
+  const b = document.createElement("span");
+  b.className = "session-rename";
+  b.textContent = "✎";
+  b.title = "Rename this session";
+  b.setAttribute("role", "button");
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const card = b.closest(".session-card");
+    const nameEl = card?.querySelector(".name") as HTMLElement | null;
+    if (nameEl) startRename(unitKey, nameEl);
+  });
+  return b;
+}
+
+/** Inline-edit a unit's display name. The editor is a floating input positioned
+ *  over the card's name (NOT nested in the card <button>, which would swallow
+ *  focus/keys); Enter saves, Esc cancels, blur saves. Persists to unit-names.json
+ *  via `set_unit_name` (blank clears the override) and re-renders the roster. */
+function startRename(unitKey: string, anchorEl: HTMLElement): void {
+  if (document.querySelector(".name-edit")) return; // one editor at a time
+  const rect = anchorEl.getBoundingClientRect();
+  const input = document.createElement("input");
+  input.className = "name-edit";
+  input.value = unitNames.get(unitKey) ?? anchorEl.textContent ?? "";
+  input.setAttribute("aria-label", "Session name");
+  input.style.left = `${Math.round(rect.left)}px`;
+  input.style.top = `${Math.round(rect.top)}px`;
+  input.style.minWidth = `${Math.max(Math.round(rect.width), 150)}px`;
+  document.body.append(input);
+
+  let done = false;
+  const finish = (save: boolean): void => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    input.remove();
+    if (save) {
+      if (v) unitNames.set(unitKey, v);
+      else unitNames.delete(unitKey);
+      void invoke("set_unit_name", { unitKey, name: v }).catch((e) =>
+        console.error("set_unit_name failed", e),
+      );
+      renderUnits();
+    }
+  };
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") finish(true);
+    else if (e.key === "Escape") finish(false);
+  });
+  input.addEventListener("blur", () => finish(true));
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  }, 0);
+}
+
+/** Close a unit off the live roster. Ends any Board-launched terminal in it (so
+ *  its `claude` can't keep running) and dismisses every source so it drops to
+ *  Archived everywhere (Board, popover, tray). A Board session stays rejoinable
+ *  via its preserved session id; an external one is just hidden, restorable. */
+async function closeUnit(unitKey: string, sources: LiveSource[]): Promise<void> {
+  endOwnedTerminalsForUnit(unitKey);
+  await Promise.all(
+    sources.map((s) =>
+      invoke("dismiss_session", { source: s.source }).catch((e) =>
+        console.error("dismiss_session failed", s.source, e),
+      ),
+    ),
+  );
+  // Reflect the dismiss locally so the roster updates before the next poll.
+  for (const s of sources) {
+    const st = parseState(s.json);
+    st.dismissed = true;
+    s.json = JSON.stringify(st);
+  }
+  renderUnits();
+}
+
+/** Restore a closed unit. Clears the dismiss flag on each source; if a source was
+ *  a Board session (has a session id + dir), rejoins it via `claude --resume`. */
+async function restoreUnit(unitKey: string, sources: LiveSource[]): Promise<void> {
+  await Promise.all(
+    sources.map((s) =>
+      invoke("restore_session", { source: s.source }).catch((e) =>
+        console.error("restore_session failed", s.source, e),
+      ),
+    ),
+  );
+  for (const s of sources) {
+    const st = parseState(s.json);
+    delete st.dismissed;
+    s.json = JSON.stringify(st);
+  }
+  // Rejoin the first rejoinable Board session in this unit (if any).
+  const rejoin = sources.map((s) => parseState(s.json)).find((st) => st.session_id && st.unit_dir);
+  if (rejoin?.unit_dir && rejoin.session_id) {
+    try {
+      await spawnOwnedSession(rejoin.unit_dir, unitKey, rejoin.session_id);
+      showArchived = false;
+      goUnit(unitKey);
+      return;
+    } catch (e) {
+      console.error("rejoin (claude --resume) failed", e);
+    }
+  }
+  renderUnits();
 }
 
 // ---- L2 unit home (hero + history) ------------------------------------------
@@ -629,6 +820,8 @@ function enterUnit(unitKey: string): void {
  *  renderHub re-apply when they're entered). */
 function leaveUnit(): void {
   closeFocus();
+  closeHistoryDrawer();
+  unitEl?.classList.remove("hero-collapsed");
   historyEl?.replaceChildren();
   digestEl?.setAttribute("hidden", "");
   applyBar(null);
@@ -661,6 +854,7 @@ async function renderHero(unitKey: string): Promise<void> {
 
   if (home) {
     digestEl.removeAttribute("hidden");
+    syncHeroToggle(true);
     applyBar(await barSpecFor(home));
     await loadArtifactInto(home, digestEl).catch((e) => console.error("hero digest load failed", e));
     return;
@@ -675,11 +869,13 @@ async function renderHero(unitKey: string): Promise<void> {
   );
   if (latest) {
     digestEl.removeAttribute("hidden");
+    syncHeroToggle(true);
     await loadArtifactInto(latest.path, digestEl).catch((e) =>
       console.error("hero artifact load failed", e),
     );
   } else {
     digestEl.setAttribute("hidden", "");
+    syncHeroToggle(false);
   }
 }
 
@@ -743,8 +939,47 @@ function renderHistory(unitKey: string): void {
 function wireHistoryClicks(): void {
   historyEl.addEventListener("click", (e) => {
     const row = (e.target as HTMLElement).closest("[data-art-path]") as HTMLElement | null;
-    if (row?.dataset.artPath) void openReader(row.dataset.artPath);
+    if (row?.dataset.artPath) {
+      closeHistoryDrawer(); // opening an artifact dismisses the drawer (claude.ai-style)
+      void openReader(row.dataset.artPath);
+    }
   });
+}
+
+// ---- L2 chrome: history drawer + hero collapse ------------------------------
+
+function closeHistoryDrawer(): void {
+  unitEl?.classList.remove("history-open");
+}
+
+/** Wire the ☰ history-drawer toggle, its scrim, and the hero collapse toggle.
+ *  The terminal's own collapse lives in its header (owned-terminals.ts); together
+ *  they let the user focus the hero, the terminal, or neither. */
+function wireUnitChrome(): void {
+  histToggleEl = document.getElementById("unit-hist-toggle");
+  heroToggleEl = document.getElementById("unit-hero-toggle");
+  const scrim = document.getElementById("unit-history-scrim");
+
+  histToggleEl?.addEventListener("click", () => unitEl.classList.toggle("history-open"));
+  scrim?.addEventListener("click", closeHistoryDrawer);
+
+  heroToggleEl?.addEventListener("click", () => {
+    const collapsed = unitEl.classList.toggle("hero-collapsed");
+    if (heroToggleEl) heroToggleEl.innerHTML = collapsed ? "▸&nbsp;artifact" : "▾&nbsp;artifact";
+    // #unit-digest show/hide changes the terminal's height — terminal.ts's
+    // ResizeObserver catches it and refits, no manual call needed.
+  });
+}
+
+/** Reflect whether the hero is showing: enable the hero toggle only when there is
+ *  a hero to collapse, and reset it to expanded on (re)entry. */
+function syncHeroToggle(hasHero: boolean): void {
+  if (!heroToggleEl) return;
+  heroToggleEl.hidden = !hasHero;
+  if (hasHero) {
+    unitEl.classList.remove("hero-collapsed");
+    heroToggleEl.innerHTML = "▾&nbsp;artifact";
+  }
 }
 
 // ---- data → header ----------------------------------------------------------
@@ -859,8 +1094,16 @@ function sourceUpdatedMs(s: LiveSource): number {
   return parseState(s.json).updated_ms ?? 0;
 }
 
-/** A source is LIVE if its file was touched within LIVENESS_MS; else stale. */
+/** A source the user has manually closed off the roster (sticky; see dismissed.json). */
+function isDismissed(s: LiveSource): boolean {
+  return parseState(s.json).dismissed === true;
+}
+
+/** A source is LIVE if its file was touched within LIVENESS_MS and isn't manually
+ *  dismissed; else stale. The dismiss flag overrides freshness so a closed
+ *  (but still-writing) session stays archived until restored. */
 function isLiveSource(s: LiveSource, now: number): boolean {
+  if (isDismissed(s)) return false;
   const u = sourceUpdatedMs(s);
   return u > 0 && now - u < LIVENESS_MS;
 }
@@ -1320,14 +1563,18 @@ function wireNavigate(): void {
       d.kind === "submit" &&
       typeof d.text === "string"
     ) {
-      // If this artifact was produced by a Board-owned session, write the
-      // compiled ✓/✎/✗ answer STRAIGHT into that session's PTY (no clipboard,
-      // no ⌘V). Otherwise fall back to the clipboard path.
-      const tabId = focusPath ? ownedTabForArtifact(focusPath) : null;
+      // Route the compiled ✓/✎/✗ answer STRAIGHT into a session's terminal
+      // (no clipboard, no ⌘V): prefer the exact owning session of the open
+      // artifact, else any owned terminal in the unit on screen. Only when there
+      // is genuinely no Board terminal to receive it (an external session running
+      // outside the Board) do we fall back to the clipboard.
+      const v = currentView();
+      const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
+      const tabId = (focusPath ? ownedTabForArtifact(focusPath) : null) ?? unitTab;
       if (tabId) {
-        const payload = `${d.text}\n\n— Companion artifact: ${focusPath} —`;
-        void invoke("submit_pty", { tabId, text: payload }).catch((e) => {
-          console.error("submit_pty failed; clipboard fallback", e);
+        const tag = focusPath ? `\n\n— Companion artifact: ${focusPath} —` : "";
+        void submitIntoPty(tabId, `${d.text}${tag}`).catch((e) => {
+          console.error("submit into PTY failed; clipboard fallback", e);
           void handleSubmit(d.text, focusPath ?? undefined);
         });
       } else {
@@ -1335,6 +1582,18 @@ function wireNavigate(): void {
       }
     }
   });
+}
+
+/** Submit a compiled artifact answer into a Board-owned PTY and AUTO-SEND it.
+ *  Sent in two writes: the bracketed-paste body first (so internal newlines don't
+ *  submit early), then — as a SEPARATE, slightly-delayed write — the carriage
+ *  return. A CR riding in the same buffer as the paste-end marker gets swallowed by
+ *  Claude's TUI (the turn lands in the prompt unsent); a distinct, delayed Enter
+ *  reliably commits it. */
+async function submitIntoPty(tabId: string, text: string): Promise<void> {
+  await invoke("write_pty", { tabId, data: `\x1b[200~${text}\x1b[201~` });
+  await new Promise((r) => setTimeout(r, 90));
+  await invoke("write_pty", { tabId, data: "\r" });
 }
 
 /** The Board-owned PTY tabId that produced `path`, or null when the artifact came

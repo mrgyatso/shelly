@@ -22,7 +22,8 @@ rm -f "$live_path" 2>/dev/null
 stem=$(basename "$live_path" .json)
 STEM="$stem" node -e '
   const fs=require("fs");
-  for (const f of ["owned-sessions.json","session-dirs.json"]) {
+  // Object sidecars keyed by stem (stem -> value): drop this stem.
+  for (const f of ["owned-sessions.json","session-dirs.json","session-ids.json"]) {
     const p=`${process.env.HOME}/.claude/companion/${f}`;
     try {
       const m=JSON.parse(fs.readFileSync(p,"utf8"));
@@ -32,5 +33,14 @@ STEM="$stem" node -e '
       }
     } catch (e) {}
   }
+  // dismissed.json is an ARRAY of stems — filter this one out so it does not
+  // linger after the session is gone.
+  const dp=`${process.env.HOME}/.claude/companion/dismissed.json`;
+  try {
+    const a=JSON.parse(fs.readFileSync(dp,"utf8"));
+    if (Array.isArray(a) && a.includes(process.env.STEM)) {
+      const t=dp+".tmp"; fs.writeFileSync(t, JSON.stringify(a.filter(x=>x!==process.env.STEM))); fs.renameSync(t, dp);
+    }
+  } catch (e) {}
 ' 2>/dev/null
 exit 0

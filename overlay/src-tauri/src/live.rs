@@ -66,6 +66,109 @@ fn session_dirs() -> std::collections::HashMap<String, String> {
         .unwrap_or_default()
 }
 
+/// `~/.claude/companion/dismissed.json` — the set of live-source stems
+/// (`<slug>--<shortid>`) the user has manually closed off the roster. A JSON
+/// array of strings. Honored as a sticky override of mtime-freshness (and the
+/// Board's owned-terminal promotion) so a closed session stays archived even if
+/// it's still being written, until it's restored or its file is pruned.
+fn dismissed_path() -> Option<PathBuf> {
+    companion_dir().map(|d| d.join("dismissed.json"))
+}
+
+/// Read the dismissed-stem set (empty when the file is absent or unreadable).
+fn dismissed_set() -> std::collections::HashSet<String> {
+    let path = match dismissed_path() {
+        Some(p) => p,
+        None => return std::collections::HashSet::new(),
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+        .map(|v| v.into_iter().collect())
+        .unwrap_or_default()
+}
+
+/// Atomically persist the dismissed-stem set (sorted for a stable diff).
+fn write_dismissed(set: &std::collections::HashSet<String>) -> Result<(), String> {
+    let path = dismissed_path().ok_or("no HOME")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let mut v: Vec<&String> = set.iter().collect();
+    v.sort();
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string(&v).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+/// `~/.claude/companion/unit-names.json` — user-assigned display names, keyed by
+/// `unit_key`. A JSON object `{unit_key: name}`. The Board renders the custom name
+/// over the derived folder/slug label (so several home-folder sessions don't all
+/// read "gyatso"); a blank name removes the override.
+fn unit_names_path() -> Option<PathBuf> {
+    companion_dir().map(|d| d.join("unit-names.json"))
+}
+
+/// Read the unit-name overrides (empty when the file is absent or unreadable).
+fn read_unit_names_map() -> std::collections::HashMap<String, String> {
+    let path = match unit_names_path() {
+        Some(p) => p,
+        None => return std::collections::HashMap::new(),
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<std::collections::HashMap<String, String>>(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Atomically persist the unit-name overrides.
+fn write_unit_names(map: &std::collections::HashMap<String, String>) -> Result<(), String> {
+    let path = unit_names_path().ok_or("no HOME")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string(map).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+/// The unit-name overrides for the Board to render (`unit_key` → custom name).
+#[tauri::command]
+pub fn read_unit_names() -> std::collections::HashMap<String, String> {
+    read_unit_names_map()
+}
+
+/// Set (or clear, when `name` is blank) a unit's display-name override.
+#[tauri::command]
+pub fn set_unit_name(unit_key: String, name: String) -> Result<(), String> {
+    let mut map = read_unit_names_map();
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        map.remove(&unit_key);
+    } else {
+        map.insert(unit_key, trimmed.to_string());
+    }
+    write_unit_names(&map)
+}
+
+/// Board-owned sidecar mapping a live-source stem → that session's FULL Claude
+/// Code `session_id` (the SessionStart hook records it; the stem only carries the
+/// 8-char shortid, which can't drive `claude --resume`). The Board injects it per
+/// source as `session_id` so a closed Board-launched session can be REJOINED via
+/// `claude --resume <id>`. Agent-proof, like the other sidecars.
+fn session_ids() -> std::collections::HashMap<String, String> {
+    let path = match companion_dir() {
+        Some(d) => d.join("session-ids.json"),
+        None => return std::collections::HashMap::new(),
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
 /// The most-recently-modified `*.json` under the per-session dir, if any.
 fn newest_live_file() -> Option<PathBuf> {
     let dir = live_dir()?;
@@ -110,7 +213,7 @@ pub fn read_live() -> String {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    inject_fields(&raw, updated_ms, None, None)
+    inject_fields(&raw, updated_ms, None, None, false, None)
 }
 
 /// One agent's live-state, tagged with the slug of the file it came from. The
@@ -139,6 +242,8 @@ pub fn read_all_live() -> Vec<LiveSource> {
     let mut out: Vec<LiveSource> = Vec::new();
     let owned = owned_sessions();
     let dirs = session_dirs();
+    let dismissed = dismissed_set();
+    let sids = session_ids();
     let entries = match std::fs::read_dir(&dir) {
         Ok(e) => e,
         Err(_) => return Vec::new(),
@@ -164,13 +269,43 @@ pub fn read_all_live() -> Vec<LiveSource> {
             .unwrap_or(0);
         let companion_session = owned.get(&source).map(|s| s.as_str());
         let unit_dir = dirs.get(&source).map(|s| s.as_str());
+        let is_dismissed = dismissed.contains(&source);
+        let session_id = sids.get(&source).map(|s| s.as_str());
         out.push(LiveSource {
-            json: inject_fields(&raw, updated_ms, companion_session, unit_dir),
+            json: inject_fields(
+                &raw,
+                updated_ms,
+                companion_session,
+                unit_dir,
+                is_dismissed,
+                session_id,
+            ),
             source,
         });
     }
     out.sort_by(|a, b| a.source.cmp(&b.source));
     out
+}
+
+/// Manually close a session off the live roster: add its stem to `dismissed.json`.
+/// Sticky — overrides mtime-freshness everywhere liveness is computed (Board,
+/// popover, tray), so a still-writing session stays archived until restored. Does
+/// NOT touch the live file or any process; the caller ends a Board-owned PTY
+/// separately (so a launched claude can't balloon).
+#[tauri::command]
+pub fn dismiss_session(source: String) -> Result<(), String> {
+    let mut set = dismissed_set();
+    set.insert(source);
+    write_dismissed(&set)
+}
+
+/// Reverse [`dismiss_session`]: drop the stem from `dismissed.json` so the session
+/// returns to the live roster (used by click-to-restore on an archived card).
+#[tauri::command]
+pub fn restore_session(source: String) -> Result<(), String> {
+    let mut set = dismissed_set();
+    set.remove(&source);
+    write_dismissed(&set)
 }
 
 /// Inject `updated_ms` (and, for Board-owned sessions, `companion_session`) into
@@ -182,6 +317,8 @@ fn inject_fields(
     updated_ms: u64,
     companion_session: Option<&str>,
     unit_dir: Option<&str>,
+    dismissed: bool,
+    session_id: Option<&str>,
 ) -> String {
     match serde_json::from_str::<serde_json::Value>(raw) {
         Ok(mut v) => {
@@ -192,6 +329,12 @@ fn inject_fields(
                 }
                 if let Some(dir) = unit_dir {
                     obj.insert("unit_dir".into(), serde_json::json!(dir));
+                }
+                if dismissed {
+                    obj.insert("dismissed".into(), serde_json::json!(true));
+                }
+                if let Some(sid) = session_id {
+                    obj.insert("session_id".into(), serde_json::json!(sid));
                 }
             }
             v.to_string()
@@ -211,26 +354,39 @@ mod tests {
             42,
             Some("board-3"),
             Some("/Users/me/repo"),
+            false,
+            Some("abc-123-full"),
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["companion_session"], "board-3");
         assert_eq!(v["unit_dir"], "/Users/me/repo");
+        assert_eq!(v["session_id"], "abc-123-full");
         assert_eq!(v["updated_ms"], 42);
         assert_eq!(v["unit_key"], "repo"); // existing fields preserved
+        assert!(v.get("dismissed").is_none()); // only present when true
     }
 
     #[test]
     fn omits_optional_fields_when_external() {
-        let out = inject_fields(r#"{"working":"x"}"#, 7, None, None);
+        let out = inject_fields(r#"{"working":"x"}"#, 7, None, None, false, None);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v.get("companion_session").is_none());
         assert!(v.get("unit_dir").is_none());
+        assert!(v.get("session_id").is_none());
+        assert!(v.get("dismissed").is_none());
         assert_eq!(v["updated_ms"], 7);
     }
 
     #[test]
+    fn injects_dismissed_only_when_true() {
+        let out = inject_fields(r#"{"working":"x"}"#, 1, None, None, true, None);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["dismissed"], true);
+    }
+
+    #[test]
     fn malformed_passes_through_verbatim() {
-        let out = inject_fields("not json", 1, Some("board-1"), None);
+        let out = inject_fields("not json", 1, Some("board-1"), None, true, Some("x"));
         assert_eq!(out, "not json");
     }
 }

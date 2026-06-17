@@ -433,6 +433,9 @@ pub fn set_board_fullscreen(app: AppHandle, on: bool) -> bool {
 /// Raise every panel without activating (the no-arg `companion` invocation).
 /// The HUD and live surface are excluded — each is driven by its own trigger,
 /// never swept up with the artifact panels.
+// Only called from the release-only single-instance forward handler, so it reads
+// as dead code in debug builds (where single-instance is skipped for dev coexistence).
+#[cfg_attr(debug_assertions, allow(dead_code))]
 pub fn raise_all(app: &AppHandle) {
     for win in app.webview_windows().values() {
         if win.label() == HISTORY_LABEL || win.label() == LIVE_LABEL || win.label() == BOARD_LABEL {

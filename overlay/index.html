@@ -135,17 +135,28 @@
         </div>
 
         <!-- L2 Unit home. A unit groups all live sessions of a project (or a bare
-             non-repo session). The HERO is the unit's lead surface — the
-             agent-authored DIGEST (home.<unit>.html) if present, else the unit's
-             most recent artifact — shown large at the top, with a readable text
-             HISTORY of the unit's artifacts below it. -->
+             non-repo session). The embedded TERMINAL is the primary surface; the
+             agent DIGEST (home.<unit>.html, else the latest artifact) sits above it
+             as a COMPACT, collapsible hero. Both hero and terminal collapse
+             independently (focus one, the other, or neither). HISTORY moved into a
+             slide-out drawer behind the ☰ toggle (claude.ai-chat style). -->
         <div id="board-unit" class="board-unit" hidden>
-          <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+          <!-- L2 toolbar: history-drawer toggle + hero collapse. -->
+          <div class="unit-toolbar">
+            <button id="unit-hist-toggle" class="unit-tool-btn" title="History — past artifacts" aria-label="History">☰</button>
+            <button id="unit-hero-toggle" class="unit-tool-btn" title="Collapse the artifact hero" hidden>▾&nbsp;artifact</button>
+          </div>
+          <!-- Stacked surfaces: compact hero over the primary terminal. -->
+          <div class="unit-main">
+            <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+            <!-- Per-session embedded terminals (the real claude TUI the Board owns).
+                 owned-terminals.ts mounts one div per session here; mounts persist
+                 across navigation (hidden, never disposed) so PTYs stay alive. -->
+            <div id="unit-terminals" class="unit-terminals" hidden></div>
+          </div>
+          <!-- History drawer (off-canvas left) + its dismiss scrim. -->
+          <div id="unit-history-scrim" class="unit-history-scrim"></div>
           <div id="unit-history" class="unit-history"></div>
-          <!-- Per-session embedded terminals (the real claude TUI the Board owns).
-               owned-terminals.ts mounts one div per session here; mounts persist
-               across navigation (hidden, never disposed) so PTYs stay alive. -->
-          <div id="unit-terminals" class="unit-terminals" hidden></div>
         </div>
 
         <div class="kbd-hint">
