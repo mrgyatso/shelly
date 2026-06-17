@@ -55,7 +55,7 @@ transcript=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",
 state=$(ART_DIR="$ART_DIR" node -e '
   const fs=require("fs");
   const artDir=process.env.ART_DIR;
-  const DISCUSSION_CHARS=1500; // a substantive multi-paragraph answer
+  const DISCUSSION_CHARS=700; // lean toward driving: even a short substantive answer earns a forward-driving surface
   let lines;
   try { lines = fs.readFileSync(process.argv[1],"utf8").trim().split("\n"); }
   catch (e) { console.log("idle"); process.exit(0); }
@@ -90,7 +90,7 @@ state=$(ART_DIR="$ART_DIR" node -e '
 # so the dynamic dir is escaped correctly.
 ART_DIR="$ART_DIR" node -e '
   const dir=process.env.ART_DIR;
-  const reason=`Companion: this turn did real work or substantive discussion but no HTML artifact was written. If the user would benefit from digesting this as a beautifully written artifact — a plan, status, comparison, review, analysis, design, or any dense / steering output — render ONE now: load the companion:prefer-html skill, then write a self-contained .html into ${dir}/<slug>.html (the Board ingests it automatically). Match the shape to the work: a pill for a light heads-up, a full document when dense, the combined informative + Next-steps shape for steering content the user must act on, or a bespoke presentation UI for look-at-it content. If this turn was genuinely trivial (a quick lookup, a one-line answer, a pure acknowledgement), just end the turn — do NOT force an artifact. Do not narrate that you considered this.`;
+  const reason=`Companion — DRIVE THE WORK FORWARD, do not just recap. This turn did real work or real discussion, so render an HTML artifact NOW: load the companion:prefer-html skill, then write a self-contained .html into ${dir}/<slug>.html (the Board ingests it automatically). On a substantive turn this is not optional, and it must NEVER be a thin info block. The artifact has one job: MOVE THE PROJECT toward the goal — solve the problem, build the feature, ship the product. So every artifact must (1) show the information as real UI (state, what changed, the analysis, the options) AND (2) PUSH to the next step — propose concrete next moves, surface the decisions to make, recommend the strongest option and say why, and ask the sharp questions that advance the work. Use the combined informative + Next-steps shape with an interactive decision surface (checkboxes — do-it / note / skip — plus one Submit) so the user acts in one click, not a paragraph of prose. NEVER wait for the user to say what is next; always propose it and offer ideas. If the goal or north-star is unclear, ASK for it INSIDE the artifact (a question surface) so the target gets locked and we keep moving. This supersedes the older "a pill is fine" guidance — a substantive turn earns a forward-driving surface, not a one-liner. Only a genuinely trivial turn (a bare acknowledgement) is exempt. Do not narrate that you considered this.`;
   process.stdout.write(JSON.stringify({decision:"block",reason}));
 '
 exit 0

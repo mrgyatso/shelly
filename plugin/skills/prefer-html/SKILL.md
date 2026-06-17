@@ -26,22 +26,30 @@ file's content is one word and controls the rest of this skill.
 
 The user flips between modes with `/companion:mode agent|manual|status`.
 
-## The default shape: brief + a "Next steps" page — but the agent CHOOSES
+## The default shape: DRIVE THE WORK FORWARD — inform + propel, every substantive turn
 
-For a **substantive, steering-oriented** turn — one where the user needs to react, decide,
-or push work forward — the default artifact does two jobs at once, as a single multi-page
-document:
+**The Companion's job is to move the project toward shipping — solve the problem, build the
+feature, ship the product — not to recap.** On any substantive turn (real work OR real
+discussion) the default artifact does two jobs at once and **always ends by pushing the next
+step**, as a single multi-page document:
 
 1. **Inform.** One or more content pages (findings, status, explanation, comparison),
    each wrapped in `data-companion-commentable` so the user can hover any block and
    click 💬 to question *that specific line* without retyping it.
 2. **Propel.** A final **"Next steps" page** — a review form (✓ do it / ✎ note / ✗ skip
    per item, plus a **Do all** button) that converts the brief into decisions and pushes
-   the work forward. Every substantive artifact must end with one of these.
+   the work forward. **Every substantive artifact MUST end with one of these — a decision
+   surface, never a closing paragraph of prose.** Propose concrete next moves, recommend the
+   strongest option and *why*, and ask the sharp questions that advance the work. **Never
+   wait for the user to say what is next — propose it, offer ideas.** And **if the goal /
+   north-star is unclear, ASK for it inside the artifact** (a question surface) so the target
+   gets locked and the work keeps moving.
 
 This is the standing format for *steering* artifacts: **informative AND goal-oriented**,
-handing the user a clear next thing to act on. But it governs **shape, not frequency** —
-whether a turn deserves an artifact at all is the cadence judgment below.
+always handing the user a clear next thing to act on. It governs **shape, not frequency** —
+whether a turn deserves an artifact at all is the cadence judgment below — but when an
+artifact IS warranted, a substantive turn earns this forward-driving surface, **not a thin
+info block**.
 
 **The combined shape is a DEFAULT, not a cage — choose it by intent.** Reach for it when the
 user needs to **react / decide / steer**: status, plans, reviews, comparisons, options,
@@ -317,16 +325,19 @@ of course in **manual mode**, skip every time.)
 > it always renders. `/companion:render` is the deprecated alias and still works for
 > one release.
 
-## The form factor: small by default, large only when dense
+## The form factor: size by density — but ALWAYS drive forward
 
-Pick the artifact's weight from the **content's density**, not habit:
+Pick the artifact's **visual weight** from the content's density — but never let "small"
+become "passive." Even the lightest artifact on a substantive turn carries a next step.
 
-- **Small pill / square — the common case.** A glanceable "this is what changed":
-  a title and 1–5 lines. No scrolling, no sections. Right for bug fixes, small edits,
-  a status flip, a single decision, a short summary.
-- **Full document — only when the content earns it.** Use the room for diagrams,
-  graphs, tables, multi-section plans, code reviews, comparisons, post-mortems —
-  anything genuinely dense or visual.
+- **Compact card — a light change, but still propelling.** A glanceable "this is what
+  changed" (title + 1–5 lines) that **still names the next move** — a recommended action, a
+  one-tap decision, or the question that unblocks progress. Right for bug fixes, small edits,
+  a status flip. NOT an inert dead-end: if there is genuinely nothing to decide or ask, the
+  turn was trivial and you should not have rendered at all.
+- **Full document — when the content earns it.** Use the room for diagrams, graphs, tables,
+  multi-section plans, code reviews, comparisons, post-mortems — and end it in a decision /
+  Next-steps surface that pushes the work forward.
 - **Multi-page document — when the work splits into several independent subjects.**
   One self-contained file with a sidebar that navigates between pages: an overview plus
   one page per subject (per project, per incident, per area). Right when a single scroll
