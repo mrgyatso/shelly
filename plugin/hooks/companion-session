@@ -56,7 +56,13 @@ if [ -n "$COMPANION_SESSION" ]; then
     const p=process.env.OWNED;
     let m={};
     try { m=JSON.parse(fs.readFileSync(p,"utf8"))||{}; } catch (e) {}
-    m[process.env.STEM]=process.env.TAB;
+    const stem=process.env.STEM, tab=process.env.TAB;
+    // Eviction-at-registration: one terminal box (tabId) hosts one live session.
+    // Drop any OTHER stem still mapped to this tab (a prior claude in the same PTY
+    // whose entry was never pruned), so the Board never sees two slugs claim one
+    // tab — the source-side complement to board.ts'"'"'s freshest-source tie-break.
+    for (const k of Object.keys(m)) { if (k!==stem && m[k]===tab) delete m[k]; }
+    m[stem]=tab;
     try { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p); } catch (e) {}
   ' 2>/dev/null
 fi

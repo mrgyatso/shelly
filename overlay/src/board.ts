@@ -1387,10 +1387,24 @@ async function pollLive(): Promise<void> {
 
   // Correlate Board-owned terminals to the live sources their spawned claude
   // produced: companion_session (a tabId, injected by read_all_live) → unit_key.
+  // TIE-BREAK: a single tabId can be claimed by MORE THAN ONE slug in
+  // owned-sessions.json — e.g. a 2nd claude started in the same PTY inherits the
+  // same COMPANION_SESSION, and the first never pruned its entry (no SessionEnd).
+  // Plain last-writer-wins would bind the terminal to whichever source iterated
+  // last (often the stale one), splitting the live session from its artifacts.
+  // Instead bind each tabId to its FRESHEST source (max updated_ms), so a stale
+  // claimant can never win regardless of order.
   const sessionToUnit = new Map<string, string>();
+  const sessionFreshness = new Map<string, number>();
   for (const s of sources) {
     const cs = parseState(s.json).companion_session;
-    if (cs) sessionToUnit.set(cs, unitKeyOf(s));
+    if (!cs) continue;
+    const u = sourceUpdatedMs(s);
+    const prior = sessionFreshness.get(cs);
+    if (prior === undefined || u > prior) {
+      sessionFreshness.set(cs, u);
+      sessionToUnit.set(cs, unitKeyOf(s));
+    }
   }
   const newlyBound = reconcileBindings(sessionToUnit);
   if (newlyBound.length) {
