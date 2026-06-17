@@ -287,7 +287,55 @@ an outer card won't double-icon its inner text).
           .catch(function () { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); });
       } else { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); }
     } else { flash("Sent to overlay ✓ — ⌘V to paste"); }
+    try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
   }
+
+  // --- Bottom message bar + post-submit "submitted" state ----------------------
+  // EVERY artifact carries both, self-injected with inline styles so no extra
+  // author CSS is needed. The bar routes a freeform comment to the owning terminal
+  // (same submit channel → auto-sent); doSubmit() flips to a "submitted" screen so
+  // it is clear the turn was sent and we are waiting for the next artifact, with a
+  // small button back to this one.
+  (function () {
+    var root = document.querySelector("[data-fit-root]") || document.body;
+    var st = document.createElement("style");
+    st.textContent =
+      ".cmp-chat{display:flex;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(32,27,21,.14);grid-column:1/-1}" +
+      ".cmp-chat input{flex:1;min-width:0;padding:9px 11px;border:1px solid rgba(32,27,21,.22);border-radius:8px;font:13px/1.4 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
+      ".cmp-chat input:focus{border-color:#b0552f}" +
+      ".cmp-chat button{flex:0 0 auto;padding:9px 14px;border-radius:8px;border:1px solid #201b15;background:#201b15;color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
+      ".cmp-submitted{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(244,241,236,.94);backdrop-filter:blur(3px)}" +
+      ".cmp-submitted .c{text-align:center;font-family:-apple-system,system-ui,sans-serif;max-width:320px;padding:24px}" +
+      ".cmp-submitted .chk{width:46px;height:46px;border-radius:50%;background:#2e7d52;color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}" +
+      ".cmp-submitted .t{font-size:17px;font-weight:650;color:#201b15;margin-bottom:5px}" +
+      ".cmp-submitted .s{font-size:13px;color:#6e655b;margin-bottom:18px}" +
+      ".cmp-submitted .b{padding:8px 14px;border-radius:8px;border:1px solid rgba(32,27,21,.25);background:#fff;color:#201b15;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}";
+    document.head.appendChild(st);
+
+    var bar = document.createElement("div");
+    bar.className = "cmp-chat";
+    bar.innerHTML = '<input type="text" placeholder="Message the terminal…" aria-label="Message the terminal"><button type="button">Send</button>';
+    root.appendChild(bar);
+    var inp = bar.querySelector("input"), snd = bar.querySelector("button");
+    function sendChat() {
+      var v = inp.value.trim(); if (!v) return;
+      try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: v }, "*"); } catch (e) {}
+      if (window.parent === window && navigator.clipboard) { navigator.clipboard.writeText(v).catch(function () {}); }
+      inp.value = ""; var p = snd.textContent; snd.textContent = "Sent ✓";
+      setTimeout(function () { snd.textContent = p; }, 1500);
+    }
+    snd.addEventListener("click", sendChat);
+    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendChat(); } });
+
+    window.__cmpShowSubmitted = function () {
+      if (document.querySelector(".cmp-submitted")) return;
+      var ov = document.createElement("div"); ov.className = "cmp-submitted";
+      ov.innerHTML = '<div class="c"><div class="chk">✓</div><div class="t">Sent to the terminal</div><div class="s">Waiting for the next step…</div><button class="b" type="button">← View this artifact</button></div>';
+      ov.querySelector("button").addEventListener("click", function () { ov.remove(); });
+      document.body.appendChild(ov);
+    };
+  })();
+
   refresh();
 })();
 </script>
