@@ -81,8 +81,11 @@
           </div>
           <div class="board-controls">
             <span id="board-clock" class="clock"></span>
-            <button id="board-newsession" class="ctl" title="New claude session">
+            <button id="board-newsession" class="ctl" title="New claude session in home (~)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button id="board-newsession-folder" class="ctl ctl-caret" title="New session in a folder…">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </button>
             <button id="board-unread" class="ctl unread-badge" title="New artifacts — view sessions" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
@@ -145,6 +148,7 @@
           <div class="unit-toolbar">
             <button id="unit-hist-toggle" class="unit-tool-btn" title="History — past artifacts" aria-label="History">☰</button>
             <button id="unit-hero-toggle" class="unit-tool-btn" title="Collapse the artifact hero" hidden>▾&nbsp;artifact</button>
+            <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
           </div>
           <!-- Stacked surfaces: compact hero over the primary terminal. -->
           <div class="unit-main">

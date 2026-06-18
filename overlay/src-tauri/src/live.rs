@@ -153,6 +153,14 @@ pub fn set_unit_name(unit_key: String, name: String) -> Result<(), String> {
     write_unit_names(&map)
 }
 
+/// The user's home dir as an absolute path — so "+ New session" can spawn a
+/// Board-owned `claude` in `~` instantly, without a folder picker. Resolved from
+/// `$HOME` (no Tauri path capability needed).
+#[tauri::command]
+pub fn resolve_home_dir() -> Option<String> {
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).to_string_lossy().into_owned())
+}
+
 /// Board-owned sidecar mapping a live-source stem → that session's FULL Claude
 /// Code `session_id` (the SessionStart hook records it; the stem only carries the
 /// 8-char shortid, which can't drive `claude --resume`). The Board injects it per

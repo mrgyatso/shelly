@@ -154,6 +154,12 @@ let focusPath: string | null = null;
 /** Artifact paths visited in this reader session, for "← Back" after jumping
  *  through the agents-need-you queue. Cleared when the reader closes. */
 const readerBackStack: string[] = [];
+/** Artifacts the user has already submitted from, keyed by path → the file's
+ *  modified_ms at submit time. Lets the reader re-show the "submitted" overlay
+ *  when you navigate back to one (otherwise the iframe reloads fresh and the
+ *  state is lost). A later rewrite (new modified_ms) clears it — fresh content
+ *  is fresh work, not an already-answered card. */
+const submittedArtifacts = new Map<string, number>();
 
 // ---- live artifact ingestion + unread ---------------------------------------
 // The poll loop re-reads list_artifacts(); a new artifact is routed to its
@@ -181,6 +187,9 @@ let digestEl: HTMLIFrameElement;
 let historyEl: HTMLElement;
 let histToggleEl: HTMLElement | null = null;
 let heroToggleEl: HTMLElement | null = null;
+let unitTitleEl: HTMLElement | null = null;
+/** The unit currently shown at L2 — so the in-session rename knows its target. */
+let currentUnitKey: string | null = null;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
@@ -261,9 +270,24 @@ export async function initBoard(): Promise<void> {
   void applyNavTarget();
 }
 
-/** "+ New session": pick a folder, spawn a Board-owned claude there, and jump to
- *  its unit once it correlates (pendingNavTab, handled in pollLive). */
-async function newGlobalSession(): Promise<void> {
+/** "+ New session" (primary): spawn a Board-owned claude in the home dir
+ *  instantly — no folder picker. Starting a session should feel effortless; the
+ *  common case is "just give me a claude here." Pick a specific folder/repo via
+ *  the adjacent caret (newFolderSession). Falls back to the picker if HOME can't
+ *  be resolved. */
+async function newHomeSession(): Promise<void> {
+  let home: string | null = null;
+  try {
+    home = await invoke<string | null>("resolve_home_dir");
+  } catch (e) {
+    console.error("resolve_home_dir failed", e);
+  }
+  if (!home) return void newFolderSession();
+  void launchSessionIn(home);
+}
+
+/** "+ New session in a folder…" (secondary): pick a folder/repo, spawn there. */
+async function newFolderSession(): Promise<void> {
   let dir: string | null = null;
   try {
     const picked = await openDialog({ directory: true, title: "Start a claude session in…" });
@@ -273,11 +297,16 @@ async function newGlobalSession(): Promise<void> {
     return;
   }
   if (!dir) return;
-  // Show the terminal IMMEDIATELY under a provisional unit (the picked dir's
-  // basename — which equals the real unit_key for a repo root) and navigate to
-  // it. claude's first-run trust prompt blocks SessionStart, so correlation
-  // can't happen until the user answers it — they must SEE the terminal first.
-  // When it does correlate, pollLive re-navigates to the real unit (pendingNavTab).
+  void launchSessionIn(dir);
+}
+
+/** Spawn a Board-owned claude in `dir` and jump to its unit once it correlates
+ *  (pendingNavTab, handled in pollLive). Shows the terminal IMMEDIATELY under a
+ *  provisional unit (the dir's basename — which equals the real unit_key for a
+ *  repo root) and navigates to it. claude's first-run trust prompt blocks
+ *  SessionStart, so correlation can't happen until the user answers it — they
+ *  must SEE the terminal first. When it correlates, pollLive re-navigates. */
+async function launchSessionIn(dir: string): Promise<void> {
   const provisional = dir.split("/").filter(Boolean).pop() || dir;
   try {
     pendingNavTab = await spawnOwnedSession(dir, provisional);
@@ -712,7 +741,7 @@ function renameButton(unitKey: string): HTMLElement {
  *  over the card's name (NOT nested in the card <button>, which would swallow
  *  focus/keys); Enter saves, Esc cancels, blur saves. Persists to unit-names.json
  *  via `set_unit_name` (blank clears the override) and re-renders the roster. */
-function startRename(unitKey: string, anchorEl: HTMLElement): void {
+function startRename(unitKey: string, anchorEl: HTMLElement, onSaved?: () => void): void {
   if (document.querySelector(".name-edit")) return; // one editor at a time
   const rect = anchorEl.getBoundingClientRect();
   const input = document.createElement("input");
@@ -736,7 +765,8 @@ function startRename(unitKey: string, anchorEl: HTMLElement): void {
       void invoke("set_unit_name", { unitKey, name: v }).catch((e) =>
         console.error("set_unit_name failed", e),
       );
-      renderUnits();
+      renderUnits(); // refresh the L1 roster
+      onSaved?.(); // let the caller refresh any other surface (e.g. the L2 title)
     }
   };
   input.addEventListener("keydown", (e) => {
@@ -811,6 +841,8 @@ function enterUnit(unitKey: string): void {
   pendingIngest.delete(unitKey);
   updateGlobalUnread();
   focusPath = null;
+  currentUnitKey = unitKey;
+  renderUnitTitle(unitKey);
   void renderHero(unitKey);
   renderHistory(unitKey);
   // Reveal this unit's Board-owned terminals (if any); their PTYs were already
@@ -822,6 +854,7 @@ function enterUnit(unitKey: string): void {
  *  themed unit can't leak its bar onto the native L1/L0 chrome (renderHero /
  *  renderHub re-apply when they're entered). */
 function leaveUnit(): void {
+  currentUnitKey = null;
   closeFocus();
   closeHistoryDrawer();
   unitEl?.classList.remove("hero-collapsed");
@@ -972,6 +1005,30 @@ function wireUnitChrome(): void {
     // #unit-digest show/hide changes the terminal's height — terminal.ts's
     // ResizeObserver catches it and refits, no manual call needed.
   });
+
+  // The in-session title doubles as a rename affordance — rename without leaving
+  // the unit. onSaved re-renders the title in place (renderUnits alone refreshes
+  // only the hidden L1 roster, leaving this title stale until re-entry).
+  unitTitleEl = document.getElementById("unit-title");
+  unitTitleEl?.addEventListener("click", () => {
+    if (!currentUnitKey || currentUnitKey === UNSOURCED) return;
+    const nameEl = unitTitleEl?.querySelector(".unit-title-name") as HTMLElement | null;
+    if (nameEl) startRename(currentUnitKey, nameEl, () => renderUnitTitle(currentUnitKey!));
+  });
+}
+
+/** Paint the L2 toolbar title with the unit's display name (custom override or
+ *  project/slug). Hidden for the Unsourced bucket (nothing to rename). */
+function renderUnitTitle(unitKey: string): void {
+  if (!unitTitleEl) return;
+  if (unitKey === UNSOURCED) {
+    unitTitleEl.hidden = true;
+    return;
+  }
+  const sources = groupSourcesByUnit().get(unitKey) ?? [];
+  const nameEl = unitTitleEl.querySelector(".unit-title-name") as HTMLElement | null;
+  if (nameEl) nameEl.textContent = unitName(unitKey, sources);
+  unitTitleEl.hidden = false;
 }
 
 /** Reflect whether the hero is showing: enable the hero toggle only when there is
@@ -1345,7 +1402,31 @@ async function openReader(path: string): Promise<void> {
   focusFrame.className = "reader-frame";
   focusFrame.setAttribute("sandbox", "allow-scripts");
   focusFrame.setAttribute("referrerpolicy", "no-referrer");
+  // After each (re)load, if the artifact now showing was already submitted (and
+  // hasn't been rewritten since), tell its helper to restore the "submitted"
+  // overlay. The frame is reused across jump/back, so one persistent listener
+  // covers every reader navigation.
+  focusFrame.addEventListener("load", () => {
+    if (!focusPath || !focusFrame) return;
+    const stamp = submittedArtifacts.get(focusPath);
+    if (stamp === undefined) return;
+    const art = allArtifacts.find((a) => a.path === focusPath);
+    if (art && art.modified_ms !== stamp) return; // rewritten since → re-armed
+    focusFrame.contentWindow?.postMessage(
+      { source: "companion-board", kind: "restore-submitted" },
+      "*",
+    );
+  });
   inner.append(focusFrame);
+
+  // A draggable strip across the top of the reader. The reader is full-bleed
+  // (inset:0, z-index above the board's own top bar), so without this the
+  // window's only drag region is buried under the artifact iframe — you can
+  // scroll/highlight the artifact but can't reposition the window. The close ×
+  // and nav float above this strip, so only the bare center-top is the handle.
+  const drag = document.createElement("div");
+  drag.className = "reader-dragbar";
+  drag.setAttribute("data-tauri-drag-region", "");
 
   const close = document.createElement("button");
   close.className = "reader-close";
@@ -1353,7 +1434,7 @@ async function openReader(path: string): Promise<void> {
   close.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
   close.addEventListener("click", closeFocus);
 
-  card.append(inner, close);
+  card.append(inner, drag, close);
   boardEl.append(card);
   scrimEl.classList.add("on");
   requestAnimationFrame(() => card.classList.add("shown"));
@@ -1646,7 +1727,8 @@ function wireControls(): void {
     win.hide().catch((e) => console.error("board hide failed", e));
   });
   document.getElementById("board-fullscreen")?.addEventListener("click", toggleFullscreen);
-  document.getElementById("board-newsession")?.addEventListener("click", () => void newGlobalSession());
+  document.getElementById("board-newsession")?.addEventListener("click", () => void newHomeSession());
+  document.getElementById("board-newsession-folder")?.addEventListener("click", () => void newFolderSession());
   document.getElementById("board-back")?.addEventListener("click", goBack);
   document.getElementById("board-unread")?.addEventListener("click", goSessions);
   document.getElementById("hub-sessions-btn")?.addEventListener("click", goSessions);
@@ -1677,6 +1759,13 @@ function wireNavigate(): void {
       // artifact, else any owned terminal in the unit on screen. Only when there
       // is genuinely no Board terminal to receive it (an external session running
       // outside the Board) do we fall back to the clipboard.
+      // Remember this artifact was answered, stamped with its current mtime, so
+      // navigating back to it re-shows the "submitted" overlay instead of the
+      // pristine form. A later rewrite changes the mtime and re-arms the card.
+      if (focusPath) {
+        const art = allArtifacts.find((a) => a.path === focusPath);
+        submittedArtifacts.set(focusPath, art?.modified_ms ?? 0);
+      }
       const v = currentView();
       const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
       const tabId = (focusPath ? ownedTabForArtifact(focusPath) : null) ?? unitTab;

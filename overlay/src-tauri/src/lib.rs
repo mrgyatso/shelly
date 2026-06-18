@@ -137,6 +137,7 @@ pub fn run() {
             live::restore_session,
             live::read_unit_names,
             live::set_unit_name,
+            live::resolve_home_dir,
             windows::set_board_fullscreen,
             windows::show_board,
             windows::take_board_nav_target,
