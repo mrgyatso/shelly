@@ -454,181 +454,238 @@
   text-transform: uppercase;
   color: var(--ink-3);
 }
+/* The roster is a vertical stack of bands (not a card grid). */
 .sessions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
-  gap: 14px;
-}
-.session-card {
-  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 24px;
+}
+
+/* =========================================================================
+   L1 STATUS BOARD — units grouped into bands by what you owe them.
+   "Needs you" (a decision/blocked next step) · "Running" (an active agent) ·
+   "Idle" (a Board terminal gone quiet). Triage IS the layout.
+   ========================================================================= */
+.sb-band { display: flex; flex-direction: column; }
+.sb-bandhead { display: flex; align-items: center; gap: 12px; margin-bottom: 11px; }
+.sb-lbl {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.sb-lbl.accent { color: var(--accent); }
+.sb-ct { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+.sb-ln { flex: 1; height: 1px; background: var(--line); }
+
+/* A row — grid: [mark] [name + working line] [right cluster]. The state rail is
+   a ::before stripe down the left edge (accent for needs, green for running). */
+.sb-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
   text-align: left;
   background: var(--card);
   border: 0;
-  border-radius: var(--radius-card);
-  box-shadow: var(--sh-art);
+  border-radius: var(--radius-art);
   outline: 1px solid var(--line-2);
   outline-offset: -1px;
-  padding: 15px 16px;
-  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease), outline-color 0.18s;
+  box-shadow: var(--sh-art);
+  padding: 15px 18px 15px 20px;
+  overflow: hidden;
+  transition: box-shadow 0.18s var(--ease), transform 0.18s var(--ease), outline-color 0.18s;
 }
-.session-card:hover {
+.sb-item + .sb-item { margin-top: 9px; }
+.sb-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  transition: width 0.16s var(--ease);
+}
+.sb-item.needs::before { width: 3px; background: var(--accent); }
+.sb-item.run::before { width: 3px; background: var(--ok); }
+.sb-item:hover {
   box-shadow: var(--sh-card);
   transform: translateY(-1px);
   outline-color: oklch(from var(--accent) l c h / 0.4);
-  /* Sit above sibling cards so the raised shadow + revealed ✎/✕ never tuck
-     under the adjacent card in the grid. */
   z-index: 3;
 }
-.session-card .pane-status { padding-left: 0; }
-.session-card .status-text { -webkit-line-clamp: 1; }
-/* Reserve the top-right gutter the ✎ / × chips occupy so the name truncates
-   clear of them instead of running underneath. The cluster widens when the
-   unread badge is also present (✎/× shift right past it), so reserve more then. */
-.session-card .pane-id { padding-right: 60px; }
-.session-card:has(.session-unread) .pane-id { padding-right: 86px; }
-.session-foot {
+.sb-item.needs:hover::before, .sb-item.run:hover::before { width: 4px; }
+/* Idle rows recede — no rail, a touch dimmer until hovered. */
+.sb-item.idle { background: var(--pane); opacity: 0.82; }
+.sb-item.idle:hover { opacity: 1; }
+
+.sb-mark {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink-2);
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.sb-mark.cloud { box-shadow: inset 0 0 0 1px oklch(0.55 0.13 75 / 0.4); }
+
+.sb-main { min-width: 0; }
+.sb-name {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line-2);
+  gap: 10px;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
-.foot-count {
+.sb-name .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-name .loc {
+  flex: 0 0 auto;
   font-family: var(--mono);
   font-size: 10px;
+  font-weight: 400;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--ink-4);
-  margin-right: auto;
+  color: var(--ink-3);
 }
-/* Informational flags, footer-anchored. Pill shape, dot + label, so several
-   read as a tidy meta row instead of crowding the card's identity line. */
-.foot-flag {
+.sb-work {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-work b { color: var(--accent); font-weight: 600; }
+
+.sb-right { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+.sb-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
+  gap: 6px;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  line-height: 1;
-  padding: 3px 8px 3px 7px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 4px 10px;
   border-radius: 999px;
+  white-space: nowrap;
 }
-.foot-flag::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  flex: 0 0 auto;
-}
-.flag-live {
+.sb-chip.decision {
   color: var(--accent);
   background: oklch(from var(--accent) l c h / 0.12);
+  box-shadow: inset 0 0 0 1px oklch(from var(--accent) l c h / 0.25);
 }
-.flag-term {
-  color: #d8cfc1;
-  background: #211c15;
-}
+.sb-chip.todo { color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.sb-chip.arrow::after { content: "→"; opacity: 0.7; }
 
-/* Per-instance id chip (tiebreaker when two cards share a project name). */
-.session-id-chip {
-  flex: 0 0 auto;
-  align-self: flex-start;
+.sb-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.02em;
-  color: var(--ink-4);
-  background: var(--line-2);
-  border-radius: 5px;
-  padding: 2px 5px;
-  line-height: 1;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ok);
 }
-
-/* "Archived (N)" toggle — spans the grid as its own row. */
-.session-archived-toggle {
-  grid-column: 1 / -1;
-  justify-self: start;
-  border: 0;
-  background: transparent;
+.sb-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.sb-dot.run { background: var(--ok); }
+.sb-count {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--ink-4);
-  cursor: pointer;
-  padding: 4px 2px;
-  transition: color 0.15s var(--ease);
+  color: var(--ink-3);
 }
-.session-archived-toggle:hover { color: var(--ink); }
 
-/* A revealed stale instance reads as dimmed until it writes again. */
-.session-card.archived { opacity: 0.55; }
-.session-card.archived:hover { opacity: 1; }
+/* Artifact count and the ✎/✕ affordances share one slot — count by default,
+   actions on hover (cross-fade, so the row stays calm until you reach for it). */
+.sb-end {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 52px;
+  height: 22px;
+}
+.sb-end .sb-count { transition: opacity 0.14s var(--ease); }
+.sb-end .sb-actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s var(--ease);
+}
+.sb-item:hover .sb-end .sb-count { opacity: 0; }
+.sb-item:hover .sb-end .sb-actions { opacity: 1; pointer-events: auto; }
 
-/* Close (×) a session off the roster — hidden until the card is hovered, so it
- * doesn't clutter the calm roster. Top-right, clear of the status text. */
+.sb-unread {
+  flex: 0 0 auto;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--board);
+  background: var(--accent);
+  box-shadow: 0 1px 4px oklch(from var(--accent) l c h / 0.4);
+}
+
+.sb-empty {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+  padding: 26px 4px;
+}
+
+/* ✎ rename / ✕ close — inline chips that live in the row's hover affordance slot
+   (.sb-actions handles the reveal; these are just the chip styling). */
+.session-rename,
 .session-close {
-  position: absolute;
-  top: 9px;
-  right: 10px;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  /* Opaque chip so the glyph never floats transparently over the card's name /
-     status text underneath it. */
   background: var(--card);
   border: 1px solid var(--line-2);
   color: var(--ink-3);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
   box-shadow: 0 2px 6px -3px rgba(40, 30, 20, 0.35);
-  transition: opacity 0.15s var(--ease), background 0.15s var(--ease), color 0.15s var(--ease);
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), border-color 0.15s var(--ease);
 }
-.session-card:hover .session-close { opacity: 1; }
+.session-rename:hover,
 .session-close:hover { background: var(--ink); border-color: var(--ink); color: var(--card); }
-/* When a card also shows an unread badge, tuck the × just left of it. */
-.session-card:has(.session-unread) .session-close { right: 34px; }
 
-/* ✎ Rename — sits just left of the × (offsets by the same +24px when unread). */
-.session-rename {
-  position: absolute;
-  top: 9px;
-  right: 36px;
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  /* Opaque chip — same treatment as the × so it doesn't bleed over text. */
-  background: var(--card);
-  border: 1px solid var(--line-2);
-  color: var(--ink-3);
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  box-shadow: 0 2px 6px -3px rgba(40, 30, 20, 0.35);
-  transition: opacity 0.15s var(--ease), background 0.15s var(--ease), color 0.15s var(--ease);
-}
-.session-card:hover .session-rename { opacity: 1; }
-.session-rename:hover { background: var(--ink); border-color: var(--ink); color: var(--card); }
-.session-card:has(.session-unread) .session-rename { right: 60px; }
-
-/* The floating name editor (appended to <body>, positioned over the card name so
-   it isn't nested in the card <button>). */
+/* The floating name editor (appended to .stage, positioned over the row name so
+   it isn't nested in the row <button>). */
 .name-edit {
   position: fixed;
   z-index: 50;
@@ -641,44 +698,6 @@
   padding: 4px 8px;
   outline: none;
   box-shadow: 0 10px 26px -16px rgba(40, 30, 20, 0.6);
-}
-
-/* The "⟲ Rejoin / Restore" affordance on an archived, manually-closed card. */
-.session-card.restorable { cursor: pointer; }
-.session-restore {
-  position: absolute;
-  top: 9px;
-  right: 10px;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: var(--line-2);
-  color: var(--ink-3, var(--ink-4));
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.03em;
-  line-height: 1.4;
-}
-.session-card.restorable:hover .session-restore { background: var(--accent); color: var(--board); }
-
-/* Unread (arrived-while-away) count, top-right of the session card. */
-.session-unread {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--board);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  box-shadow: 0 1px 4px oklch(from var(--accent) l c h / 0.4);
 }
 
 /* Global Board unread badge (control cluster) — visible at every level. */

@@ -35,7 +35,6 @@ import {
   reconcileBindings,
   showOwnedTerminals,
   hideOwnedTerminals,
-  unitHasOwnedTerminal,
   ownedUnits,
   ownedTabForUnit,
   endOwnedTerminalsForUnit,
@@ -146,8 +145,6 @@ let allArtifacts: ArtifactEntry[] = [];
 let pendingNavTab: string | null = null;
 
 let isFullscreen = false;
-/** Whether the L1 roster's stale (archived) units are revealed. */
-let showArchived = false;
 /** The reader overlay's dedicated live iframe + the path it's showing (null = closed). */
 let focusFrame: HTMLIFrameElement | null = null;
 let focusPath: string | null = null;
@@ -674,8 +671,10 @@ function unitName(unitKey: string, sources: LiveSource[]): string {
 
 // ---- L1 Sessions picker (units) ---------------------------------------------
 
-/** Render the roster: one card per unit with live activity; stale units behind a
- *  reversible "Archived" toggle. No iframes. */
+/** Render the roster as a live-only Status Board: units grouped into bands by what
+ *  you owe them — Needs you (a decision/blocked next step) · Running (an active
+ *  agent) · Idle (a Board terminal gone quiet). Stale/closed units and the orphan
+ *  "Unsourced" artifacts are NOT shown here — they live in searchable History. */
 function renderUnits(): void {
   const grid = document.getElementById("board-sessions-grid");
   const sub = document.getElementById("sessions-sub");
@@ -684,195 +683,197 @@ function renderUnits(): void {
   const byUnit = groupSourcesByUnit();
   const artsByUnit = groupArtifactsByUnit();
 
-  const liveUnits: string[] = [];
-  const staleUnits: string[] = [];
+  // The live set: units with ≥1 live source, plus Board-owned terminals (a session
+  // you launched here stays reachable even after its live file is gone). A unit you
+  // explicitly closed stays gone even if its owned terminal lingers.
+  const live = new Set<string>();
   for (const [unit, sources] of byUnit) {
-    (sources.some((s) => isLiveSource(s, now)) ? liveUnits : staleUnits).push(unit);
+    if (sources.some((s) => isLiveSource(s, now))) live.add(unit);
   }
-
-  // A Board-owned terminal is the Board's OWN state — its unit must stay in the
-  // live roster even when the agent's live file is gone (SessionEnd deletes it),
-  // so a session you launched here is always reachable. Promote any owned unit
-  // into the live set (creating an empty entry if it has no live source at all).
   for (const ou of ownedUnits()) {
-    // A unit the user closed stays archived even if it still has an owned
-    // terminal entry — the dismiss flag wins over owned-promotion (else closing
-    // the sessions you most want gone would silently no-op).
     const srcs = byUnit.get(ou) ?? [];
     if (srcs.length > 0 && srcs.every(isDismissed)) continue;
     if (!byUnit.has(ou)) byUnit.set(ou, []);
-    if (!liveUnits.includes(ou)) {
-      const si = staleUnits.indexOf(ou);
-      if (si >= 0) staleUnits.splice(si, 1);
-      liveUnits.push(ou);
-    }
+    live.add(ou);
   }
 
-  const cards: HTMLElement[] = [];
+  // Triage is the layout: a blocked/decision next step → Needs you; an active agent
+  // → Running; a quiet owned terminal → Idle.
+  const needs: string[] = [];
+  const running: string[] = [];
+  const idle: string[] = [];
   let liveCount = 0;
-  for (const unit of liveUnits) {
+  for (const unit of live) {
     const sources = byUnit.get(unit) ?? [];
-    liveCount += sources.filter((s) => isLiveSource(s, now)).length;
-    cards.push(buildUnitCard(unit, sources, artsByUnit.get(unit)?.length ?? 0, now));
+    const liveN = sources.filter((s) => isLiveSource(s, now)).length;
+    liveCount += liveN;
+    if (unitNeedsYou(sources, now)) needs.push(unit);
+    else if (liveN > 0) running.push(unit);
+    else idle.push(unit);
   }
 
-  // Hidden bucket behind one "Archived" toggle, so the live roster stays calm:
-  // stale (closed/idle) units AND the orphan "Unsourced" artifacts (no live
-  // session backs them — context-less old work). Both reachable, neither
-  // front-and-center on the roster.
-  const unsourced = artsByUnit.get(UNSOURCED)?.length ?? 0;
-  const hiddenCount = staleUnits.length + (unsourced ? 1 : 0);
-  if (hiddenCount) {
-    cards.push(buildArchivedToggle(hiddenCount));
-    if (showArchived) {
-      for (const unit of staleUnits) {
-        const card = buildUnitCard(unit, byUnit.get(unit) ?? [], artsByUnit.get(unit)?.length ?? 0, now, true);
-        card.classList.add("archived");
-        cards.push(card);
-      }
-      if (unsourced) {
-        const card = buildUnitCard(UNSOURCED, [], unsourced, now);
-        card.classList.add("archived");
-        cards.push(card);
-      }
-    }
+  const bands: HTMLElement[] = [];
+  if (needs.length) bands.push(buildBand("Needs you", "needs", needs, byUnit, artsByUnit, now));
+  if (running.length) bands.push(buildBand("Running", "run", running, byUnit, artsByUnit, now));
+  if (idle.length) bands.push(buildBand("Idle", "idle", idle, byUnit, artsByUnit, now));
+  if (!bands.length) {
+    const empty = document.createElement("div");
+    empty.className = "sb-empty";
+    empty.textContent = "No live sessions. Start one with + above.";
+    bands.push(empty);
   }
 
   if (sub) {
-    const u = liveUnits.length;
+    const u = live.size;
     sub.textContent = `${u} live unit${u === 1 ? "" : "s"} · ${liveCount} agent${liveCount === 1 ? "" : "s"} · ${allArtifacts.length} artifact${allArtifacts.length === 1 ? "" : "s"}`;
   }
-  grid.replaceChildren(...cards);
+  grid.replaceChildren(...bands);
 }
 
-/** The "Archived (N)" pill that reveals/hides stale units on the roster. */
-function buildArchivedToggle(n: number): HTMLElement {
-  const btn = document.createElement("button");
-  btn.className = "session-archived-toggle";
-  btn.textContent = showArchived ? `Hide archived (${n})` : `Archived (${n})`;
-  btn.addEventListener("click", () => {
-    showArchived = !showArchived;
-    renderUnits();
-  });
-  return btn;
+type Band = "needs" | "run" | "idle";
+
+/** The freshest live source blocked on you (top next-step is a decision/blocked),
+ *  or null. Drives both the band split and the row's decision chip, so the chip
+ *  always names the source that actually needs you (not just sources[0]). Note
+ *  levelFromKind maps "decision"→idle, so we read the raw kind here. */
+function blockingNextOf(sources: LiveSource[], now: number): NextItem | null {
+  for (const s of sources) {
+    if (!isLiveSource(s, now)) continue;
+    const top = parseState(s.json).next?.[0];
+    const kind = (top?.kind || "").toLowerCase();
+    if (top && (kind === "decision" || kind === "blocked")) return top;
+  }
+  return null;
 }
 
-/** One unit card — header from the freshest source, a "N live" chip when more
- *  than one agent runs in the unit, unread summed across its sources. */
-function buildUnitCard(
+function unitNeedsYou(sources: LiveSource[], now: number): boolean {
+  return blockingNextOf(sources, now) !== null;
+}
+
+/** A labelled band (header + its rows). Empty bands are never built. */
+function buildBand(
+  label: string,
+  band: Band,
+  units: string[],
+  byUnit: Map<string, LiveSource[]>,
+  artsByUnit: Map<string, ArtifactEntry[]>,
+  now: number,
+): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "sb-band";
+  const head = document.createElement("div");
+  head.className = "sb-bandhead";
+  const lbl = document.createElement("span");
+  lbl.className = "sb-lbl" + (band === "needs" ? " accent" : "");
+  lbl.textContent = label;
+  const ct = document.createElement("span");
+  ct.className = "sb-ct";
+  ct.textContent = String(units.length);
+  const ln = document.createElement("span");
+  ln.className = "sb-ln";
+  head.append(lbl, ct, ln);
+  section.append(head);
+  for (const unit of units) {
+    section.append(
+      buildStatusRow(unit, byUnit.get(unit) ?? [], artsByUnit.get(unit)?.length ?? 0, band, now),
+    );
+  }
+  return section;
+}
+
+/** One unit as a Status-Board row: [state rail][mark][name·loc / working line]
+ *  [decision-or-next chip · N live · artifact count ⇄ ✎/✕ on hover]. Click drills
+ *  into the unit (L2); ✎ renames, ✕ closes it off the roster. */
+function buildStatusRow(
   unitKey: string,
   sources: LiveSource[],
   artCount: number,
+  band: Band,
   now: number,
-  archived = false,
 ): HTMLElement {
   const liveN = sources.filter((s) => isLiveSource(s, now)).length;
-  const owned = unitHasOwnedTerminal(unitKey);
-  const head = sources[0] ? makeHead(sources[0]) : owned ? ownedHead() : unsourcedHead(artCount);
-  const dismissed = sources.some(isDismissed);
+  const head = sources[0] ? makeHead(sources[0]) : ownedHead();
+  const blocking = band === "needs" ? blockingNextOf(sources, now) : null;
+  const top = sources[0] ? parseState(sources[0].json).next?.[0] : undefined;
 
-  const card = document.createElement("button");
-  card.className = "session-card";
-  card.dataset.unit = unitKey;
+  const row = document.createElement("button");
+  row.className = `sb-item ${band}`;
+  row.dataset.unit = unitKey;
 
+  const mark = document.createElement("span");
+  mark.className = "sb-mark" + (head.isCloud ? " cloud" : "");
+  mark.textContent = head.mark;
+
+  const main = document.createElement("div");
+  main.className = "sb-main";
+  const nameRow = document.createElement("div");
+  nameRow.className = "sb-name";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = unitName(unitKey, sources);
+  const loc = document.createElement("span");
+  loc.className = "loc";
+  loc.textContent = head.prov;
+  nameRow.append(name, loc);
   const unread = unreadCount(unitKey);
   if (unread > 0) {
     const badge = document.createElement("span");
-    badge.className = "session-unread";
+    badge.className = "sb-unread";
     badge.textContent = unread > 9 ? "9+" : String(unread);
     badge.title = `${unread} new artifact${unread === 1 ? "" : "s"} since you last looked`;
-    card.append(badge);
+    nameRow.append(badge);
   }
+  const work = document.createElement("div");
+  work.className = "sb-work";
+  work.innerHTML = head.statusHtml;
+  main.append(nameRow, work);
 
-  const idRow = document.createElement("div");
-  idRow.className = "pane-id";
-  const mark = document.createElement("span");
-  mark.className = "agent-mark" + (head.isCloud ? " cloud" : "");
-  mark.textContent = head.mark;
-  const who = document.createElement("div");
-  who.className = "who";
-  const name = document.createElement("div");
-  name.className = "name";
-  name.textContent = unitName(unitKey, sources);
-  const prov = document.createElement("div");
-  prov.className = "prov";
-  prov.textContent = head.prov;
-  who.append(name, prov);
-  idRow.append(mark, who);
-
-  card.append(idRow);
-
-  if (unitKey !== UNSOURCED) {
-    const statusRow = document.createElement("div");
-    statusRow.className = "pane-status";
+  const right = document.createElement("div");
+  right.className = "sb-right";
+  if (blocking?.title) {
+    const chip = document.createElement("span");
+    chip.className = "sb-chip decision arrow";
+    chip.textContent = `${(blocking.kind || "").toUpperCase()} · ${clip(blocking.title)}`;
+    right.append(chip);
+  } else if (band === "run" && top?.title && isTodoKind(top.kind)) {
+    const chip = document.createElement("span");
+    chip.className = "sb-chip todo";
+    chip.textContent = clip(top.title);
+    right.append(chip);
+  }
+  if (liveN > 0) {
+    const livePill = document.createElement("span");
+    livePill.className = "sb-live";
     const dot = document.createElement("span");
-    dot.className = "status-dot " + head.level;
-    const stext = document.createElement("span");
-    stext.className = "status-text";
-    stext.innerHTML = head.statusHtml;
-    statusRow.append(dot, stext);
-    card.append(statusRow);
+    dot.className = "sb-dot run";
+    livePill.append(dot, document.createTextNode(`${liveN} live`));
+    right.append(livePill);
   }
-
-  // Footer = a single meta row. Informational flags (live count, owned terminal)
-  // live here, NOT in the identity row — there they collided with the absolute
-  // ✎/✕/unread cluster and bled over neighbouring cards on hover.
-  const foot = document.createElement("div");
-  foot.className = "session-foot";
+  // Artifact count, swapped for the ✎/✕ affordances on hover (same slot).
+  const end = document.createElement("span");
+  end.className = "sb-end";
   const count = document.createElement("span");
-  count.className = "foot-count";
-  count.textContent = `${artCount} artifact${artCount === 1 ? "" : "s"}`;
-  foot.append(count);
-  // "N live" — a unit can hold several agents; the count is what matters here.
-  if (liveN > 1) {
-    const chip = document.createElement("span");
-    chip.className = "foot-flag flag-live";
-    chip.textContent = `${liveN} live`;
-    chip.title = `${liveN} agents active in this unit`;
-    foot.append(chip);
-  }
-  // Board-owned terminal here — mark it so launched sessions are findable.
-  if (owned) {
-    const chip = document.createElement("span");
-    chip.className = "foot-flag flag-term";
-    chip.textContent = "terminal";
-    chip.title = "A claude session you launched from the Board runs here";
-    foot.append(chip);
-  }
-  card.append(foot);
+  count.className = "sb-count";
+  count.textContent = `${artCount} art`;
+  const actions = document.createElement("span");
+  actions.className = "sb-actions";
+  actions.append(renameButton(unitKey), closeButton(unitKey, sources));
+  end.append(count, actions);
+  right.append(end);
 
-  if (archived && dismissed) {
-    // A manually-closed unit: clicking it restores (rejoins a Board session via
-    // `claude --resume`, or just un-hides an external one). It does NOT drill in.
-    const canRejoin = sources.some((s) => sourceCanRejoin(s));
-    card.classList.add("restorable");
-    card.title = canRejoin ? "Rejoin this session" : "Restore to the live roster";
-    card.append(restorePill(canRejoin));
-    card.addEventListener("click", () => void restoreUnit(unitKey, sources));
-  } else if (unitKey !== UNSOURCED) {
-    // Live (or naturally-stale) card: drill in, with ✎ rename + × close affordances.
-    card.append(renameButton(unitKey));
-    card.append(closeButton(unitKey, sources));
-    card.addEventListener("click", () => goUnit(unitKey));
-  } else {
-    card.addEventListener("click", () => goUnit(unitKey));
-  }
-  return card;
+  row.append(mark, main, right);
+  row.addEventListener("click", () => goUnit(unitKey));
+  return row;
 }
 
-/** A source we can rejoin via `claude --resume` — a closed Board session that
- *  recorded its full session id and project dir. */
-function sourceCanRejoin(s: LiveSource): boolean {
-  const st = parseState(s.json);
-  return Boolean(st.session_id && st.unit_dir);
+function isTodoKind(kind?: string): boolean {
+  const k = (kind || "").toLowerCase();
+  return k === "todo" || k === "in-progress" || k === "in_progress";
 }
 
-/** The small "Restore" / "Rejoin" affordance shown on an archived closed card. */
-function restorePill(canRejoin: boolean): HTMLElement {
-  const pill = document.createElement("span");
-  pill.className = "session-restore";
-  pill.textContent = canRejoin ? "⟲ Rejoin" : "⟲ Restore";
-  return pill;
+/** Truncate a chip label so a long next-step can't blow out the row width. */
+function clip(s: string, n = 46): string {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
 /** The × that closes a unit off the live roster. A <span> (the card is a button;
@@ -899,7 +900,7 @@ function renameButton(unitKey: string): HTMLElement {
   b.setAttribute("role", "button");
   b.addEventListener("click", (e) => {
     e.stopPropagation();
-    const card = b.closest(".session-card");
+    const card = b.closest(".sb-item");
     const nameEl = card?.querySelector(".name") as HTMLElement | null;
     if (nameEl) startRename(unitKey, nameEl);
   });
@@ -970,36 +971,6 @@ async function closeUnit(unitKey: string, sources: LiveSource[]): Promise<void> 
     const st = parseState(s.json);
     st.dismissed = true;
     s.json = JSON.stringify(st);
-  }
-  renderUnits();
-}
-
-/** Restore a closed unit. Clears the dismiss flag on each source; if a source was
- *  a Board session (has a session id + dir), rejoins it via `claude --resume`. */
-async function restoreUnit(unitKey: string, sources: LiveSource[]): Promise<void> {
-  await Promise.all(
-    sources.map((s) =>
-      invoke("restore_session", { source: s.source }).catch((e) =>
-        console.error("restore_session failed", s.source, e),
-      ),
-    ),
-  );
-  for (const s of sources) {
-    const st = parseState(s.json);
-    delete st.dismissed;
-    s.json = JSON.stringify(st);
-  }
-  // Rejoin the first rejoinable Board session in this unit (if any).
-  const rejoin = sources.map((s) => parseState(s.json)).find((st) => st.session_id && st.unit_dir);
-  if (rejoin?.unit_dir && rejoin.session_id) {
-    try {
-      await spawnOwnedSession(rejoin.unit_dir, unitKey, rejoin.session_id);
-      showArchived = false;
-      goUnit(unitKey);
-      return;
-    } catch (e) {
-      console.error("rejoin (claude --resume) failed", e);
-    }
   }
   renderUnits();
 }
@@ -1219,19 +1190,6 @@ function syncHeroToggle(hasHero: boolean): void {
 function freshCount(): number {
   const now = Date.now();
   return allArtifacts.filter((a) => now - a.modified_ms < FRESH_WINDOW_MS).length;
-}
-
-/** Header fields for an UNSOURCED unit (no live state). */
-function unsourcedHead(count: number): PaneHead {
-  return {
-    source: UNSOURCED,
-    name: "Unsourced",
-    prov: "ARTIFACTS · NO LIVE SOURCE",
-    mark: "·",
-    isCloud: false,
-    level: "idle",
-    statusHtml: `${count} artifact${count === 1 ? "" : "s"} with no live agent`,
-  };
 }
 
 /** Head for a Board-owned unit whose agent live file is gone (the session ended
