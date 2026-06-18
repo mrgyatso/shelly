@@ -438,6 +438,12 @@ function goUnit(unitKey: string): void {
 
 /** Pop one level: Unit → Sessions → Hub. */
 function goBack(): void {
+  // The reader (open artifact) overlays every level — back must close it first,
+  // else the click pops the hidden level underneath and looks like a no-op.
+  if (focusPath) {
+    closeFocus();
+    return;
+  }
   if (viewStack.length <= 1) return;
   viewStack.pop();
   const v = currentView();
@@ -1939,8 +1945,28 @@ function toggleFullscreen(): void {
     .catch((e) => console.error("set_board_fullscreen failed", e));
 }
 
+/** True when the keydown came from somewhere the user is typing — the embedded
+ *  terminal, a text input, or a contentEditable. Global one-key shortcuts (F) and
+ *  the Backspace back-nav guard must stand down there, else typing "F" in the
+ *  terminal full-screens the Board and Backspace clears in-progress work. */
+function isTypingContext(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.closest !== "function") return false;
+  if (el.closest("#unit-terminals")) return true; // the live claude TUI
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+}
+
 function wireKeyboard(): void {
   window.addEventListener("keydown", (e: KeyboardEvent) => {
+    const typing = isTypingContext(e.target);
+    // Backspace with nothing focused triggers the webview's back-navigation,
+    // which reloads the surface and wipes any open artifact's answers. Swallow it
+    // outside typing contexts (where it's just normal editing).
+    if (e.key === "Backspace" && !typing) {
+      e.preventDefault();
+      return;
+    }
     if (focusPath) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -1953,7 +1979,7 @@ function wireKeyboard(): void {
       goBack();
       return;
     }
-    if ((e.key === "f" || e.key === "F") && currentView().level !== "hub") {
+    if ((e.key === "f" || e.key === "F") && !typing && currentView().level !== "hub") {
       toggleFullscreen();
     }
   });
