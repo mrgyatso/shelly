@@ -276,6 +276,85 @@
 .ns-tx { display: flex; align-items: baseline; gap: 7px; }
 .ns-tx small { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
 
+/* Notifications dropdown — opened from the 🔔; lists units with unread work so a
+   click jumps straight to that agent (was a blunt "go to sessions"). */
+.notif-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 240px;
+  max-width: 320px;
+  padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: 11px;
+  box-shadow: 0 16px 40px -18px rgba(40, 30, 20, 0.55), 0 2px 8px -4px rgba(40, 30, 20, 0.35);
+  animation: nsIn 0.12s var(--ease) both;
+}
+.notif-head {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  padding: 6px 9px 7px;
+}
+.notif-empty {
+  font-family: var(--serif);
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 2px 9px 9px;
+}
+.notif-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.13s var(--ease);
+}
+.notif-item:hover { background: var(--sunk); }
+.notif-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px oklch(from var(--accent) l c h / 0.16);
+}
+.notif-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--ui-font);
+  font-size: 13.5px;
+  font-weight: 540;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notif-n {
+  flex: 0 0 auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--board);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
 /* =========================================================================
    L0 HUB — full-bleed agent-authored dashboard (home.html) + native fallback
    ========================================================================= */

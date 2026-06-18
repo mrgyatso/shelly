@@ -128,6 +128,7 @@ pub fn run() {
             artifact::artifact_in_scope,
             layout::notify_fit,
             history::list_artifacts,
+            history::sweep_artifacts,
             history::reopen_artifact,
             history::resolve_home,
             history::resolve_unit_home,

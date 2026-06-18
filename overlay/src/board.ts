@@ -242,6 +242,14 @@ export async function initBoard(): Promise<void> {
 
   setStatus(status, "Loading…");
 
+  // Non-destructive retention sweep before listing — archives artifacts older
+  // than the retention window so the roster doesn't balloon. Best-effort.
+  try {
+    await invoke<number>("sweep_artifacts");
+  } catch (e) {
+    console.error("artifact sweep failed", e);
+  }
+
   try {
     [allSources, allArtifacts] = await Promise.all([
       invoke<LiveSource[]>("read_all_live"),
@@ -386,6 +394,77 @@ function closeNewSessionMenu(): void {
   document.querySelector(".newsession-menu")?.remove();
   document.getElementById("board-newsession")?.setAttribute("aria-expanded", "false");
   document.removeEventListener("keydown", onMenuEsc);
+}
+
+/** The 🔔 dropdown: one row per unit with unread work, click to jump to that
+ *  agent. Replaces the old blunt "bell → go to sessions". */
+function toggleNotifMenu(anchor: HTMLElement): void {
+  if (document.querySelector(".notif-menu")) {
+    closeNotifMenu();
+    return;
+  }
+  const menu = document.createElement("div");
+  menu.className = "notif-menu";
+  menu.setAttribute("role", "menu");
+
+  const entries: { unit: string; n: number }[] = [];
+  for (const [unit, set] of unreadByUnit) if (set.size > 0) entries.push({ unit, n: set.size });
+  entries.sort((a, b) => b.n - a.n);
+
+  const head = document.createElement("div");
+  head.className = "notif-head";
+  head.textContent = entries.length ? "Needs you" : "Nothing new";
+  menu.append(head);
+
+  if (!entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "notif-empty";
+    empty.textContent = "No agents are waiting on you.";
+    menu.append(empty);
+  } else {
+    const byUnit = groupSourcesByUnit();
+    for (const { unit, n } of entries) {
+      const row = document.createElement("button");
+      row.className = "notif-item";
+      row.setAttribute("role", "menuitem");
+      const dot = document.createElement("span");
+      dot.className = "notif-dot";
+      const name = document.createElement("span");
+      name.className = "notif-name";
+      name.textContent = unitName(unit, byUnit.get(unit) ?? []);
+      const count = document.createElement("span");
+      count.className = "notif-n";
+      count.textContent = n > 9 ? "9+" : String(n);
+      row.append(dot, name, count);
+      row.addEventListener("click", () => {
+        closeNotifMenu();
+        goUnit(unit);
+      });
+      menu.append(row);
+    }
+  }
+
+  const r = anchor.getBoundingClientRect();
+  menu.style.top = `${Math.round(r.bottom + 7)}px`;
+  menu.style.right = `${Math.round(window.innerWidth - r.right)}px`;
+  stageEl.append(menu);
+  anchor.setAttribute("aria-expanded", "true");
+  // Close on next outside click / Escape (next tick so the opening click doesn't
+  // immediately dismiss it).
+  setTimeout(() => {
+    document.addEventListener("click", closeNotifMenu, { once: true });
+    document.addEventListener("keydown", onNotifEsc);
+  }, 0);
+}
+
+function onNotifEsc(e: KeyboardEvent): void {
+  if (e.key === "Escape") closeNotifMenu();
+}
+
+function closeNotifMenu(): void {
+  document.querySelector(".notif-menu")?.remove();
+  document.getElementById("board-unread")?.setAttribute("aria-expanded", "false");
+  document.removeEventListener("keydown", onNotifEsc);
 }
 
 /** Drain any pending deep-link target (Rust-side), routing to its unit (L2). */
@@ -637,15 +716,22 @@ function renderUnits(): void {
     cards.push(buildUnitCard(unit, sources, artsByUnit.get(unit)?.length ?? 0, now));
   }
 
-  // Artifacts with no live source form their own "Unsourced" unit card.
+  // Hidden bucket behind one "Archived" toggle, so the live roster stays calm:
+  // stale (closed/idle) units AND the orphan "Unsourced" artifacts (no live
+  // session backs them — context-less old work). Both reachable, neither
+  // front-and-center on the roster.
   const unsourced = artsByUnit.get(UNSOURCED)?.length ?? 0;
-  if (unsourced) cards.push(buildUnitCard(UNSOURCED, [], unsourced, now));
-
-  if (staleUnits.length) {
-    cards.push(buildArchivedToggle(staleUnits.length));
+  const hiddenCount = staleUnits.length + (unsourced ? 1 : 0);
+  if (hiddenCount) {
+    cards.push(buildArchivedToggle(hiddenCount));
     if (showArchived) {
       for (const unit of staleUnits) {
         const card = buildUnitCard(unit, byUnit.get(unit) ?? [], artsByUnit.get(unit)?.length ?? 0, now, true);
+        card.classList.add("archived");
+        cards.push(card);
+      }
+      if (unsourced) {
+        const card = buildUnitCard(UNSOURCED, [], unsourced, now);
         card.classList.add("archived");
         cards.push(card);
       }
@@ -1833,7 +1919,10 @@ function wireControls(): void {
     toggleNewSessionMenu(e.currentTarget as HTMLElement);
   });
   document.getElementById("board-back")?.addEventListener("click", goBack);
-  document.getElementById("board-unread")?.addEventListener("click", goSessions);
+  document.getElementById("board-unread")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleNotifMenu(e.currentTarget as HTMLElement);
+  });
   document.getElementById("hub-sessions-btn")?.addEventListener("click", goSessions);
   scrimEl?.addEventListener("click", closeFocus);
 }

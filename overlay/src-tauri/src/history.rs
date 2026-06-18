@@ -259,6 +259,78 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
     entries
 }
 
+/// Days an artifact stays on the live listing before a sweep archives it.
+const RETENTION_DAYS: u64 = 21;
+
+/// Current time as epoch milliseconds (0 on an impossible pre-epoch clock).
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Non-destructive retention: move artifacts older than [`RETENTION_DAYS`] into an
+/// `archive/` subdir of each artifact dir, so the listing (and the Board roster)
+/// stop growing without end. Reserved surfaces (`home`, `home.<unit>`) and
+/// `_`-scaffolding are never touched; nothing is deleted (files stay recoverable
+/// under `archive/`, and `list_artifacts` skips that subdir since it isn't `.html`
+/// at the top level). Returns the count moved. Safe to call on every launch.
+#[tauri::command]
+pub fn sweep_artifacts() -> usize {
+    let cutoff = now_ms().saturating_sub(RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    let mut moved = 0usize;
+    for dir in artifact_dirs() {
+        let archive = dir.join("archive");
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+                continue;
+            };
+            let ext = ext.to_ascii_lowercase();
+            if ext != "html" && ext != "htm" {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            // Never sweep reserved/agent surfaces or repo scaffolding.
+            if stem == "home" || stem.starts_with("home.") || stem.starts_with('_') {
+                continue;
+            }
+            let modified = std::fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(u64::MAX); // unknown mtime ⇒ keep (treat as fresh)
+            if modified >= cutoff {
+                continue;
+            }
+            let Some(name) = path.file_name() else {
+                continue;
+            };
+            let target = archive.join(name);
+            if target.exists() {
+                continue; // don't clobber an earlier archived copy
+            }
+            if std::fs::create_dir_all(&archive).is_err() {
+                continue;
+            }
+            if std::fs::rename(&path, &target).is_ok() {
+                moved += 1;
+            }
+        }
+    }
+    moved
+}
+
 /// Resolve the agent-authored Hub dashboard (`home.html`), if one exists. The
 /// Board loads it full-bleed at L0; `None` ⇒ the native fallback. It MUST live in
 /// the artifacts dir (so it's in `asset:` scope and its navigate buttons' JS
