@@ -151,6 +151,9 @@ let showArchived = false;
 /** The reader overlay's dedicated live iframe + the path it's showing (null = closed). */
 let focusFrame: HTMLIFrameElement | null = null;
 let focusPath: string | null = null;
+/** Artifact paths visited in this reader session, for "← Back" after jumping
+ *  through the agents-need-you queue. Cleared when the reader closes. */
+const readerBackStack: string[] = [];
 
 // ---- live artifact ingestion + unread ---------------------------------------
 // The poll loop re-reads list_artifacts(); a new artifact is routed to its
@@ -1354,8 +1357,96 @@ async function openReader(path: string): Promise<void> {
   boardEl.append(card);
   scrimEl.classList.add("on");
   requestAnimationFrame(() => card.classList.add("shown"));
+  renderReaderNav();
 
   await loadArtifactInto(path, focusFrame).catch((e) => console.error("reader load failed", path, e));
+}
+
+/** The agents-need-you queue: one entry per source (agent) that has an unread
+ *  artifact OTHER than the one on screen, represented by its freshest such
+ *  artifact. Count = distinct agents, so "N agents need you" reads true even when
+ *  one agent dropped several artifacts. Freshest agent first. */
+function agentQueue(): { source: string; path: string }[] {
+  const unread = new Set<string>();
+  for (const set of unreadByUnit.values()) for (const p of set) unread.add(p);
+  const freshestBySource = new Map<string, ArtifactEntry>();
+  for (const a of allArtifacts) {
+    if (!unread.has(a.path) || a.path === focusPath) continue;
+    const src = a.source ?? a.path; // unsourced artifact = its own "agent"
+    const cur = freshestBySource.get(src);
+    if (!cur || a.modified_ms > cur.modified_ms) freshestBySource.set(src, a);
+  }
+  return [...freshestBySource.values()]
+    .sort((x, y) => y.modified_ms - x.modified_ms)
+    .map((a) => ({ source: a.source ?? a.path, path: a.path }));
+}
+
+/** Mark a single artifact read (it's now on the reader) without clearing the rest
+ *  of its unit's unread — surgical, so jumping to one agent leaves the others queued. */
+function markArtifactRead(path: string): void {
+  for (const [unit, set] of unreadByUnit) {
+    if (set.delete(path)) {
+      if (set.size === 0) unreadByUnit.delete(unit);
+      break;
+    }
+  }
+  updateGlobalUnread();
+}
+
+/** Build/refresh the reader's top-left nav: "← Back" (when the stack is non-empty)
+ *  and "N agents need you · Next →" (when other agents have unread work). Called on
+ *  open, on every jump/back, and from updateGlobalUnread so the count stays live as
+ *  artifacts arrive while the reader is open. */
+function renderReaderNav(): void {
+  const card = boardEl.querySelector("[data-reader]") as HTMLElement | null;
+  if (!card) return;
+  let nav = card.querySelector(".reader-nav") as HTMLElement | null;
+  if (!nav) {
+    nav = document.createElement("div");
+    nav.className = "reader-nav";
+    card.append(nav);
+  }
+  const q = agentQueue();
+  nav.replaceChildren();
+  if (readerBackStack.length) {
+    const back = document.createElement("button");
+    back.className = "reader-back";
+    back.textContent = "← Back";
+    back.addEventListener("click", () => void readerBack());
+    nav.append(back);
+  }
+  if (q.length) {
+    const next = document.createElement("button");
+    next.className = "reader-next";
+    next.textContent =
+      q.length === 1 ? "1 agent needs you · Next →" : `${q.length} agents need you · Next →`;
+    next.addEventListener("click", () => void readerJumpNext());
+    nav.append(next);
+  }
+  nav.toggleAttribute("hidden", nav.childElementCount === 0);
+}
+
+/** Jump the reader to the next agent's freshest unread artifact, pushing the
+ *  current one onto the back-stack and marking the target read (so that agent
+ *  drops out of the queue → submit-then-Next walks agent to agent). */
+async function readerJumpNext(): Promise<void> {
+  const q = agentQueue();
+  if (!q.length || !focusFrame) return;
+  const next = q[0].path;
+  if (focusPath) readerBackStack.push(focusPath);
+  focusPath = next;
+  markArtifactRead(next); // also refreshes the nav via updateGlobalUnread
+  renderReaderNav();
+  await loadArtifactInto(next, focusFrame).catch((e) => console.error("reader jump failed", next, e));
+}
+
+/** Return to the previously-viewed artifact in the reader. */
+async function readerBack(): Promise<void> {
+  const prev = readerBackStack.pop();
+  if (prev === undefined || !focusFrame) return;
+  focusPath = prev;
+  renderReaderNav();
+  await loadArtifactInto(prev, focusFrame).catch((e) => console.error("reader back failed", prev, e));
 }
 
 /** Close the reader; flush any unit history rebuild deferred while it was open. */
@@ -1365,6 +1456,7 @@ function closeFocus(): void {
   card?.remove();
   focusFrame = null;
   focusPath = null;
+  readerBackStack.length = 0;
   if (pendingIngest.size) {
     const v = currentView();
     const due = v.level === "unit" && pendingIngest.has(v.unitKey) ? v.unitKey : null;
@@ -1524,6 +1616,9 @@ function updateGlobalUnread(): void {
   const count = document.getElementById("board-unread-count");
   if (btn) btn.toggleAttribute("hidden", total === 0);
   if (count) count.textContent = total > 99 ? "99+" : String(total);
+  // Keep the reader's "N agents need you" pill live as artifacts arrive mid-read
+  // (ingestArtifacts still routes unread while the reader defers its unit rebuild).
+  if (focusPath !== null) renderReaderNav();
   postUnreadToHub();
 }
 
@@ -1599,12 +1694,16 @@ function wireNavigate(): void {
 }
 
 /** Submit a compiled artifact answer into a Board-owned PTY and AUTO-SEND it.
- *  Sent in two writes: the bracketed-paste body first (so internal newlines don't
- *  submit early), then — as a SEPARATE, slightly-delayed write — the carriage
- *  return. A CR riding in the same buffer as the paste-end marker gets swallowed by
- *  Claude's TUI (the turn lands in the prompt unsent); a distinct, delayed Enter
- *  reliably commits it. */
+ *  Sent in THREE writes: first Ctrl-U to clear the prompt (so an artifact send never
+ *  MERGES with whatever the user had half-typed — without this, the paste appends to
+ *  the existing buffer and the Enter submits the concatenation as one line, e.g. a
+ *  stray `/checkpoint` swallowing the answer as args → "Args from unknown skill");
+ *  then the bracketed-paste body (so internal newlines don't submit early); then —
+ *  as a SEPARATE, slightly-delayed write — the carriage return. A CR riding in the
+ *  same buffer as the paste-end marker gets swallowed by Claude's TUI (the turn lands
+ *  in the prompt unsent); a distinct, delayed Enter reliably commits it. */
 async function submitIntoPty(tabId: string, text: string): Promise<void> {
+  await invoke("write_pty", { tabId, data: "\x15" }); // Ctrl-U: kill line, clear any typed-but-unsent input
   await invoke("write_pty", { tabId, data: `\x1b[200~${text}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 90));
   await invoke("write_pty", { tabId, data: "\r" });

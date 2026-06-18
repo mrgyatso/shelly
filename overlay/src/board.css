@@ -97,6 +97,9 @@
   height: min(94vh, 1000px);
   background: var(--board);
   border-radius: 20px;
+  /* Crisp black frame around the whole Board shell (the surface, not the
+     transparent letterbox stage). The ring sits just inside the shadow stack. */
+  border: 2px solid #000;
   box-shadow:
     0 0 0 1px oklch(0.2 0.01 55 / 0.5),
     0 40px 120px oklch(0 0 0 / 0.45),
@@ -802,6 +805,11 @@
   outline: 1px solid var(--line-2);
   outline-offset: -1px;
   background: var(--card);
+  /* Promote to its own GPU compositing layer so the mix-blend-mode paper
+     texture doesn't force this iframe into the main-thread blend cycle —
+     the same starvation that hits terminal input, fixed there by WebGL. */
+  will-change: transform;
+  isolation: isolate;
 }
 #unit-digest[hidden] { display: none; }
 /* Hero collapsed → terminal owns the full height. */
@@ -1080,7 +1088,7 @@
 }
 .reader.shown { opacity: 1; transform: none; }
 .reader-inner { position: absolute; inset: 0; }
-.reader-frame { width: 100%; height: 100%; border: 0; display: block; background: var(--card); }
+.reader-frame { width: 100%; height: 100%; border: 0; display: block; background: var(--card); will-change: transform; isolation: isolate; }
 .reader-close {
   position: absolute;
   top: 12px;
@@ -1099,6 +1107,46 @@
 }
 .reader-close:hover { background: var(--sunk); color: var(--ink); }
 .reader-close svg { width: 16px; height: 16px; }
+
+/* Reader navigation chrome (top-left): "← Back" through the visited stack and
+   "N agents need you · Next →" jump to the next agent's freshest unread artifact.
+   Absolute over the iframe, mirroring .reader-close (proves chrome paints above
+   the sandboxed frame). */
+.reader-nav {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.reader-nav[hidden] { display: none; }
+.reader-nav button {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: oklch(0.99 0.005 60 / 0.86);
+  backdrop-filter: blur(6px);
+  color: var(--ink-2);
+  font-family: var(--ui-font);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  transition: background 0.16s, color 0.16s;
+}
+.reader-nav button:hover { background: var(--sunk); color: var(--ink); }
+.reader-next {
+  /* The "agents need you" jump — clay accent so it reads as the live affordance. */
+  border-color: oklch(from var(--accent) l c h / 0.4) !important;
+  color: var(--clay-deep) !important;
+  font-weight: 600 !important;
+}
+.reader-next:hover { background: oklch(from var(--accent) l c h / 0.12) !important; color: var(--clay-deep) !important; }
 
 /* =========================================================================
    MENU-BAR POPOVER — the roster glance dropped from the status item
