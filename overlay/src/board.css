@@ -166,8 +166,7 @@
   background: var(--bar-bg, transparent);
   color: var(--bar-fg, var(--ink));
 }
-.board-top.themed .greeting,
-.board-top.themed #board-clock { display: none; }
+.board-top.themed .greeting { display: none; }
 /* mandatory controls adopt the bar's foreground so they stay legible on any bg */
 .board-top.themed .ctl { color: color-mix(in srgb, var(--bar-fg, #000) 50%, transparent); }
 .board-top.themed .ctl:hover {
@@ -184,6 +183,10 @@
   min-width: 0;
   font-family: var(--bar-font, var(--sans-ui));
 }
+/* A class selector beats the UA `[hidden] { display:none }`, so the agent-bar
+   stays visible after applyBar(null) unless we restore the hide explicitly —
+   else its title/clock stack on top of the native greeting (two clocks). */
+.bar-custom[hidden] { display: none; }
 .bar-zone { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .bar-left { justify-self: start; }
 .bar-center { justify-self: center; }
@@ -272,14 +275,6 @@
 .ns-ico { flex: 0 0 auto; width: 20px; text-align: center; font-size: 14px; opacity: 0.8; }
 .ns-tx { display: flex; align-items: baseline; gap: 7px; }
 .ns-tx small { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
-.clock {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--ink-3);
-  letter-spacing: 0.02em;
-  padding: 0 8px 0 4px;
-  font-variant-numeric: tabular-nums;
-}
 
 /* =========================================================================
    L0 HUB — full-bleed agent-authored dashboard (home.html) + native fallback
@@ -404,20 +399,63 @@
   box-shadow: var(--sh-card);
   transform: translateY(-1px);
   outline-color: oklch(from var(--accent) l c h / 0.4);
+  /* Sit above sibling cards so the raised shadow + revealed ✎/✕ never tuck
+     under the adjacent card in the grid. */
+  z-index: 3;
 }
 .session-card .pane-status { padding-left: 0; }
 .session-card .status-text { -webkit-line-clamp: 1; }
 /* Reserve the top-right gutter the ✎ / × chips occupy so the name truncates
-   clear of them instead of running underneath. */
-.session-card .pane-id { padding-right: 50px; }
+   clear of them instead of running underneath. The cluster widens when the
+   unread badge is also present (✎/× shift right past it), so reserve more then. */
+.session-card .pane-id { padding-right: 60px; }
+.session-card:has(.session-unread) .pane-id { padding-right: 86px; }
 .session-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-2);
+}
+.foot-count {
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ink-4);
-  padding-top: 4px;
-  border-top: 1px solid var(--line-2);
+  margin-right: auto;
+}
+/* Informational flags, footer-anchored. Pill shape, dot + label, so several
+   read as a tidy meta row instead of crowding the card's identity line. */
+.foot-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  padding: 3px 8px 3px 7px;
+  border-radius: 999px;
+}
+.foot-flag::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+.flag-live {
+  color: var(--accent);
+  background: oklch(from var(--accent) l c h / 0.12);
+}
+.flag-term {
+  color: #d8cfc1;
+  background: #211c15;
 }
 
 /* Per-instance id chip (tiebreaker when two cards share a project name). */
@@ -1124,35 +1162,6 @@
   font-size: 11px;
   color: var(--ink-4);
   padding: 14px 8px;
-}
-
-/* "N live" chip on a unit card (replaces the per-instance #shortid chip). */
-.session-live-chip {
-  flex: 0 0 auto;
-  align-self: flex-start;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--accent);
-  background: oklch(from var(--accent) l c h / 0.12);
-  border-radius: 5px;
-  padding: 2px 6px;
-  line-height: 1;
-}
-/* Board-owned terminal marker on a session card. */
-.session-term-chip {
-  flex: 0 0 auto;
-  align-self: flex-start;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #e9e4da;
-  background: #1d1b19;
-  border-radius: 5px;
-  padding: 2px 6px;
-  line-height: 1;
 }
 
 /* =========================================================================

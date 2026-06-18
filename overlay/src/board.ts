@@ -239,7 +239,6 @@ export async function initBoard(): Promise<void> {
   wireHistoryClicks();
   wireUnitChrome();
   wireScrollGating();
-  startClock();
 
   setStatus(status, "Loading…");
 
@@ -709,23 +708,6 @@ function buildUnitCard(
   who.append(name, prov);
   idRow.append(mark, who);
 
-  // "N live" chip replaces the per-instance #shortid chip — a unit can hold
-  // several agents, and the count is the fact that matters at the roster.
-  if (liveN > 1) {
-    const chip = document.createElement("span");
-    chip.className = "session-live-chip";
-    chip.textContent = `${liveN} live`;
-    chip.title = `${liveN} agents active in this unit`;
-    idRow.append(chip);
-  }
-  // Board-owned terminal here — mark it so launched sessions are findable.
-  if (owned) {
-    const chip = document.createElement("span");
-    chip.className = "session-term-chip";
-    chip.textContent = "▸ terminal";
-    chip.title = "A claude session you launched from the Board runs here";
-    idRow.append(chip);
-  }
   card.append(idRow);
 
   if (unitKey !== UNSOURCED) {
@@ -740,9 +722,31 @@ function buildUnitCard(
     card.append(statusRow);
   }
 
+  // Footer = a single meta row. Informational flags (live count, owned terminal)
+  // live here, NOT in the identity row — there they collided with the absolute
+  // ✎/✕/unread cluster and bled over neighbouring cards on hover.
   const foot = document.createElement("div");
   foot.className = "session-foot";
-  foot.textContent = `${artCount} artifact${artCount === 1 ? "" : "s"}`;
+  const count = document.createElement("span");
+  count.className = "foot-count";
+  count.textContent = `${artCount} artifact${artCount === 1 ? "" : "s"}`;
+  foot.append(count);
+  // "N live" — a unit can hold several agents; the count is what matters here.
+  if (liveN > 1) {
+    const chip = document.createElement("span");
+    chip.className = "foot-flag flag-live";
+    chip.textContent = `${liveN} live`;
+    chip.title = `${liveN} agents active in this unit`;
+    foot.append(chip);
+  }
+  // Board-owned terminal here — mark it so launched sessions are findable.
+  if (owned) {
+    const chip = document.createElement("span");
+    chip.className = "foot-flag flag-term";
+    chip.textContent = "terminal";
+    chip.title = "A claude session you launched from the Board runs here";
+    foot.append(chip);
+  }
   card.append(foot);
 
   if (archived && dismissed) {
@@ -1285,16 +1289,6 @@ function timeGreeting(): string {
   if (h < 12) return "Good morning";
   if (h < 18) return "Good afternoon";
   return "Good evening";
-}
-
-function startClock(): void {
-  const el = document.getElementById("board-clock");
-  if (!el) return;
-  const tick = () => {
-    el.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  };
-  tick();
-  window.setInterval(tick, 30_000);
 }
 
 // ---- agent-composed bar (L0 hub + L2 digest) --------------------------------
