@@ -343,13 +343,29 @@ an outer card won't double-icon its inner text).
       ".cmp-chat input{flex:1;min-width:0;padding:9px 11px;border:1px solid rgba(32,27,21,.22);border-radius:8px;font:13px/1.4 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
       ".cmp-chat input:focus{border-color:#b0552f}" +
       ".cmp-chat button{flex:0 0 auto;padding:9px 14px;border-radius:8px;border:1px solid #201b15;background:#201b15;color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
-      ".cmp-submitted{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(244,241,236,.94);backdrop-filter:blur(3px)}" +
-      ".cmp-submitted .c{text-align:center;font-family:-apple-system,system-ui,sans-serif;max-width:340px;padding:24px}" +
-      ".cmp-submitted .chk{width:46px;height:46px;border-radius:50%;background:#2e7d52;color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}" +
-      ".cmp-submitted .t{font-size:17px;font-weight:650;color:#201b15;margin-bottom:5px}" +
-      ".cmp-submitted .s{font-size:13px;color:#6e655b;margin-bottom:18px}" +
-      ".cmp-submitted .b{display:inline-block;margin:4px;padding:8px 14px;border-radius:8px;border:1px solid rgba(32,27,21,.25);background:#fff;color:#201b15;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
-      ".cmp-submitted .b.pri{background:#201b15;color:#f4f1ec;border-color:#201b15}";
+      // The post-submit "Claude is working" scene — a little Claude sipping a
+      // steaming coffee while the agent works the next step. Keeps the user on
+      // the Board, out of the terminal. All motion is transform/opacity and
+      // honors prefers-reduced-motion. (One of several state animations.)
+      ".cmp-submitted{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(120% 90% at 50% 32%,#fbf8f2 0%,rgba(244,241,236,.97) 70%);backdrop-filter:blur(3px);font-family:-apple-system,system-ui,sans-serif}" +
+      ".cmp-submitted .halo{position:absolute;top:50%;left:50%;width:240px;height:240px;transform:translate(-50%,-78%);background:radial-gradient(circle,rgba(217,138,92,.32) 0%,transparent 62%);filter:blur(6px);animation:cmpHalo 4.5s ease-in-out infinite}" +
+      "@keyframes cmpHalo{0%,100%{opacity:.55;transform:translate(-50%,-78%) scale(1)}50%{opacity:.9;transform:translate(-50%,-78%) scale(1.08)}}" +
+      ".cmp-submitted .bob{animation:cmpBob 3.4s ease-in-out infinite;transform-origin:50% 90%}" +
+      "@keyframes cmpBob{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-7px) rotate(1deg)}}" +
+      ".cmp-submitted .steam{transform-box:fill-box;transform-origin:center bottom}" +
+      ".cmp-submitted .steam path{fill:none;stroke:rgba(180,170,150,.85);stroke-width:5;stroke-linecap:round;opacity:0}" +
+      ".cmp-submitted .s1{animation:cmpRise 2.8s ease-in-out infinite}.cmp-submitted .s2{animation:cmpRise 2.8s ease-in-out infinite .65s}.cmp-submitted .s3{animation:cmpRise 2.8s ease-in-out infinite 1.3s}" +
+      "@keyframes cmpRise{0%{opacity:0;transform:translateY(8px) scaleY(.7)}25%{opacity:.9}70%{opacity:.5}100%{opacity:0;transform:translateY(-26px) scaleY(1.15)}}" +
+      ".cmp-submitted .swirl{animation:cmpSpin 3.2s linear infinite;transform-box:fill-box;transform-origin:center}" +
+      "@keyframes cmpSpin{to{transform:rotate(360deg)}}" +
+      ".cmp-submitted .t{font-size:16px;font-weight:650;color:#201b15;text-align:center}" +
+      ".cmp-submitted .dots{margin-top:9px;text-align:center}" +
+      ".cmp-submitted .dots span{display:inline-block;width:5px;height:5px;border-radius:50%;background:#c06a3a;margin:0 2px;opacity:.3;animation:cmpBlink 1.4s ease-in-out infinite}" +
+      ".cmp-submitted .dots span:nth-child(2){animation-delay:.2s}.cmp-submitted .dots span:nth-child(3){animation-delay:.4s}" +
+      "@keyframes cmpBlink{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}" +
+      ".cmp-submitted .s{font-size:12px;color:#6e655b;margin-top:8px;text-align:center;max-width:300px}" +
+      ".cmp-submitted .b{margin-top:4px;padding:8px 14px;border-radius:8px;border:1px solid rgba(32,27,21,.25);background:#fff;color:#201b15;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
+      "@media (prefers-reduced-motion:reduce){.cmp-submitted .bob,.cmp-submitted .steam path,.cmp-submitted .swirl,.cmp-submitted .halo,.cmp-submitted .dots span{animation:none!important}.cmp-submitted .steam path{opacity:.5}}";
     document.head.appendChild(st);
 
     if (submitBtn) {
@@ -385,7 +401,34 @@ an outer card won't double-icon its inner text).
     window.__cmpShowSubmitted = function () {
       if (document.querySelector(".cmp-submitted")) return;
       var ov = document.createElement("div"); ov.className = "cmp-submitted";
-      ov.innerHTML = '<div class="c"><div class="chk">✓</div><div class="t">Sent to the terminal</div><div class="s">Waiting for the next step…</div><button class="b" type="button">← View this artifact</button></div>';
+      ov.innerHTML =
+        '<div class="halo"></div>' +
+        '<svg class="bob" viewBox="0 0 200 170" width="200" height="170" aria-label="Claude is working">' +
+        '<ellipse cx="100" cy="158" rx="52" ry="8" fill="rgba(32,27,21,0.10)"/>' +
+        '<rect x="52" y="58" width="96" height="92" rx="40" fill="#d98a5c"/>' +
+        '<circle cx="86" cy="96" r="6.5" fill="#2a2018"/><circle cx="118" cy="96" r="6.5" fill="#2a2018"/>' +
+        '<circle cx="88" cy="94" r="2" fill="#fff" opacity="0.85"/><circle cx="120" cy="94" r="2" fill="#fff" opacity="0.85"/>' +
+        '<path d="M88 112 q14 11 28 0" fill="none" stroke="#2a2018" stroke-width="3.4" stroke-linecap="round"/>' +
+        '<circle cx="74" cy="108" r="6" fill="#e8a982" opacity="0.55"/><circle cx="130" cy="108" r="6" fill="#e8a982" opacity="0.55"/>' +
+        '<g transform="translate(150 44)" opacity="0.85"><path d="M0 -10 L2.6 -2.6 L10 0 L2.6 2.6 L0 10 L-2.6 2.6 L-10 0 L-2.6 -2.6 Z" fill="#c06a3a"/></g>' +
+        '<g transform="translate(0 2)">' +
+        '<path d="M138 120 q22 2 20 20 q-2 16 -20 14" fill="none" stroke="#cfc6b8" stroke-width="7" stroke-linecap="round"/>' +
+        '<rect x="78" y="116" width="64" height="40" rx="11" fill="#ffffff" stroke="#d9d2c6" stroke-width="2"/>' +
+        '<clipPath id="cmpRim"><ellipse cx="110" cy="124" rx="26" ry="7"/></clipPath>' +
+        '<ellipse cx="110" cy="124" rx="26" ry="7" fill="#5a3a23"/>' +
+        '<g clip-path="url(#cmpRim)"><g class="swirl">' +
+        '<path d="M110 124 m-22 0 a22 7 0 1 0 44 0" fill="none" stroke="#7a4f30" stroke-width="4"/>' +
+        '<path d="M110 124 m-12 0 a12 4 0 1 1 24 0" fill="none" stroke="#caa57f" stroke-width="3"/>' +
+        '</g></g></g>' +
+        '<g class="steam" transform="translate(0 -4)">' +
+        '<path class="s1" d="M98 110 q-7 -10 0 -20 q6 -9 0 -18"/>' +
+        '<path class="s2" d="M110 108 q7 -11 0 -22 q-6 -9 0 -18"/>' +
+        '<path class="s3" d="M122 110 q-6 -10 0 -20 q6 -9 0 -17"/></g>' +
+        '</svg>' +
+        '<div><div class="t">Claude’s brewing the next step</div>' +
+        '<div class="dots"><span></span><span></span><span></span></div>' +
+        '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
+        '<button class="b" type="button">← View this artifact</button>';
       ov.querySelector("button").addEventListener("click", function () { ov.remove(); });
       document.body.appendChild(ov);
     };
