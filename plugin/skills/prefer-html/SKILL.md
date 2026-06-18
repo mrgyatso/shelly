@@ -389,6 +389,16 @@ an outer card won't double-icon its inner text).
       ov.querySelector("button").addEventListener("click", function () { ov.remove(); });
       document.body.appendChild(ov);
     };
+
+    // The Board re-shows the "submitted" overlay when you navigate back to an
+    // artifact you already submitted from (the iframe reloads fresh, so the
+    // state would otherwise be lost). It posts this message after each reload.
+    window.addEventListener("message", function (e) {
+      var d = e.data;
+      if (d && d.source === "companion-board" && d.kind === "restore-submitted") {
+        try { window.__cmpShowSubmitted(); } catch (err) {}
+      }
+    });
   })();
 
   refresh();
