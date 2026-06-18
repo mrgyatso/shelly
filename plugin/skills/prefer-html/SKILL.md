@@ -81,6 +81,32 @@ The **unified helper is inlined below** — copy it verbatim. It is self-contain
 external files, no machine-specific paths); use the ambient-comments CSS and the
 review-form CSS documented later in this file for styling.
 
+### Buttons must NEVER be dead (non-negotiable)
+
+A review surface whose ✓/✎/✗ buttons don't respond is a broken artifact — it strands the
+user with a decision form they can't use. This must never ship. Two hard rules:
+
+1. **Always include the unified helper script verbatim** (the block below) in any artifact
+   that has `[data-action]` buttons. The buttons are inert markup on their own — *the helper
+   is what makes them click*. Don't hand-roll a partial handler; don't drop the helper to
+   "save space"; don't use the ambient-comments-only helper (it has no `[data-action]`
+   handling) on a page that has review buttons.
+2. **Keep every review item reachable.** In a multi-page document, buttons on a
+   `display:none` page can't be clicked until that page is shown — fine, but never leave a
+   Next-steps form on a page with no nav link to it. When in doubt, **put the decision
+   surface on a single, always-visible page** (the safest shape, and what to default to).
+
+**Pre-ship self-check (run this before writing the file).** Confirm all four, every time:
+
+- [ ] The unified helper `<script>` is present and **unedited** (copy-paste, don't retype).
+- [ ] Every `[data-action]` button sits inside a `[data-companion-item]` ancestor.
+- [ ] Exactly one `[data-companion-submit]` button exists.
+- [ ] No element with `position:fixed`/absolute overlaps the buttons at load (the
+      `.cmp-submitted` overlay is fine — it only appears *after* submit).
+
+If you can't tick all four, the artifact isn't ready. A dead-button form is worse than no
+artifact at all.
+
 ### HTML wiring
 
 ```html
@@ -214,13 +240,17 @@ an outer card won't double-icon its inner text).
     if (sub) doSubmit(sub);
   });
 
-  function pending() { return comments.size + document.querySelectorAll("[data-companion-item][data-state]").length; }
+  var commentEl = null; // the single freeform comment field, injected below
+  function freeComment() { return commentEl ? commentEl.value.trim() : ""; }
+  function pending() {
+    return comments.size + document.querySelectorAll("[data-companion-item][data-state]").length + (freeComment() ? 1 : 0);
+  }
   function refresh() {
-    var c = comments.size, d = document.querySelectorAll("[data-companion-item][data-state]").length;
-    if (countEl) countEl.textContent = (c || d)
-      ? (d + " decision" + (d !== 1 ? "s" : "") + (c ? (" · " + c + " comment" + (c !== 1 ? "s" : "")) : ""))
+    var c = comments.size, d = document.querySelectorAll("[data-companion-item][data-state]").length, fc = freeComment() ? 1 : 0;
+    if (countEl) countEl.textContent = (c || d || fc)
+      ? (d + " decision" + (d !== 1 ? "s" : "") + (c ? (" · " + c + " comment" + (c !== 1 ? "s" : "")) : "") + (fc ? " · note added" : ""))
       : "nothing marked yet";
-    if (submitBtn) submitBtn.classList.toggle("ready", (c + d) > 0);
+    if (submitBtn) submitBtn.classList.toggle("ready", (c + d + fc) > 0);
   }
   function meta() {
     var el = document.getElementById("companion-meta");
@@ -258,6 +288,12 @@ an outer card won't double-icon its inner text).
       });
       lines.push("");
     }
+    var fc = freeComment();
+    if (fc) {
+      lines.push("— Comment —", "");
+      fc.split("\n").forEach(function (l) { lines.push(l); });
+      lines.push("");
+    }
     return lines.join("\n");
   }
   function fallbackCopy(text) {
@@ -273,7 +309,7 @@ an outer card won't double-icon its inner text).
     clearTimeout(submitBtn._t); submitBtn._t = setTimeout(function () { submitBtn.textContent = submitBtn.dataset.label; }, 2000);
   }
   function doSubmit(sub) {
-    if (pending() === 0) { flash("Mark an item or leave a 💬 first"); return; }
+    if (pending() === 0) { flash("Mark an item, leave a 💬, or write a comment first"); return; }
     var text = build(sub.getAttribute("data-companion-submit") || "Review");
     try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: text }, "*"); } catch (e) {}
     // Inside the Companion overlay (iframed) the overlay is the single clipboard
@@ -290,42 +326,61 @@ an outer card won't double-icon its inner text).
     try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
   }
 
-  // --- Bottom message bar + post-submit "submitted" state ----------------------
-  // EVERY artifact carries both, self-injected with inline styles so no extra
-  // author CSS is needed. The bar routes a freeform comment to the owning terminal
-  // (same submit channel → auto-sent); doSubmit() flips to a "submitted" screen so
-  // it is clear the turn was sent and we are waiting for the next artifact, with a
-  // small button back to this one.
+  // --- Comment field + post-submit "submitted" state ---------------------------
+  // The comment box and the decisions submit are ONE action. When a review form
+  // exists, the freeform comment sits directly above the Submit bar (end of the
+  // list → comment → Submit), and the single Submit button sends decisions +
+  // ambient comments + this comment together — there is no separate "Send".
+  // Only a pure-recap artifact (no Submit button at all) gets a standalone Send
+  // bar as a fallback. doSubmit() flips to a "submitted" screen either way.
   (function () {
-    var root = document.querySelector("[data-fit-root]") || document.body;
     var st = document.createElement("style");
     st.textContent =
+      ".cmp-comment{grid-column:1/-1;margin:16px 0 0}" +
+      ".cmp-comment textarea{display:block;width:100%;box-sizing:border-box;min-height:54px;resize:vertical;padding:10px 12px;border:1px solid rgba(32,27,21,.22);border-radius:9px;font:13px/1.5 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
+      ".cmp-comment textarea:focus{border-color:#b0552f}" +
       ".cmp-chat{display:flex;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(32,27,21,.14);grid-column:1/-1}" +
       ".cmp-chat input{flex:1;min-width:0;padding:9px 11px;border:1px solid rgba(32,27,21,.22);border-radius:8px;font:13px/1.4 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
       ".cmp-chat input:focus{border-color:#b0552f}" +
       ".cmp-chat button{flex:0 0 auto;padding:9px 14px;border-radius:8px;border:1px solid #201b15;background:#201b15;color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
       ".cmp-submitted{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(244,241,236,.94);backdrop-filter:blur(3px)}" +
-      ".cmp-submitted .c{text-align:center;font-family:-apple-system,system-ui,sans-serif;max-width:320px;padding:24px}" +
+      ".cmp-submitted .c{text-align:center;font-family:-apple-system,system-ui,sans-serif;max-width:340px;padding:24px}" +
       ".cmp-submitted .chk{width:46px;height:46px;border-radius:50%;background:#2e7d52;color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}" +
       ".cmp-submitted .t{font-size:17px;font-weight:650;color:#201b15;margin-bottom:5px}" +
       ".cmp-submitted .s{font-size:13px;color:#6e655b;margin-bottom:18px}" +
-      ".cmp-submitted .b{padding:8px 14px;border-radius:8px;border:1px solid rgba(32,27,21,.25);background:#fff;color:#201b15;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}";
+      ".cmp-submitted .b{display:inline-block;margin:4px;padding:8px 14px;border-radius:8px;border:1px solid rgba(32,27,21,.25);background:#fff;color:#201b15;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
+      ".cmp-submitted .b.pri{background:#201b15;color:#f4f1ec;border-color:#201b15}";
     document.head.appendChild(st);
 
-    var bar = document.createElement("div");
-    bar.className = "cmp-chat";
-    bar.innerHTML = '<input type="text" placeholder="Message the terminal…" aria-label="Message the terminal"><button type="button">Send</button>';
-    root.appendChild(bar);
-    var inp = bar.querySelector("input"), snd = bar.querySelector("button");
-    function sendChat() {
-      var v = inp.value.trim(); if (!v) return;
-      try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: v }, "*"); } catch (e) {}
-      if (window.parent === window && navigator.clipboard) { navigator.clipboard.writeText(v).catch(function () {}); }
-      inp.value = ""; var p = snd.textContent; snd.textContent = "Sent ✓";
-      setTimeout(function () { snd.textContent = p; }, 1500);
+    if (submitBtn) {
+      // Merged path: comment field directly above the Submit bar; Submit sends all.
+      var box = document.createElement("div");
+      box.className = "cmp-comment";
+      box.innerHTML = '<textarea placeholder="Add a comment for the terminal (optional)…" aria-label="Comment"></textarea>';
+      var bar = submitBtn.closest(".bar") || submitBtn.parentElement;
+      bar.parentNode.insertBefore(box, bar);
+      commentEl = box.querySelector("textarea");
+      commentEl.addEventListener("input", refresh);
+    } else {
+      // Fallback: no review form (pure recap / presentation-first). A freeform
+      // Send bar at the bottom that posts immediately to the owning terminal.
+      var root = document.querySelector("[data-fit-root]") || document.body;
+      var cbar = document.createElement("div");
+      cbar.className = "cmp-chat";
+      cbar.innerHTML = '<input type="text" placeholder="Message the terminal…" aria-label="Message the terminal" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><button type="button">Send</button>';
+      root.appendChild(cbar);
+      var inp = cbar.querySelector("input"), snd = cbar.querySelector("button");
+      var sendChat = function () {
+        var v = inp.value.trim(); if (!v) return;
+        try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: v }, "*"); } catch (e) {}
+        if (window.parent === window && navigator.clipboard) { navigator.clipboard.writeText(v).catch(function () {}); }
+        inp.value = ""; var p = snd.textContent; snd.textContent = "Sent ✓";
+        setTimeout(function () { snd.textContent = p; }, 1500);
+        try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
+      };
+      snd.addEventListener("click", sendChat);
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendChat(); } });
     }
-    snd.addEventListener("click", sendChat);
-    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendChat(); } });
 
     window.__cmpShowSubmitted = function () {
       if (document.querySelector(".cmp-submitted")) return;
@@ -510,6 +565,66 @@ A ~360px self-sizing "what changed" card. Swap the accent color by intent
 For the **full-document** case, build a normal self-contained page (your own layout,
 sections, SVG/diagrams as needed) — just keep `data-fit-root` on the main wrapper with a
 definite width (e.g. 720–960px) and include the size-report snippet above.
+
+## Two-zone layout: use the open right side (don't ship a thin column)
+
+The most common waste in a full-document artifact is a single narrow column of prose
+running top-to-bottom while the **entire right half of the Board sits empty**. Don't. When
+a turn has real substance to explain, default to a **two-zone layout**: prose on the left,
+a **genuinely useful visual on the right** — a diagram, chart, figure, or annotated image
+that helps the user *understand the topic and make the decision*.
+
+**The visual must earn its place.** It illustrates what the prose is arguing — a flow
+diagram of the bug, a before/after, a tree of options, a data chart. **Never decorative
+filler** (no stock gradients, abstract blobs, or a logo to "balance" the layout). If you
+can't name what a reader learns from the visual, leave the column out and go single-column.
+
+**Pick the visual medium by what it is:**
+- **Diagrams / flows / relationships / before-after** → hand-author an inline **SVG** (no
+  dependency, crisp, themeable). This covers most cases.
+- **Quantitative data** → **D3** (bundled — see Bundled assets) for charts/graphs.
+- **Rich illustrative figures** a diagram can't capture (a scene, a textured concept image,
+  a realistic mock) → generate one with **gpt image-2**, save it into the artifacts dir
+  (e.g. `~/.claude/companion/artifacts/img/<slug>-<n>.png`), and reference it via the
+  `asset:` protocol (external URLs are blocked in the sandbox):
+  ```html
+  <img src="asset://localhost/Users/gyatso/.claude/companion/artifacts/img/<slug>-1.png"
+       width="360" alt="<what it shows>" />
+  ```
+  Always set an explicit `width`/`height` and a real `alt`. Generate sparingly — one
+  purposeful figure beats three pretty ones.
+
+### Two-zone template (copy, fill, write)
+
+`data-fit-root` stays a block wrapper; the two-zone grid is its own element so the unified
+helper's auto-injected `.cmp-chat` bar (which targets `data-fit-root`) lands full-width
+below. The right column is `position:sticky` so it stays beside the prose as the left
+scrolls. The left column carries `data-companion-commentable`; the visual does not.
+
+```html
+<main data-fit-root> <!-- width ~860–900px to actually use the space -->
+  <header>…kicker + h1 + sub…</header>
+  <div class="zone">
+    <div class="col-main" data-companion-commentable>
+      <h2>…</h2><p>…prose that the visual illustrates…</p>
+    </div>
+    <aside class="visual"><!-- sticky card -->
+      <svg viewBox="0 0 320 240" width="100%"> … </svg>
+      <div class="cap">One line on what the figure shows.</div>
+    </aside>
+  </div>
+  <!-- Next-steps decision section spans full width below the zone -->
+</main>
+<style>
+  .zone { display:grid; grid-template-columns:1fr 360px; gap:26px; align-items:start; }
+  .visual { position:sticky; top:16px; }
+  @media (max-width:720px){ .zone{ grid-template-columns:1fr; } } /* graceful narrow fallback */
+</style>
+```
+
+Reach for two-zone on any substantive full-document turn (a triage, a plan, a comparison,
+an explainer). Skip it for pills, pure dashboards (those get a bespoke editorial layout),
+and turns with nothing worth visualizing.
 
 ## Multi-page documents (several independent subjects in one file)
 
