@@ -160,6 +160,12 @@ const readerBackStack: string[] = [];
  *  state is lost). A later rewrite (new modified_ms) clears it — fresh content
  *  is fresh work, not an already-answered card. */
 const submittedArtifacts = new Map<string, number>();
+/** After a submit, the source (session) whose NEXT artifact should auto-open in
+ *  the reader — so you flow card→card without touching the terminal. Set on
+ *  submit, consumed by the next same-source artifact, cleared on manual nav or
+ *  reader close. Only THIS session's artifacts auto-advance; another session's
+ *  new work just raises the ambient "N agents need you" awareness (unread). */
+let awaitingAdvanceSource: string | null = null;
 
 // ---- live artifact ingestion + unread ---------------------------------------
 // The poll loop re-reads list_artifacts(); a new artifact is routed to its
@@ -302,18 +308,85 @@ async function newFolderSession(): Promise<void> {
 
 /** Spawn a Board-owned claude in `dir` and jump to its unit once it correlates
  *  (pendingNavTab, handled in pollLive). Shows the terminal IMMEDIATELY under a
- *  provisional unit (the dir's basename — which equals the real unit_key for a
- *  repo root) and navigates to it. claude's first-run trust prompt blocks
- *  SessionStart, so correlation can't happen until the user answers it — they
- *  must SEE the terminal first. When it correlates, pollLive re-navigates. */
+ *  provisional unit, then re-navigates to the real unit when it correlates
+ *  (claude's first-run trust prompt blocks SessionStart, so the user must SEE
+ *  the terminal first).
+ *
+ *  Provisional choice matters: in a REPO the basename IS the real unit_key (so
+ *  two sessions in one repo correctly share one unit). In a NON-repo the real
+ *  unit_key is `slug--shortid` (unique per session) and the basename COLLIDES —
+ *  e.g. every `~` session is "gyatso". A bare-basename provisional there makes
+ *  two home sessions shadow each other (one terminal "disappears") and closing
+ *  one can end both before its resume id is recorded → `--resume` fails. So we
+ *  give non-repos a UNIQUE provisional; correlation re-homes it to the real unit. */
+let provisionalSeq = 0;
 async function launchSessionIn(dir: string): Promise<void> {
-  const provisional = dir.split("/").filter(Boolean).pop() || dir;
+  const base = dir.split("/").filter(Boolean).pop() || dir;
+  let isRepo = false;
+  try {
+    isRepo = await invoke<boolean>("path_is_repo", { dir });
+  } catch (e) {
+    console.error("path_is_repo failed", e); // safe fallback: treat as non-repo
+  }
+  const provisional = isRepo ? base : `${base}~${++provisionalSeq}`;
   try {
     pendingNavTab = await spawnOwnedSession(dir, provisional);
     goUnit(provisional);
   } catch (e) {
     console.error("spawnOwnedSession failed", e);
   }
+}
+
+/** The "+ New session" menu: a small popover under the + giving the two ways to
+ *  start — at home (~), or in a folder you pick. Click + again (or anywhere) to
+ *  close. */
+function toggleNewSessionMenu(anchor: HTMLElement): void {
+  const existing = document.querySelector(".newsession-menu");
+  if (existing) {
+    closeNewSessionMenu();
+    return;
+  }
+  const menu = document.createElement("div");
+  menu.className = "newsession-menu";
+  menu.setAttribute("role", "menu");
+  menu.innerHTML =
+    '<button class="ns-item" role="menuitem" data-ns="home">' +
+    '<span class="ns-ico">⌂</span><span class="ns-tx">Start at home<small>~</small></span></button>' +
+    '<button class="ns-item" role="menuitem" data-ns="folder">' +
+    '<span class="ns-ico">📁</span><span class="ns-tx">Start in a folder…</span></button>';
+  const r = anchor.getBoundingClientRect();
+  menu.style.top = `${Math.round(r.bottom + 7)}px`;
+  menu.style.right = `${Math.round(window.innerWidth - r.right)}px`;
+  // Append inside .stage — the design tokens (--card, --ink, …) hang on .stage,
+  // not :root/body, so a menu on <body> renders transparent with invisible text.
+  // .stage has no transform/filter, so the menu's position:fixed stays viewport-relative.
+  stageEl.append(menu);
+  anchor.setAttribute("aria-expanded", "true");
+
+  menu.querySelector('[data-ns="home"]')?.addEventListener("click", () => {
+    closeNewSessionMenu();
+    void newHomeSession();
+  });
+  menu.querySelector('[data-ns="folder"]')?.addEventListener("click", () => {
+    closeNewSessionMenu();
+    void newFolderSession();
+  });
+  // Close on any outside click or Escape (next tick, so this opening click
+  // doesn't immediately dismiss it).
+  setTimeout(() => {
+    document.addEventListener("click", closeNewSessionMenu, { once: true });
+    document.addEventListener("keydown", onMenuEsc);
+  }, 0);
+}
+
+function onMenuEsc(e: KeyboardEvent): void {
+  if (e.key === "Escape") closeNewSessionMenu();
+}
+
+function closeNewSessionMenu(): void {
+  document.querySelector(".newsession-menu")?.remove();
+  document.getElementById("board-newsession")?.setAttribute("aria-expanded", "false");
+  document.removeEventListener("keydown", onMenuEsc);
 }
 
 /** Drain any pending deep-link target (Rust-side), routing to its unit (L2). */
@@ -751,7 +824,9 @@ function startRename(unitKey: string, anchorEl: HTMLElement, onSaved?: () => voi
   input.style.left = `${Math.round(rect.left)}px`;
   input.style.top = `${Math.round(rect.top)}px`;
   input.style.minWidth = `${Math.max(Math.round(rect.width), 150)}px`;
-  document.body.append(input);
+  // Append inside .stage so the input inherits the design tokens (they hang on
+  // .stage, not :root/body — on <body> the input would render transparent).
+  stageEl.append(input);
 
   let done = false;
   const finish = (save: boolean): void => {
@@ -1513,6 +1588,7 @@ function renderReaderNav(): void {
 async function readerJumpNext(): Promise<void> {
   const q = agentQueue();
   if (!q.length || !focusFrame) return;
+  awaitingAdvanceSource = null; // manual nav cancels a pending auto-advance
   const next = q[0].path;
   if (focusPath) readerBackStack.push(focusPath);
   focusPath = next;
@@ -1525,6 +1601,7 @@ async function readerJumpNext(): Promise<void> {
 async function readerBack(): Promise<void> {
   const prev = readerBackStack.pop();
   if (prev === undefined || !focusFrame) return;
+  awaitingAdvanceSource = null; // manual nav cancels a pending auto-advance
   focusPath = prev;
   renderReaderNav();
   await loadArtifactInto(prev, focusFrame).catch((e) => console.error("reader back failed", prev, e));
@@ -1537,6 +1614,7 @@ function closeFocus(): void {
   card?.remove();
   focusFrame = null;
   focusPath = null;
+  awaitingAdvanceSource = null;
   readerBackStack.length = 0;
   if (pendingIngest.size) {
     const v = currentView();
@@ -1671,9 +1749,32 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
     if (unit !== viewingUnit) addUnread(unit, a.path);
   }
 
+  maybeAutoAdvance(newOnes);
+
   if (view.level === "sessions") renderUnits();
   else if (view.level === "unit") ingestIntoUnit(view.unitKey);
   updateGlobalUnread();
+}
+
+/** Same-session auto-advance: if the reader is open on an artifact we just
+ *  submitted, and this session's NEXT artifact has now arrived, slide the reader
+ *  straight to it (the waiting scene is discarded with the old iframe). Another
+ *  session's new artifact is intentionally ignored here — it surfaces as ambient
+ *  unread instead. The freshest matching new artifact wins. */
+function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
+  if (focusPath === null || awaitingAdvanceSource === null || !focusFrame) return;
+  const next = newOnes
+    .filter((a) => a.source === awaitingAdvanceSource && a.path !== focusPath)
+    .sort((x, y) => y.modified_ms - x.modified_ms)[0];
+  if (!next) return;
+  awaitingAdvanceSource = null;
+  readerBackStack.push(focusPath);
+  focusPath = next.path;
+  markArtifactRead(next.path);
+  renderReaderNav();
+  void loadArtifactInto(next.path, focusFrame).catch((e) =>
+    console.error("auto-advance failed", next.path, e),
+  );
 }
 
 /** Refresh the on-screen unit's HERO + HISTORY when its artifact set changed (a
@@ -1727,8 +1828,10 @@ function wireControls(): void {
     win.hide().catch((e) => console.error("board hide failed", e));
   });
   document.getElementById("board-fullscreen")?.addEventListener("click", toggleFullscreen);
-  document.getElementById("board-newsession")?.addEventListener("click", () => void newHomeSession());
-  document.getElementById("board-newsession-folder")?.addEventListener("click", () => void newFolderSession());
+  document.getElementById("board-newsession")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleNewSessionMenu(e.currentTarget as HTMLElement);
+  });
   document.getElementById("board-back")?.addEventListener("click", goBack);
   document.getElementById("board-unread")?.addEventListener("click", goSessions);
   document.getElementById("hub-sessions-btn")?.addEventListener("click", goSessions);
@@ -1765,6 +1868,9 @@ function wireNavigate(): void {
       if (focusPath) {
         const art = allArtifacts.find((a) => a.path === focusPath);
         submittedArtifacts.set(focusPath, art?.modified_ms ?? 0);
+        // Arm same-session auto-advance: this session's next artifact will
+        // replace the waiting scene in the reader (no click, no terminal).
+        awaitingAdvanceSource = art?.source ?? null;
       }
       const v = currentView();
       const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;

@@ -138,6 +138,7 @@ pub fn run() {
             live::read_unit_names,
             live::set_unit_name,
             live::resolve_home_dir,
+            live::path_is_repo,
             windows::set_board_fullscreen,
             windows::show_board,
             windows::take_board_nav_target,
