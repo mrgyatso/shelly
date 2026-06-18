@@ -140,19 +140,27 @@
              independently (focus one, the other, or neither). HISTORY moved into a
              slide-out drawer behind the ☰ toggle (claude.ai-chat style). -->
         <div id="board-unit" class="board-unit" hidden>
-          <!-- L2 toolbar: history-drawer toggle + hero collapse. -->
-          <div class="unit-toolbar">
-            <button id="unit-hist-toggle" class="unit-tool-btn" title="History — past artifacts" aria-label="History">☰</button>
-            <button id="unit-hero-toggle" class="unit-tool-btn" title="Collapse the artifact hero" hidden>▾&nbsp;artifact</button>
-            <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
-          </div>
-          <!-- Stacked surfaces: compact hero over the primary terminal. -->
-          <div class="unit-main">
-            <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
-            <!-- Per-session embedded terminals (the real claude TUI the Board owns).
-                 owned-terminals.ts mounts one div per session here; mounts persist
-                 across navigation (hidden, never disposed) so PTYs stay alive. -->
-            <div id="unit-terminals" class="unit-terminals" hidden></div>
+          <!-- Vertical-tabs rail (browser style): jump between live sessions without
+               leaving L2. Clicking a tab swaps the pane (terminal + hero) to that
+               session; this shell stays put. board.ts fills it; hidden when there's
+               only one live unit (nothing to switch to). -->
+          <nav id="unit-rail" class="unit-rail" aria-label="Live sessions" hidden></nav>
+          <!-- The pane that swaps per session: toolbar + stacked surfaces. -->
+          <div class="unit-pane">
+            <!-- L2 toolbar: history-drawer toggle + hero collapse. -->
+            <div class="unit-toolbar">
+              <button id="unit-hist-toggle" class="unit-tool-btn" title="History — past artifacts" aria-label="History">☰</button>
+              <button id="unit-hero-toggle" class="unit-tool-btn" title="Collapse the artifact hero" hidden>▾&nbsp;artifact</button>
+              <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
+            </div>
+            <!-- Stacked surfaces: compact hero over the primary terminal. -->
+            <div class="unit-main">
+              <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+              <!-- Per-session embedded terminals (the real claude TUI the Board owns).
+                   owned-terminals.ts mounts one div per session here; mounts persist
+                   across navigation (hidden, never disposed) so PTYs stay alive. -->
+              <div id="unit-terminals" class="unit-terminals" hidden></div>
+            </div>
           </div>
           <!-- History drawer (off-canvas left) + its dismiss scrim. -->
           <div id="unit-history-scrim" class="unit-history-scrim"></div>

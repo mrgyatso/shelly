@@ -934,11 +934,123 @@
   min-height: 0;
   overflow: hidden; /* fixed layout: the terminal + drawer scroll internally, not the unit */
   display: flex;
+  flex-direction: row; /* [rail] [pane] — rail is the session switcher */
+  gap: 0;
+  padding: 0;
+}
+.board-unit[hidden] { display: none; }
+
+/* The pane that swaps per session — carries the toolbar + stacked surfaces. The
+   L2 padding lives here (not on .board-unit) so the rail can sit flush-left. */
+.unit-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 8px 26px 26px;
+  overflow: hidden;
 }
-.board-unit[hidden] { display: none; }
+
+/* =========================================================================
+   L2 SESSION RAIL — browser-style vertical tabs. One tab per live unit; click
+   to swap the pane to that session (the shell stays put). Hidden when there's
+   only one live unit. State dot mirrors the Status Board bands.
+   ========================================================================= */
+.unit-rail {
+  flex: 0 0 auto;
+  width: 208px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 8px 16px;
+  overflow-y: auto;
+  border-right: 1px solid var(--line-2);
+  background: var(--board);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.unit-rail[hidden] { display: none; }
+
+.unit-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 9px;
+  padding: 8px 10px 8px 12px;
+  cursor: pointer;
+  color: var(--ink-2);
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+/* Active-tab accent bar, browser style — grows in when selected. */
+.unit-tab::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 0;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: height 0.16s var(--ease);
+}
+.unit-tab:hover { background: var(--card); color: var(--ink); }
+.unit-tab.active {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--sh-art);
+  outline: 1px solid var(--line-2);
+  outline-offset: -1px;
+  cursor: default;
+}
+.unit-tab.active::before { height: 18px; }
+
+.unit-tab-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--idle); }
+.unit-tab-dot.needs { background: var(--accent); }
+.unit-tab-dot.run { background: var(--ok); }
+.unit-tab-mark {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.unit-tab-mark.cloud { box-shadow: inset 0 0 0 1px oklch(0.55 0.13 75 / 0.4); }
+.unit-tab-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 500 12.5px/1.3 var(--ui-font);
+  letter-spacing: -0.01em;
+}
+.unit-tab-unread {
+  flex: 0 0 auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  font: 600 9.5px/1 var(--mono);
+  color: var(--board);
+  background: var(--accent);
+}
 
 /* L2 toolbar — a thin paper strip carrying the history-drawer toggle (☰) and the
    hero collapse toggle. The mandatory Board controls live in the top bar; these are

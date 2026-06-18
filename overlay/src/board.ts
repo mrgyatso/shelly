@@ -188,6 +188,7 @@ let sessionsEl: HTMLElement;
 let unitEl: HTMLElement;
 let digestEl: HTMLIFrameElement;
 let historyEl: HTMLElement;
+let railEl: HTMLElement | null = null;
 let histToggleEl: HTMLElement | null = null;
 let heroToggleEl: HTMLElement | null = null;
 let unitTitleEl: HTMLElement | null = null;
@@ -220,6 +221,7 @@ export async function initBoard(): Promise<void> {
   unitEl = unit;
   digestEl = digest;
   historyEl = history;
+  railEl = document.getElementById("unit-rail");
   const terminalsSlot = document.getElementById("unit-terminals");
   if (terminalsSlot) initOwnedTerminals(terminalsSlot, { resolveDir: unitDirOf });
   stage.removeAttribute("hidden");
@@ -680,12 +682,50 @@ function renderUnits(): void {
   const sub = document.getElementById("sessions-sub");
   if (!grid) return;
   const now = Date.now();
+  const r = computeRoster(now);
+
+  const bands: HTMLElement[] = [];
+  if (r.needs.length) bands.push(buildBand("Needs you", "needs", r.needs, r.byUnit, r.artsByUnit, now));
+  if (r.running.length) bands.push(buildBand("Running", "run", r.running, r.byUnit, r.artsByUnit, now));
+  if (r.idle.length) bands.push(buildBand("Idle", "idle", r.idle, r.byUnit, r.artsByUnit, now));
+  if (!bands.length) {
+    const empty = document.createElement("div");
+    empty.className = "sb-empty";
+    empty.textContent = "No live sessions. Start one with + above.";
+    bands.push(empty);
+  }
+
+  if (sub) {
+    const u = r.order.length;
+    sub.textContent = `${u} live unit${u === 1 ? "" : "s"} · ${r.liveCount} agent${r.liveCount === 1 ? "" : "s"} · ${allArtifacts.length} artifact${allArtifacts.length === 1 ? "" : "s"}`;
+  }
+  grid.replaceChildren(...bands);
+}
+
+type Band = "needs" | "run" | "idle";
+
+interface Roster {
+  byUnit: Map<string, LiveSource[]>;
+  artsByUnit: Map<string, ArtifactEntry[]>;
+  needs: string[];
+  running: string[];
+  idle: string[];
+  /** needs ++ running ++ idle — priority order, shared by the roster + rail. */
+  order: string[];
+  bandOf: Map<string, Band>;
+  liveCount: number;
+}
+
+/** The live roster, computed once and shared by the L1 Status Board and the L2
+ *  rail: units with ≥1 live source plus Board-owned terminals (a session you
+ *  launched here stays reachable even after its live file is gone). A unit you
+ *  explicitly closed stays gone even if its owned terminal lingers. Classified
+ *  by what you owe each: decision/blocked → needs; active agent → run; quiet
+ *  owned terminal → idle. */
+function computeRoster(now: number): Roster {
   const byUnit = groupSourcesByUnit();
   const artsByUnit = groupArtifactsByUnit();
 
-  // The live set: units with ≥1 live source, plus Board-owned terminals (a session
-  // you launched here stays reachable even after its live file is gone). A unit you
-  // explicitly closed stays gone even if its owned terminal lingers.
   const live = new Set<string>();
   for (const [unit, sources] of byUnit) {
     if (sources.some((s) => isLiveSource(s, now))) live.add(unit);
@@ -697,40 +737,90 @@ function renderUnits(): void {
     live.add(ou);
   }
 
-  // Triage is the layout: a blocked/decision next step → Needs you; an active agent
-  // → Running; a quiet owned terminal → Idle.
   const needs: string[] = [];
   const running: string[] = [];
   const idle: string[] = [];
+  const bandOf = new Map<string, Band>();
   let liveCount = 0;
   for (const unit of live) {
     const sources = byUnit.get(unit) ?? [];
     const liveN = sources.filter((s) => isLiveSource(s, now)).length;
     liveCount += liveN;
-    if (unitNeedsYou(sources, now)) needs.push(unit);
-    else if (liveN > 0) running.push(unit);
-    else idle.push(unit);
+    const band: Band = unitNeedsYou(sources, now) ? "needs" : liveN > 0 ? "run" : "idle";
+    bandOf.set(unit, band);
+    (band === "needs" ? needs : band === "run" ? running : idle).push(unit);
   }
 
-  const bands: HTMLElement[] = [];
-  if (needs.length) bands.push(buildBand("Needs you", "needs", needs, byUnit, artsByUnit, now));
-  if (running.length) bands.push(buildBand("Running", "run", running, byUnit, artsByUnit, now));
-  if (idle.length) bands.push(buildBand("Idle", "idle", idle, byUnit, artsByUnit, now));
-  if (!bands.length) {
-    const empty = document.createElement("div");
-    empty.className = "sb-empty";
-    empty.textContent = "No live sessions. Start one with + above.";
-    bands.push(empty);
-  }
-
-  if (sub) {
-    const u = live.size;
-    sub.textContent = `${u} live unit${u === 1 ? "" : "s"} · ${liveCount} agent${liveCount === 1 ? "" : "s"} · ${allArtifacts.length} artifact${allArtifacts.length === 1 ? "" : "s"}`;
-  }
-  grid.replaceChildren(...bands);
+  return {
+    byUnit,
+    artsByUnit,
+    needs,
+    running,
+    idle,
+    order: [...needs, ...running, ...idle],
+    bandOf,
+    liveCount,
+  };
 }
 
-type Band = "needs" | "run" | "idle";
+/** Render the L2 session rail — browser-style vertical tabs, one per live unit,
+ *  in priority order. Clicking a tab swaps the pane to that session; the shell
+ *  stays put. Hidden when there's only one live unit (nothing to switch to). */
+function renderUnitRail(activeUnitKey: string | null): void {
+  if (!railEl) return;
+  const now = Date.now();
+  const { order, byUnit, bandOf } = computeRoster(now);
+  if (order.length < 2) {
+    railEl.replaceChildren();
+    railEl.setAttribute("hidden", "");
+    return;
+  }
+  railEl.removeAttribute("hidden");
+  const tabs = order.map((unit) =>
+    buildRailTab(unit, byUnit.get(unit) ?? [], bandOf.get(unit) ?? "idle", unit === activeUnitKey),
+  );
+  railEl.replaceChildren(...tabs);
+}
+
+/** One rail tab: a state dot, the unit's mark, its name, an unread badge. The
+ *  active tab is highlighted and inert; others drill in on click. */
+function buildRailTab(
+  unitKey: string,
+  sources: LiveSource[],
+  band: Band,
+  active: boolean,
+): HTMLElement {
+  const head = sources[0] ? makeHead(sources[0]) : ownedHead();
+  const name = unitName(unitKey, sources);
+  const tab = document.createElement("button");
+  tab.className = "unit-tab" + (active ? " active" : "");
+  tab.dataset.unit = unitKey;
+  const work = sources[0]
+    ? parseState(sources[0].json).working || parseState(sources[0].json).next?.[0]?.title || "Idle"
+    : "Launched from the Board";
+  tab.title = `${name} — ${work}`;
+
+  const dot = document.createElement("span");
+  dot.className = `unit-tab-dot ${band}`;
+  const mark = document.createElement("span");
+  mark.className = "unit-tab-mark" + (head.isCloud ? " cloud" : "");
+  mark.textContent = head.mark;
+  const nameEl = document.createElement("span");
+  nameEl.className = "unit-tab-name";
+  nameEl.textContent = name;
+  tab.append(dot, mark, nameEl);
+
+  const unread = unreadCount(unitKey);
+  if (unread > 0) {
+    const badge = document.createElement("span");
+    badge.className = "unit-tab-unread";
+    badge.textContent = unread > 9 ? "9+" : String(unread);
+    tab.append(badge);
+  }
+
+  if (!active) tab.addEventListener("click", () => goUnit(unitKey));
+  return tab;
+}
 
 /** The freshest live source blocked on you (top next-step is a decision/blocked),
  *  or null. Drives both the band split and the row's decision chip, so the chip
@@ -984,6 +1074,7 @@ function enterUnit(unitKey: string): void {
   updateGlobalUnread();
   focusPath = null;
   currentUnitKey = unitKey;
+  renderUnitRail(unitKey);
   renderUnitTitle(unitKey);
   void renderHero(unitKey);
   renderHistory(unitKey);
@@ -1724,10 +1815,12 @@ async function pollLive(): Promise<void> {
     changed.push(s.source);
   }
   if (changed.length) {
-    // L1 refreshes its unit cards' live status. L2 (hero + history) is
-    // artifact-driven, not live-state-driven, so it ignores live changes; the
-    // L0 Hub re-resolves on entry only.
+    // L1 refreshes its unit cards' live status. L2's hero + history are
+    // artifact-driven, but its rail mirrors live state — refresh it so a session
+    // appearing/quieting updates the switcher in place. The L0 Hub re-resolves
+    // on entry only.
     if (view.level === "sessions") renderUnits();
+    else if (view.level === "unit") renderUnitRail(view.unitKey);
   }
 
   // Live artifact ingestion — act only when the set actually changed.
