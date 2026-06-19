@@ -160,16 +160,11 @@
           </nav>
           <!-- The pane that swaps per session AND per nav destination. -->
           <div class="unit-pane">
-            <!-- L2 toolbar: the in-session rename title. (Surface resizing moved to
-                 the focus strip between the artifact and terminal below.) -->
+            <!-- L2 toolbar: the in-session rename title + surface controls. -->
             <div class="unit-toolbar">
               <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
-            </div>
-            <!-- SESSION view: the artifact hero + the live terminal (always present —
-                 a unit IS a session). Sized by the floating controls top-right. -->
-            <div class="unit-main">
-              <!-- Floating, sticky surface controls: resize the two surfaces (⬒/⊟/⬓),
-                   a live status dot, and ✕ to end the session. Always reachable. -->
+              <!-- Surface controls: resize (⬒/⊟/⬓), status dot, end session. Lives in
+                   the toolbar so it never overlaps the artifact/terminal pills below. -->
               <div id="unit-surface-controls" class="surface-controls">
                 <div class="sc-resize" role="group" aria-label="Resize surfaces">
                   <button class="surface-focus" type="button" data-focus="artifact" title="Focus the artifact" aria-label="Focus the artifact">⬒</button>
@@ -180,6 +175,10 @@
                 <span id="unit-term-dot" class="sc-dot" title="Session"></span>
                 <button id="unit-term-close" class="sc-close" type="button" title="End this session" aria-label="End session">✕</button>
               </div>
+            </div>
+            <!-- SESSION view: the artifact hero + the live terminal (always present —
+                 a unit IS a session). -->
+            <div class="unit-main">
               <!-- Artifact restore pill — shown only when the artifact is tucked. -->
               <button id="unit-artifact-pill" class="surface-pill" type="button">
                 <span class="surface-pill-ico">▤</span>

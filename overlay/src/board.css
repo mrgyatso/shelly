@@ -93,17 +93,12 @@
    ========================================================================= */
 .board {
   position: relative;
-  width: min(96vw, 1680px);
-  height: min(94vh, 1000px);
+  /* Fill the stage window — no letterboxing. The stage's border-radius +
+     overflow:hidden clips to the rounded transparent window shape. */
+  width: 100%;
+  height: 100%;
   background: var(--board);
-  border-radius: 20px;
-  /* Crisp black frame around the whole Board shell (the surface, not the
-     transparent letterbox stage). The ring sits just inside the shadow stack. */
   border: 2px solid #000;
-  box-shadow:
-    0 0 0 1px oklch(0.2 0.01 55 / 0.5),
-    0 40px 120px oklch(0 0 0 / 0.45),
-    0 8px 30px oklch(0 0 0 / 0.3);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -119,12 +114,9 @@
   opacity: 0.035;
   mix-blend-mode: multiply;
 }
-/* When the Board window is maximized (Rust set_board_fullscreen), the surface
-   fills it edge-to-edge; the stage's dark gradient still shows on monitors
-   wider than the max width. */
+/* When maximized the stage border-radius is 0, so the board's border goes
+   full-bleed to the screen edges. */
 .stage.fullscreen .board {
-  width: 100%;
-  height: 100%;
   border-radius: 0;
 }
 
@@ -1230,14 +1222,11 @@
   min-height: 0;
 }
 
-/* Floating surface controls — one warm cluster pinned top-right of the session
-   view: resize the two surfaces (⬒/⊟/⬓), a live status dot, and ✕ to end the
-   session. Always reachable (the surfaces scroll internally; this stays put). */
+/* Surface controls — inline in the unit toolbar, right-justified.
+   Resize the two surfaces (⬒/⊟/⬓), a live status dot, and ✕ to end the
+   session. Toolbar placement prevents overlap with the artifact/terminal pills. */
 .surface-controls {
-  position: absolute;
-  top: 10px;
-  right: 14px;
-  z-index: 6;
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 7px;
