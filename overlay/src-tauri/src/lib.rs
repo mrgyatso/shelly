@@ -5,6 +5,7 @@ mod layout;
 mod live;
 mod macos_panel;
 mod pty;
+mod sessions;
 mod tray;
 mod windows;
 
@@ -149,6 +150,7 @@ pub fn run() {
             pty::submit_pty,
             pty::resize_pty,
             pty::close_pty,
+            sessions::list_recent_sessions,
             hub::read_live_from_hub,
             hub::hub_config_get,
             hub::hub_config_set,

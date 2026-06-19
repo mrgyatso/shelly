@@ -67,6 +67,17 @@ interface LiveSource {
   json: string;
 }
 
+/** A resumable, NON-live session from Claude Code's own transcripts (list_recent_sessions).
+ *  Drives the roster's "Recent" band — click to `claude --resume` it in its original cwd. */
+interface RecentSession {
+  session_id: string;
+  cwd: string;
+  project: string;
+  last_active_ms: number;
+  size_bytes: number;
+  title?: string | null;
+}
+
 interface NextItem {
   title: string;
   sub?: string;
@@ -144,6 +155,9 @@ const lastJsonBySource = new Map<string, string>();
 /** Raw data read once in initBoard; the router re-scopes it per view. */
 let allSources: LiveSource[] = [];
 let allArtifacts: ArtifactEntry[] = [];
+/** Resumable closed sessions (from claude's transcripts), refreshed on a slow cadence —
+ *  the source for the roster's "Recent" band. */
+let allRecent: RecentSession[] = [];
 /** A "+ New session" terminal awaiting its first live source, so pollLive can
  *  navigate to its unit once it correlates. */
 let pendingNavTab: string | null = null;
@@ -202,29 +216,6 @@ let unitTitleEl: HTMLElement | null = null;
 let currentUnitKey: string | null = null;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
-
-/** Local calendar-day key (YYYY-M-D) for the once-a-day Hub landing. */
-function todayKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-}
-const LAST_HOME_KEY = "companion:lastHomeDate";
-/** True the first time the Board is opened on a given calendar day. The Hub is a
- *  daily landing: shown once, then dropped from the back stack on first forward nav. */
-function isNewDay(): boolean {
-  try {
-    return localStorage.getItem(LAST_HOME_KEY) !== todayKey();
-  } catch {
-    return true; // storage blocked → treat each open as the daily landing
-  }
-}
-function markDailyLanded(): void {
-  try {
-    localStorage.setItem(LAST_HOME_KEY, todayKey());
-  } catch {
-    /* non-fatal */
-  }
-}
 
 export async function initBoard(): Promise<void> {
   const stage = document.getElementById("board-stage");
@@ -321,16 +312,17 @@ export async function initBoard(): Promise<void> {
   lastArtifactSig = artifactSig(allArtifacts);
   window.setInterval(() => void pollLive(), POLL_MS);
 
-  // First open of the day lands on the Hub (the daily home); later opens go
-  // straight to the live roster. The Hub is a landing — the first forward nav off
-  // it drops it from the back stack (goSessions/goUnit), so the back arrow can
-  // never return to it.
-  if (isNewDay()) {
-    markDailyLanded();
-    await goHub();
-  } else {
-    goSessions();
-  }
+  // Recent (resumable, closed) sessions change slowly — load once, then refresh on a
+  // much calmer cadence than the live poll (each refresh scans transcript heads).
+  void loadRecent();
+  window.setInterval(() => void loadRecent(), POLL_MS * 20);
+
+  // Every TRUE app relaunch lands on the L0 Hub. initBoard runs once per process — a
+  // fresh launch creates the Board window (→ this runs), but a mere hide/show of the
+  // window does NOT (open_board_window just show()s the existing one). So putting the
+  // Board away and reopening it KEEPS YOUR PLACE; only a real relaunch returns home.
+  // (Per the user's pick: "only true app relaunch.")
+  await goHub();
 
   // A popover row click stores a deep-link target; drain it (fresh window). An
   // already-open Board catches the same target via the `board:navigate` event.
@@ -374,23 +366,22 @@ async function newFolderSession(): Promise<void> {
  *  (claude's first-run trust prompt blocks SessionStart, so the user must SEE
  *  the terminal first).
  *
- *  Provisional choice matters: in a REPO the basename IS the real unit_key (so
- *  two sessions in one repo correctly share one unit). In a NON-repo the real
- *  unit_key is `slug--shortid` (unique per session) and the basename COLLIDES —
- *  e.g. every `~` session is "gyatso". A bare-basename provisional there makes
- *  two home sessions shadow each other (one terminal "disappears") and closing
- *  one can end both before its resume id is recorded → `--resume` fails. So we
- *  give non-repos a UNIQUE provisional; correlation re-homes it to the real unit. */
+ *  Provisional choice: every session is its own unit (unit_key = slug--shortid),
+ *  so the provisional is ALWAYS unique (`base~N`). A 2nd session in the same repo
+ *  must not share the first's basename — that's what made two same-repo sessions
+ *  collapse onto one card and shadow each other (one terminal "disappears", and
+ *  closing one could end both before its resume id was recorded → `--resume`
+ *  fails). Correlation (reconcileBindings) re-homes the unique provisional to the
+ *  session's real unit_key once its live file appears. */
 let provisionalSeq = 0;
 async function launchSessionIn(dir: string): Promise<void> {
   const base = dir.split("/").filter(Boolean).pop() || dir;
-  let isRepo = false;
-  try {
-    isRepo = await invoke<boolean>("path_is_repo", { dir });
-  } catch (e) {
-    console.error("path_is_repo failed", e); // safe fallback: treat as non-repo
-  }
-  const provisional = isRepo ? base : `${base}~${++provisionalSeq}`;
+  // Every session is its own unit now (unit_key = slug--shortid, set by the
+  // SessionStart hook), so a freshly spawned session ALWAYS gets a UNIQUE
+  // provisional — even a 2nd session in the same repo must not collapse onto the
+  // first's card during the pre-correlation window. Correlation (reconcileBindings)
+  // re-homes it to its real per-session unit_key once its live file appears.
+  const provisional = `${base}~${++provisionalSeq}`;
   try {
     pendingNavTab = await spawnOwnedSession(dir, provisional);
     goUnit(provisional);
@@ -747,6 +738,17 @@ function unitName(unitKey: string, sources: LiveSource[]): string {
  *  you owe them — Needs you (a decision/blocked next step) · Running (an active
  *  agent) · Idle (a Board terminal gone quiet). Stale/closed units and the orphan
  *  "Unsourced" artifacts are NOT shown here — they live in searchable History. */
+/** Poll/timer-driven roster refresh that YIELDS to an in-progress drag. Rebuilding
+ *  the cards mid-drag (renderUnits does replaceChildren) would destroy the dragged
+ *  node and silently break the drop — the same don't-re-render-under-interaction
+ *  rule as the sticky hero. reorderUnit's own post-drop renderUnits() still paints
+ *  the new order (drop fires before dragend, so draggingUnit is set then — which is
+ *  why the guard lives here on the poll callers, not inside renderUnits). */
+function renderUnitsLive(): void {
+  if (draggingUnit !== null) return;
+  renderUnits();
+}
+
 function renderUnits(): void {
   const grid = document.getElementById("board-sessions-grid");
   const sub = document.getElementById("sessions-sub");
@@ -758,6 +760,10 @@ function renderUnits(): void {
   if (r.needs.length) bands.push(buildBand("Needs you", "needs", r.needs, r.byUnit, r.artsByUnit, now));
   if (r.running.length) bands.push(buildBand("Running", "run", r.running, r.byUnit, r.artsByUnit, now));
   if (r.idle.length) bands.push(buildBand("Idle", "idle", r.idle, r.byUnit, r.artsByUnit, now));
+  // Recent: closed-but-resumable sessions (from claude's transcripts) sit below the live
+  // bands — pick up yesterday's work in one click without making a new session first.
+  const recent = recentToShow();
+  if (recent.length) bands.push(buildRecentBand(recent));
   if (!bands.length) {
     const empty = document.createElement("div");
     empty.className = "sb-empty";
@@ -770,6 +776,133 @@ function renderUnits(): void {
     sub.textContent = `${u} live unit${u === 1 ? "" : "s"} · ${r.liveCount} agent${r.liveCount === 1 ? "" : "s"} · ${allArtifacts.length} artifact${allArtifacts.length === 1 ? "" : "s"}`;
   }
   grid.replaceChildren(...bands);
+}
+
+// ---- Recent sessions (resumable, from claude's transcripts) ------------------
+
+/** Refresh the resumable-sessions list; re-render the roster if it's on screen. */
+async function loadRecent(): Promise<void> {
+  try {
+    allRecent = await invoke<RecentSession[]>("list_recent_sessions", { limit: 40 });
+  } catch (e) {
+    console.error("list_recent_sessions failed", e);
+    return;
+  }
+  rebuildHeartbeats();
+  if (currentView().level === "sessions") renderUnitsLive();
+}
+
+/** Transcript-mtime heartbeat by session shortid (first 8 of the session_id),
+ *  rebuilt whenever `allRecent` refreshes. Claude Code rewrites a session's
+ *  transcript every turn — a FREE liveness signal needing no agent live.json
+ *  rewrite — so a long-running session stays on the roster even after its live
+ *  file goes stale. See `isLiveSource`. */
+let heartbeatByShortId = new Map<string, number>();
+function rebuildHeartbeats(): void {
+  const m = new Map<string, number>();
+  for (const r of allRecent) {
+    const sid = r.session_id.slice(0, 8);
+    if (r.last_active_ms > (m.get(sid) ?? 0)) m.set(sid, r.last_active_ms);
+  }
+  heartbeatByShortId = m;
+}
+
+/** session_ids that are currently LIVE (owned sessions inject session_id into their live
+ *  file) — excluded from Recent so a running session never also shows as "resumable". */
+function liveSessionIds(): Set<string> {
+  const set = new Set<string>();
+  for (const s of allSources) {
+    const st = parseState(s.json);
+    // A closed-out (dismissed) session is no longer live — it belongs in Recent as
+    // a rejoinable session, so don't let its lingering session_id exclude it there.
+    if (st.dismissed === true) continue;
+    if (st.session_id) set.add(st.session_id);
+  }
+  return set;
+}
+
+/** Empty/ghost transcripts (a session that registered but never did real work) are below
+ *  this size — kept out of Recent so the band is only genuinely resumable work. */
+const RECENT_MIN_BYTES = 1500;
+const RECENT_MAX_ROWS = 8;
+
+/** The resumable, non-live sessions to surface (newest-first from Rust, deduped + capped). */
+function recentToShow(): RecentSession[] {
+  const live = liveSessionIds();
+  return allRecent
+    .filter((r) => r.cwd && r.size_bytes >= RECENT_MIN_BYTES && !live.has(r.session_id))
+    .slice(0, RECENT_MAX_ROWS);
+}
+
+/** Resume a closed session: spawn `claude --resume <id>` in its original cwd under a
+ *  unique provisional unit, then let correlation re-home it to its real per-session unit. */
+async function resumeRecentSession(rs: RecentSession): Promise<void> {
+  const base = rs.project || rs.cwd.split("/").filter(Boolean).pop() || "session";
+  const provisional = `${base}~${++provisionalSeq}`;
+  try {
+    pendingNavTab = await spawnOwnedSession(rs.cwd, provisional, rs.session_id);
+    goUnit(provisional);
+  } catch (e) {
+    console.error("resume session failed", rs.session_id, e);
+  }
+}
+
+/** The "Recent" band: closed-but-resumable sessions, click any to rejoin. */
+function buildRecentBand(recent: RecentSession[]): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "sb-band";
+  const head = document.createElement("div");
+  head.className = "sb-bandhead";
+  const lbl = document.createElement("span");
+  lbl.className = "sb-lbl";
+  lbl.textContent = "Recent";
+  const ct = document.createElement("span");
+  ct.className = "sb-ct";
+  ct.textContent = String(recent.length);
+  const ln = document.createElement("span");
+  ln.className = "sb-ln";
+  head.append(lbl, ct, ln);
+  section.append(head);
+  for (const rs of recent) section.append(buildRecentRow(rs));
+  return section;
+}
+
+/** One resumable session row: [mark][project · last-active / first prompt][↻ Resume]. */
+function buildRecentRow(rs: RecentSession): HTMLElement {
+  const row = document.createElement("button");
+  row.className = "sb-item recent";
+  row.title = `Resume — ${rs.cwd}`;
+
+  const mark = document.createElement("span");
+  mark.className = "sb-mark";
+  mark.textContent = markFor(rs.project || rs.cwd);
+
+  const main = document.createElement("div");
+  main.className = "sb-main";
+  const nameRow = document.createElement("div");
+  nameRow.className = "sb-name";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = rs.project || "session";
+  const loc = document.createElement("span");
+  loc.className = "loc";
+  loc.textContent = relTime(rs.last_active_ms);
+  nameRow.append(name, loc);
+  const work = document.createElement("div");
+  work.className = "sb-work";
+  work.textContent = rs.title || "(no preview)";
+  main.append(nameRow, work);
+
+  const right = document.createElement("div");
+  right.className = "sb-right";
+  const resume = document.createElement("span");
+  resume.className = "sb-resume";
+  resume.textContent = "↻ Resume";
+  right.append(resume);
+
+  row.append(mark, main, right);
+  row.addEventListener("click", () => void resumeRecentSession(rs));
+  return row;
 }
 
 type Band = "needs" | "run" | "idle";
@@ -792,6 +925,57 @@ interface Roster {
  *  explicitly closed stays gone even if its owned terminal lingers. Classified
  *  by what you owe each: decision/blocked → needs; active agent → run; quiet
  *  owned terminal → idle. */
+// ---- manual session order (drag-to-reorder, persisted) ---------------------
+
+/** The unit currently being dragged in the roster, or null. */
+let draggingUnit: string | null = null;
+/** localStorage key holding the user's manual unit order (array of unit_keys).
+ *  Board-local persistence, like the rail-collapse flag — survives relaunch. */
+const ORDER_KEY = "companion:sessionOrder";
+
+function loadOrder(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(ORDER_KEY) || "[]");
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+function saveOrder(order: string[]): void {
+  try {
+    localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+  } catch {
+    /* storage disabled — reorder just won't persist */
+  }
+}
+
+/** Sort `units` by the saved manual order; units with no saved position keep their
+ *  incoming (default) order, after the placed ones (stable). */
+function applyManualOrder(units: string[]): string[] {
+  const order = loadOrder();
+  const pos = (u: string): number => {
+    const i = order.indexOf(u);
+    return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return units
+    .map((u, i) => [u, i] as const)
+    .sort((a, b) => pos(a[0]) - pos(b[0]) || a[1] - b[1])
+    .map(([u]) => u);
+}
+
+/** Move `dragged` to sit just before `target` in the persisted order, then
+ *  re-render. Rebuilds the full order from the current roster each time so the
+ *  saved list stays complete and well-defined regardless of band membership. */
+function reorderUnit(dragged: string, target: string): void {
+  if (dragged === target) return;
+  const current = applyManualOrder(computeRoster(Date.now()).order).filter((u) => u !== dragged);
+  const ti = current.indexOf(target);
+  if (ti < 0) return;
+  current.splice(ti, 0, dragged);
+  saveOrder(current);
+  renderUnits();
+}
+
 function computeRoster(now: number): Roster {
   const byUnit = groupSourcesByUnit();
   const artsByUnit = groupArtifactsByUnit();
@@ -821,13 +1005,18 @@ function computeRoster(now: number): Roster {
     (band === "needs" ? needs : band === "run" ? running : idle).push(unit);
   }
 
+  // Apply the user's manual drag order within each band (status still decides the
+  // band; the saved order decides position inside it).
+  const oNeeds = applyManualOrder(needs);
+  const oRunning = applyManualOrder(running);
+  const oIdle = applyManualOrder(idle);
   return {
     byUnit,
     artsByUnit,
-    needs,
-    running,
-    idle,
-    order: [...needs, ...running, ...idle],
+    needs: oNeeds,
+    running: oRunning,
+    idle: oIdle,
+    order: [...oNeeds, ...oRunning, ...oIdle],
     bandOf,
     liveCount,
   };
@@ -1018,7 +1207,91 @@ function buildStatusRow(
 
   row.append(mark, main, right);
   row.addEventListener("click", () => goUnit(unitKey));
+  row.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    showUnitMenu(e, unitKey, sources);
+  });
+
+  // Drag to reorder within a band; the order persists (localStorage). A click
+  // without movement still drills in — DnD and click coexist on the same element.
+  row.draggable = true;
+  row.addEventListener("dragstart", (e) => {
+    draggingUnit = unitKey;
+    row.classList.add("dragging");
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", unitKey);
+    }
+  });
+  row.addEventListener("dragend", () => {
+    row.classList.remove("dragging");
+    draggingUnit = null;
+  });
+  row.addEventListener("dragover", (e) => {
+    if (!draggingUnit || draggingUnit === unitKey) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    row.classList.add("drop-target");
+  });
+  row.addEventListener("dragleave", () => row.classList.remove("drop-target"));
+  row.addEventListener("drop", (e) => {
+    e.preventDefault();
+    row.classList.remove("drop-target");
+    if (draggingUnit && draggingUnit !== unitKey) reorderUnit(draggingUnit, unitKey);
+  });
   return row;
+}
+
+/** Right-click context menu for a session card: open it, or close it out (end its
+ *  Board-launched terminal + drop it to Recent, where it stays one click from a
+ *  `claude --resume`). One menu at a time; dismissed on any outside click, Esc, or
+ *  scroll. The hover ✕ does the same close; this is the discoverable right-click. */
+function showUnitMenu(e: MouseEvent, unitKey: string, sources: LiveSource[]): void {
+  document.querySelector(".ctx-menu")?.remove();
+  const menu = document.createElement("div");
+  menu.className = "ctx-menu";
+
+  const add = (label: string, fn: () => void, danger = false): void => {
+    const it = document.createElement("button");
+    it.className = "ctx-item" + (danger ? " danger" : "");
+    it.textContent = label;
+    it.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      close();
+      fn();
+    });
+    menu.append(it);
+  };
+  add("Open", () => goUnit(unitKey));
+  add("Close out", () => void closeUnit(unitKey, sources), true);
+
+  menu.style.left = `${e.clientX}px`;
+  menu.style.top = `${e.clientY}px`;
+  // Mount inside .stage so it inherits the board's warm design tokens (it's
+  // position:fixed, so the parent doesn't affect where it lands).
+  (document.querySelector(".stage") ?? document.body).append(menu);
+  // Clamp to the viewport so a card near the edge doesn't push the menu off-screen.
+  const r = menu.getBoundingClientRect();
+  if (r.right > window.innerWidth) menu.style.left = `${window.innerWidth - r.width - 8}px`;
+  if (r.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - r.height - 8}px`;
+
+  const close = (): void => {
+    menu.remove();
+    document.removeEventListener("mousedown", onDoc, true);
+    document.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("scroll", close, true);
+  };
+  const onDoc = (ev: MouseEvent): void => {
+    if (!menu.contains(ev.target as Node)) close();
+  };
+  const onKey = (ev: KeyboardEvent): void => {
+    if (ev.key === "Escape") close();
+  };
+  setTimeout(() => {
+    document.addEventListener("mousedown", onDoc, true);
+    document.addEventListener("keydown", onKey, true);
+    window.addEventListener("scroll", close, true);
+  }, 0);
 }
 
 function isTodoKind(kind?: string): boolean {
@@ -1147,16 +1420,38 @@ function enterUnit(unitKey: string): void {
   renderUnitTitle(unitKey);
   void renderHero(unitKey);
   renderHistory(unitKey);
-  // Reveal this unit's Board-owned terminal — auto-starting one if it has none
-  // (a unit IS a session). Existing terminals show immediately; a missing one
-  // spawns first, then shows, so there's no empty-panel flash.
+  // Reveal this unit's Board-owned terminal. A unit is one specific session, so
+  // entry never FRESH-spawns: an existing Board terminal shows immediately; a
+  // Board-launched session whose terminal is gone (e.g. after a Board restart) is
+  // RESUMED (same id ⇒ same unit ⇒ reusable); an external session has no terminal
+  // the Board can attach to, so it shows its hero + history only.
   void ensureAndShowTerminal(unitKey);
 }
 
-/** Show the unit's terminal, auto-starting one if it has none. */
+/** Reveal the unit's terminal. Resume a Board-launched session if its terminal is
+ *  missing in THIS process; never fresh-spawn (that would clone — see
+ *  ensureOwnedTerminal) and never spawn for an external session (no resume id). */
 async function ensureAndShowTerminal(unitKey: string): Promise<void> {
-  if (!ownedTabForUnit(unitKey)) await ensureOwnedTerminal(unitKey);
+  if (!ownedTabForUnit(unitKey)) {
+    const resumeId = resumableSessionFor(unitKey);
+    if (resumeId) await ensureOwnedTerminal(unitKey, resumeId);
+    // No resume id ⇒ external session running in the user's own terminal: the
+    // Board can't attach to a PTY it doesn't own, so it shows the unit's state
+    // only and NEVER spawns a duplicate claude (the hook's documented intent).
+  }
   if (currentUnitKey === unitKey) showOwnedTerminals(unitKey);
+}
+
+/** The resumable Claude session id for a unit, or null. Present only for sessions
+ *  the Board launched (session-ids.json is hook-guarded on COMPANION_SESSION), so
+ *  this cleanly gates resume-on-entry: Board-launched ⇒ resume; external ⇒ never. */
+function resumableSessionFor(unitKey: string): string | null {
+  for (const s of allSources) {
+    if (unitKeyOf(s) !== unitKey) continue;
+    const id = parseState(s.json).session_id;
+    if (id) return id;
+  }
+  return null;
 }
 
 /** Tear down L2 state when leaving a unit. Clears any L2 hero bar theming so a
@@ -1355,6 +1650,27 @@ function wireUnitChrome(): void {
     const nameEl = unitTitleEl?.querySelector(".unit-title-name") as HTMLElement | null;
     if (nameEl) startRename(currentUnitKey, nameEl, () => renderUnitTitle(currentUnitKey!));
   });
+
+  // Collapse / expand the left rail to reclaim space. Persisted so it survives reloads;
+  // the « (rail bottom) hides it, the » (toolbar) brings it back.
+  const setRailCollapsed = (c: boolean): void => {
+    if (!unitEl) return;
+    if (c) unitEl.dataset.railCollapsed = "1";
+    else delete unitEl.dataset.railCollapsed;
+    try {
+      localStorage.setItem("companion:railCollapsed", c ? "1" : "0");
+    } catch {
+      /* non-fatal */
+    }
+    fitShownTerminal(); // the pane just grew/shrank — refit the terminal to it
+  };
+  document.getElementById("unit-rail-collapse")?.addEventListener("click", () => setRailCollapsed(true));
+  document.getElementById("unit-rail-expand")?.addEventListener("click", () => setRailCollapsed(false));
+  try {
+    if (localStorage.getItem("companion:railCollapsed") === "1" && unitEl) unitEl.dataset.railCollapsed = "1";
+  } catch {
+    /* non-fatal */
+  }
 }
 
 /** Paint the L2 toolbar title with the unit's display name (custom override or
@@ -1499,17 +1815,31 @@ function sourceUpdatedMs(s: LiveSource): number {
   return parseState(s.json).updated_ms ?? 0;
 }
 
+/** The shortid half of a source stem (`<slug>--<shortid>`). */
+function shortIdOfSource(source: string): string {
+  const i = source.indexOf("--");
+  return i >= 0 ? source.slice(i + 2) : "";
+}
+
+/** This source's transcript-mtime heartbeat (0 if its session has no scanned
+ *  transcript yet) — the free, agent-independent liveness signal. */
+function sourceHeartbeatMs(s: LiveSource): number {
+  return heartbeatByShortId.get(shortIdOfSource(s.source)) ?? 0;
+}
+
 /** A source the user has manually closed off the roster (sticky; see dismissed.json). */
 function isDismissed(s: LiveSource): boolean {
   return parseState(s.json).dismissed === true;
 }
 
-/** A source is LIVE if its file was touched within LIVENESS_MS and isn't manually
- *  dismissed; else stale. The dismiss flag overrides freshness so a closed
- *  (but still-writing) session stays archived until restored. */
+/** A source is LIVE if it was touched within LIVENESS_MS and isn't manually
+ *  dismissed; else stale. "Touched" = the NEWER of its live-file mtime and its
+ *  transcript heartbeat, so an active session stays live with no per-turn live.json
+ *  rewrite (the transcript is written every turn for free). The dismiss flag
+ *  overrides freshness so a closed (but still-writing) session stays archived. */
 function isLiveSource(s: LiveSource, now: number): boolean {
   if (isDismissed(s)) return false;
-  const u = sourceUpdatedMs(s);
+  const u = Math.max(sourceUpdatedMs(s), sourceHeartbeatMs(s));
   return u > 0 && now - u < LIVENESS_MS;
 }
 
@@ -1944,7 +2274,7 @@ async function pollLive(): Promise<void> {
     // artifact-driven, but its rail mirrors live state — refresh it so a session
     // appearing/quieting updates the switcher in place. The L0 Hub re-resolves
     // on entry only.
-    if (view.level === "sessions") renderUnits();
+    if (view.level === "sessions") renderUnitsLive();
     else if (view.level === "unit") renderUnitRail(view.unitKey);
   }
 
@@ -2013,7 +2343,7 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
 
   maybeAutoAdvance(newOnes);
 
-  if (view.level === "sessions") renderUnits();
+  if (view.level === "sessions") renderUnitsLive();
   else if (view.level === "unit") ingestIntoUnit(view.unitKey);
   updateGlobalUnread();
 }
@@ -2039,16 +2369,22 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
   );
 }
 
-/** Refresh the on-screen unit's HERO + HISTORY when its artifact set changed (a
- *  new artifact may now be the freshest, so the hero re-resolves too). Preserves
- *  scroll. Deferred while the reader overlay is open. */
+/** Refresh the on-screen unit's HISTORY when its artifact set changed. The HERO
+ *  is deliberately STICKY: once a lead surface is shown, a live poll must NOT
+ *  reload it. `loadArtifactInto` cache-busts the iframe `src` on every load, so
+ *  reloading tears down the document — wiping any comment the user is mid-typing
+ *  and bouncing focus to the terminal. New artifacts still surface as unread +
+ *  history rows, and the hero re-resolves on re-entry (enterUnit). The lone
+ *  exception: an empty unit with no hero yet (`digestPath === null`) paints its
+ *  first artifact, so a unit lights up live the moment its first work lands.
+ *  Preserves scroll. Deferred entirely while the reader overlay is open. */
 function ingestIntoUnit(unitKey: string): void {
   if (focusPath !== null) {
     pendingIngest.add(unitKey);
     return;
   }
   const keep = unitEl.scrollTop;
-  void renderHero(unitKey); // a newer artifact may have arrived → refresh the lead surface
+  if (digestPath === null) void renderHero(unitKey); // empty unit → light up its first artifact
   renderHistory(unitKey);
   unitEl.scrollTop = keep;
 }
@@ -2101,16 +2437,6 @@ function wireControls(): void {
   });
   document.getElementById("hub-sessions-btn")?.addEventListener("click", goSessions);
   scrimEl?.addEventListener("click", closeFocus);
-
-  // The Board window persists across days (tray show/hide, not rebuild). On each
-  // reveal, if the calendar day has rolled over, re-land on the daily Hub.
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) return;
-    if (isNewDay()) {
-      markDailyLanded();
-      void goHub();
-    }
-  });
 }
 
 /**
@@ -2159,8 +2485,31 @@ function wireNavigate(): void {
       } else {
         void handleSubmit(d.text, focusPath ?? undefined);
       }
+      // Version-proof "On it" feedback rendered by the BOARD, over the artifact
+      // surface — so even artifacts authored before the in-page splash helper
+      // existed (the shikari-editor bug: "it said submitted but never splashed")
+      // still confirm the submit. It stacks above the iframe, so a newer
+      // artifact's own in-page splash is simply covered (no visible double).
+      showBoardSubmitted();
     }
   });
+}
+
+/** The Board-rendered "submitted" splash — the version-proof complement to the
+ *  artifact helper's in-page `__cmpShowSubmitted`. One at a time; dismiss returns
+ *  to the artifact. Mounted in `.stage` so it inherits the warm tokens and covers
+ *  the artifact surface. */
+function showBoardSubmitted(): void {
+  if (document.querySelector(".board-submitted")) return;
+  const ov = document.createElement("div");
+  ov.className = "board-submitted";
+  ov.innerHTML =
+    '<div class="ring"></div>' +
+    '<div class="msg"><div class="t">On it.</div>' +
+    '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
+    '<button class="b" type="button">← View this artifact</button>';
+  ov.querySelector("button")?.addEventListener("click", () => ov.remove());
+  (document.querySelector(".stage") ?? document.body).append(ov);
 }
 
 /** Submit a compiled artifact answer into a Board-owned PTY and AUTO-SEND it.

@@ -19,6 +19,15 @@ payload=$(cat)
 cwd=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||process.cwd())}catch(e){console.log(process.cwd())}})')
 session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})')
 
+# Ignore tool-internal observer sessions. claude-mem (and similar) spawn long-lived
+# `claude` processes under ~/.claude-mem/observer-sessions to watch other sessions;
+# they inherit this SessionStart hook but are NOT user work. Bail before writing any
+# live file / sidecar so they never appear on the Board roster (the app filters them
+# too, but stopping at the source keeps the live/ dir clean).
+case "$cwd" in
+  */.claude-mem/*|*/.claude-mem) exit 0 ;;
+esac
+
 line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
 live_path=$(printf '%s' "$line" | cut -f1)
 project=$(printf '%s' "$line" | cut -f2)
@@ -104,9 +113,32 @@ fi
 #    list doesn't grow unbounded across crashed/abandoned sessions.
 find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exec rm -f {} + 2>/dev/null
 
+# 2b. Worktree-awareness. If ANOTHER session is already active in this same repo
+#     root (its live file was touched within ~30 min), hint this agent to isolate
+#     its edits in a git worktree so two agents in one repo don't clobber each
+#     other's files. Repo-only; a one-off dir never triggers it.
+wt_note=""
+if [ "$is_repo" = "1" ]; then
+  other_active=$(STEM="$stem" ROOT="$root" DIRS="${HOME}/.claude/companion/session-dirs.json" LIVE_DIR="$live_dir" node -e '
+    const fs=require("fs"),path=require("path");
+    try{
+      const dirs=JSON.parse(fs.readFileSync(process.env.DIRS,"utf8"))||{};
+      const me=process.env.STEM,root=process.env.ROOT,ld=process.env.LIVE_DIR,now=Date.now();
+      for(const [stem,r] of Object.entries(dirs)){
+        if(stem===me||r!==root) continue;
+        try{ if(now-fs.statSync(path.join(ld,stem+".json")).mtimeMs < 1800000){console.log("1");break;} }catch(e){}
+      }
+    }catch(e){}
+  ' 2>/dev/null)
+  if [ "$other_active" = "1" ]; then
+    wt_note="HEADS-UP: another agent is already active in this repo (${project}). To avoid clobbering each other's files, create and work inside a git worktree (git worktree add ../${project}-<task> -b <task>) instead of editing the shared working tree directly."
+  fi
+fi
+
 # 3. Tell the agent its live path + its per-unit digest for the rest of the session.
-LIVE_PATH="$live_path" DIGEST_PATH="$digest_path" node -e '
+LIVE_PATH="$live_path" DIGEST_PATH="$digest_path" WT_NOTE="$wt_note" node -e '
   const p=process.env.LIVE_PATH, dg=process.env.DIGEST_PATH;
+  const wt=process.env.WT_NOTE ? "\n"+process.env.WT_NOTE : "";
   const ctx=`Companion live surface: rewrite your live state to ${p} on each work turn `+
     `(the Board roster reads it). Shape: {"working":"…","where":["…"],`+
     `"next":[{"title":"…","sub":"…","kind":"decision|todo|blocked"}],"project":"…",`+
@@ -117,7 +149,7 @@ LIVE_PATH="$live_path" DIGEST_PATH="$digest_path" node -e '
     `Board is ${dg}. Author and grow it as a living document of where this work stands — a `+
     `full-document HTML artifact following the prefer-html home convention (data-fit-root, `+
     `companion-bar, navigate protocol). The Board shows it full-bleed when you enter this unit; `+
-    `when it is absent the Board falls back to a native home, so it is optional but high-value.`;
+    `when it is absent the Board falls back to a native home, so it is optional but high-value.`+wt;
   process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:ctx}}));
 '
 exit 0

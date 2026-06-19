@@ -216,18 +216,23 @@ export function ownedUnits(): string[] {
 
 // ── launch + lifecycle ──────────────────────────────────────────────────────
 
-/** Ensure the unit has a live owned terminal: if none exists and we can resolve a
- *  spawn dir, start one (auto-start — a unit IS a session). A guard prevents a
- *  double-spawn from rapid re-entry. Returns whether a terminal is now present. */
+/** Ensure the unit has a live owned terminal. With session-first unit_keys a unit
+ *  IS one specific session, so entry must RESUME that session (`resume` = its
+ *  Claude session id) — a resumed claude keeps the same id ⇒ same unit_key ⇒ it
+ *  binds back to THIS unit and is reused on re-entry. A fresh (no-resume) spawn
+ *  would mint a NEW session id ⇒ NEW unit_key ⇒ it re-homes away from the clicked
+ *  card, orphaning it and cloning a new card on every entry (the clone bug). A
+ *  guard prevents a double-spawn from rapid re-entry. Returns whether a terminal
+ *  is now present. */
 const spawningUnits = new Set<string>();
-export async function ensureOwnedTerminal(unitKey: string): Promise<boolean> {
+export async function ensureOwnedTerminal(unitKey: string, resume?: string): Promise<boolean> {
   if (shownForUnit(unitKey)) return true;
   if (spawningUnits.has(unitKey)) return false;
   const dir = resolveDir(unitKey);
   if (!dir) return false;
   spawningUnits.add(unitKey);
   try {
-    const tabId = await spawnOwnedSession(dir, unitKey);
+    const tabId = await spawnOwnedSession(dir, unitKey, resume);
     activeByUnit.set(unitKey, tabId);
     return true;
   } finally {

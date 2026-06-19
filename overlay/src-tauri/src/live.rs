@@ -193,6 +193,19 @@ fn session_ids() -> std::collections::HashMap<String, String> {
         .unwrap_or_default()
 }
 
+/// Whether a live source is a tool-internal "observer" session that must never
+/// reach the Board. claude-mem (and similar) spawn long-lived `claude` processes
+/// under `~/.claude-mem/observer-sessions` to watch other sessions; those run the
+/// companion SessionStart hook too, so they write `live/observer-sessions--*.json`.
+/// They are NOT user-interactive work — left in, they flood the roster and (worse)
+/// get bound/resumed like a real session. The plugin now early-exits for
+/// `.claude-mem` cwds, but we filter here too so an already-written file (or an
+/// un-updated plugin install) can never surface. Matched on the slug (the cwd
+/// basename, `observer-sessions`) or any `.claude-mem` marker in the file body.
+fn is_observer_source(source: &str, raw: &str) -> bool {
+    source.split("--").next() == Some("observer-sessions") || raw.contains(".claude-mem")
+}
+
 /// The most-recently-modified `*.json` under the per-session dir, if any.
 fn newest_live_file() -> Option<PathBuf> {
     let dir = live_dir()?;
@@ -285,6 +298,10 @@ pub fn read_all_live() -> Vec<LiveSource> {
             Ok(r) => r,
             Err(_) => continue,
         };
+        // Tool-internal observer sessions (claude-mem et al.) never reach the Board.
+        if is_observer_source(&source, &raw) {
+            continue;
+        }
         let updated_ms = std::fs::metadata(&path)
             .and_then(|m| m.modified())
             .ok()
@@ -412,5 +429,24 @@ mod tests {
     fn malformed_passes_through_verbatim() {
         let out = inject_fields("not json", 1, Some("board-1"), None, true, Some("x"));
         assert_eq!(out, "not json");
+    }
+
+    #[test]
+    fn observer_sources_are_filtered() {
+        // The claude-mem observer slug, by stem.
+        assert!(is_observer_source(
+            "observer-sessions--12e33a8c",
+            r#"{"project":"observer-sessions"}"#
+        ));
+        // A real session that mentions .claude-mem in its body (e.g. cwd leaked in).
+        assert!(is_observer_source(
+            "repo--abc12345",
+            r#"{"working":"poking /Users/me/.claude-mem/db"}"#
+        ));
+        // A normal session is untouched.
+        assert!(!is_observer_source(
+            "claude-code-companion--96c4bed2",
+            r#"{"working":"x","unit_key":"claude-code-companion--96c4bed2"}"#
+        ));
     }
 }
