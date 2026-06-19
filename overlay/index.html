@@ -141,7 +141,7 @@
              (#unit-rail) hosts BOTH the session switcher and the nav menu; the main
              pane swaps between the Session, History, and Settings views. State lives
              in data-rail (which rail face) + data-view (which main view). -->
-        <div id="board-unit" class="board-unit" data-rail="sessions" data-view="session" hidden>
+        <div id="board-unit" class="board-unit" data-rail="sessions" data-view="session" data-focus="split" hidden>
           <!-- Unified left frame, always present. Default face = Sessions (vertical
                tabs to jump between live sessions; clicking one swaps the pane). The ☰
                flips the rail to its Menu face (Sessions · History · Settings); picking
@@ -160,14 +160,27 @@
           </nav>
           <!-- The pane that swaps per session AND per nav destination. -->
           <div class="unit-pane">
-            <!-- L2 toolbar: hero collapse + the in-session rename title. -->
+            <!-- L2 toolbar: the in-session rename title. (Surface resizing moved to
+                 the focus strip between the artifact and terminal below.) -->
             <div class="unit-toolbar">
-              <button id="unit-hero-toggle" class="unit-tool-btn" title="Collapse the artifact hero" hidden>▾&nbsp;artifact</button>
               <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
             </div>
-            <!-- SESSION view: compact hero over the primary terminal. -->
+            <!-- SESSION view: the artifact hero + the primary terminal, sized by the
+                 focus strip between them (split / focus artifact / focus terminal). -->
             <div class="unit-main">
+              <!-- Artifact restore pill — shown only when the artifact is tucked. -->
+              <button id="unit-artifact-pill" class="surface-pill" type="button">
+                <span class="surface-pill-ico">▤</span>
+                <span class="surface-pill-label">Artifact</span>
+                <span class="surface-pill-cue">show</span>
+              </button>
               <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+              <!-- Focus strip: one warm control sizes the two stacked surfaces. -->
+              <div id="unit-surface-strip" class="surface-strip" role="group" aria-label="Resize surfaces">
+                <button class="surface-focus" type="button" data-focus="artifact" title="Focus the artifact" aria-label="Focus the artifact">⬒</button>
+                <button class="surface-focus" type="button" data-focus="split" title="Split evenly" aria-label="Split evenly">⊟</button>
+                <button class="surface-focus" type="button" data-focus="terminal" title="Focus the terminal" aria-label="Focus the terminal">⬓</button>
+              </div>
               <!-- Per-session embedded terminals (the real claude TUI the Board owns).
                    owned-terminals.ts mounts one div per session here; mounts persist
                    across navigation (hidden, never disposed) so PTYs stay alive. -->

@@ -1147,19 +1147,6 @@
   align-items: center;
   gap: 8px;
 }
-.unit-tool-btn {
-  background: var(--card);
-  border: 1px solid var(--line-2);
-  color: var(--ink-2);
-  cursor: pointer;
-  font: 600 12px/1 "JetBrains Mono", ui-monospace, monospace;
-  padding: 7px 11px;
-  border-radius: 8px;
-  transition: background 0.14s, color 0.14s, border-color 0.14s;
-}
-.unit-tool-btn:hover { background: var(--ink); color: var(--card); border-color: var(--ink); }
-.unit-tool-btn[hidden] { display: none; }
-
 /* In-session title — shows the unit's name in the L2 toolbar and doubles as a
    rename button (no need to go back to the roster). The ✎ stays faint until the
    title is hovered. */
@@ -1194,8 +1181,6 @@
   transition: opacity 0.14s;
 }
 .unit-title:hover .unit-title-edit { opacity: 1; }
-/* Hero toggle is session-only — hide it when History/Settings own the pane. */
-.board-unit:not([data-view="session"]) #unit-hero-toggle { display: none; }
 
 /* Stacked surfaces: compact hero over the primary terminal. Fills the unit; the
    terminal flexes to take whatever the hero leaves. */
@@ -1235,15 +1220,89 @@
   isolation: isolate;
 }
 #unit-digest[hidden] { display: none; }
-/* Hero collapsed → terminal owns the full height. */
-.board-unit.hero-collapsed #unit-digest { display: none; }
-/* Terminal collapsed → its (header-only) bar drops to the BOTTOM and the hero grows
-   to fill the whole pane above it, so the artifact takes the remaining window. */
-.unit-main:has(.unit-terminals.collapsed) #unit-digest {
+/* The focus strip sizes the two surfaces. Focus terminal → the artifact tucks to
+   its pill; focus artifact → the artifact grows to fill (terminal tucks to its bar). */
+.board-unit[data-focus="terminal"] #unit-digest { display: none; }
+.board-unit[data-focus="artifact"] #unit-digest {
   flex: 1 1 auto;
   height: auto;
   min-height: 0;
 }
+
+/* Focus strip — one warm control on the divider between the two surfaces. Replaces
+   the old split hero-toggle (warm) + in-terminal collapse chevron (dark). */
+.surface-strip {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 4px 0;
+}
+.surface-strip::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: 1px;
+  background: var(--line-2);
+}
+.board-unit.no-hero .surface-strip { display: none; }
+.surface-focus {
+  position: relative;
+  z-index: 1;
+  width: 30px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  background: var(--card);
+  color: var(--ink-4);
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.surface-focus:hover { color: var(--ink); border-color: var(--ink-3); }
+.board-unit[data-focus="split"] .surface-focus[data-focus="split"],
+.board-unit[data-focus="artifact"] .surface-focus[data-focus="artifact"],
+.board-unit[data-focus="terminal"] .surface-focus[data-focus="terminal"] {
+  background: var(--ink);
+  color: var(--card);
+  border-color: var(--ink);
+}
+
+/* Artifact restore pill — the warm tucked-artifact chip (shown on focus terminal).
+   The terminal's own collapsed bar (below) is the terminal's warm pill. */
+.surface-pill {
+  flex: 0 0 auto;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-card);
+  box-shadow: var(--sh-art);
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+}
+.surface-pill:hover { background: var(--sunk); border-color: var(--ink-4); }
+.surface-pill-ico { flex: 0 0 auto; color: var(--ink-4); font-size: 13px; }
+.surface-pill-label { flex: 1 1 auto; font: 500 12.5px/1.2 var(--ui-font); }
+.surface-pill-cue {
+  flex: 0 0 auto;
+  font: 600 9.5px/1 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-4);
+}
+.board-unit[data-focus="terminal"]:not(.no-hero) #unit-artifact-pill { display: flex; }
 
 /* Per-session embedded terminal panel — the real `claude` TUI the Board owns.
    A dark "sunken" inset in the paper chrome: a header bar (always visible, with a
@@ -1264,9 +1323,18 @@
   flex-direction: column;
 }
 .unit-terminals[hidden] { display: none; }
-/* Terminal collapsed (header-only) → the hero takes the pane. With both collapsed,
-   only the two header strips remain. */
-.unit-terminals.collapsed { flex: 0 0 auto; }
+/* Collapsed terminal = the warm "tucked" bar (the old dark minimize bar, redesigned).
+   Only the minimized state goes warm; the expanded terminal stays dark (parked). */
+.unit-terminals.collapsed {
+  flex: 0 0 auto;
+  background: var(--card);
+  outline-color: var(--line-2);
+  cursor: pointer;
+}
+.unit-terminals.collapsed .term-title { color: var(--ink-2); }
+.unit-terminals.collapsed .term-act { color: var(--ink-2); border-color: var(--line-2); }
+.unit-terminals.collapsed .term-act:hover { background: var(--sunk); border-color: var(--ink-4); }
+.unit-terminals.collapsed .term-new { color: var(--accent); border-color: rgba(176, 85, 47, 0.4); }
 
 .term-head {
   flex: 0 0 auto;
@@ -1278,7 +1346,7 @@
   font: 600 12px/1 "JetBrains Mono", ui-monospace, monospace;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
-.unit-terminals.collapsed .term-head { border-bottom: 0; }
+.unit-terminals.collapsed .term-head { border-bottom: 0; color: var(--ink-2); }
 .term-dot {
   width: 7px;
   height: 7px;
@@ -1314,19 +1382,6 @@
 .term-act[hidden] { display: none; }
 .term-new { color: #cc785c; border-color: rgba(204, 120, 92, 0.45); }
 .term-close { padding: 5px 8px; }
-.term-collapse {
-  flex: 0 0 auto;
-  background: transparent;
-  border: 0;
-  color: #cc785c;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 3px 7px;
-  border-radius: 5px;
-  transition: background 0.14s;
-}
-.term-collapse:hover { background: rgba(255, 255, 255, 0.08); }
 
 /* Session switcher — one pill per owned session in this unit (shown only >1). */
 .term-pills {

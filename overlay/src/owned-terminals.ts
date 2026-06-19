@@ -52,7 +52,6 @@ let titleEl: HTMLElement | null = null;
 const activeByUnit = new Map<string, string>();
 let newBtn: HTMLButtonElement | null = null;
 let closeBtn: HTMLButtonElement | null = null;
-let collapseBtn: HTMLButtonElement | null = null;
 let resolveDir: (unitKey: string) => string | null = () => null;
 
 /** Collapsed = the panel is tucked to just its header; the PTY keeps running.
@@ -93,11 +92,9 @@ export function initOwnedTerminals(slot: HTMLElement, opts: OwnedTerminalsOpts):
   closeBtn.title = "End this session";
   closeBtn.addEventListener("click", () => closeShown());
 
-  collapseBtn = document.createElement("button");
-  collapseBtn.className = "term-collapse";
-  collapseBtn.addEventListener("click", () => setCollapsed(!collapsed));
-
-  head.append(dotEl, titleEl, newBtn, closeBtn, collapseBtn);
+  // Collapse/expand is driven by the Board's focus strip now (setTerminalCollapsed),
+  // not an in-header chevron — so the resize controls all live on warm chrome.
+  head.append(dotEl, titleEl, newBtn, closeBtn);
 
   pillsEl = document.createElement("div");
   pillsEl.className = "term-pills";
@@ -307,6 +304,21 @@ function setCollapsed(next: boolean): void {
   }
 }
 
+/** Drive the terminal's collapse from the Board's focus strip. Tucks the panel to
+ *  its (warm) bar; the PTY keeps running, and expanding refits it. */
+export function setTerminalCollapsed(next: boolean): void {
+  setCollapsed(next);
+}
+
+/** Fit the shown terminal to its current box. Use after a layout change that grows
+ *  the panel WITHOUT toggling collapse (e.g. the artifact tucking away on
+ *  focus-terminal) — the ResizeObserver would catch it too, but this is immediate. */
+export function fitShownTerminal(): void {
+  if (!currentUnit) return;
+  const shown = shownForUnit(currentUnit);
+  if (shown) fitSoon(shown);
+}
+
 function applyCollapsed(): void {
   const shown = currentUnit ? shownForUnit(currentUnit) : null;
   // The body + chat only matter when there's a terminal to show; collapse hides
@@ -314,18 +326,13 @@ function applyCollapsed(): void {
   const hideBody = collapsed || !shown;
   if (bodyEl) bodyEl.hidden = hideBody;
   panelEl?.classList.toggle("collapsed", hideBody);
-  if (collapseBtn) {
-    collapseBtn.textContent = collapsed ? "▸" : "▾";
-    collapseBtn.title = collapsed ? "Expand terminal" : "Collapse terminal";
-  }
 }
 
 function refreshHeader(): void {
   const shown = currentUnit ? shownForUnit(currentUnit) : null;
   if (titleEl) titleEl.textContent = shown ? (shown.exited ? "claude — exited" : "claude") : "Start a claude session";
-  // Close + collapse only apply when a terminal is shown.
+  // Close only applies when a terminal is shown.
   if (closeBtn) closeBtn.hidden = !shown;
-  if (collapseBtn) collapseBtn.hidden = !shown;
   // "+ session" is enabled only when we can resolve a spawn dir for this unit.
   if (newBtn) newBtn.disabled = !currentUnit || resolveDir(currentUnit) === null;
 }

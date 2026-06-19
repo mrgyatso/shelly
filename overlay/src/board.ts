@@ -38,6 +38,8 @@ import {
   ownedUnits,
   ownedTabForUnit,
   endOwnedTerminalsForUnit,
+  setTerminalCollapsed,
+  fitShownTerminal,
 } from "./owned-terminals";
 
 interface ArtifactEntry {
@@ -191,7 +193,7 @@ let historyEl: HTMLElement;
 let railEl: HTMLElement | null = null;
 let railSessionsEl: HTMLElement | null = null;
 let menuToggleEl: HTMLElement | null = null;
-let heroToggleEl: HTMLElement | null = null;
+let stripEl: HTMLElement | null = null;
 let unitTitleEl: HTMLElement | null = null;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
 let currentUnitKey: string | null = null;
@@ -1116,9 +1118,10 @@ function enterUnit(unitKey: string): void {
   updateGlobalUnread();
   focusPath = null;
   currentUnitKey = unitKey;
-  // Always land on the Sessions face / Session view when entering a unit.
+  // Always land on the Sessions face / Session view / split surfaces on entry.
   unitEl.dataset.rail = "sessions";
   unitEl.dataset.view = "session";
+  unitEl.dataset.focus = "split";
   renderUnitRail(unitKey);
   renderUnitTitle(unitKey);
   void renderHero(unitKey);
@@ -1137,7 +1140,8 @@ function leaveUnit(): void {
   if (unitEl) {
     unitEl.dataset.rail = "sessions";
     unitEl.dataset.view = "session";
-    unitEl.classList.remove("hero-collapsed");
+    unitEl.dataset.focus = "split";
+    unitEl.classList.remove("no-hero");
   }
   historyEl?.replaceChildren();
   digestEl?.setAttribute("hidden", "");
@@ -1171,7 +1175,7 @@ async function renderHero(unitKey: string): Promise<void> {
 
   if (home) {
     digestEl.removeAttribute("hidden");
-    syncHeroToggle(true);
+    syncSurfaceStrip(true);
     applyBar(await barSpecFor(home));
     await loadArtifactInto(home, digestEl).catch((e) => console.error("hero digest load failed", e));
     return;
@@ -1186,13 +1190,13 @@ async function renderHero(unitKey: string): Promise<void> {
   );
   if (latest) {
     digestEl.removeAttribute("hidden");
-    syncHeroToggle(true);
+    syncSurfaceStrip(true);
     await loadArtifactInto(latest.path, digestEl).catch((e) =>
       console.error("hero artifact load failed", e),
     );
   } else {
     digestEl.setAttribute("hidden", "");
-    syncHeroToggle(false);
+    syncSurfaceStrip(false);
   }
 }
 
@@ -1280,12 +1284,11 @@ function setUnitView(view: "session" | "history" | "settings"): void {
   if (view === "history" && currentUnitKey) renderHistory(currentUnitKey);
 }
 
-/** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the hero
- *  collapse. The terminal's own collapse lives in its header (owned-terminals.ts);
- *  together they let the user focus the hero, the terminal, or neither. */
+/** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the focus strip
+ *  (the one warm control that sizes the stacked artifact + terminal surfaces). */
 function wireUnitChrome(): void {
   menuToggleEl = document.getElementById("unit-menu-toggle");
-  heroToggleEl = document.getElementById("unit-hero-toggle");
+  stripEl = document.getElementById("unit-surface-strip");
 
   // ☰ flips the rail's two faces. In Menu mode the nav rows take over.
   menuToggleEl?.addEventListener("click", () =>
@@ -1301,11 +1304,18 @@ function wireUnitChrome(): void {
     else if (dest === "settings") setUnitView("settings");
   });
 
-  heroToggleEl?.addEventListener("click", () => {
-    const collapsed = unitEl.classList.toggle("hero-collapsed");
-    if (heroToggleEl) heroToggleEl.innerHTML = collapsed ? "▸&nbsp;artifact" : "▾&nbsp;artifact";
-    // #unit-digest show/hide changes the terminal's height — terminal.ts's
-    // ResizeObserver catches it and refits, no manual call needed.
+  // Focus strip: split / focus the artifact / focus the terminal.
+  stripEl?.addEventListener("click", (e) => {
+    const f = (e.target as HTMLElement).closest<HTMLElement>(".surface-focus")?.dataset.focus;
+    if (f === "split" || f === "artifact" || f === "terminal") setFocus(f);
+  });
+  // Each tucked surface restores on click: the artifact pill, and the collapsed
+  // (warm) terminal bar — but not the terminal's own action buttons (+session / ✕).
+  document.getElementById("unit-artifact-pill")?.addEventListener("click", () => setFocus("split"));
+  document.getElementById("unit-terminals")?.addEventListener("click", (e) => {
+    if (unitEl.dataset.focus !== "artifact") return;
+    if ((e.target as HTMLElement).closest("button")) return;
+    setFocus("split");
   });
 
   // The in-session title doubles as a rename affordance — rename without leaving
@@ -1333,15 +1343,24 @@ function renderUnitTitle(unitKey: string): void {
   unitTitleEl.hidden = false;
 }
 
-/** Reflect whether the hero is showing: enable the hero toggle only when there is
- *  a hero to collapse, and reset it to expanded on (re)entry. */
-function syncHeroToggle(hasHero: boolean): void {
-  if (!heroToggleEl) return;
-  heroToggleEl.hidden = !hasHero;
-  if (hasHero) {
-    unitEl.classList.remove("hero-collapsed");
-    heroToggleEl.innerHTML = "▾&nbsp;artifact";
-  }
+/** Size the two stacked surfaces. "split" shares the pane; "artifact" grows the
+ *  hero and tucks the terminal to its warm bar; "terminal" grows the terminal and
+ *  tucks the artifact to its pill. The terminal collapse reuses its own refit. */
+function setFocus(state: "split" | "artifact" | "terminal"): void {
+  if (!unitEl) return;
+  unitEl.dataset.focus = state;
+  setTerminalCollapsed(state === "artifact");
+  // Expanding the terminal (split / focus-terminal) can grow its box without a
+  // collapse toggle — fit promptly rather than waiting on the debounced observer.
+  if (state !== "artifact") fitShownTerminal();
+}
+
+/** Reflect whether there's a hero to size against: with no hero the strip + pill
+ *  hide and the terminal owns the pane; with one, reset to the split default. */
+function syncSurfaceStrip(hasHero: boolean): void {
+  if (!unitEl) return;
+  unitEl.classList.toggle("no-hero", !hasHero);
+  setFocus(hasHero ? "split" : "terminal");
 }
 
 // ---- data → header ----------------------------------------------------------
