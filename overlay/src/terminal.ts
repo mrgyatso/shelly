@@ -127,6 +127,23 @@ export async function createTerminal(
     void invoke("write_pty", { tabId, data }).catch(() => {});
   });
 
+  // File drag-drop: write dropped file paths to the PTY.
+  // Tauri's WebKit patches `File.prototype.path` with the real FS path.
+  // Use capture so we intercept before xterm's canvas swallows the event.
+  mount.addEventListener("dragover", (e) => { e.preventDefault(); e.stopPropagation(); }, { capture: true, passive: false });
+  mount.addEventListener("drop", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    let data = "";
+    for (let i = 0; i < files.length; i++) {
+      const path = (files[i] as unknown as { path?: string }).path;
+      if (path) data += (data ? " " : "") + JSON.stringify(path);
+    }
+    if (data) void invoke("write_pty", { tabId, data }).catch(() => {});
+    term.focus();
+  }, { capture: true });
+
   // resize → fit → SIGWINCH, debounced. ResizeObserver also catches layout
   // changes (show/hide, the panel expanding), not just window resizes. Frozen
   // while hidden: never fit/SIGWINCH against a 0-box.
