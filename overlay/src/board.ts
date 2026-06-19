@@ -40,6 +40,8 @@ import {
   endOwnedTerminalsForUnit,
   setTerminalCollapsed,
   fitShownTerminal,
+  ensureOwnedTerminal,
+  endShownTerminal,
 } from "./owned-terminals";
 
 interface ArtifactEntry {
@@ -193,7 +195,7 @@ let historyEl: HTMLElement;
 let railEl: HTMLElement | null = null;
 let railSessionsEl: HTMLElement | null = null;
 let menuToggleEl: HTMLElement | null = null;
-let stripEl: HTMLElement | null = null;
+let controlsEl: HTMLElement | null = null;
 let unitTitleEl: HTMLElement | null = null;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
 let currentUnitKey: string | null = null;
@@ -250,7 +252,11 @@ export async function initBoard(): Promise<void> {
   railEl = document.getElementById("unit-rail");
   railSessionsEl = document.getElementById("unit-rail-sessions");
   const terminalsSlot = document.getElementById("unit-terminals");
-  if (terminalsSlot) initOwnedTerminals(terminalsSlot, { resolveDir: unitDirOf });
+  if (terminalsSlot)
+    initOwnedTerminals(terminalsSlot, {
+      resolveDir: unitDirOf,
+      statusDot: document.getElementById("unit-term-dot"),
+    });
   stage.removeAttribute("hidden");
 
   // Dev/test hook: drive `window.__spawnOwned('<abs dir>')` from the MCP bridge to
@@ -1126,9 +1132,16 @@ function enterUnit(unitKey: string): void {
   renderUnitTitle(unitKey);
   void renderHero(unitKey);
   renderHistory(unitKey);
-  // Reveal this unit's Board-owned terminals (if any); their PTYs were already
-  // running, mounted off-screen — this just shows + fits them.
-  showOwnedTerminals(unitKey);
+  // Reveal this unit's Board-owned terminal — auto-starting one if it has none
+  // (a unit IS a session). Existing terminals show immediately; a missing one
+  // spawns first, then shows, so there's no empty-panel flash.
+  void ensureAndShowTerminal(unitKey);
+}
+
+/** Show the unit's terminal, auto-starting one if it has none. */
+async function ensureAndShowTerminal(unitKey: string): Promise<void> {
+  if (!ownedTabForUnit(unitKey)) await ensureOwnedTerminal(unitKey);
+  if (currentUnitKey === unitKey) showOwnedTerminals(unitKey);
 }
 
 /** Tear down L2 state when leaving a unit. Clears any L2 hero bar theming so a
@@ -1284,11 +1297,11 @@ function setUnitView(view: "session" | "history" | "settings"): void {
   if (view === "history" && currentUnitKey) renderHistory(currentUnitKey);
 }
 
-/** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the focus strip
- *  (the one warm control that sizes the stacked artifact + terminal surfaces). */
+/** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the floating
+ *  surface controls (resize the stacked artifact + terminal, plus end the session). */
 function wireUnitChrome(): void {
   menuToggleEl = document.getElementById("unit-menu-toggle");
-  stripEl = document.getElementById("unit-surface-strip");
+  controlsEl = document.getElementById("unit-surface-controls");
 
   // ☰ flips the rail's two faces. In Menu mode the nav rows take over.
   menuToggleEl?.addEventListener("click", () =>
@@ -1304,19 +1317,16 @@ function wireUnitChrome(): void {
     else if (dest === "settings") setUnitView("settings");
   });
 
-  // Focus strip: split / focus the artifact / focus the terminal.
-  stripEl?.addEventListener("click", (e) => {
-    const f = (e.target as HTMLElement).closest<HTMLElement>(".surface-focus")?.dataset.focus;
-    if (f === "split" || f === "artifact" || f === "terminal") setFocus(f);
+  // Floating controls: resize (⬒/⊟/⬓) + ✕ end session.
+  controlsEl?.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    const f = t.closest<HTMLElement>(".surface-focus")?.dataset.focus;
+    if (f === "split" || f === "artifact" || f === "terminal") { setFocus(f); return; }
+    if (t.closest("#unit-term-close")) endSession();
   });
-  // Each tucked surface restores on click: the artifact pill, and the collapsed
-  // (warm) terminal bar — but not the terminal's own action buttons (+session / ✕).
+  // Each tucked surface restores on click via its warm pill.
   document.getElementById("unit-artifact-pill")?.addEventListener("click", () => setFocus("split"));
-  document.getElementById("unit-terminals")?.addEventListener("click", (e) => {
-    if (unitEl.dataset.focus !== "artifact") return;
-    if ((e.target as HTMLElement).closest("button")) return;
-    setFocus("split");
-  });
+  document.getElementById("unit-terminal-pill")?.addEventListener("click", () => setFocus("split"));
 
   // The in-session title doubles as a rename affordance — rename without leaving
   // the unit. onSaved re-renders the title in place (renderUnits alone refreshes
@@ -1353,6 +1363,15 @@ function setFocus(state: "split" | "artifact" | "terminal"): void {
   // Expanding the terminal (split / focus-terminal) can grow its box without a
   // collapse toggle — fit promptly rather than waiting on the debounced observer.
   if (state !== "artifact") fitShownTerminal();
+}
+
+/** End the current unit's shown terminal (the floating ✕). If nothing's left to
+ *  show here, leave to the roster — a unit with no session has nothing to stay for
+ *  (re-entering a unit that still exists in the roster will auto-start a fresh one). */
+function endSession(): void {
+  if (!currentUnitKey) return;
+  endShownTerminal();
+  if (!ownedTabForUnit(currentUnitKey)) goBack();
 }
 
 /** Reflect whether there's a hero to size against: with no hero the strip + pill

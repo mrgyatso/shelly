@@ -165,9 +165,21 @@
             <div class="unit-toolbar">
               <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
             </div>
-            <!-- SESSION view: the artifact hero + the primary terminal, sized by the
-                 focus strip between them (split / focus artifact / focus terminal). -->
+            <!-- SESSION view: the artifact hero + the live terminal (always present —
+                 a unit IS a session). Sized by the floating controls top-right. -->
             <div class="unit-main">
+              <!-- Floating, sticky surface controls: resize the two surfaces (⬒/⊟/⬓),
+                   a live status dot, and ✕ to end the session. Always reachable. -->
+              <div id="unit-surface-controls" class="surface-controls">
+                <div class="sc-resize" role="group" aria-label="Resize surfaces">
+                  <button class="surface-focus" type="button" data-focus="artifact" title="Focus the artifact" aria-label="Focus the artifact">⬒</button>
+                  <button class="surface-focus" type="button" data-focus="split" title="Split evenly" aria-label="Split evenly">⊟</button>
+                  <button class="surface-focus" type="button" data-focus="terminal" title="Focus the terminal" aria-label="Focus the terminal">⬓</button>
+                </div>
+                <span class="sc-sep" aria-hidden="true"></span>
+                <span id="unit-term-dot" class="sc-dot" title="Session"></span>
+                <button id="unit-term-close" class="sc-close" type="button" title="End this session" aria-label="End session">✕</button>
+              </div>
               <!-- Artifact restore pill — shown only when the artifact is tucked. -->
               <button id="unit-artifact-pill" class="surface-pill" type="button">
                 <span class="surface-pill-ico">▤</span>
@@ -175,16 +187,16 @@
                 <span class="surface-pill-cue">show</span>
               </button>
               <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
-              <!-- Focus strip: one warm control sizes the two stacked surfaces. -->
-              <div id="unit-surface-strip" class="surface-strip" role="group" aria-label="Resize surfaces">
-                <button class="surface-focus" type="button" data-focus="artifact" title="Focus the artifact" aria-label="Focus the artifact">⬒</button>
-                <button class="surface-focus" type="button" data-focus="split" title="Split evenly" aria-label="Split evenly">⊟</button>
-                <button class="surface-focus" type="button" data-focus="terminal" title="Focus the terminal" aria-label="Focus the terminal">⬓</button>
-              </div>
               <!-- Per-session embedded terminals (the real claude TUI the Board owns).
                    owned-terminals.ts mounts one div per session here; mounts persist
                    across navigation (hidden, never disposed) so PTYs stay alive. -->
               <div id="unit-terminals" class="unit-terminals" hidden></div>
+              <!-- Terminal restore pill — shown only when the terminal is tucked. -->
+              <button id="unit-terminal-pill" class="surface-pill" type="button">
+                <span class="surface-pill-ico">▤</span>
+                <span class="surface-pill-label">Terminal</span>
+                <span class="surface-pill-cue">show</span>
+              </button>
             </div>
             <!-- HISTORY view: the unit's past artifacts as a readable list (was a drawer). -->
             <div id="unit-history" class="unit-history"></div>

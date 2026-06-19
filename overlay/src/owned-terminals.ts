@@ -37,8 +37,11 @@ export interface NewBinding {
 
 export interface OwnedTerminalsOpts {
   /** Resolve the absolute dir to spawn `claude` in for the given unit (from the
-   *  Board's unit_dir, injected per live source). null ⇒ "+ session" is disabled. */
+   *  Board's unit_dir, injected per live source). null ⇒ can't auto-start here. */
   resolveDir: (unitKey: string) => string | null;
+  /** The Board's floating status dot — pulses when output arrives while the
+   *  terminal is tucked away (the panel itself carries no header now). */
+  statusDot?: HTMLElement | null;
 }
 
 const terminals = new Map<string, OwnedTerminal>();
@@ -46,12 +49,9 @@ const terminals = new Map<string, OwnedTerminal>();
 let panelEl: HTMLElement | null = null; // #unit-terminals (the whole panel)
 let pillsEl: HTMLElement | null = null; // session switcher (>1 session per unit)
 let bodyEl: HTMLElement | null = null; // holds the .term-mount divs
-let dotEl: HTMLElement | null = null; // header status dot (pulses on hidden activity)
-let titleEl: HTMLElement | null = null;
+let dotEl: HTMLElement | null = null; // floating status dot (pulses on hidden activity)
 /** Per-unit active terminal (when a unit has >1 owned session). */
 const activeByUnit = new Map<string, string>();
-let newBtn: HTMLButtonElement | null = null;
-let closeBtn: HTMLButtonElement | null = null;
 let resolveDir: (unitKey: string) => string | null = () => null;
 
 /** Collapsed = the panel is tucked to just its header; the PTY keeps running.
@@ -70,32 +70,13 @@ const INSTANCE = Math.random().toString(36).slice(2, 6);
 export function initOwnedTerminals(slot: HTMLElement, opts: OwnedTerminalsOpts): void {
   panelEl = slot;
   resolveDir = opts.resolveDir;
+  dotEl = opts.statusDot ?? null;
   slot.replaceChildren();
 
-  const head = document.createElement("div");
-  head.className = "term-head";
-  dotEl = document.createElement("span");
-  dotEl.className = "term-dot";
-  titleEl = document.createElement("span");
-  titleEl.className = "term-title";
-  titleEl.textContent = "claude";
-
-  newBtn = document.createElement("button");
-  newBtn.className = "term-act term-new";
-  newBtn.textContent = "+ session";
-  newBtn.title = "Start a claude session in this project";
-  newBtn.addEventListener("click", () => void newSessionHere());
-
-  closeBtn = document.createElement("button");
-  closeBtn.className = "term-act term-close";
-  closeBtn.textContent = "✕";
-  closeBtn.title = "End this session";
-  closeBtn.addEventListener("click", () => closeShown());
-
-  // Collapse/expand is driven by the Board's focus strip now (setTerminalCollapsed),
-  // not an in-header chevron — so the resize controls all live on warm chrome.
-  head.append(dotEl, titleEl, newBtn, closeBtn);
-
+  // No header bar: the terminal fills the surface (a unit IS a session, so there's
+  // no "start a session" / "+ session" empty state). The resize / status-dot / end
+  // controls live in the Board's floating cluster (wired in board.ts); the passed-in
+  // dot pulses when output arrives while the terminal is tucked away.
   pillsEl = document.createElement("div");
   pillsEl.className = "term-pills";
   pillsEl.hidden = true;
@@ -103,10 +84,9 @@ export function initOwnedTerminals(slot: HTMLElement, opts: OwnedTerminalsOpts):
   bodyEl = document.createElement("div");
   bodyEl.className = "term-body";
 
-  // No separate chat input — the embedded terminal IS claude's prompt; you type
-  // directly into it. (Artifact ✓/✎/✗ answers still route into the PTY via the
-  // Board's submit handler, which is the no-⌘V path.)
-  slot.append(head, pillsEl, bodyEl);
+  // The embedded terminal IS claude's prompt; you type directly into it. (Artifact
+  // ✓/✎/✗ answers still route into the PTY via the Board's submit handler.)
+  slot.append(pillsEl, bodyEl);
   applyCollapsed();
 }
 
@@ -140,7 +120,6 @@ export async function spawnOwnedSession(
     resume,
     onExit: () => {
       owned.exited = true;
-      if (owned.unitKey === currentUnit) refreshHeader();
     },
     onActivity: () => {
       // Output arrived while this terminal was hidden — pulse the header dot if
@@ -174,9 +153,9 @@ export function showOwnedTerminals(unitKey: string): void {
   if (!panelEl) return;
   currentUnit = unitKey;
   const shown = shownForUnit(unitKey);
-  // No owned session here AND nowhere to spawn one (an old external unit with no
-  // recorded dir) → don't show a dead "no session" panel at all.
-  if (!shown && resolveDir(unitKey) === null) {
+  // No live terminal to show → keep the panel hidden (no "start a session" empty
+  // box). Auto-start spawns one on entry; this is re-called once it exists.
+  if (!shown) {
     for (const t of terminals.values()) t.mount.hidden = true;
     panelEl.hidden = true;
     return;
@@ -185,7 +164,6 @@ export function showOwnedTerminals(unitKey: string): void {
   for (const t of terminals.values()) t.mount.hidden = t !== shown;
   renderPills(unitKey);
   applyCollapsed();
-  refreshHeader();
   if (shown && !collapsed) {
     dotEl?.classList.remove("pulsing"); // visible now — clear any activity pulse
     fitSoon(shown);
@@ -238,17 +216,27 @@ export function ownedUnits(): string[] {
 
 // ── launch + lifecycle ──────────────────────────────────────────────────────
 
-async function newSessionHere(): Promise<void> {
-  if (!currentUnit) return;
-  const dir = resolveDir(currentUnit);
-  if (!dir) return;
-  collapsed = false; // a freshly started session should be visible
-  const tabId = await spawnOwnedSession(dir, currentUnit);
-  activeByUnit.set(currentUnit, tabId); // focus the one just started
-  showOwnedTerminals(currentUnit);
+/** Ensure the unit has a live owned terminal: if none exists and we can resolve a
+ *  spawn dir, start one (auto-start — a unit IS a session). A guard prevents a
+ *  double-spawn from rapid re-entry. Returns whether a terminal is now present. */
+const spawningUnits = new Set<string>();
+export async function ensureOwnedTerminal(unitKey: string): Promise<boolean> {
+  if (shownForUnit(unitKey)) return true;
+  if (spawningUnits.has(unitKey)) return false;
+  const dir = resolveDir(unitKey);
+  if (!dir) return false;
+  spawningUnits.add(unitKey);
+  try {
+    const tabId = await spawnOwnedSession(dir, unitKey);
+    activeByUnit.set(unitKey, tabId);
+    return true;
+  } finally {
+    spawningUnits.delete(unitKey);
+  }
 }
 
-function closeShown(): void {
+/** End the shown owned terminal of the current unit (the floating ✕). */
+export function endShownTerminal(): void {
   if (!currentUnit) return;
   const shown = shownForUnit(currentUnit);
   if (shown) closeOwnedTerminal(shown.tabId);
@@ -326,15 +314,6 @@ function applyCollapsed(): void {
   const hideBody = collapsed || !shown;
   if (bodyEl) bodyEl.hidden = hideBody;
   panelEl?.classList.toggle("collapsed", hideBody);
-}
-
-function refreshHeader(): void {
-  const shown = currentUnit ? shownForUnit(currentUnit) : null;
-  if (titleEl) titleEl.textContent = shown ? (shown.exited ? "claude — exited" : "claude") : "Start a claude session";
-  // Close only applies when a terminal is shown.
-  if (closeBtn) closeBtn.hidden = !shown;
-  // "+ session" is enabled only when we can resolve a spawn dir for this unit.
-  if (newBtn) newBtn.disabled = !currentUnit || resolveDir(currentUnit) === null;
 }
 
 function shownForUnit(unitKey: string): OwnedTerminal | null {
