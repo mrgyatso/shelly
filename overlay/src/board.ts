@@ -198,6 +198,29 @@ let currentUnitKey: string | null = null;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
+/** Local calendar-day key (YYYY-M-D) for the once-a-day Hub landing. */
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+const LAST_HOME_KEY = "companion:lastHomeDate";
+/** True the first time the Board is opened on a given calendar day. The Hub is a
+ *  daily landing: shown once, then dropped from the back stack on first forward nav. */
+function isNewDay(): boolean {
+  try {
+    return localStorage.getItem(LAST_HOME_KEY) !== todayKey();
+  } catch {
+    return true; // storage blocked → treat each open as the daily landing
+  }
+}
+function markDailyLanded(): void {
+  try {
+    localStorage.setItem(LAST_HOME_KEY, todayKey());
+  } catch {
+    /* non-fatal */
+  }
+}
+
 export async function initBoard(): Promise<void> {
   const stage = document.getElementById("board-stage");
   const board = document.getElementById("board");
@@ -275,8 +298,16 @@ export async function initBoard(): Promise<void> {
   lastArtifactSig = artifactSig(allArtifacts);
   window.setInterval(() => void pollLive(), POLL_MS);
 
-  // Land on L0 (the Hub) — agent-authored home.html if present, else native.
-  await goHub();
+  // First open of the day lands on the Hub (the daily home); later opens go
+  // straight to the live roster. The Hub is a landing — the first forward nav off
+  // it drops it from the back stack (goSessions/goUnit), so the back arrow can
+  // never return to it.
+  if (isNewDay()) {
+    markDailyLanded();
+    await goHub();
+  } else {
+    goSessions();
+  }
 
   // A popover row click stores a deep-link target; drain it (fresh window). An
   // already-open Board catches the same target via the `board:navigate` event.
@@ -485,7 +516,9 @@ function showLevel(level: BoardView["level"]): void {
   hubEl.toggleAttribute("hidden", level !== "hub");
   sessionsEl.toggleAttribute("hidden", level !== "sessions");
   unitEl.toggleAttribute("hidden", level !== "unit");
-  document.getElementById("board-back")?.toggleAttribute("hidden", level === "hub");
+  // Back is shown only when there's somewhere to go back to. The Hub (daily
+  // landing) and the Sessions roster are both stack roots → no back arrow there.
+  document.getElementById("board-back")?.toggleAttribute("hidden", viewStack.length <= 1);
 }
 
 /** Enter L0. Resolves home.html (Rust) → full-bleed iframe, else native fallback. */
@@ -498,20 +531,32 @@ async function goHub(): Promise<void> {
   updateGlobalUnread();
 }
 
-/** Enter L1 — the native Sessions picker, grouped by unit. */
+/** Enter L1 — the native Sessions roster, grouped by unit. The roster is the
+ *  effective root of the back stack: leaving the daily-home Hub lands here and
+ *  drops the Hub, so the back arrow can't return to it. */
 function goSessions(): void {
   leaveUnit(); // also clears any L2 digest bar theming
-  if (currentView().level !== "sessions") viewStack.push({ level: "sessions" });
+  if (currentView().level === "hub") {
+    viewStack = [{ level: "sessions" }]; // Hub was the daily landing — drop it
+  } else if (currentView().level !== "sessions") {
+    viewStack.push({ level: "sessions" });
+  }
   showLevel("sessions");
   renderUnits();
 }
 
 /** Enter L2 — one unit's home. Replace rather than stack if already at a unit
- *  (e.g. an artifact-navigate across units), so back-nav stays one level up. */
+ *  (e.g. an artifact-navigate across units), so back-nav stays one level up. From
+ *  the daily-home Hub, seat the Sessions roster as the root beneath the unit so
+ *  back goes unit→roster→(stop), never back to the Hub. */
 function goUnit(unitKey: string): void {
   leaveUnit(); // clears prior theming; renderHero re-themes if this unit authored a home
-  if (currentView().level === "unit") viewStack.pop();
-  viewStack.push({ level: "unit", unitKey });
+  if (currentView().level === "hub") {
+    viewStack = [{ level: "sessions" }, { level: "unit", unitKey }];
+  } else {
+    if (currentView().level === "unit") viewStack.pop();
+    viewStack.push({ level: "unit", unitKey });
+  }
   showLevel("unit");
   enterUnit(unitKey);
 }
@@ -2000,6 +2045,16 @@ function wireControls(): void {
   });
   document.getElementById("hub-sessions-btn")?.addEventListener("click", goSessions);
   scrimEl?.addEventListener("click", closeFocus);
+
+  // The Board window persists across days (tray show/hide, not rebuild). On each
+  // reveal, if the calendar day has rolled over, re-land on the daily Hub.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    if (isNewDay()) {
+      markDailyLanded();
+      void goHub();
+    }
+  });
 }
 
 /**
