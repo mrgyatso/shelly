@@ -127,22 +127,20 @@ export async function createTerminal(
     void invoke("write_pty", { tabId, data }).catch(() => {});
   });
 
-  // File drag-drop: write dropped file paths to the PTY.
-  // Tauri's WebKit patches `File.prototype.path` with the real FS path.
-  // Use capture so we intercept before xterm's canvas swallows the event.
+  // File drag-drop: Tauri v2 emits dropped file paths via a window-level event
+  // (File.prototype.path from v1 is gone). Only respond when this terminal's
+  // mount is actually visible — prevents background terminals from stealing drops.
+  // Suppress the browser's default "navigate to file" behaviour over the canvas.
   mount.addEventListener("dragover", (e) => { e.preventDefault(); e.stopPropagation(); }, { capture: true, passive: false });
-  mount.addEventListener("drop", (e) => {
-    e.preventDefault(); e.stopPropagation();
-    const files = e.dataTransfer?.files;
-    if (!files?.length) return;
-    let data = "";
-    for (let i = 0; i < files.length; i++) {
-      const path = (files[i] as unknown as { path?: string }).path;
-      if (path) data += (data ? " " : "") + JSON.stringify(path);
-    }
-    if (data) void invoke("write_pty", { tabId, data }).catch(() => {});
+  const unlistenDrop = await win.onDragDropEvent((e) => {
+    if (e.payload.type !== "drop") return;
+    if (!isLaidOut(mount)) return;
+    const paths: string[] = e.payload.paths;
+    if (!paths.length) return;
+    const data = paths.map((p) => JSON.stringify(p)).join(" ");
+    void invoke("write_pty", { tabId, data }).catch(() => {});
     term.focus();
-  }, { capture: true });
+  });
 
   // resize → fit → SIGWINCH, debounced. ResizeObserver also catches layout
   // changes (show/hide, the panel expanding), not just window resizes. Frozen
@@ -185,6 +183,7 @@ export async function createTerminal(
       clearTimeout(resizeTimer);
       unlistenOutput();
       unlistenExit();
+      unlistenDrop();
       void invoke("close_pty", { tabId }).catch(() => {});
       term.dispose();
     },

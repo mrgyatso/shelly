@@ -191,6 +191,7 @@ let hubEl: HTMLElement;
 let sessionsEl: HTMLElement;
 let unitEl: HTMLElement;
 let digestEl: HTMLIFrameElement;
+let digestPath: string | null = null; // tracks what's currently loaded in digestEl
 let historyEl: HTMLElement;
 let railEl: HTMLElement | null = null;
 let railSessionsEl: HTMLElement | null = null;
@@ -249,6 +250,20 @@ export async function initBoard(): Promise<void> {
   unitEl = unit;
   digestEl = digest;
   historyEl = history;
+  // Mirror the focusFrame "restore-submitted" logic: when the hero digest
+  // reloads after a unit re-entry, re-show the submitted overlay if the user
+  // already answered this artifact and it hasn't been rewritten since.
+  digest.addEventListener("load", () => {
+    if (!digestPath) return;
+    const stamp = submittedArtifacts.get(digestPath);
+    if (stamp === undefined) return;
+    const art = allArtifacts.find((a) => a.path === digestPath);
+    if (art && art.modified_ms !== stamp) return; // rewritten → form re-arms
+    digest.contentWindow?.postMessage(
+      { source: "companion-board", kind: "restore-submitted" },
+      "*",
+    );
+  });
   railEl = document.getElementById("unit-rail");
   railSessionsEl = document.getElementById("unit-rail-sessions");
   const terminalsSlot = document.getElementById("unit-terminals");
@@ -1158,6 +1173,7 @@ function leaveUnit(): void {
   }
   historyEl?.replaceChildren();
   digestEl?.setAttribute("hidden", "");
+  digestPath = null;
   applyBar(null);
   focusPath = null;
   // Hide (NEVER dispose) the owned terminals — their PTYs must stay alive across
@@ -1190,6 +1206,7 @@ async function renderHero(unitKey: string): Promise<void> {
     digestEl.removeAttribute("hidden");
     syncSurfaceStrip(true);
     applyBar(await barSpecFor(home));
+    digestPath = home;
     await loadArtifactInto(home, digestEl).catch((e) => console.error("hero digest load failed", e));
     return;
   }
@@ -1204,6 +1221,7 @@ async function renderHero(unitKey: string): Promise<void> {
   if (latest) {
     digestEl.removeAttribute("hidden");
     syncSurfaceStrip(true);
+    digestPath = latest.path;
     await loadArtifactInto(latest.path, digestEl).catch((e) =>
       console.error("hero artifact load failed", e),
     );
