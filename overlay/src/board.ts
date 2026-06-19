@@ -189,7 +189,8 @@ let unitEl: HTMLElement;
 let digestEl: HTMLIFrameElement;
 let historyEl: HTMLElement;
 let railEl: HTMLElement | null = null;
-let histToggleEl: HTMLElement | null = null;
+let railSessionsEl: HTMLElement | null = null;
+let menuToggleEl: HTMLElement | null = null;
 let heroToggleEl: HTMLElement | null = null;
 let unitTitleEl: HTMLElement | null = null;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
@@ -222,6 +223,7 @@ export async function initBoard(): Promise<void> {
   digestEl = digest;
   historyEl = history;
   railEl = document.getElementById("unit-rail");
+  railSessionsEl = document.getElementById("unit-rail-sessions");
   const terminalsSlot = document.getElementById("unit-terminals");
   if (terminalsSlot) initOwnedTerminals(terminalsSlot, { resolveDir: unitDirOf });
   stage.removeAttribute("hidden");
@@ -763,23 +765,18 @@ function computeRoster(now: number): Roster {
   };
 }
 
-/** Render the L2 session rail — browser-style vertical tabs, one per live unit,
- *  in priority order. Clicking a tab swaps the pane to that session; the shell
- *  stays put. Hidden when there's only one live unit (nothing to switch to). */
+/** Render the Sessions face of the unified rail — browser-style vertical tabs, one
+ *  per live unit, in priority order. Clicking a tab swaps the pane to that session;
+ *  the shell stays put. The frame itself is always present (it also hosts the ☰
+ *  menu), so a single live session just shows its one tab. */
 function renderUnitRail(activeUnitKey: string | null): void {
-  if (!railEl) return;
+  if (!railSessionsEl) return;
   const now = Date.now();
   const { order, byUnit, bandOf } = computeRoster(now);
-  if (order.length < 2) {
-    railEl.replaceChildren();
-    railEl.setAttribute("hidden", "");
-    return;
-  }
-  railEl.removeAttribute("hidden");
   const tabs = order.map((unit) =>
     buildRailTab(unit, byUnit.get(unit) ?? [], bandOf.get(unit) ?? "idle", unit === activeUnitKey),
   );
-  railEl.replaceChildren(...tabs);
+  railSessionsEl.replaceChildren(...tabs);
 }
 
 /** One rail tab: a state dot, the unit's mark, its name, an unread badge. The
@@ -1074,6 +1071,9 @@ function enterUnit(unitKey: string): void {
   updateGlobalUnread();
   focusPath = null;
   currentUnitKey = unitKey;
+  // Always land on the Sessions face / Session view when entering a unit.
+  unitEl.dataset.rail = "sessions";
+  unitEl.dataset.view = "session";
   renderUnitRail(unitKey);
   renderUnitTitle(unitKey);
   void renderHero(unitKey);
@@ -1089,8 +1089,11 @@ function enterUnit(unitKey: string): void {
 function leaveUnit(): void {
   currentUnitKey = null;
   closeFocus();
-  closeHistoryDrawer();
-  unitEl?.classList.remove("hero-collapsed");
+  if (unitEl) {
+    unitEl.dataset.rail = "sessions";
+    unitEl.dataset.view = "session";
+    unitEl.classList.remove("hero-collapsed");
+  }
   historyEl?.replaceChildren();
   digestEl?.setAttribute("hidden", "");
   applyBar(null);
@@ -1208,29 +1211,50 @@ function renderHistory(unitKey: string): void {
 function wireHistoryClicks(): void {
   historyEl.addEventListener("click", (e) => {
     const row = (e.target as HTMLElement).closest("[data-art-path]") as HTMLElement | null;
-    if (row?.dataset.artPath) {
-      closeHistoryDrawer(); // opening an artifact dismisses the drawer (claude.ai-style)
-      void openReader(row.dataset.artPath);
-    }
+    if (row?.dataset.artPath) void openReader(row.dataset.artPath);
   });
 }
 
-// ---- L2 chrome: history drawer + hero collapse ------------------------------
+// ---- L2 chrome: the unified rail (sessions ⇄ menu) + hero collapse ----------
 
-function closeHistoryDrawer(): void {
-  unitEl?.classList.remove("history-open");
+/** Flip the rail between its Sessions face and its Menu face. Returning to the
+ *  Sessions face also restores the main pane to the session (the tabs imply you
+ *  are looking at a session, not at History/Settings). */
+function setRailMode(mode: "sessions" | "menu"): void {
+  if (!unitEl) return;
+  unitEl.dataset.rail = mode;
+  if (mode === "sessions") unitEl.dataset.view = "session";
 }
 
-/** Wire the ☰ history-drawer toggle, its scrim, and the hero collapse toggle.
- *  The terminal's own collapse lives in its header (owned-terminals.ts); together
- *  they let the user focus the hero, the terminal, or neither. */
-function wireUnitChrome(): void {
-  histToggleEl = document.getElementById("unit-hist-toggle");
-  heroToggleEl = document.getElementById("unit-hero-toggle");
-  const scrim = document.getElementById("unit-history-scrim");
+/** Swap the main pane to a nav destination. History/Settings keep the Menu face
+ *  open so the user can hop between destinations; "session" is the Sessions home. */
+function setUnitView(view: "session" | "history" | "settings"): void {
+  if (!unitEl) return;
+  unitEl.dataset.view = view;
+  if (view !== "session") unitEl.dataset.rail = "menu";
+  if (view === "history" && currentUnitKey) renderHistory(currentUnitKey);
+}
 
-  histToggleEl?.addEventListener("click", () => unitEl.classList.toggle("history-open"));
-  scrim?.addEventListener("click", closeHistoryDrawer);
+/** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the hero
+ *  collapse. The terminal's own collapse lives in its header (owned-terminals.ts);
+ *  together they let the user focus the hero, the terminal, or neither. */
+function wireUnitChrome(): void {
+  menuToggleEl = document.getElementById("unit-menu-toggle");
+  heroToggleEl = document.getElementById("unit-hero-toggle");
+
+  // ☰ flips the rail's two faces. In Menu mode the nav rows take over.
+  menuToggleEl?.addEventListener("click", () =>
+    setRailMode(unitEl.dataset.rail === "menu" ? "sessions" : "menu"),
+  );
+
+  // Menu nav: each destination takes over the main pane.
+  railEl?.addEventListener("click", (e) => {
+    const nav = (e.target as HTMLElement).closest<HTMLElement>(".rail-nav");
+    const dest = nav?.dataset.dest;
+    if (dest === "sessions") setRailMode("sessions");
+    else if (dest === "history") setUnitView("history");
+    else if (dest === "settings") setUnitView("settings");
+  });
 
   heroToggleEl?.addEventListener("click", () => {
     const collapsed = unitEl.classList.toggle("hero-collapsed");
@@ -2116,6 +2140,16 @@ function wireKeyboard(): void {
     }
     if (e.key === "Escape") {
       e.preventDefault();
+      // At L2, Esc first returns the Menu / History / Settings to the session
+      // home; only once you're already there does it pop the level.
+      if (
+        currentView().level === "unit" &&
+        unitEl &&
+        (unitEl.dataset.rail === "menu" || unitEl.dataset.view !== "session")
+      ) {
+        setRailMode("sessions");
+        return;
+      }
       goBack();
       return;
     }

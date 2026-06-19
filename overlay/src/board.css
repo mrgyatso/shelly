@@ -954,9 +954,11 @@
 }
 
 /* =========================================================================
-   L2 SESSION RAIL — browser-style vertical tabs. One tab per live unit; click
-   to swap the pane to that session (the shell stays put). Hidden when there's
-   only one live unit. State dot mirrors the Status Board bands.
+   L2 UNIFIED RAIL — one always-present left frame hosting BOTH the session
+   switcher and the nav menu. Default face = Sessions (browser-style vertical
+   tabs; click to swap the pane). The ☰ flips to the Menu face (Sessions ·
+   History · Settings), which navigates the main pane. data-rail picks the face;
+   data-view picks the main view. State dot mirrors the Status Board bands.
    ========================================================================= */
 .unit-rail {
   flex: 0 0 auto;
@@ -964,14 +966,88 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 12px 8px 16px;
+  padding: 10px 8px 16px;
   overflow-y: auto;
   border-right: 1px solid var(--line-2);
   background: var(--board);
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
 }
-.unit-rail[hidden] { display: none; }
+
+/* ☰ menu toggle — flips the rail's two faces; sits at the top of the frame. */
+.rail-menu-btn {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  width: 34px;
+  height: 30px;
+  margin: 0 0 6px 2px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--ink-3);
+  font: 600 14px/1 "JetBrains Mono", ui-monospace, monospace;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.rail-menu-btn:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
+.board-unit[data-rail="menu"] .rail-menu-btn { background: var(--ink); color: var(--card); border-color: var(--ink); }
+
+/* The two faces share the frame; data-rail toggles which one shows. */
+.rail-sessions { display: flex; flex-direction: column; gap: 3px; }
+.rail-menu { display: none; flex-direction: column; gap: 3px; }
+.board-unit[data-rail="menu"] .rail-sessions { display: none; }
+.board-unit[data-rail="menu"] .rail-menu { display: flex; }
+
+/* Menu nav rows — reuse the session-tab accent language so the Menu face reads
+   as native chrome. The active row mirrors the current main view. */
+.rail-nav {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 9px;
+  padding: 9px 10px 9px 12px;
+  cursor: pointer;
+  color: var(--ink-2);
+  font: 500 13px/1.3 var(--ui-font);
+  letter-spacing: -0.01em;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+.rail-nav::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 0;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: height 0.16s var(--ease);
+}
+.rail-nav:hover { background: var(--card); color: var(--ink); }
+.rail-nav-ico { flex: 0 0 auto; width: 18px; text-align: center; font-size: 12px; color: var(--ink-4); }
+.board-unit[data-view="session"] .rail-nav[data-dest="sessions"],
+.board-unit[data-view="history"] .rail-nav[data-dest="history"],
+.board-unit[data-view="settings"] .rail-nav[data-dest="settings"] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--sh-art);
+  outline: 1px solid var(--line-2);
+  outline-offset: -1px;
+}
+.board-unit[data-view="session"] .rail-nav[data-dest="sessions"]::before,
+.board-unit[data-view="history"] .rail-nav[data-dest="history"]::before,
+.board-unit[data-view="settings"] .rail-nav[data-dest="settings"]::before { height: 18px; }
+.board-unit[data-view="session"] .rail-nav[data-dest="sessions"] .rail-nav-ico,
+.board-unit[data-view="history"] .rail-nav[data-dest="history"] .rail-nav-ico,
+.board-unit[data-view="settings"] .rail-nav[data-dest="settings"] .rail-nav-ico { color: var(--accent); }
 
 .unit-tab {
   position: relative;
@@ -1052,16 +1128,14 @@
   background: var(--accent);
 }
 
-/* L2 toolbar — a thin paper strip carrying the history-drawer toggle (☰) and the
-   hero collapse toggle. The mandatory Board controls live in the top bar; these are
-   L2-scoped surface controls. */
+/* L2 toolbar — a thin paper strip carrying the hero collapse toggle and the
+   in-session rename title. The mandatory Board controls live in the top bar; the
+   ☰ menu now lives in the rail. */
 .unit-toolbar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  position: relative;
-  z-index: 7; /* stay above the drawer (z6) + scrim (z5) so ☰ can toggle it closed */
 }
 .unit-tool-btn {
   background: var(--card);
@@ -1110,7 +1184,8 @@
   transition: opacity 0.14s;
 }
 .unit-title:hover .unit-title-edit { opacity: 1; }
-.board-unit.history-open #unit-hist-toggle { background: var(--ink); color: var(--card); border-color: var(--ink); }
+/* Hero toggle is session-only — hide it when History/Settings own the pane. */
+.board-unit:not([data-view="session"]) #unit-hero-toggle { display: none; }
 
 /* Stacked surfaces: compact hero over the primary terminal. Fills the unit; the
    terminal flexes to take whatever the hero leaves. */
@@ -1121,6 +1196,14 @@
   flex-direction: column;
   gap: 12px;
 }
+
+/* The main pane swaps between three peer views (data-view). Each fills the pane;
+   only the active one shows. */
+.board-unit:not([data-view="session"]) .unit-main { display: none; }
+#unit-history,
+#unit-settings { display: none; }
+.board-unit[data-view="history"] #unit-history { display: flex; }
+.board-unit[data-view="settings"] #unit-settings { display: flex; }
 
 /* The HERO is now a COMPACT lead surface above the primary terminal (was a 74vh
    slab). Collapse it (hero toggle) to give the terminal the whole pane. The id
@@ -1321,42 +1404,22 @@
   color: var(--ink-4);
   font-variant-numeric: tabular-nums;
 }
-/* History — the unit's durable artifact list, now an off-canvas DRAWER (claude.ai
-   chat-list style): slides in from the left over the surface, dismissed by the
-   scrim, ✕, or opening an artifact. Toggled by ☰ (.history-open on .board-unit). */
+/* HISTORY view — the unit's durable artifact list (readable text rows, no iframes).
+   A peer view in the main pane now (was an off-canvas drawer); shown when
+   data-view="history". The display:flex is applied by the data-view rule above. */
 .unit-history {
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: min(320px, 82%);
-  z-index: 6;
-  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   flex-direction: column;
-  padding: 52px 14px 18px; /* top clearance so the head clears the L2 toolbar row */
-  background: var(--card);
-  border-right: 1px solid var(--line-2);
-  border-radius: 0 var(--radius-card) var(--radius-card) 0;
-  box-shadow: 18px 0 44px -28px rgba(40, 30, 20, 0.6);
+  gap: 2px;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 4px 2px 10px;
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
-  transform: translateX(-104%);
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.board-unit.history-open .unit-history { transform: translateX(0); }
-
-/* Dismiss scrim behind the drawer. */
-.unit-history-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  background: oklch(0.2 0.01 55 / 0.32);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
-}
-.board-unit.history-open .unit-history-scrim { opacity: 1; pointer-events: auto; }
 .history-head {
   font-family: var(--mono);
   font-size: 10px;
@@ -1372,6 +1435,60 @@
   font-size: 11px;
   color: var(--ink-4);
   padding: 14px 8px;
+}
+
+/* SETTINGS view — Companion preferences. Placeholder rows for now (no wiring),
+   styled as real settings so the surface reads as designed, not "coming soon".
+   Shown when data-view="settings". */
+.unit-settings {
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  overflow: auto;
+  padding: 6px 2px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.settings-inner { width: min(560px, 100%); margin: 6px auto 0; }
+.settings-head { margin-bottom: 18px; }
+.settings-head h2 {
+  font: 600 20px/1.2 var(--serif);
+  color: var(--ink);
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+.settings-head p { font: 400 13px/1.5 var(--ui-font); color: var(--ink-3); margin: 0; }
+.settings-group { display: flex; flex-direction: column; gap: 8px; }
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-card);
+  box-shadow: var(--sh-art);
+}
+.settings-row.is-soon { opacity: 0.6; }
+.settings-row-main { flex: 1 1 auto; min-width: 0; }
+.settings-row-title { font: 600 13.5px/1.3 var(--ui-font); color: var(--ink); }
+.settings-row-sub { font: 400 12px/1.45 var(--ui-font); color: var(--ink-3); margin-top: 2px; }
+.settings-pill {
+  flex: 0 0 auto;
+  font: 600 10.5px/1 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+}
+.settings-foot {
+  margin-top: 16px;
+  font: 400 11px/1.5 var(--mono);
+  color: var(--ink-4);
+  text-align: center;
 }
 
 /* =========================================================================

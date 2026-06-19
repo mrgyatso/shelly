@@ -137,23 +137,35 @@
              non-repo session). The embedded TERMINAL is the primary surface; the
              agent DIGEST (home.<unit>.html, else the latest artifact) sits above it
              as a COMPACT, collapsible hero. Both hero and terminal collapse
-             independently (focus one, the other, or neither). HISTORY moved into a
-             slide-out drawer behind the ☰ toggle (claude.ai-chat style). -->
-        <div id="board-unit" class="board-unit" hidden>
-          <!-- Vertical-tabs rail (browser style): jump between live sessions without
-               leaving L2. Clicking a tab swaps the pane (terminal + hero) to that
-               session; this shell stays put. board.ts fills it; hidden when there's
-               only one live unit (nothing to switch to). -->
-          <nav id="unit-rail" class="unit-rail" aria-label="Live sessions" hidden></nav>
-          <!-- The pane that swaps per session: toolbar + stacked surfaces. -->
+             independently (focus one, the other, or neither). One unified left frame
+             (#unit-rail) hosts BOTH the session switcher and the nav menu; the main
+             pane swaps between the Session, History, and Settings views. State lives
+             in data-rail (which rail face) + data-view (which main view). -->
+        <div id="board-unit" class="board-unit" data-rail="sessions" data-view="session" hidden>
+          <!-- Unified left frame, always present. Default face = Sessions (vertical
+               tabs to jump between live sessions; clicking one swaps the pane). The ☰
+               flips the rail to its Menu face (Sessions · History · Settings); picking
+               History/Settings takes over the main pane. board.ts fills
+               #unit-rail-sessions and drives data-rail / data-view. -->
+          <nav id="unit-rail" class="unit-rail" aria-label="Sessions and menu">
+            <button id="unit-menu-toggle" class="rail-menu-btn" title="Menu" aria-label="Menu">☰</button>
+            <!-- Sessions face: one tab per live session (browser style). -->
+            <div id="unit-rail-sessions" class="rail-sessions"></div>
+            <!-- Menu face: navigate the main pane between Sessions / History / Settings. -->
+            <div class="rail-menu" role="menu" aria-label="Navigate">
+              <button class="rail-nav" role="menuitem" data-dest="sessions"><span class="rail-nav-ico">▤</span><span>Sessions</span></button>
+              <button class="rail-nav" role="menuitem" data-dest="history"><span class="rail-nav-ico">◷</span><span>History</span></button>
+              <button class="rail-nav" role="menuitem" data-dest="settings"><span class="rail-nav-ico">⚙</span><span>Settings</span></button>
+            </div>
+          </nav>
+          <!-- The pane that swaps per session AND per nav destination. -->
           <div class="unit-pane">
-            <!-- L2 toolbar: history-drawer toggle + hero collapse. -->
+            <!-- L2 toolbar: hero collapse + the in-session rename title. -->
             <div class="unit-toolbar">
-              <button id="unit-hist-toggle" class="unit-tool-btn" title="History — past artifacts" aria-label="History">☰</button>
               <button id="unit-hero-toggle" class="unit-tool-btn" title="Collapse the artifact hero" hidden>▾&nbsp;artifact</button>
               <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
             </div>
-            <!-- Stacked surfaces: compact hero over the primary terminal. -->
+            <!-- SESSION view: compact hero over the primary terminal. -->
             <div class="unit-main">
               <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
               <!-- Per-session embedded terminals (the real claude TUI the Board owns).
@@ -161,10 +173,42 @@
                    across navigation (hidden, never disposed) so PTYs stay alive. -->
               <div id="unit-terminals" class="unit-terminals" hidden></div>
             </div>
+            <!-- HISTORY view: the unit's past artifacts as a readable list (was a drawer). -->
+            <div id="unit-history" class="unit-history"></div>
+            <!-- SETTINGS view: Companion preferences. Placeholder rows for now. -->
+            <div id="unit-settings" class="unit-settings">
+              <div class="settings-inner">
+                <header class="settings-head">
+                  <h2>Settings</h2>
+                  <p>Companion preferences live here. Nothing to change yet — these are previews.</p>
+                </header>
+                <div class="settings-group">
+                  <div class="settings-row is-soon">
+                    <div class="settings-row-main">
+                      <div class="settings-row-title">Render mode</div>
+                      <div class="settings-row-sub">Let agents auto-render artifacts, or render only when you ask.</div>
+                    </div>
+                    <span class="settings-pill">Agent</span>
+                  </div>
+                  <div class="settings-row is-soon">
+                    <div class="settings-row-main">
+                      <div class="settings-row-title">Artifact retention</div>
+                      <div class="settings-row-sub">How long the Board keeps past artifacts before archiving them.</div>
+                    </div>
+                    <span class="settings-pill">Default</span>
+                  </div>
+                  <div class="settings-row is-soon">
+                    <div class="settings-row-main">
+                      <div class="settings-row-title">Appearance</div>
+                      <div class="settings-row-sub">Theme and density for the Board surface.</div>
+                    </div>
+                    <span class="settings-pill">Auto</span>
+                  </div>
+                </div>
+                <div class="settings-foot">Wiring comes next.</div>
+              </div>
+            </div>
           </div>
-          <!-- History drawer (off-canvas left) + its dismiss scrim. -->
-          <div id="unit-history-scrim" class="unit-history-scrim"></div>
-          <div id="unit-history" class="unit-history"></div>
         </div>
 
         <div class="kbd-hint">
