@@ -15,15 +15,15 @@
 # correct. The slug sanitizer collapses runs of '-', so a slug never contains
 # '--'; the frontend splits the stem on the first '--' to recover shortid.
 #
-# UNIT identity (for the Board's per-session home): every session is its OWN unit,
-# so its artifacts, board, and home are NEVER shared with another session — even two
-# sessions in the same repo. The Board is session-first. is_repo is still reported
-# (the Board uses it for worktree-isolation decisions + display), but it no longer
-# collapses sessions:
+# UNIT identity (for the Board's per-unit home): a unit is the PROJECT for a repo
+# session, so sessions in one repo share a project home/artifacts/rail group, with
+# the rail switching between the project's sessions. A non-repo session is its own
+# unit. is_repo is still reported (worktree-isolation decisions + display):
 #   is_repo  = 1 when the session runs inside a git repo, else 0
-#   unit_key = <slug>--<shortid>  ALWAYS (unique per session)
-# Two agents in one repo are two distinct units, each with its own artifact space;
-# use a git worktree when they must not edit the same files.
+#   unit_key = <slug>            when is_repo=1 (the project — sessions share it)
+#            = <slug>--<shortid> when is_repo=0 (a bare session is its own unit)
+# Two agents in one repo share a unit; use a git worktree when they must not edit
+# the same files.
 
 cwd="${1:-$(pwd)}"
 session_id="$2"
@@ -38,10 +38,11 @@ slug=$(printf '%s' "$project" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-\{1,\}/-/g; s
 shortid=$(printf '%.8s' "$session_id" | tr -c 'A-Za-z0-9' '-')
 [ -n "$shortid" ] || shortid="nosessid"
 
-# Per-session identity: each session is its own unit (never shared across sessions
-# in one repo). is_repo stays reported above for worktree/display, but unit_key is
-# always slug--shortid so a 2nd session in the same repo never collapses onto the 1st.
-unit_key="${slug}--${shortid}"
+# Unit identity: a repo session belongs to its PROJECT (unit_key = slug), so every
+# session in one repo shares one project unit (home, artifacts, rail group); a
+# non-repo session is its own unit (slug--shortid). The Board derives this for repos
+# regardless, but we stamp it correctly so closed-session fallbacks stay right.
+if [ "$is_repo" = "1" ]; then unit_key="$slug"; else unit_key="${slug}--${shortid}"; fi
 
 live_path="${HOME}/.claude/companion/live/${slug}--${shortid}.json"
 printf '%s\t%s\t%s\t%s\t%s\n' "$live_path" "$project" "$shortid" "$is_repo" "$unit_key"

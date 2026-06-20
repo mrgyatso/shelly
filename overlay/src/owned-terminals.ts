@@ -240,6 +240,44 @@ export async function ensureOwnedTerminal(unitKey: string, resume?: string): Pro
   }
 }
 
+/** Switch to a SPECIFIC session within `unitKey` (the two-level rail's per-session
+ *  click). Three cases, mirroring the per-unit rule at the session grain:
+ *   • already-owned terminal (matched by its tabId) ⇒ activate + show;
+ *   • Board-launchable but no terminal here (resumeId present) ⇒ resume by id;
+ *   • external session (no terminal, no resumeId) ⇒ false — caller shows state only,
+ *     never spawning a duplicate `claude` for a session in the user's own terminal.
+ *  Resuming by id keeps the session id ⇒ it binds back to THIS unit ⇒ no clone. */
+const resumingSessions = new Set<string>();
+export async function showSessionInUnit(
+  unitKey: string,
+  tabId: string | null,
+  resumeId: string | null,
+): Promise<boolean> {
+  if (tabId) {
+    const t = terminals.get(tabId);
+    if (t && !t.exited) {
+      activeByUnit.set(unitKey, tabId);
+      showOwnedTerminals(unitKey);
+      return true;
+    }
+  }
+  if (resumeId) {
+    if (resumingSessions.has(resumeId)) return false;
+    const dir = resolveDir(unitKey);
+    if (!dir) return false;
+    resumingSessions.add(resumeId);
+    try {
+      const newTab = await spawnOwnedSession(dir, unitKey, resumeId);
+      activeByUnit.set(unitKey, newTab);
+      showOwnedTerminals(unitKey);
+      return true;
+    } finally {
+      resumingSessions.delete(resumeId);
+    }
+  }
+  return false;
+}
+
 /** End the shown owned terminal of the current unit (the floating ✕). */
 export function endShownTerminal(): void {
   if (!currentUnit) return;

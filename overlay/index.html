@@ -148,6 +148,11 @@
                History/Settings takes over the main pane. board.ts fills
                #unit-rail-sessions and drives data-rail / data-view. -->
           <nav id="unit-rail" class="unit-rail" aria-label="Sessions and menu">
+            <!-- Home: back to the sessions roster (L1). The always-visible "get back"
+                 affordance on the rail itself (the toolbar ◁ was easy to miss). -->
+            <button id="unit-rail-home" class="rail-home-btn" title="Back to all sessions" aria-label="Back to all sessions">
+              <span class="rail-home-ico">⌂</span><span>Sessions</span>
+            </button>
             <button id="unit-menu-toggle" class="rail-menu-btn" title="Menu" aria-label="Menu">☰</button>
             <!-- Sessions face: one tab per live session (browser style). -->
             <div id="unit-rail-sessions" class="rail-sessions"></div>
@@ -183,6 +188,14 @@
             <!-- SESSION view: the artifact hero + the live terminal (always present —
                  a unit IS a session). -->
             <div class="unit-main">
+              <!-- "New artifact" pill — floats over the hero when a newer artifact
+                   arrives for the unit on screen. The hero is sticky (never auto-
+                   reloads under the poll), so this is the click-to-advance affordance. -->
+              <button id="unit-hero-new" class="hero-new-pill" type="button" hidden>
+                <span class="hero-new-dot"></span>
+                <span class="hero-new-label">New artifact</span>
+                <span class="hero-new-cue">view ↑</span>
+              </button>
               <!-- Artifact restore pill — shown only when the artifact is tucked. -->
               <button id="unit-artifact-pill" class="surface-pill" type="button">
                 <span class="surface-pill-ico">▤</span>

@@ -42,6 +42,7 @@ import {
   fitShownTerminal,
   ensureOwnedTerminal,
   endShownTerminal,
+  showSessionInUnit,
 } from "./owned-terminals";
 
 interface ArtifactEntry {
@@ -206,6 +207,9 @@ let sessionsEl: HTMLElement;
 let unitEl: HTMLElement;
 let digestEl: HTMLIFrameElement;
 let digestPath: string | null = null; // tracks what's currently loaded in digestEl
+/** Newest unseen artifact for the on-screen unit while its hero stays sticky. */
+let heroPendingPath: string | null = null;
+let heroNewEl: HTMLButtonElement | null = null;
 let historyEl: HTMLElement;
 let railEl: HTMLElement | null = null;
 let railSessionsEl: HTMLElement | null = null;
@@ -214,6 +218,7 @@ let controlsEl: HTMLElement | null = null;
 let unitTitleEl: HTMLElement | null = null;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
 let currentUnitKey: string | null = null;
+let lastRailActiveUnit: string | null = null; // tracks which unit the rail was last rendered for
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
@@ -241,6 +246,7 @@ export async function initBoard(): Promise<void> {
   unitEl = unit;
   digestEl = digest;
   historyEl = history;
+  heroNewEl = document.getElementById("unit-hero-new") as HTMLButtonElement | null;
   // Mirror the focusFrame "restore-submitted" logic: when the hero digest
   // reloads after a unit re-entry, re-show the submitted overlay if the user
   // already answered this artifact and it hasn't been rewritten since.
@@ -564,6 +570,8 @@ function goSessions(): void {
  *  the daily-home Hub, seat the Sessions roster as the root beneath the unit so
  *  back goes unit→roster→(stop), never back to the Hub. */
 function goUnit(unitKey: string): void {
+  // Instant-hide the pane so the content swap doesn't flash; fades back in after load.
+  if (unitEl) unitEl.classList.add("is-switching");
   leaveUnit(); // clears prior theming; renderHero re-themes if this unit authored a home
   if (currentView().level === "hub") {
     viewStack = [{ level: "sessions" }, { level: "unit", unitKey }];
@@ -573,6 +581,10 @@ function goUnit(unitKey: string): void {
   }
   showLevel("unit");
   enterUnit(unitKey);
+  // Two rAFs: first lets the browser paint opacity:0, second starts the 180ms fade-in.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => unitEl?.classList.remove("is-switching")),
+  );
 }
 
 /** Pop one level: Unit → Sessions → Hub. */
@@ -654,8 +666,10 @@ function parseState(json: string): LiveState {
  */
 function unitKeyOf(s: LiveSource): string {
   const st = parseState(s.json);
-  if (st.unit_key) return st.unit_key;
-  if (st.is_repo === false) return s.source;
+  // Project-units: a repo session belongs to its PROJECT, derived from the source
+  // itself (NOT the stored unit_key) so plugin-cache drift in unit_key can't split
+  // one repo into several units. A non-repo session stays its own unit.
+  if (st.is_repo === false) return st.unit_key ?? s.source;
   return sourceProjectKey(s);
 }
 
@@ -695,9 +709,16 @@ function groupSourcesByUnit(): Map<string, LiveSource[]> {
  * Falls back to the unique non-repo instance's unit, else UNSOURCED.
  */
 function unitForArtifact(a: ArtifactEntry): string {
-  // Authoritative: the hook stamped the writing session's unit key at create time
-  // (keyed on session_id). This is immune to the project-slug ambiguity below
-  // (stale live files, two dirs sharing a basename) and to a volatile cwd.
+  // Prefer the live SOURCE that wrote it: unitKeyOf derives the project unit, so an
+  // artifact follows its session's unit even when the stored unit_key is stale
+  // (plugin-cache drift split one repo across two keys). Falls through to the stored
+  // key when the writing source is gone (closed session) — already project-correct.
+  if (a.source) {
+    const src = allSources.find((s) => s.source === a.source);
+    if (src) return unitKeyOf(src);
+  }
+  // Authoritative for closed sessions: the hook stamped the writing session's unit
+  // key at create time. Immune to the project-slug ambiguity below and a volatile cwd.
   if (a.unit_key) return a.unit_key;
   // Fallback for un-indexed artifacts (hub/offsite/cron, or pre-hook): match by
   // the model-stamped project. Display-only metadata, kept only as a fallback.
@@ -1030,10 +1051,85 @@ function renderUnitRail(activeUnitKey: string | null): void {
   if (!railSessionsEl) return;
   const now = Date.now();
   const { order, byUnit, bandOf } = computeRoster(now);
-  const tabs = order.map((unit) =>
-    buildRailTab(unit, byUnit.get(unit) ?? [], bandOf.get(unit) ?? "idle", unit === activeUnitKey),
-  );
-  railSessionsEl.replaceChildren(...tabs);
+  const unitChanged = activeUnitKey !== lastRailActiveUnit;
+  lastRailActiveUnit = activeUnitKey;
+
+  const nodes: HTMLElement[] = [];
+  let newGroup: HTMLElement | null = null;
+
+  for (const unit of order) {
+    const sources = byUnit.get(unit) ?? [];
+    nodes.push(buildRailTab(unit, sources, bandOf.get(unit) ?? "idle", unit === activeUnitKey));
+    // Two-level: the ACTIVE project expands inline to its sessions (only when it
+    // holds more than one — a single-session project is its own tab already).
+    if (unit === activeUnitKey && sources.length > 1) {
+      const shownTab = ownedTabForUnit(unit);
+      const group = document.createElement("div");
+      group.className = "unit-subtab-group";
+      const inner = document.createElement("div");
+      inner.className = "unit-subtab-group-inner";
+      for (const s of railSessionOrder(sources)) inner.appendChild(buildRailSessionRow(unit, s, shownTab));
+      group.appendChild(inner);
+      nodes.push(group);
+      newGroup = group;
+      // Poll re-renders of the same unit skip animation; project switches animate open.
+      if (!unitChanged) group.classList.add("open");
+    }
+  }
+
+  railSessionsEl.replaceChildren(...nodes);
+
+  // Trigger the drop-down: set .open on the next paint so the browser can
+  // measure the 0fr state before transitioning to 1fr.
+  if (unitChanged && newGroup) {
+    const g = newGroup;
+    requestAnimationFrame(() => requestAnimationFrame(() => g.classList.add("open")));
+  }
+}
+
+/** Sessions of a project, most-recent first (matches resume-on-entry order). */
+function railSessionOrder(sources: LiveSource[]): LiveSource[] {
+  return [...sources].sort((a, b) => sourceUpdatedMs(b) - sourceUpdatedMs(a));
+}
+
+/** A short, identifying label for a session sub-row: its working line, else its
+ *  shortid. */
+function sessionLabel(s: LiveSource): string {
+  const w = (parseState(s.json).working || "").trim();
+  if (w) return w.length > 24 ? w.slice(0, 23) + "…" : w;
+  return shortIdOfSource(s.source) || "session";
+}
+
+/** One session sub-row under the active project tab. Active = its bound terminal is
+ *  the one currently shown. Click switches/resumes it (see switchToSession). */
+function buildRailSessionRow(unitKey: string, s: LiveSource, shownTab: string | null): HTMLElement {
+  const st = parseState(s.json);
+  const tabId = st.companion_session ?? null;
+  const active = tabId !== null && tabId === shownTab;
+  const row = document.createElement("button");
+  row.className = "unit-subtab" + (active ? " active" : "");
+  row.dataset.session = s.source;
+  row.title = `${sessionLabel(s)} — ${st.working || "session"}`;
+
+  const dot = document.createElement("span");
+  dot.className = "unit-subtab-dot" + (isLiveSource(s, Date.now()) ? " live" : "");
+  const name = document.createElement("span");
+  name.className = "unit-subtab-name";
+  name.textContent = sessionLabel(s);
+  row.append(dot, name);
+
+  if (!active) row.addEventListener("click", () => switchToSession(unitKey, s));
+  return row;
+}
+
+/** Switch the active project's shown terminal to a specific session, resuming it by
+ *  id if the Board owns it but its terminal is gone. External sessions (no id) just
+ *  leave the hero/state visible — never a duplicate spawn. */
+function switchToSession(unitKey: string, s: LiveSource): void {
+  const st = parseState(s.json);
+  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null).then(() => {
+    if (currentUnitKey === unitKey) renderUnitRail(unitKey);
+  });
 }
 
 /** One rail tab: a state dot, the unit's mark, its name, an unread badge. The
@@ -1446,12 +1542,18 @@ async function ensureAndShowTerminal(unitKey: string): Promise<void> {
  *  the Board launched (session-ids.json is hook-guarded on COMPANION_SESSION), so
  *  this cleanly gates resume-on-entry: Board-launched ⇒ resume; external ⇒ never. */
 function resumableSessionFor(unitKey: string): string | null {
+  // Project-units: a unit can hold several sessions — resume the MOST-RECENT one on
+  // entry (by updated_ms). Resuming by its id keeps the id ⇒ it binds back to this
+  // same unit ⇒ no clone. (Per-session switching to the others lives in the rail.)
+  let best: { id: string; ms: number } | null = null;
   for (const s of allSources) {
     if (unitKeyOf(s) !== unitKey) continue;
     const id = parseState(s.json).session_id;
-    if (id) return id;
+    if (!id) continue;
+    const ms = sourceUpdatedMs(s);
+    if (!best || ms > best.ms) best = { id, ms };
   }
-  return null;
+  return best ? best.id : null;
 }
 
 /** Tear down L2 state when leaving a unit. Clears any L2 hero bar theming so a
@@ -1460,6 +1562,7 @@ function resumableSessionFor(unitKey: string): string | null {
 function leaveUnit(): void {
   currentUnitKey = null;
   closeFocus();
+  hideHeroNewPill();
   if (unitEl) {
     unitEl.dataset.rail = "sessions";
     unitEl.dataset.view = "session";
@@ -1485,6 +1588,7 @@ function leaveUnit(): void {
  * carries its empty state. Progressive enhancement, exactly like the L0 Hub.
  */
 async function renderHero(unitKey: string): Promise<void> {
+  hideHeroNewPill(); // entry/refresh lands on the newest → any pending is moot
   let home: string | null = null;
   if (unitKey !== UNSOURCED) {
     try {
@@ -1524,6 +1628,40 @@ async function renderHero(unitKey: string): Promise<void> {
     digestEl.setAttribute("hidden", "");
     syncSurfaceStrip(false);
   }
+}
+
+/** Reveal the "new artifact → view" pill over the sticky hero. `path` is the
+ *  newest unseen artifact for the on-screen unit; clicking advances the hero to it.
+ *  Passive by design — the poll never reloads the hero itself (see ingestIntoUnit),
+ *  so a newer artifact for the unit you're already in can't silently vanish into
+ *  history. */
+function showHeroNewPill(path: string): void {
+  heroPendingPath = path;
+  heroNewEl?.removeAttribute("hidden");
+}
+
+function hideHeroNewPill(): void {
+  heroPendingPath = null;
+  heroNewEl?.setAttribute("hidden", "");
+}
+
+/** User-initiated hero advance: load the pending artifact into the hero. This is
+ *  the ONLY sanctioned hero reload while a unit is live (a click, not the poll), so
+ *  it can't wipe a comment the user was mid-typing — they chose to move on. Mirrors
+ *  renderHero's plain-artifact branch. */
+async function viewHeroPending(): Promise<void> {
+  const path = heroPendingPath;
+  hideHeroNewPill();
+  if (!path || currentView().level !== "unit") return;
+  digestEl.removeAttribute("hidden");
+  syncSurfaceStrip(true);
+  applyBar(null);
+  digestPath = path;
+  markArtifactRead(path);
+  await loadArtifactInto(path, digestEl).catch((e) =>
+    console.error("hero advance load failed", path, e),
+  );
+  updateGlobalUnread();
 }
 
 /** A clickable artifact row — the history list. */
@@ -1621,6 +1759,10 @@ function wireUnitChrome(): void {
     setRailMode(unitEl.dataset.rail === "menu" ? "sessions" : "menu"),
   );
 
+  // ⌂ Home — back to the sessions roster (L1). The labeled, always-visible "get
+  // back" affordance on the rail itself (the toolbar ◁ was easy to miss).
+  document.getElementById("unit-rail-home")?.addEventListener("click", () => goSessions());
+
   // Menu nav: each destination takes over the main pane.
   railEl?.addEventListener("click", (e) => {
     const nav = (e.target as HTMLElement).closest<HTMLElement>(".rail-nav");
@@ -1640,6 +1782,7 @@ function wireUnitChrome(): void {
   // Each tucked surface restores on click via its warm pill.
   document.getElementById("unit-artifact-pill")?.addEventListener("click", () => setFocus("split"));
   document.getElementById("unit-terminal-pill")?.addEventListener("click", () => setFocus("split"));
+  heroNewEl?.addEventListener("click", () => void viewHeroPending());
 
   // The in-session title doubles as a rename affordance — rename without leaving
   // the unit. onSaved re-renders the title in place (renderUnits alone refreshes
@@ -2333,13 +2476,23 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
     for (const p of [...set]) if (!present.has(p)) set.delete(p);
     if (set.size === 0) unreadByUnit.delete(unit);
   }
+  if (heroPendingPath !== null && !present.has(heroPendingPath)) hideHeroNewPill();
 
   const view = currentView();
   const viewingUnit = view.level === "unit" ? view.unitKey : null;
+  let heroNewCandidate: ArtifactEntry | null = null;
   for (const a of newOnes) {
     const unit = unitForArtifact(a);
-    if (unit !== viewingUnit) addUnread(unit, a.path);
+    if (unit !== viewingUnit) {
+      addUnread(unit, a.path);
+    } else if (digestPath !== null && a.path !== digestPath) {
+      // The on-screen unit's hero is populated + sticky. Rather than let a newer
+      // artifact drop silently into history (the reported bug), surface the freshest
+      // one as a click-to-advance pill on the hero.
+      if (!heroNewCandidate || a.modified_ms > heroNewCandidate.modified_ms) heroNewCandidate = a;
+    }
   }
+  if (heroNewCandidate) showHeroNewPill(heroNewCandidate.path);
 
   maybeAutoAdvance(newOnes);
 

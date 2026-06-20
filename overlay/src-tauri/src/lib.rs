@@ -462,6 +462,21 @@ pub fn run() {
                         }
                     }
                 }
+                // Dock-icon click after the Board was minimized or hidden. tao
+                // delivers Reopen; with no handler the click was silently dropped,
+                // forcing a quit+reopen. unminimize() is required — show() alone
+                // only un-hides, it does NOT deminiaturize a window minimized via
+                // the yellow button / Cmd-M.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => {
+                    if let Some(win) = app_handle.get_webview_window(windows::BOARD_LABEL) {
+                        let _ = win.unminimize();
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    } else {
+                        windows::open_board_window(app_handle);
+                    }
+                }
                 _ => {}
             });
         });
