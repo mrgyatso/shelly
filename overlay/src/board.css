@@ -688,40 +688,6 @@
 }
 .board-unit::-webkit-scrollbar-thumb:hover { background: var(--ink-4); background-clip: content-box; }
 
-/* keyboard hint footer */
-.kbd-hint {
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
-  z-index: 7;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--ink-4);
-  letter-spacing: 0.02em;
-  background: oklch(0.98 0.005 60 / 0.7);
-  backdrop-filter: blur(6px);
-  padding: 5px 12px;
-  border-radius: 999px;
-  box-shadow: 0 1px 4px oklch(0 0 0 / 0.06);
-  opacity: 0;
-  transition: opacity 0.3s;
-  pointer-events: none;
-}
-.board:hover .kbd-hint { opacity: 1; }
-.kbd-hint kbd {
-  font-family: var(--mono);
-  font-size: 10px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  padding: 1px 5px;
-  color: var(--ink-2);
-}
 
 /* =========================================================================
    SCROLL GATING — while the L2 list scrolls, pause the repaint-heavy paper

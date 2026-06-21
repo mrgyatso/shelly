@@ -550,22 +550,13 @@ function showLevel(level: BoardView["level"]): void {
  *  has authored home.html, so the rail is immediately visible. Falls back to the
  *  Hub fallback when nothing exists yet. */
 async function startupNavigate(): Promise<void> {
-  let home: string | null = null;
-  try {
-    home = await invoke<string | null>("resolve_home");
-  } catch {
-    home = null;
-  }
-  if (home) {
-    await goHub();
-    return;
-  }
+  // Live sessions take priority — go directly to work instead of landing on home.html.
   const recent = findMostRecentActiveUnit();
   if (recent) {
     goUnit(recent);
-  } else {
-    await goHub();
+    return;
   }
+  await goHub();
 }
 
 /** The unit key of the most recently active project (live first, then closed).
@@ -598,12 +589,14 @@ async function goHub(): Promise<void> {
 }
 
 /** "Enter the roster" / sessions target. The L1 roster is gone (the rail IS the
- *  navigation), so there's no list page to land on — drop into the first live unit
- *  instead, where the rail surfaces every other session. No live units ⇒ stay put
- *  (re-entering the hub from the hub would just reload home.html for no change). */
+ *  navigation), so there's no list page to land on — drop into the first live unit.
+ *  Falls back to findMostRecentActiveUnit() so the button works even when the poll
+ *  hasn't yet propagated freshness (e.g. immediately after Board launch). */
 function goSessions(): void {
   const order = computeRoster(Date.now()).order;
-  if (order.length > 0) goUnit(order[0]);
+  if (order.length > 0) { goUnit(order[0]); return; }
+  const u = findMostRecentActiveUnit();
+  if (u) goUnit(u);
 }
 
 /** Enter L2 — one unit's home. Replace rather than stack if already at a unit.
