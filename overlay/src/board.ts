@@ -182,6 +182,8 @@ const submittedArtifacts = new Map<string, number>();
  *  reader close. Only THIS session's artifacts auto-advance; another session's
  *  new work just raises the ambient "N agents need you" awareness (unread). */
 let awaitingAdvanceSource: string | null = null;
+/** Teardown for the scoped "On it" overlay's resize listener, or null when none. */
+let boardSubmittedCleanup: (() => void) | null = null;
 
 // ---- live artifact ingestion + unread ---------------------------------------
 // The poll loop re-reads list_artifacts(); a new artifact is routed to its
@@ -1051,8 +1053,16 @@ function renderUnitRail(activeUnitKey: string | null): void {
   if (!railSessionsEl) return;
   const now = Date.now();
   const { order, byUnit, bandOf } = computeRoster(now);
-  const unitChanged = activeUnitKey !== lastRailActiveUnit;
+  const prevActiveUnit = lastRailActiveUnit;
+  const unitChanged = activeUnitKey !== prevActiveUnit;
   lastRailActiveUnit = activeUnitKey;
+
+  // On a project switch, grab the OUTGOING project's session group so it can animate
+  // closed after the rebuild (replaceChildren would otherwise drop it instantly).
+  const exitingGroup =
+    unitChanged && prevActiveUnit
+      ? (railSessionsEl.querySelector(".unit-subtab-group") as HTMLElement | null)
+      : null;
 
   const nodes: HTMLElement[] = [];
   let newGroup: HTMLElement | null = null;
@@ -1061,7 +1071,8 @@ function renderUnitRail(activeUnitKey: string | null): void {
     const sources = byUnit.get(unit) ?? [];
     nodes.push(buildRailTab(unit, sources, bandOf.get(unit) ?? "idle", unit === activeUnitKey));
     // Two-level: the ACTIVE project expands inline to its sessions (only when it
-    // holds more than one — a single-session project is its own tab already).
+    // holds more than one — a single-session project is its own tab already). The
+    // group is visible by default; .opening just adds the drop-in animation.
     if (unit === activeUnitKey && sources.length > 1) {
       const shownTab = ownedTabForUnit(unit);
       const group = document.createElement("div");
@@ -1072,18 +1083,28 @@ function renderUnitRail(activeUnitKey: string | null): void {
       group.appendChild(inner);
       nodes.push(group);
       newGroup = group;
-      // Poll re-renders of the same unit skip animation; project switches animate open.
-      if (!unitChanged) group.classList.add("open");
     }
   }
 
   railSessionsEl.replaceChildren(...nodes);
 
-  // Trigger the drop-down: set .open on the next paint so the browser can
-  // measure the 0fr state before transitioning to 1fr.
-  if (unitChanged && newGroup) {
-    const g = newGroup;
-    requestAnimationFrame(() => requestAnimationFrame(() => g.classList.add("open")));
+  // Animate the incoming group's drop-down — a CSS keyframe (no rAF, runs even when
+  // the Board isn't the key window). Only on a project switch, not on every poll.
+  if (unitChanged && newGroup) newGroup.classList.add("opening");
+
+  // Re-attach the outgoing group under its (still-present) project tab and play the
+  // close keyframe, then remove — old sessions slide up as the new ones slide down.
+  if (exitingGroup) {
+    const oldTab = Array.from(railSessionsEl.querySelectorAll(".unit-tab")).find(
+      (t) => (t as HTMLElement).dataset.unit === prevActiveUnit,
+    ) as HTMLElement | undefined;
+    if (oldTab) {
+      exitingGroup.style.pointerEvents = "none"; // inert while collapsing
+      exitingGroup.classList.remove("opening");
+      exitingGroup.classList.add("closing");
+      oldTab.insertAdjacentElement("afterend", exitingGroup);
+      setTimeout(() => exitingGroup.remove(), 220);
+    }
   }
 }
 
@@ -1563,6 +1584,7 @@ function leaveUnit(): void {
   currentUnitKey = null;
   closeFocus();
   hideHeroNewPill();
+  dismissBoardSubmitted(); // never leave the "On it" splash mounted across nav
   if (unitEl) {
     unitEl.dataset.rail = "sessions";
     unitEl.dataset.view = "session";
@@ -2501,25 +2523,50 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
   updateGlobalUnread();
 }
 
-/** Same-session auto-advance: if the reader is open on an artifact we just
- *  submitted, and this session's NEXT artifact has now arrived, slide the reader
- *  straight to it (the waiting scene is discarded with the old iframe). Another
- *  session's new artifact is intentionally ignored here — it surfaces as ambient
- *  unread instead. The freshest matching new artifact wins. */
+/** Same-session auto-advance: after a submit, when this session's NEXT artifact
+ *  arrives, replace the waiting scene with it — in the reader if one is open,
+ *  else in the hero slot. Either way the "On it" splash is dismissed. Another
+ *  session's new artifact is intentionally ignored here (it surfaces as ambient
+ *  unread instead). The freshest matching new artifact wins. */
 function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
-  if (focusPath === null || awaitingAdvanceSource === null || !focusFrame) return;
+  if (awaitingAdvanceSource === null) return;
   const next = newOnes
-    .filter((a) => a.source === awaitingAdvanceSource && a.path !== focusPath)
+    .filter(
+      (a) =>
+        a.source === awaitingAdvanceSource && a.path !== focusPath && a.path !== digestPath,
+    )
     .sort((x, y) => y.modified_ms - x.modified_ms)[0];
   if (!next) return;
-  awaitingAdvanceSource = null;
-  readerBackStack.push(focusPath);
-  focusPath = next.path;
-  markArtifactRead(next.path);
-  renderReaderNav();
-  void loadArtifactInto(next.path, focusFrame).catch((e) =>
-    console.error("auto-advance failed", next.path, e),
-  );
+
+  // Reader open → slide the reader to the next artifact.
+  if (focusPath !== null && focusFrame) {
+    awaitingAdvanceSource = null;
+    dismissBoardSubmitted();
+    readerBackStack.push(focusPath);
+    focusPath = next.path;
+    markArtifactRead(next.path);
+    renderReaderNav();
+    void loadArtifactInto(next.path, focusFrame).catch((e) =>
+      console.error("auto-advance failed", next.path, e),
+    );
+    return;
+  }
+
+  // Hero waiting (no reader) → load the next artifact into the slot in place.
+  // Guard on the artifact's unit matching the one on screen so a stale pending
+  // advance can never load session A's artifact into a different unit's hero.
+  const v = currentView();
+  if (v.level === "unit" && unitForArtifact(next) === v.unitKey) {
+    awaitingAdvanceSource = null;
+    dismissBoardSubmitted();
+    hideHeroNewPill();
+    digestPath = next.path;
+    markArtifactRead(next.path);
+    void loadArtifactInto(next.path, digestEl).catch((e) =>
+      console.error("hero auto-advance failed", next.path, e),
+    );
+    updateGlobalUnread();
+  }
 }
 
 /** Refresh the on-screen unit's HISTORY when its artifact set changed. The HERO
@@ -2625,6 +2672,12 @@ function wireNavigate(): void {
         // Arm same-session auto-advance: this session's next artifact will
         // replace the waiting scene in the reader (no click, no terminal).
         awaitingAdvanceSource = art?.source ?? null;
+      } else if (digestPath) {
+        // Hero submit (no reader): arm same-slot auto-advance so this session's
+        // next artifact replaces the waiting scene in the hero, in place.
+        const art = allArtifacts.find((a) => a.path === digestPath);
+        submittedArtifacts.set(digestPath, art?.modified_ms ?? 0);
+        awaitingAdvanceSource = art?.source ?? null;
       }
       const v = currentView();
       const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
@@ -2650,8 +2703,13 @@ function wireNavigate(): void {
 
 /** The Board-rendered "submitted" splash — the version-proof complement to the
  *  artifact helper's in-page `__cmpShowSubmitted`. One at a time; dismiss returns
- *  to the artifact. Mounted in `.stage` so it inherits the warm tokens and covers
- *  the artifact surface. */
+ *  to the artifact.
+ *
+ *  Scoped to the ARTIFACT SLOT when we're on a unit hero (not the full-screen
+ *  reader): it covers only #unit-digest, so the terminal, rail, and the top-bar
+ *  drag region stay live — the user can keep working while the next artifact is
+ *  awaited, and it's dismissed automatically when that artifact lands. Falls back
+ *  to covering `.stage` for the reader / other levels (already full-screen). */
 function showBoardSubmitted(): void {
   if (document.querySelector(".board-submitted")) return;
   const ov = document.createElement("div");
@@ -2661,8 +2719,44 @@ function showBoardSubmitted(): void {
     '<div class="msg"><div class="t">On it.</div>' +
     '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
     '<button class="b" type="button">← View this artifact</button>';
-  ov.querySelector("button")?.addEventListener("click", () => ov.remove());
-  (document.querySelector(".stage") ?? document.body).append(ov);
+  ov.querySelector("button")?.addEventListener("click", () => dismissBoardSubmitted());
+
+  // Scope to the hero slot only when a hero artifact is actually on screen.
+  const main =
+    currentView().level === "unit" && !focusPath && unitEl && !digestEl.hasAttribute("hidden")
+      ? (unitEl.querySelector(".unit-main") as HTMLElement | null)
+      : null;
+  if (main && digestEl) {
+    ov.classList.add("scoped");
+    main.append(ov);
+    const sync = (): void => {
+      ov.style.top = `${digestEl.offsetTop}px`;
+      ov.style.left = `${digestEl.offsetLeft}px`;
+      ov.style.width = `${digestEl.offsetWidth}px`;
+      ov.style.height = `${digestEl.offsetHeight}px`;
+    };
+    sync();
+    // Observe the digest so the sheet tracks it through window resizes AND
+    // data-focus changes (the user can hit the toolbar resize buttons mid-"On it").
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(sync);
+      ro.observe(digestEl);
+      boardSubmittedCleanup = () => ro.disconnect();
+    } else {
+      window.addEventListener("resize", sync);
+      boardSubmittedCleanup = () => window.removeEventListener("resize", sync);
+    }
+  } else {
+    (document.querySelector(".stage") ?? document.body).append(ov);
+  }
+}
+
+/** Remove the "On it" splash and any listener it installed. Safe to call when
+ *  none is showing. */
+function dismissBoardSubmitted(): void {
+  boardSubmittedCleanup?.();
+  boardSubmittedCleanup = null;
+  document.querySelector(".board-submitted")?.remove();
 }
 
 /** Submit a compiled artifact answer into a Board-owned PTY and AUTO-SEND it.

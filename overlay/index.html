@@ -172,17 +172,14 @@
               <!-- Shown only when the rail is collapsed — click to bring it back. -->
               <button id="unit-rail-expand" class="rail-expand-btn" title="Show sidebar" aria-label="Show sidebar">»</button>
               <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
-              <!-- Surface controls: resize (⬒/⊟/⬓), status dot, end session. Lives in
-                   the toolbar so it never overlaps the artifact/terminal pills below. -->
+              <!-- Surface controls: resize only (⬒/⊟/⬓). Lives in the toolbar so it
+                   never overlaps the artifact/terminal pills below. -->
               <div id="unit-surface-controls" class="surface-controls">
                 <div class="sc-resize" role="group" aria-label="Resize surfaces">
                   <button class="surface-focus" type="button" data-focus="artifact" title="Focus the artifact" aria-label="Focus the artifact">⬒</button>
                   <button class="surface-focus" type="button" data-focus="split" title="Split evenly" aria-label="Split evenly">⊟</button>
                   <button class="surface-focus" type="button" data-focus="terminal" title="Focus the terminal" aria-label="Focus the terminal">⬓</button>
                 </div>
-                <span class="sc-sep" aria-hidden="true"></span>
-                <span id="unit-term-dot" class="sc-dot" title="Session"></span>
-                <button id="unit-term-close" class="sc-close" type="button" title="End this session" aria-label="End session">✕</button>
               </div>
             </div>
             <!-- SESSION view: the artifact hero + the live terminal (always present —

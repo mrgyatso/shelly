@@ -760,6 +760,20 @@
   background: radial-gradient(120% 90% at 50% 32%, var(--card) 0%, var(--board) 72%);
   backdrop-filter: blur(3px);
 }
+/* Scoped to the artifact slot (the hero), not the whole window: the "On it"
+   waiting scene sits exactly where the artifact was, so the terminal, rail, and
+   top-bar drag region all stay live while the next artifact is awaited. JS sizes
+   it to #unit-digest's box (top/left/width/height) inside the positioned
+   .unit-main. */
+.board-submitted.scoped {
+  position: absolute;
+  inset: auto;
+  z-index: 6;
+  border-radius: var(--radius-card);
+  outline: 1px solid var(--line-2);
+  outline-offset: -1px;
+  overflow: hidden;
+}
 .board-submitted .ring {
   width: 54px;
   height: 54px;
@@ -1302,21 +1316,31 @@
 .unit-subtab.active .unit-subtab-name { font-weight: 650; }
 .unit-subtab-dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; background: var(--idle); }
 
-/* Animated expand/collapse wrapper for session sub-rows under a project tab.
-   grid-template-rows: 0fr → 1fr lets height animate from 0 to auto without
-   measuring. JS adds .open on the next paint after insertion. */
+/* Session sub-rows under the active project. VISIBLE BY DEFAULT (grid-template-rows
+   1fr) so the dropdown always shows even if the open animation can't run — the prior
+   "collapsed 0fr + JS adds .open via rAF" left the list hidden whenever the rAF
+   didn't fire (the Board is a non-key overlay window). The drop-down/​up motion is a
+   compositor-driven CSS keyframe, added as a transient .opening/.closing class — no
+   rAF, no focus dependency. If grid-fr animation is unsupported the static 1fr still
+   shows it. */
 .unit-subtab-group {
   display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 220ms ease;
+  grid-template-rows: 1fr;
 }
-.unit-subtab-group.open { grid-template-rows: 1fr; }
 .unit-subtab-group-inner {
   overflow: hidden;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding-bottom: 2px;
+}
+.unit-subtab-group.opening { animation: rail-drop-in 220ms var(--ease, ease); }
+.unit-subtab-group.closing { animation: rail-drop-out 200ms var(--ease, ease) both; }
+@keyframes rail-drop-in { from { grid-template-rows: 0fr; } to { grid-template-rows: 1fr; } }
+@keyframes rail-drop-out { from { grid-template-rows: 1fr; } to { grid-template-rows: 0fr; } }
+@media (prefers-reduced-motion: reduce) {
+  .unit-subtab-group.opening, .unit-subtab-group.closing { animation: none; }
 }
 .unit-subtab-dot.live { background: var(--ok); }
 .unit-subtab.active .unit-subtab-dot { background: var(--accent); }
