@@ -123,16 +123,6 @@
           </div>
         </div>
 
-        <!-- L1 Sessions picker. A light native grid of one card per live source —
-             status only, NO artifact iframes. board.ts fills #board-sessions-grid. -->
-        <div id="board-sessions" class="board-sessions" hidden>
-          <div class="sessions-head">
-            <div class="sessions-title">Sessions</div>
-            <div id="sessions-sub" class="sessions-sub"></div>
-          </div>
-          <div id="board-sessions-grid" class="sessions-grid"></div>
-        </div>
-
         <!-- L2 Unit home. A unit groups all live sessions of a project (or a bare
              non-repo session). The embedded TERMINAL is the primary surface; the
              agent DIGEST (home.<unit>.html, else the latest artifact) sits above it
@@ -148,11 +138,6 @@
                History/Settings takes over the main pane. board.ts fills
                #unit-rail-sessions and drives data-rail / data-view. -->
           <nav id="unit-rail" class="unit-rail" aria-label="Sessions and menu">
-            <!-- Home: back to the sessions roster (L1). The always-visible "get back"
-                 affordance on the rail itself (the toolbar ◁ was easy to miss). -->
-            <button id="unit-rail-home" class="rail-home-btn" title="Back to all sessions" aria-label="Back to all sessions">
-              <span class="rail-home-ico">⌂</span><span>Sessions</span>
-            </button>
             <button id="unit-menu-toggle" class="rail-menu-btn" title="Menu" aria-label="Menu">☰</button>
             <!-- Sessions face: one tab per live session (browser style). -->
             <div id="unit-rail-sessions" class="rail-sessions"></div>

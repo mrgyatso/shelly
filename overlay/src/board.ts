@@ -38,6 +38,7 @@ import {
   ownedUnits,
   ownedTabForUnit,
   endOwnedTerminalsForUnit,
+  closeOwnedTerminal,
   setTerminalCollapsed,
   fitShownTerminal,
   ensureOwnedTerminal,
@@ -138,10 +139,10 @@ const FRESH_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 const win = getCurrentWebviewWindow();
 
-/** The Board's three drill-down levels. L0 Hub → L1 Sessions → L2 one unit. */
+/** The Board's two drill-down levels. L0 Hub → L2 one unit. (The rail IS the
+ *  session navigation now; the old L1 sessions roster is gone.) */
 type BoardView =
   | { level: "hub" }
-  | { level: "sessions" }
   | { level: "unit"; unitKey: string };
 
 /** Back-navigation stack; the current view is its top. */
@@ -162,6 +163,10 @@ let allRecent: RecentSession[] = [];
 /** A "+ New session" terminal awaiting its first live source, so pollLive can
  *  navigate to its unit once it correlates. */
 let pendingNavTab: string | null = null;
+/** Whether `pendingNavTab` is a FRESH launch (true) vs a RESUME (false). On the
+ *  correlate-and-re-nav, only a fresh launch skips the digest (lands terminal-focused);
+ *  a resume keeps its hero — the user clicked a session that HAS context to show. */
+let pendingNavFresh = false;
 /** The unit of a just-launched/resumed session — `renderHero` skips the project
  *  digest for it (the user wants their new terminal, not a ~1s artifact load), so
  *  entry lands terminal-focused with no flash. Consumed on the first render. */
@@ -209,7 +214,6 @@ let boardEl: HTMLElement;
 let stageEl: HTMLElement;
 let scrimEl: HTMLElement;
 let hubEl: HTMLElement;
-let sessionsEl: HTMLElement;
 let unitEl: HTMLElement;
 let digestEl: HTMLIFrameElement;
 let digestPath: string | null = null; // tracks what's currently loaded in digestEl
@@ -225,6 +229,8 @@ let unitTitleEl: HTMLElement | null = null;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
 let currentUnitKey: string | null = null;
 let lastRailActiveUnit: string | null = null; // tracks which unit the rail was last rendered for
+/** Which recent (closed) project is expanded in the rail, or null for all collapsed. */
+let expandedRecentProject: string | null = null;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
@@ -234,7 +240,6 @@ export async function initBoard(): Promise<void> {
   const scrim = document.getElementById("board-scrim");
   const status = document.getElementById("board-status");
   const hub = document.getElementById("board-hub");
-  const sessions = document.getElementById("board-sessions");
   const unit = document.getElementById("board-unit");
   const digest = document.getElementById("unit-digest") as HTMLIFrameElement | null;
   const history = document.getElementById("unit-history");
@@ -242,13 +247,12 @@ export async function initBoard(): Promise<void> {
   document.getElementById("frame")?.setAttribute("hidden", "");
   document.getElementById("empty")?.setAttribute("hidden", "");
   document.getElementById("controls")?.setAttribute("hidden", "");
-  if (!stage || !board || !scrim || !status || !hub || !sessions || !unit || !digest || !history) return;
+  if (!stage || !board || !scrim || !status || !hub || !unit || !digest || !history) return;
 
   stageEl = stage;
   boardEl = board;
   scrimEl = scrim;
   hubEl = hub;
-  sessionsEl = sessions;
   unitEl = unit;
   digestEl = digest;
   historyEl = history;
@@ -329,12 +333,10 @@ export async function initBoard(): Promise<void> {
   void loadRecent();
   window.setInterval(() => void loadRecent(), POLL_MS * 20);
 
-  // Every TRUE app relaunch lands on the L0 Hub. initBoard runs once per process — a
-  // fresh launch creates the Board window (→ this runs), but a mere hide/show of the
-  // window does NOT (open_board_window just show()s the existing one). So putting the
-  // Board away and reopening it KEEPS YOUR PLACE; only a real relaunch returns home.
-  // (Per the user's pick: "only true app relaunch.")
-  await goHub();
+  // On relaunch, skip straight to the most recently active project when no home.html
+  // has been authored — the rail shows all projects and is immediately useful without
+  // an extra click through the old sessions roster.
+  await startupNavigate();
 
   // A popover row click stores a deep-link target; drain it (fresh window). An
   // already-open Board catches the same target via the `board:navigate` event.
@@ -393,7 +395,10 @@ async function launchSessionIn(dir: string): Promise<void> {
   const provisional = existing ? base : `${base}~${++provisionalSeq}`;
   try {
     const tabId = await spawnOwnedSession(dir, provisional);
-    if (!existing) pendingNavTab = tabId; // re-nav only when the throwaway re-homes
+    if (!existing) {
+      pendingNavTab = tabId; // re-nav only when the throwaway re-homes
+      pendingNavFresh = true; // a fresh launch: the re-nav skips the digest
+    }
     freshLaunchUnit = provisional; // land on the new terminal, not the project digest
     goUnit(provisional);
   } catch (e) {
@@ -536,14 +541,54 @@ async function applyNavTarget(): Promise<void> {
 
 // ---- view router ------------------------------------------------------------
 
-/** Show exactly one of the three level containers; the rest stay hidden. */
+/** Show exactly one of the level containers; the rest stay hidden. */
 function showLevel(level: BoardView["level"]): void {
   hubEl.toggleAttribute("hidden", level !== "hub");
-  sessionsEl.toggleAttribute("hidden", level !== "sessions");
   unitEl.toggleAttribute("hidden", level !== "unit");
   // Back is shown only when there's somewhere to go back to. The Hub (daily
-  // landing) and the Sessions roster are both stack roots → no back arrow there.
+  // landing) is the stack root → no back arrow there.
   document.getElementById("board-back")?.toggleAttribute("hidden", viewStack.length <= 1);
+}
+
+/** Startup routing: go directly to the most recently active project when no agent
+ *  has authored home.html, so the rail is immediately visible. Falls back to the
+ *  Hub fallback when nothing exists yet. */
+async function startupNavigate(): Promise<void> {
+  let home: string | null = null;
+  try {
+    home = await invoke<string | null>("resolve_home");
+  } catch {
+    home = null;
+  }
+  if (home) {
+    await goHub();
+    return;
+  }
+  const recent = findMostRecentActiveUnit();
+  if (recent) {
+    goUnit(recent);
+  } else {
+    await goHub();
+  }
+}
+
+/** The unit key of the most recently active project (live first, then closed).
+ *  Used by startupNavigate and the hub fallback CTA. */
+function findMostRecentActiveUnit(): string | null {
+  const now = Date.now();
+  const liveSorted = allSources
+    .filter((s) => !isDismissed(s) && isLiveSource(s, now))
+    .sort(
+      (a, b) =>
+        Math.max(sourceUpdatedMs(b), sourceHeartbeatMs(b)) -
+        Math.max(sourceUpdatedMs(a), sourceHeartbeatMs(a)),
+    );
+  if (liveSorted.length) return unitKeyOf(liveSorted[0]);
+  const recent = recentToShow();
+  if (recent.length) {
+    return projectSlug(recent[0].project) ?? recent[0].cwd.split("/").filter(Boolean).pop() ?? null;
+  }
+  return null;
 }
 
 /** Enter L0. Resolves home.html (Rust) → full-bleed iframe, else native fallback. */
@@ -556,34 +601,26 @@ async function goHub(): Promise<void> {
   updateGlobalUnread();
 }
 
-/** Enter L1 — the native Sessions roster, grouped by unit. The roster is the
- *  effective root of the back stack: leaving the daily-home Hub lands here and
- *  drops the Hub, so the back arrow can't return to it. */
+/** "Enter the roster" / sessions target. The L1 roster is gone (the rail IS the
+ *  navigation), so there's no list page to land on — drop into the first live unit
+ *  instead, where the rail surfaces every other session. No live units ⇒ stay put
+ *  (re-entering the hub from the hub would just reload home.html for no change). */
 function goSessions(): void {
-  leaveUnit(); // also clears any L2 digest bar theming
-  if (currentView().level === "hub") {
-    viewStack = [{ level: "sessions" }]; // Hub was the daily landing — drop it
-  } else if (currentView().level !== "sessions") {
-    viewStack.push({ level: "sessions" });
-  }
-  showLevel("sessions");
-  renderUnits();
+  const order = computeRoster(Date.now()).order;
+  if (order.length > 0) goUnit(order[0]);
 }
 
-/** Enter L2 — one unit's home. Replace rather than stack if already at a unit
- *  (e.g. an artifact-navigate across units), so back-nav stays one level up. From
- *  the daily-home Hub, seat the Sessions roster as the root beneath the unit so
- *  back goes unit→roster→(stop), never back to the Hub. */
+/** Enter L2 — one unit's home. Replace rather than stack if already at a unit.
+ *  Back goes unit → Hub (sessions roster is gone; the rail IS the navigation). */
 function goUnit(unitKey: string): void {
   // Instant-hide the pane so the content swap doesn't flash; fades back in after load.
   if (unitEl) unitEl.classList.add("is-switching");
   leaveUnit(); // clears prior theming; renderHero re-themes if this unit authored a home
-  if (currentView().level === "hub") {
-    viewStack = [{ level: "sessions" }, { level: "unit", unitKey }];
-  } else {
-    if (currentView().level === "unit") viewStack.pop();
-    viewStack.push({ level: "unit", unitKey });
-  }
+  // A unit is a TOP-LEVEL destination — the rail IS the navigation, so a unit never
+  // stacks the hub beneath it. That means no back-arrow and no Esc → L0 from within
+  // a unit; switching units replaces the root rather than deepening the stack. L0 is
+  // reached only deliberately (startup with a home.html, or when nothing is open).
+  viewStack = [{ level: "unit", unitKey }];
   showLevel("unit");
   enterUnit(unitKey);
   // Two rAFs: first lets the browser paint opacity:0, second starts the 180ms fade-in.
@@ -592,7 +629,9 @@ function goUnit(unitKey: string): void {
   );
 }
 
-/** Pop one level: Unit → Sessions → Hub. */
+/** Close the open artifact reader if one's up. Otherwise a no-op: a unit is a
+ *  top-level destination (the rail is the navigation), so there's no level to pop
+ *  back to — Esc/back stay put rather than dropping you on L0. */
 function goBack(): void {
   // The reader (open artifact) overlays every level — back must close it first,
   // else the click pops the hidden level underneath and looks like a no-op.
@@ -604,11 +643,6 @@ function goBack(): void {
   viewStack.pop();
   const v = currentView();
   if (v.level === "hub") void goHub();
-  else if (v.level === "sessions") {
-    leaveUnit();
-    showLevel("sessions");
-    renderUnits();
-  }
 }
 
 // ---- L0 Hub -----------------------------------------------------------------
@@ -646,8 +680,8 @@ function renderHubFallback(): void {
   const cta = document.getElementById("hub-sessions-btn");
   if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
   if (cta) {
-    const n = allSources.length;
-    cta.textContent = n ? `View ${n} session${n === 1 ? "" : "s"} →` : "View sessions →";
+    const hasWork = allSources.length > 0 || recentToShow().length > 0;
+    cta.textContent = hasWork ? "Open recent sessions →" : "Start a session →";
   }
   fallback?.removeAttribute("hidden");
 }
@@ -758,51 +792,6 @@ function unitName(unitKey: string, sources: LiveSource[]): string {
   return fresh ? (parseState(fresh.json).project || unitKey) : unitKey;
 }
 
-// ---- L1 Sessions picker (units) ---------------------------------------------
-
-/** Render the roster as a live-only Status Board: units grouped into bands by what
- *  you owe them — Needs you (a decision/blocked next step) · Running (an active
- *  agent) · Idle (a Board terminal gone quiet). Stale/closed units and the orphan
- *  "Unsourced" artifacts are NOT shown here — they live in searchable History. */
-/** Poll/timer-driven roster refresh that YIELDS to an in-progress drag. Rebuilding
- *  the cards mid-drag (renderUnits does replaceChildren) would destroy the dragged
- *  node and silently break the drop — the same don't-re-render-under-interaction
- *  rule as the sticky hero. reorderUnit's own post-drop renderUnits() still paints
- *  the new order (drop fires before dragend, so draggingUnit is set then — which is
- *  why the guard lives here on the poll callers, not inside renderUnits). */
-function renderUnitsLive(): void {
-  if (draggingUnit !== null) return;
-  renderUnits();
-}
-
-function renderUnits(): void {
-  const grid = document.getElementById("board-sessions-grid");
-  const sub = document.getElementById("sessions-sub");
-  if (!grid) return;
-  const now = Date.now();
-  const r = computeRoster(now);
-
-  const bands: HTMLElement[] = [];
-  if (r.needs.length) bands.push(buildBand("Needs you", "needs", r.needs, r.byUnit, r.artsByUnit, now));
-  if (r.running.length) bands.push(buildBand("Running", "run", r.running, r.byUnit, r.artsByUnit, now));
-  if (r.idle.length) bands.push(buildBand("Idle", "idle", r.idle, r.byUnit, r.artsByUnit, now));
-  // Recent: closed-but-resumable sessions (from claude's transcripts) sit below the live
-  // bands — pick up yesterday's work in one click without making a new session first.
-  const recent = recentToShow();
-  if (recent.length) bands.push(buildRecentBand(recent));
-  if (!bands.length) {
-    const empty = document.createElement("div");
-    empty.className = "sb-empty";
-    empty.textContent = "No live sessions. Start one with + above.";
-    bands.push(empty);
-  }
-
-  if (sub) {
-    const u = r.order.length;
-    sub.textContent = `${u} live unit${u === 1 ? "" : "s"} · ${r.liveCount} agent${r.liveCount === 1 ? "" : "s"} · ${allArtifacts.length} artifact${allArtifacts.length === 1 ? "" : "s"}`;
-  }
-  grid.replaceChildren(...bands);
-}
 
 // ---- Recent sessions (resumable, from claude's transcripts) ------------------
 
@@ -815,7 +804,8 @@ async function loadRecent(): Promise<void> {
     return;
   }
   rebuildHeartbeats();
-  if (currentView().level === "sessions") renderUnitsLive();
+  const v = currentView();
+  if (v.level === "unit") renderUnitRail(v.unitKey);
 }
 
 /** Transcript-mtime heartbeat by session shortid (first 8 of the session_id),
@@ -877,70 +867,14 @@ async function resumeRecentSession(rs: RecentSession): Promise<void> {
   const provisional = existing ? base : `${base}~${++provisionalSeq}`;
   try {
     const tabId = await spawnOwnedSession(rs.cwd, provisional, rs.session_id);
-    if (!existing) pendingNavTab = tabId;
-    freshLaunchUnit = provisional; // resumed session lands on its terminal, no digest flash
+    if (!existing) {
+      pendingNavTab = tabId;
+      pendingNavFresh = false; // a resume: keep the hero on the re-nav (don't skip the digest)
+    }
     goUnit(provisional);
   } catch (e) {
     console.error("resume session failed", rs.session_id, e);
   }
-}
-
-/** The "Recent" band: closed-but-resumable sessions, click any to rejoin. */
-function buildRecentBand(recent: RecentSession[]): HTMLElement {
-  const section = document.createElement("section");
-  section.className = "sb-band";
-  const head = document.createElement("div");
-  head.className = "sb-bandhead";
-  const lbl = document.createElement("span");
-  lbl.className = "sb-lbl";
-  lbl.textContent = "Recent";
-  const ct = document.createElement("span");
-  ct.className = "sb-ct";
-  ct.textContent = String(recent.length);
-  const ln = document.createElement("span");
-  ln.className = "sb-ln";
-  head.append(lbl, ct, ln);
-  section.append(head);
-  for (const rs of recent) section.append(buildRecentRow(rs));
-  return section;
-}
-
-/** One resumable session row: [mark][project · last-active / first prompt][↻ Resume]. */
-function buildRecentRow(rs: RecentSession): HTMLElement {
-  const row = document.createElement("button");
-  row.className = "sb-item recent";
-  row.title = `Resume — ${rs.cwd}`;
-
-  const mark = document.createElement("span");
-  mark.className = "sb-mark";
-  mark.textContent = markFor(rs.project || rs.cwd);
-
-  const main = document.createElement("div");
-  main.className = "sb-main";
-  const nameRow = document.createElement("div");
-  nameRow.className = "sb-name";
-  const name = document.createElement("span");
-  name.className = "name";
-  name.textContent = rs.project || "session";
-  const loc = document.createElement("span");
-  loc.className = "loc";
-  loc.textContent = relTime(rs.last_active_ms);
-  nameRow.append(name, loc);
-  const work = document.createElement("div");
-  work.className = "sb-work";
-  work.textContent = rs.title || "(no preview)";
-  main.append(nameRow, work);
-
-  const right = document.createElement("div");
-  right.className = "sb-right";
-  const resume = document.createElement("span");
-  resume.className = "sb-resume";
-  resume.textContent = "↻ Resume";
-  right.append(resume);
-
-  row.append(mark, main, right);
-  row.addEventListener("click", () => void resumeRecentSession(rs));
-  return row;
 }
 
 type Band = "needs" | "run" | "idle";
@@ -965,8 +899,6 @@ interface Roster {
  *  owned terminal → idle. */
 // ---- manual session order (drag-to-reorder, persisted) ---------------------
 
-/** The unit currently being dragged in the roster, or null. */
-let draggingUnit: string | null = null;
 /** localStorage key holding the user's manual unit order (array of unit_keys).
  *  Board-local persistence, like the rail-collapse flag — survives relaunch. */
 const ORDER_KEY = "companion:sessionOrder";
@@ -979,14 +911,6 @@ function loadOrder(): string[] {
     return [];
   }
 }
-function saveOrder(order: string[]): void {
-  try {
-    localStorage.setItem(ORDER_KEY, JSON.stringify(order));
-  } catch {
-    /* storage disabled — reorder just won't persist */
-  }
-}
-
 /** Sort `units` by the saved manual order; units with no saved position keep their
  *  incoming (default) order, after the placed ones (stable). */
 function applyManualOrder(units: string[]): string[] {
@@ -999,19 +923,6 @@ function applyManualOrder(units: string[]): string[] {
     .map((u, i) => [u, i] as const)
     .sort((a, b) => pos(a[0]) - pos(b[0]) || a[1] - b[1])
     .map(([u]) => u);
-}
-
-/** Move `dragged` to sit just before `target` in the persisted order, then
- *  re-render. Rebuilds the full order from the current roster each time so the
- *  saved list stays complete and well-defined regardless of band membership. */
-function reorderUnit(dragged: string, target: string): void {
-  if (dragged === target) return;
-  const current = applyManualOrder(computeRoster(Date.now()).order).filter((u) => u !== dragged);
-  const ti = current.indexOf(target);
-  if (ti < 0) return;
-  current.splice(ti, 0, dragged);
-  saveOrder(current);
-  renderUnits();
 }
 
 function computeRoster(now: number): Roster {
@@ -1101,6 +1012,28 @@ function renderUnitRail(activeUnitKey: string | null): void {
     }
   }
 
+  // Recent (closed) projects — below live units, expand to session list on click.
+  const recentGroups = groupRecentByProject(new Set(order));
+  if (recentGroups.size > 0) {
+    const divider = document.createElement("div");
+    divider.className = "rail-section-head";
+    divider.textContent = "Recent";
+    nodes.push(divider);
+    for (const [projectKey, sessions] of recentGroups) {
+      const isExpanded = expandedRecentProject === projectKey;
+      nodes.push(buildRecentProjectTab(projectKey, sessions, isExpanded));
+      if (isExpanded) {
+        const group = document.createElement("div");
+        group.className = "unit-subtab-group";
+        const inner = document.createElement("div");
+        inner.className = "unit-subtab-group-inner";
+        for (const rs of sessions.slice(0, 6)) inner.appendChild(buildRecentSessionRow(rs));
+        group.appendChild(inner);
+        nodes.push(group);
+      }
+    }
+  }
+
   railSessionsEl.replaceChildren(...nodes);
 
   // Animate the incoming group's drop-down — a CSS keyframe (no rAF, runs even when
@@ -1164,6 +1097,68 @@ function buildRailSessionRow(unitKey: string, s: LiveSource, shownTab: string | 
   row.append(dot, name);
 
   if (!active) row.addEventListener("click", () => switchToSession(unitKey, s));
+  row.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    showRailSessionMenu(e, unitKey, s);
+  });
+  return row;
+}
+
+/** Collect recent (closed) sessions grouped by project slug, excluding live units. */
+function groupRecentByProject(excludeUnits: Set<string>): Map<string, RecentSession[]> {
+  const live = liveSessionIds();
+  const groups = new Map<string, RecentSession[]>();
+  for (const rs of allRecent) {
+    if (!rs.cwd || rs.size_bytes < RECENT_MIN_BYTES || live.has(rs.session_id)) continue;
+    const key = projectSlug(rs.project) ?? rs.cwd.split("/").filter(Boolean).pop() ?? "session";
+    if (excludeUnits.has(key)) continue;
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(rs);
+  }
+  return groups;
+}
+
+/** Rail tab for a recent (closed) project — expands/collapses session list on click,
+ *  does NOT navigate the main pane. */
+function buildRecentProjectTab(projectKey: string, sessions: RecentSession[], expanded: boolean): HTMLElement {
+  const tab = document.createElement("button");
+  tab.className = "unit-tab recent-project" + (expanded ? " expanded" : "");
+  tab.dataset.unit = projectKey;
+  tab.title = `${projectKey} — ${sessions.length} recent session${sessions.length === 1 ? "" : "s"}`;
+
+  const dot = document.createElement("span");
+  dot.className = "unit-tab-dot idle";
+  const mark = document.createElement("span");
+  mark.className = "unit-tab-mark";
+  mark.textContent = markFor(projectKey);
+  const nameEl = document.createElement("span");
+  nameEl.className = "unit-tab-name";
+  nameEl.textContent = projectKey;
+  const chevron = document.createElement("span");
+  chevron.className = "unit-tab-chevron";
+  chevron.textContent = expanded ? "▾" : "▸";
+  tab.append(dot, mark, nameEl, chevron);
+
+  tab.addEventListener("click", () => {
+    expandedRecentProject = expanded ? null : projectKey;
+    renderUnitRail(currentUnitKey);
+  });
+  return tab;
+}
+
+/** One recent (closed) session sub-row. Click resumes it. */
+function buildRecentSessionRow(rs: RecentSession): HTMLElement {
+  const row = document.createElement("button");
+  row.className = "unit-subtab";
+  row.title = `Resume — ${rs.cwd}`;
+
+  const dot = document.createElement("span");
+  dot.className = "unit-subtab-dot";
+  const name = document.createElement("span");
+  name.className = "unit-subtab-name";
+  name.textContent = rs.title || relTime(rs.last_active_ms);
+  row.append(dot, name);
+
+  row.addEventListener("click", () => void resumeRecentSession(rs));
   return row;
 }
 
@@ -1214,6 +1209,10 @@ function buildRailTab(
   }
 
   if (!active) tab.addEventListener("click", () => goUnit(unitKey));
+  tab.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    showUnitMenu(e, unitKey, sources);
+  });
   return tab;
 }
 
@@ -1233,154 +1232,6 @@ function blockingNextOf(sources: LiveSource[], now: number): NextItem | null {
 
 function unitNeedsYou(sources: LiveSource[], now: number): boolean {
   return blockingNextOf(sources, now) !== null;
-}
-
-/** A labelled band (header + its rows). Empty bands are never built. */
-function buildBand(
-  label: string,
-  band: Band,
-  units: string[],
-  byUnit: Map<string, LiveSource[]>,
-  artsByUnit: Map<string, ArtifactEntry[]>,
-  now: number,
-): HTMLElement {
-  const section = document.createElement("section");
-  section.className = "sb-band";
-  const head = document.createElement("div");
-  head.className = "sb-bandhead";
-  const lbl = document.createElement("span");
-  lbl.className = "sb-lbl" + (band === "needs" ? " accent" : "");
-  lbl.textContent = label;
-  const ct = document.createElement("span");
-  ct.className = "sb-ct";
-  ct.textContent = String(units.length);
-  const ln = document.createElement("span");
-  ln.className = "sb-ln";
-  head.append(lbl, ct, ln);
-  section.append(head);
-  for (const unit of units) {
-    section.append(
-      buildStatusRow(unit, byUnit.get(unit) ?? [], artsByUnit.get(unit)?.length ?? 0, band, now),
-    );
-  }
-  return section;
-}
-
-/** One unit as a Status-Board row: [state rail][mark][name·loc / working line]
- *  [decision-or-next chip · N live · artifact count ⇄ ✎/✕ on hover]. Click drills
- *  into the unit (L2); ✎ renames, ✕ closes it off the roster. */
-function buildStatusRow(
-  unitKey: string,
-  sources: LiveSource[],
-  artCount: number,
-  band: Band,
-  now: number,
-): HTMLElement {
-  const liveN = sources.filter((s) => isLiveSource(s, now)).length;
-  const head = sources[0] ? makeHead(sources[0]) : ownedHead();
-  const blocking = band === "needs" ? blockingNextOf(sources, now) : null;
-  const top = sources[0] ? parseState(sources[0].json).next?.[0] : undefined;
-
-  const row = document.createElement("button");
-  row.className = `sb-item ${band}`;
-  row.dataset.unit = unitKey;
-
-  const mark = document.createElement("span");
-  mark.className = "sb-mark" + (head.isCloud ? " cloud" : "");
-  mark.textContent = head.mark;
-
-  const main = document.createElement("div");
-  main.className = "sb-main";
-  const nameRow = document.createElement("div");
-  nameRow.className = "sb-name";
-  const name = document.createElement("span");
-  name.className = "name";
-  name.textContent = unitName(unitKey, sources);
-  const loc = document.createElement("span");
-  loc.className = "loc";
-  loc.textContent = head.prov;
-  nameRow.append(name, loc);
-  const unread = unreadCount(unitKey);
-  if (unread > 0) {
-    const badge = document.createElement("span");
-    badge.className = "sb-unread";
-    badge.textContent = unread > 9 ? "9+" : String(unread);
-    badge.title = `${unread} new artifact${unread === 1 ? "" : "s"} since you last looked`;
-    nameRow.append(badge);
-  }
-  const work = document.createElement("div");
-  work.className = "sb-work";
-  work.innerHTML = head.statusHtml;
-  main.append(nameRow, work);
-
-  const right = document.createElement("div");
-  right.className = "sb-right";
-  if (blocking?.title) {
-    const chip = document.createElement("span");
-    chip.className = "sb-chip decision arrow";
-    chip.textContent = `${(blocking.kind || "").toUpperCase()} · ${clip(blocking.title)}`;
-    right.append(chip);
-  } else if (band === "run" && top?.title && isTodoKind(top.kind)) {
-    const chip = document.createElement("span");
-    chip.className = "sb-chip todo";
-    chip.textContent = clip(top.title);
-    right.append(chip);
-  }
-  if (liveN > 0) {
-    const livePill = document.createElement("span");
-    livePill.className = "sb-live";
-    const dot = document.createElement("span");
-    dot.className = "sb-dot run";
-    livePill.append(dot, document.createTextNode(`${liveN} live`));
-    right.append(livePill);
-  }
-  // Artifact count, swapped for the ✎/✕ affordances on hover (same slot).
-  const end = document.createElement("span");
-  end.className = "sb-end";
-  const count = document.createElement("span");
-  count.className = "sb-count";
-  count.textContent = `${artCount} art`;
-  const actions = document.createElement("span");
-  actions.className = "sb-actions";
-  actions.append(renameButton(unitKey), closeButton(unitKey, sources));
-  end.append(count, actions);
-  right.append(end);
-
-  row.append(mark, main, right);
-  row.addEventListener("click", () => goUnit(unitKey));
-  row.addEventListener("contextmenu", (e) => {
-    e.preventDefault();
-    showUnitMenu(e, unitKey, sources);
-  });
-
-  // Drag to reorder within a band; the order persists (localStorage). A click
-  // without movement still drills in — DnD and click coexist on the same element.
-  row.draggable = true;
-  row.addEventListener("dragstart", (e) => {
-    draggingUnit = unitKey;
-    row.classList.add("dragging");
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", unitKey);
-    }
-  });
-  row.addEventListener("dragend", () => {
-    row.classList.remove("dragging");
-    draggingUnit = null;
-  });
-  row.addEventListener("dragover", (e) => {
-    if (!draggingUnit || draggingUnit === unitKey) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-    row.classList.add("drop-target");
-  });
-  row.addEventListener("dragleave", () => row.classList.remove("drop-target"));
-  row.addEventListener("drop", (e) => {
-    e.preventDefault();
-    row.classList.remove("drop-target");
-    if (draggingUnit && draggingUnit !== unitKey) reorderUnit(draggingUnit, unitKey);
-  });
-  return row;
 }
 
 /** Right-click context menu for a session card: open it, or close it out (end its
@@ -1404,6 +1255,8 @@ function showUnitMenu(e: MouseEvent, unitKey: string, sources: LiveSource[]): vo
     menu.append(it);
   };
   add("Open", () => goUnit(unitKey));
+  const dir = unitDirOf(unitKey);
+  if (dir) add("New session here", () => void launchSessionIn(dir));
   add("Close out", () => void closeUnit(unitKey, sources), true);
 
   menu.style.left = `${e.clientX}px`;
@@ -1435,45 +1288,9 @@ function showUnitMenu(e: MouseEvent, unitKey: string, sources: LiveSource[]): vo
   }, 0);
 }
 
-function isTodoKind(kind?: string): boolean {
-  const k = (kind || "").toLowerCase();
-  return k === "todo" || k === "in-progress" || k === "in_progress";
-}
-
 /** Truncate a chip label so a long next-step can't blow out the row width. */
 function clip(s: string, n = 46): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
-}
-
-/** The × that closes a unit off the live roster. A <span> (the card is a button;
- *  nested buttons are invalid) — stops propagation so it doesn't drill in. */
-function closeButton(unitKey: string, sources: LiveSource[]): HTMLElement {
-  const x = document.createElement("span");
-  x.className = "session-close";
-  x.textContent = "✕";
-  x.title = "Close this session off the roster";
-  x.setAttribute("role", "button");
-  x.addEventListener("click", (e) => {
-    e.stopPropagation();
-    void closeUnit(unitKey, sources);
-  });
-  return x;
-}
-
-/** The ✎ on a live unit card — rename the session/unit to anything you want. */
-function renameButton(unitKey: string): HTMLElement {
-  const b = document.createElement("span");
-  b.className = "session-rename";
-  b.textContent = "✎";
-  b.title = "Rename this session";
-  b.setAttribute("role", "button");
-  b.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const card = b.closest(".sb-item");
-    const nameEl = card?.querySelector(".name") as HTMLElement | null;
-    if (nameEl) startRename(unitKey, nameEl);
-  });
-  return b;
 }
 
 /** Inline-edit a unit's display name. The editor is a floating input positioned
@@ -1506,7 +1323,7 @@ function startRename(unitKey: string, anchorEl: HTMLElement, onSaved?: () => voi
       void invoke("set_unit_name", { unitKey, name: v }).catch((e) =>
         console.error("set_unit_name failed", e),
       );
-      renderUnits(); // refresh the L1 roster
+      renderUnitRail(currentUnitKey); // refresh the rail's tab labels
       onSaved?.(); // let the caller refresh any other surface (e.g. the L2 title)
     }
   };
@@ -1541,7 +1358,75 @@ async function closeUnit(unitKey: string, sources: LiveSource[]): Promise<void> 
     st.dismissed = true;
     s.json = JSON.stringify(st);
   }
-  renderUnits();
+  renderUnitRail(currentUnitKey);
+}
+
+/** Close a single session off the roster, leaving other sessions in its unit intact.
+ *  Ends the Board-owned terminal for this specific session (if any), dismisses its
+ *  source, and navigates back if this was the unit's last live session. */
+async function closeSession(unitKey: string, s: LiveSource): Promise<void> {
+  const st = parseState(s.json);
+  const tabId = st.companion_session;
+  if (tabId) closeOwnedTerminal(tabId);
+  await invoke("dismiss_session", { source: s.source }).catch((e) =>
+    console.error("dismiss_session failed", s.source, e),
+  );
+  st.dismissed = true;
+  s.json = JSON.stringify(st);
+  const remaining = (groupSourcesByUnit().get(unitKey) ?? []).filter(
+    (src) => src.source !== s.source && !isDismissed(src),
+  );
+  if (remaining.length === 0) {
+    void goHub();
+  } else {
+    if (currentUnitKey === unitKey) renderUnitRail(unitKey);
+  }
+}
+
+/** Context menu for a session sub-row in the rail: switch to it or close just this session. */
+function showRailSessionMenu(e: MouseEvent, unitKey: string, s: LiveSource): void {
+  document.querySelector(".ctx-menu")?.remove();
+  const menu = document.createElement("div");
+  menu.className = "ctx-menu";
+
+  const add = (label: string, fn: () => void, danger = false): void => {
+    const it = document.createElement("button");
+    it.className = "ctx-item" + (danger ? " danger" : "");
+    it.textContent = label;
+    it.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      close();
+      fn();
+    });
+    menu.append(it);
+  };
+  add("Switch to", () => switchToSession(unitKey, s));
+  add("Close session", () => void closeSession(unitKey, s), true);
+
+  menu.style.left = `${e.clientX}px`;
+  menu.style.top = `${e.clientY}px`;
+  (document.querySelector(".stage") ?? document.body).append(menu);
+  const r = menu.getBoundingClientRect();
+  if (r.right > window.innerWidth) menu.style.left = `${window.innerWidth - r.width - 8}px`;
+  if (r.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - r.height - 8}px`;
+
+  const close = (): void => {
+    menu.remove();
+    document.removeEventListener("mousedown", onDoc, true);
+    document.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("scroll", close, true);
+  };
+  const onDoc = (ev: MouseEvent): void => {
+    if (!menu.contains(ev.target as Node)) close();
+  };
+  const onKey = (ev: KeyboardEvent): void => {
+    if (ev.key === "Escape") close();
+  };
+  setTimeout(() => {
+    document.addEventListener("mousedown", onDoc, true);
+    document.addEventListener("keydown", onKey, true);
+    window.addEventListener("scroll", close, true);
+  }, 0);
 }
 
 // ---- L2 unit home (hero + history) ------------------------------------------
@@ -1817,10 +1702,6 @@ function wireUnitChrome(): void {
     setRailMode(unitEl.dataset.rail === "menu" ? "sessions" : "menu"),
   );
 
-  // ⌂ Home — back to the sessions roster (L1). The labeled, always-visible "get
-  // back" affordance on the rail itself (the toolbar ◁ was easy to miss).
-  document.getElementById("unit-rail-home")?.addEventListener("click", () => goSessions());
-
   // Menu nav: each destination takes over the main pane.
   railEl?.addEventListener("click", (e) => {
     const nav = (e.target as HTMLElement).closest<HTMLElement>(".rail-nav");
@@ -1843,8 +1724,8 @@ function wireUnitChrome(): void {
   heroNewEl?.addEventListener("click", () => void viewHeroPending());
 
   // The in-session title doubles as a rename affordance — rename without leaving
-  // the unit. onSaved re-renders the title in place (renderUnits alone refreshes
-  // only the hidden L1 roster, leaving this title stale until re-entry).
+  // the unit. onSaved re-renders the title in place (startRename refreshes the
+  // rail tabs, but not this toolbar title, so the caller patches it).
   unitTitleEl = document.getElementById("unit-title");
   unitTitleEl?.addEventListener("click", () => {
     if (!currentUnitKey || currentUnitKey === UNSOURCED) return;
@@ -1905,8 +1786,15 @@ function setFocus(state: "split" | "artifact" | "terminal"): void {
  *  (re-entering a unit that still exists in the roster will auto-start a fresh one). */
 function endSession(): void {
   if (!currentUnitKey) return;
+  const leaving = currentUnitKey;
   endShownTerminal();
-  if (!ownedTabForUnit(currentUnitKey)) goBack();
+  // Nothing left to show here → hop to the next live unit; fall to the hub only if
+  // no unit remains (goBack no longer navigates, so leave explicitly).
+  if (!ownedTabForUnit(leaving)) {
+    const next = computeRoster(Date.now()).order.find((u) => u !== leaving);
+    if (next) goUnit(next);
+    else void goHub();
+  }
 }
 
 /** Reflect whether there's a hero to size against: with no hero the strip + pill
@@ -2456,7 +2344,9 @@ async function pollLive(): Promise<void> {
     const pend = pendingNavTab && newlyBound.find((b) => b.tabId === pendingNavTab);
     if (pend) {
       pendingNavTab = null;
-      freshLaunchUnit = pend.unitKey; // same launch intent — skip the digest flash on re-nav
+      // Fresh launch ⇒ skip the digest flash and land terminal-focused. Resume ⇒ leave
+      // freshLaunchUnit clear so renderHero keeps the hero (the session has context to show).
+      if (pendingNavFresh) freshLaunchUnit = pend.unitKey;
       goUnit(pend.unitKey);
     } else if (v.level === "unit") {
       // A binding adopted while viewing a unit: reveal it in place.
@@ -2476,8 +2366,7 @@ async function pollLive(): Promise<void> {
     // artifact-driven, but its rail mirrors live state — refresh it so a session
     // appearing/quieting updates the switcher in place. The L0 Hub re-resolves
     // on entry only.
-    if (view.level === "sessions") renderUnitsLive();
-    else if (view.level === "unit") renderUnitRail(view.unitKey);
+    if (view.level === "unit") renderUnitRail(view.unitKey);
   }
 
   // Live artifact ingestion — act only when the set actually changed.
@@ -2555,8 +2444,7 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
 
   maybeAutoAdvance(newOnes);
 
-  if (view.level === "sessions") renderUnitsLive();
-  else if (view.level === "unit") ingestIntoUnit(view.unitKey);
+  if (view.level === "unit") ingestIntoUnit(view.unitKey);
   updateGlobalUnread();
 }
 
@@ -2672,7 +2560,10 @@ function wireControls(): void {
     e.stopPropagation();
     toggleNotifMenu(e.currentTarget as HTMLElement);
   });
-  document.getElementById("hub-sessions-btn")?.addEventListener("click", goSessions);
+  document.getElementById("hub-sessions-btn")?.addEventListener("click", () => {
+    const u = findMostRecentActiveUnit();
+    if (u) goUnit(u); else void newHomeSession();
+  });
   scrimEl?.addEventListener("click", closeFocus);
 }
 
@@ -2913,7 +2804,6 @@ function wireScrollGating(): void {
     timer = window.setTimeout(() => boardEl.classList.remove("is-scrolling"), 140);
   };
   unitEl.addEventListener("scroll", onScroll, { passive: true });
-  sessionsEl.addEventListener("scroll", onScroll, { passive: true });
 }
 
 // ---- small utils ------------------------------------------------------------
