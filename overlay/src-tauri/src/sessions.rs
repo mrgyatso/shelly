@@ -107,6 +107,29 @@ fn extract_user_title(v: &serde_json::Value) -> Option<String> {
     Some(t.chars().take(90).collect())
 }
 
+/// The launch cwd for a session id, read from its transcript head — the ONLY directory
+/// `claude --resume <id>` can be spawned in. Claude keys a transcript by the dir it was
+/// launched in, and the Board's `unit_dir` sidecar deliberately stores the GITROOT (for
+/// unit grouping), which differs from the launch cwd whenever a session starts in a repo
+/// SUBDIR — or whenever the agent `cd`s mid-run. Resolving the dir from the transcript
+/// head sidesteps both: it's the exact path Claude itself will look under. None when no
+/// transcript exists for the id (then the caller keeps its supplied cwd).
+pub fn cwd_for_session(session_id: &str) -> Option<String> {
+    let dir = projects_dir()?;
+    let fname = format!("{session_id}.jsonl");
+    for pe in std::fs::read_dir(&dir).ok()?.flatten() {
+        let pdir = pe.path();
+        if !pdir.is_dir() {
+            continue;
+        }
+        let candidate = pdir.join(&fname);
+        if candidate.is_file() {
+            return head_meta(&candidate).0;
+        }
+    }
+    None
+}
+
 /// Every resumable session across all projects, newest-first, capped. The Board dedupes
 /// the currently-live ones (it knows their session ids) and groups/filters by project.
 /// Returns a `Vec` (never a `Result`) so one unreadable transcript can't sink the list.

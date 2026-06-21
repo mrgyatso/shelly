@@ -207,9 +207,17 @@ pub async fn spawn_pty(
     cmd.arg("-c");
     cmd.arg(claude_then_shell_script(&claude, &shell, resume.as_deref()));
     inject_env(&mut cmd, &tab_id);
-    // Run in the requested directory (a unit's project dir, chosen at spawn),
-    // falling back to HOME when none was supplied.
-    if let Some(dir) = cwd {
+    // A resume MUST run in the session's launch dir — the only place `claude --resume`
+    // can find the transcript. The caller's cwd is the unit's `unit_dir`, which is the
+    // GITROOT (for unit grouping) and so differs from the launch cwd for any session
+    // started in a repo subdir (or after a mid-run `cd`). For a resume we therefore
+    // resolve the authoritative dir from the transcript head and prefer it; otherwise
+    // (and on lookup miss) we fall back to the supplied cwd, then HOME.
+    let effective_cwd = resume
+        .as_deref()
+        .and_then(crate::sessions::cwd_for_session)
+        .or(cwd);
+    if let Some(dir) = effective_cwd {
         cmd.cwd(dir);
     } else if let Some(home) = std::env::var_os("HOME") {
         cmd.cwd(home);
