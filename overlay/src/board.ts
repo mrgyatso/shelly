@@ -172,7 +172,6 @@ let pendingNavFresh = false;
  *  entry lands terminal-focused with no flash. Consumed on the first render. */
 let freshLaunchUnit: string | null = null;
 
-let isFullscreen = false;
 /** The reader overlay's dedicated live iframe + the path it's showing (null = closed). */
 let focusFrame: HTMLIFrameElement | null = null;
 let focusPath: string | null = null;
@@ -545,9 +544,6 @@ async function applyNavTarget(): Promise<void> {
 function showLevel(level: BoardView["level"]): void {
   hubEl.toggleAttribute("hidden", level !== "hub");
   unitEl.toggleAttribute("hidden", level !== "unit");
-  // Back is shown only when there's somewhere to go back to. The Hub (daily
-  // landing) is the stack root → no back arrow there.
-  document.getElementById("board-back")?.toggleAttribute("hidden", viewStack.length <= 1);
 }
 
 /** Startup routing: go directly to the most recently active project when no agent
@@ -627,22 +623,6 @@ function goUnit(unitKey: string): void {
   requestAnimationFrame(() =>
     requestAnimationFrame(() => unitEl?.classList.remove("is-switching")),
   );
-}
-
-/** Close the open artifact reader if one's up. Otherwise a no-op: a unit is a
- *  top-level destination (the rail is the navigation), so there's no level to pop
- *  back to — Esc/back stay put rather than dropping you on L0. */
-function goBack(): void {
-  // The reader (open artifact) overlays every level — back must close it first,
-  // else the click pops the hidden level underneath and looks like a no-op.
-  if (focusPath) {
-    closeFocus();
-    return;
-  }
-  if (viewStack.length <= 1) return;
-  viewStack.pop();
-  const v = currentView();
-  if (v.level === "hub") void goHub();
 }
 
 // ---- L0 Hub -----------------------------------------------------------------
@@ -1789,7 +1769,7 @@ function endSession(): void {
   const leaving = currentUnitKey;
   endShownTerminal();
   // Nothing left to show here → hop to the next live unit; fall to the hub only if
-  // no unit remains (goBack no longer navigates, so leave explicitly).
+  // no unit remains.
   if (!ownedTabForUnit(leaving)) {
     const next = computeRoster(Date.now()).order.find((u) => u !== leaving);
     if (next) goUnit(next);
@@ -2550,12 +2530,10 @@ function wireControls(): void {
   document.getElementById("board-collapse")?.addEventListener("click", () => {
     win.hide().catch((e) => console.error("board hide failed", e));
   });
-  document.getElementById("board-fullscreen")?.addEventListener("click", toggleFullscreen);
   document.getElementById("board-newsession")?.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleNewSessionMenu(e.currentTarget as HTMLElement);
   });
-  document.getElementById("board-back")?.addEventListener("click", goBack);
   document.getElementById("board-unread")?.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleNotifMenu(e.currentTarget as HTMLElement);
@@ -2735,19 +2713,9 @@ async function navigateToArtifact(path: string): Promise<void> {
   requestAnimationFrame(() => void openReader(path));
 }
 
-function toggleFullscreen(): void {
-  invoke<boolean>("set_board_fullscreen", { on: !isFullscreen })
-    .then((on) => {
-      isFullscreen = on;
-      stageEl.classList.toggle("fullscreen", on);
-    })
-    .catch((e) => console.error("set_board_fullscreen failed", e));
-}
-
 /** True when the keydown came from somewhere the user is typing — the embedded
- *  terminal, a text input, or a contentEditable. Global one-key shortcuts (F) and
- *  the Backspace back-nav guard must stand down there, else typing "F" in the
- *  terminal full-screens the Board and Backspace clears in-progress work. */
+ *  terminal, a text input, or a contentEditable. The Backspace back-nav guard must
+ *  stand down there, else Backspace clears in-progress work instead of editing. */
 function isTypingContext(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el || typeof el.closest !== "function") return false;
@@ -2757,6 +2725,9 @@ function isTypingContext(target: EventTarget | null): boolean {
 }
 
 function wireKeyboard(): void {
+  // No navigation shortcuts: the Board is driven by its on-screen controls only
+  // (Esc / F were legacy and have been removed). The one keydown we still handle
+  // is a protective guard, not a navigation aid.
   window.addEventListener("keydown", (e: KeyboardEvent) => {
     const typing = isTypingContext(e.target);
     // Backspace with nothing focused triggers the webview's back-navigation,
@@ -2764,32 +2735,6 @@ function wireKeyboard(): void {
     // outside typing contexts (where it's just normal editing).
     if (e.key === "Backspace" && !typing) {
       e.preventDefault();
-      return;
-    }
-    if (focusPath) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeFocus();
-      }
-      return;
-    }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      // At L2, Esc first returns the Menu / History / Settings to the session
-      // home; only once you're already there does it pop the level.
-      if (
-        currentView().level === "unit" &&
-        unitEl &&
-        (unitEl.dataset.rail === "menu" || unitEl.dataset.view !== "session")
-      ) {
-        setRailMode("sessions");
-        return;
-      }
-      goBack();
-      return;
-    }
-    if ((e.key === "f" || e.key === "F") && !typing && currentView().level !== "hub") {
-      toggleFullscreen();
     }
   });
 }

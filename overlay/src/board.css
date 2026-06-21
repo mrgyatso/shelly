@@ -233,16 +233,6 @@
 .ctl:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
 .ctl svg { width: 16px; height: 16px; display: block; }
 
-/* The back arrow is the primary wayfinding control — give it more presence than
-   its peers: a resting surface + stronger ink so it reads as a button, not a faint
-   glyph that only shows on hover. */
-#board-back {
-  color: var(--ink-2);
-  background: var(--card);
-  border-color: var(--line-2);
-}
-#board-back:hover { background: var(--ink); color: var(--card); border-color: var(--ink); }
-
 /* The "+ New session" menu — a small popover under the + offering the two ways
    to start a session (home, or a picked folder). */
 .newsession-menu {
