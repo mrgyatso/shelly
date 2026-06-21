@@ -115,6 +115,12 @@ export async function spawnOwnedSession(
     exited: false,
   };
   terminals.set(tabId, owned);
+  // A freshly spawned terminal is the one to SHOW for its unit — make it active so
+  // `shownForUnit` returns it even when the unit already has a prior active session
+  // (otherwise reusing a project key as the provisional would reveal the OLD
+  // terminal, not the one just created). ensureOwnedTerminal/showSessionInUnit also
+  // set this right after spawn; doing it here covers the launch/resume paths too.
+  if (provisionalUnit) activeByUnit.set(provisionalUnit, tabId);
   owned.handle = await createTerminal(tabId, mount, {
     cwd,
     resume,

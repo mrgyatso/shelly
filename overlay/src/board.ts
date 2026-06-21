@@ -162,6 +162,10 @@ let allRecent: RecentSession[] = [];
 /** A "+ New session" terminal awaiting its first live source, so pollLive can
  *  navigate to its unit once it correlates. */
 let pendingNavTab: string | null = null;
+/** The unit of a just-launched/resumed session — `renderHero` skips the project
+ *  digest for it (the user wants their new terminal, not a ~1s artifact load), so
+ *  entry lands terminal-focused with no flash. Consumed on the first render. */
+let freshLaunchUnit: string | null = null;
 
 let isFullscreen = false;
 /** The reader overlay's dedicated live iframe + the path it's showing (null = closed). */
@@ -368,30 +372,29 @@ async function newFolderSession(): Promise<void> {
   void launchSessionIn(dir);
 }
 
-/** Spawn a Board-owned claude in `dir` and jump to its unit once it correlates
- *  (pendingNavTab, handled in pollLive). Shows the terminal IMMEDIATELY under a
- *  provisional unit, then re-navigates to the real unit when it correlates
- *  (claude's first-run trust prompt blocks SessionStart, so the user must SEE
- *  the terminal first).
+/** Spawn a Board-owned claude in `dir` and reveal it. Shows the terminal
+ *  IMMEDIATELY under a provisional unit (claude's first-run trust prompt blocks
+ *  SessionStart, so the user must SEE the terminal before its live file exists),
+ *  then re-navigates to the real unit when it correlates (pendingNavTab, handled
+ *  in pollLive) — but only when the provisional was a throwaway.
  *
- *  Provisional choice: every session is its own unit (unit_key = slug--shortid),
- *  so the provisional is ALWAYS unique (`base~N`). A 2nd session in the same repo
- *  must not share the first's basename — that's what made two same-repo sessions
- *  collapse onto one card and shadow each other (one terminal "disappears", and
- *  closing one could end both before its resume id was recorded → `--resume`
- *  fails). Correlation (reconcileBindings) re-homes the unique provisional to the
- *  session's real unit_key once its live file appears. */
+ *  Provisional choice (project-units): a repo session belongs to its PROJECT unit
+ *  (`unitKeyOf` → project slug). If that unit is ALREADY on the roster, launch the
+ *  new session straight into it (provisional = the project key) so it joins the
+ *  existing group instantly — no transient `base~N` card that flashes at the
+ *  bottom (Idle band) for the ~2-4s correlation window before re-homing. With NO
+ *  existing unit (first session), keep a UNIQUE `base~N` so two rapid brand-new
+ *  same-repo launches can't collapse onto one card before either has a live file;
+ *  reconcileBindings re-homes it to the project key once its live file appears. */
 let provisionalSeq = 0;
 async function launchSessionIn(dir: string): Promise<void> {
   const base = dir.split("/").filter(Boolean).pop() || dir;
-  // Every session is its own unit now (unit_key = slug--shortid, set by the
-  // SessionStart hook), so a freshly spawned session ALWAYS gets a UNIQUE
-  // provisional — even a 2nd session in the same repo must not collapse onto the
-  // first's card during the pre-correlation window. Correlation (reconcileBindings)
-  // re-homes it to its real per-session unit_key once its live file appears.
-  const provisional = `${base}~${++provisionalSeq}`;
+  const existing = allSources.some((s) => unitKeyOf(s) === base);
+  const provisional = existing ? base : `${base}~${++provisionalSeq}`;
   try {
-    pendingNavTab = await spawnOwnedSession(dir, provisional);
+    const tabId = await spawnOwnedSession(dir, provisional);
+    if (!existing) pendingNavTab = tabId; // re-nav only when the throwaway re-homes
+    freshLaunchUnit = provisional; // land on the new terminal, not the project digest
     goUnit(provisional);
   } catch (e) {
     console.error("spawnOwnedSession failed", e);
@@ -821,13 +824,20 @@ async function loadRecent(): Promise<void> {
  *  rewrite — so a long-running session stays on the roster even after its live
  *  file goes stale. See `isLiveSource`. */
 let heartbeatByShortId = new Map<string, number>();
+/** First-prompt transcript title by session shortid — the STABLE identity a live
+ *  session's rail row is labelled with (its volatile `working` line is the stub
+ *  "Session started" until its agent writes real state). Rebuilt with the recents. */
+let titleByShortId = new Map<string, string>();
 function rebuildHeartbeats(): void {
   const m = new Map<string, number>();
+  const t = new Map<string, string>();
   for (const r of allRecent) {
     const sid = r.session_id.slice(0, 8);
     if (r.last_active_ms > (m.get(sid) ?? 0)) m.set(sid, r.last_active_ms);
+    if (r.title && !t.has(sid)) t.set(sid, r.title);
   }
   heartbeatByShortId = m;
+  titleByShortId = t;
 }
 
 /** session_ids that are currently LIVE (owned sessions inject session_id into their live
@@ -857,13 +867,18 @@ function recentToShow(): RecentSession[] {
     .slice(0, RECENT_MAX_ROWS);
 }
 
-/** Resume a closed session: spawn `claude --resume <id>` in its original cwd under a
- *  unique provisional unit, then let correlation re-home it to its real per-session unit. */
+/** Resume a closed session: spawn `claude --resume <id>` in its original cwd. Joins
+ *  the project unit directly when it's already on the roster (no bottom-of-roster
+ *  flash); otherwise a unique provisional that correlation re-homes — same rule as
+ *  launchSessionIn. */
 async function resumeRecentSession(rs: RecentSession): Promise<void> {
-  const base = rs.project || rs.cwd.split("/").filter(Boolean).pop() || "session";
-  const provisional = `${base}~${++provisionalSeq}`;
+  const base = projectSlug(rs.project) || rs.cwd.split("/").filter(Boolean).pop() || "session";
+  const existing = allSources.some((s) => unitKeyOf(s) === base);
+  const provisional = existing ? base : `${base}~${++provisionalSeq}`;
   try {
-    pendingNavTab = await spawnOwnedSession(rs.cwd, provisional, rs.session_id);
+    const tabId = await spawnOwnedSession(rs.cwd, provisional, rs.session_id);
+    if (!existing) pendingNavTab = tabId;
+    freshLaunchUnit = provisional; // resumed session lands on its terminal, no digest flash
     goUnit(provisional);
   } catch (e) {
     console.error("resume session failed", rs.session_id, e);
@@ -1113,12 +1128,21 @@ function railSessionOrder(sources: LiveSource[]): LiveSource[] {
   return [...sources].sort((a, b) => sourceUpdatedMs(b) - sourceUpdatedMs(a));
 }
 
-/** A short, identifying label for a session sub-row: its working line, else its
- *  shortid. */
+/** The SessionStart hook seeds (and re-seeds on every resume) a session's `working`
+ *  line as this stub — so it can't be the switcher label, or every fresh/just-
+ *  resumed session reads identically. */
+const SESSION_STARTED_STUB = "Session started";
+
+/** A STABLE, identifying label for a session sub-row. A switcher wants identity,
+ *  not the volatile `working` line (the poll repaints the rail every turn). Prefer
+ *  the session's first-prompt transcript title; fall back to a genuine working line;
+ *  else it's a brand-new session with no identity yet. */
 function sessionLabel(s: LiveSource): string {
-  const w = (parseState(s.json).working || "").trim();
-  if (w) return w.length > 24 ? w.slice(0, 23) + "…" : w;
-  return shortIdOfSource(s.source) || "session";
+  const title = titleByShortId.get(shortIdOfSource(s.source));
+  const working = (parseState(s.json).working || "").trim();
+  const raw = title || (working && working !== SESSION_STARTED_STUB ? working : "");
+  const oneLine = raw.split("\n", 1)[0].trim();
+  return oneLine ? clip(oneLine, 28) : "New session";
 }
 
 /** One session sub-row under the active project tab. Active = its bound terminal is
@@ -1611,6 +1635,18 @@ function leaveUnit(): void {
  */
 async function renderHero(unitKey: string): Promise<void> {
   hideHeroNewPill(); // entry/refresh lands on the newest → any pending is moot
+  // A just-launched/resumed session lands on its TERMINAL — skip the project digest
+  // so there's no ~1s iframe load + blank-then-paint flash. Synchronous (no await
+  // before the return) so focus flips split→terminal in one tick. Cleared on consume,
+  // so a later NORMAL entry to the same unit re-resolves the hero as usual.
+  if (freshLaunchUnit === unitKey) {
+    freshLaunchUnit = null;
+    digestPath = null;
+    applyBar(null);
+    digestEl.setAttribute("hidden", "");
+    syncSurfaceStrip(false);
+    return;
+  }
   let home: string | null = null;
   if (unitKey !== UNSOURCED) {
     try {
@@ -2420,6 +2456,7 @@ async function pollLive(): Promise<void> {
     const pend = pendingNavTab && newlyBound.find((b) => b.tabId === pendingNavTab);
     if (pend) {
       pendingNavTab = null;
+      freshLaunchUnit = pend.unitKey; // same launch intent — skip the digest flash on re-nav
       goUnit(pend.unitKey);
     } else if (v.level === "unit") {
       // A binding adopted while viewing a unit: reveal it in place.
