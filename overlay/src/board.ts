@@ -27,7 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
-import { isNavigateMessage } from "./resize";
+import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   initOwnedTerminals,
@@ -392,7 +392,7 @@ async function newFolderSession(): Promise<void> {
  *  same-repo launches can't collapse onto one card before either has a live file;
  *  reconcileBindings re-homes it to the project key once its live file appears. */
 let provisionalSeq = 0;
-async function launchSessionIn(dir: string): Promise<void> {
+async function launchSessionIn(dir: string): Promise<string | null> {
   const base = dir.split("/").filter(Boolean).pop() || dir;
   const existing = allSources.some((s) => unitKeyOf(s) === base);
   const provisional = existing ? base : `${base}~${++provisionalSeq}`;
@@ -404,9 +404,43 @@ async function launchSessionIn(dir: string): Promise<void> {
     }
     freshLaunchUnit = provisional; // land on the new terminal, not the project digest
     goUnit(provisional);
+    return tabId;
   } catch (e) {
     console.error("spawnOwnedSession failed", e);
+    return null;
   }
+}
+
+/** ms to wait after spawning a session before pre-filling a seeded quote — enough
+ *  for `claude` to reach its prompt (home is typically already trusted, so no
+ *  first-run gate). The paste is pre-fill only; if it lands early the user just
+ *  re-pastes, so this is a soft target, not a correctness dependency. */
+const SEED_PREFILL_MS = 1800;
+
+/** "✦ Start a new session with this quote": the user highlighted text in an artifact
+ *  and wants a fresh session to dig into it. Spawn a Board-owned `claude` in HOME,
+ *  navigate to it, then PRE-FILL (never send) the prompt with the attributed quote so
+ *  the user adds their own angle and submits. The quote is artifact-controlled, so it's
+ *  ESC-stripped before it touches the PTY — same paste-escape breakout guard as
+ *  submitIntoPty (see the SECURITY note in wireNavigate). No trailing CR: pre-fill only. */
+async function startSessionFromQuote(quote: string, artifact?: string): Promise<void> {
+  let home: string | null = null;
+  try {
+    home = await invoke<string | null>("resolve_home_dir");
+  } catch (e) {
+    console.error("resolve_home_dir failed", e);
+  }
+  if (!home) return;
+  const tabId = await launchSessionIn(home);
+  if (!tabId) return;
+  const attribution = artifact ? `Re: ${artifact} — ` : "";
+  const seed = `${attribution}"${quote}"\n\n`;
+  const safe = seed.split("\x1b").join(""); // ESC-strip: block paste-escape breakout
+  window.setTimeout(() => {
+    void invoke("write_pty", { tabId, data: `\x1b[200~${safe}\x1b[201~` }).catch((e) =>
+      console.error("seed pre-fill failed", e),
+    );
+  }, SEED_PREFILL_MS);
 }
 
 /** The "+ New session" menu: a small popover under the + giving the two ways to
@@ -2622,6 +2656,15 @@ function wireNavigate(): void {
     const d = e.data;
     if (isNavigateMessage(d)) {
       navigateTo(d.to);
+      return;
+    }
+    if (isNewSessionMessage(d)) {
+      // Highlight → "✦ New session with this quote". Untrusted artifact text, but
+      // lower-risk than submit: it pre-fills (never auto-Enters) a FRESH session, so
+      // nothing runs without the user typing + submitting. ESC-stripped at the PTY.
+      // (Same trust-gate caveat as submit applies before rendering 3rd-party artifacts:
+      // a hostile artifact could spam-spawn; gate the new-session channel too.)
+      void startSessionFromQuote(d.quote, d.artifact);
       return;
     }
     if (
