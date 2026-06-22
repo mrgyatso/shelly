@@ -161,22 +161,6 @@ pub fn resolve_home_dir() -> Option<String> {
     std::env::var_os("HOME").map(|h| PathBuf::from(h).to_string_lossy().into_owned())
 }
 
-/// Whether `dir` is inside a git repo. Lets the Board pick the right PROVISIONAL
-/// unit for a freshly-spawned session: a repo's basename IS its real unit_key
-/// (so sessions in one repo correctly share it), but a non-repo session's real
-/// unit_key is `slug--shortid` (unique) — its basename collides across sessions
-/// (every `~` session is "gyatso"), so it needs a unique provisional instead.
-/// Falls back to `false` (treat as non-repo → unique provisional, always safe)
-/// when git is unavailable.
-#[tauri::command]
-pub fn path_is_repo(dir: String) -> bool {
-    std::process::Command::new("git")
-        .args(["-C", &dir, "rev-parse", "--is-inside-work-tree"])
-        .output()
-        .map(|o| o.status.success() && o.stdout.starts_with(b"true"))
-        .unwrap_or(false)
-}
-
 /// Board-owned sidecar mapping a live-source stem → that session's FULL Claude
 /// Code `session_id` (the SessionStart hook records it; the stem only carries the
 /// 8-char shortid, which can't drive `claude --resume`). The Board injects it per
@@ -337,15 +321,6 @@ pub fn read_all_live() -> Vec<LiveSource> {
 pub fn dismiss_session(source: String) -> Result<(), String> {
     let mut set = dismissed_set();
     set.insert(source);
-    write_dismissed(&set)
-}
-
-/// Reverse [`dismiss_session`]: drop the stem from `dismissed.json` so the session
-/// returns to the live roster (used by click-to-restore on an archived card).
-#[tauri::command]
-pub fn restore_session(source: String) -> Result<(), String> {
-    let mut set = dismissed_set();
-    set.remove(&source);
     write_dismissed(&set)
 }
 

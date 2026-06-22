@@ -62,6 +62,29 @@ export function isNavigateMessage(d: unknown): d is NavigateMessage {
   return m.source === "companion-artifact" && m.kind === "navigate" && typeof m.to === "string";
 }
 
+/** "Start a new session with this quote": the user highlighted text in an artifact
+ *  and wants a fresh Claude session seeded with it. `quote` is the selection; `artifact`
+ *  (optional) is the source's subject/path, for attribution in the seeded prompt.
+ *  UNTRUSTED (artifact-controlled) — the board.ts listener ESC-strips `quote` before
+ *  it touches the PTY and never auto-sends it (pre-fill only). */
+export interface NewSessionMessage {
+  source: "companion-artifact";
+  kind: "new-session";
+  quote: string;
+  artifact?: string;
+}
+
+/** Type guard for a NewSessionMessage. Exported so board.ts can wire it. */
+export function isNewSessionMessage(d: unknown): d is NewSessionMessage {
+  if (!d || typeof d !== "object") return false;
+  const m = d as Record<string, unknown>;
+  return (
+    m.source === "companion-artifact" &&
+    m.kind === "new-session" &&
+    typeof m.quote === "string"
+  );
+}
+
 let raf = 0;
 let lastTarget: Size | null = null;
 let gotReport = false;

@@ -27,7 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
-import { isNavigateMessage } from "./resize";
+import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   initOwnedTerminals,
@@ -392,7 +392,7 @@ async function newFolderSession(): Promise<void> {
  *  same-repo launches can't collapse onto one card before either has a live file;
  *  reconcileBindings re-homes it to the project key once its live file appears. */
 let provisionalSeq = 0;
-async function launchSessionIn(dir: string): Promise<void> {
+async function launchSessionIn(dir: string): Promise<string | null> {
   const base = dir.split("/").filter(Boolean).pop() || dir;
   const existing = allSources.some((s) => unitKeyOf(s) === base);
   const provisional = existing ? base : `${base}~${++provisionalSeq}`;
@@ -404,9 +404,43 @@ async function launchSessionIn(dir: string): Promise<void> {
     }
     freshLaunchUnit = provisional; // land on the new terminal, not the project digest
     goUnit(provisional);
+    return tabId;
   } catch (e) {
     console.error("spawnOwnedSession failed", e);
+    return null;
   }
+}
+
+/** ms to wait after spawning a session before pre-filling a seeded quote — enough
+ *  for `claude` to reach its prompt (home is typically already trusted, so no
+ *  first-run gate). The paste is pre-fill only; if it lands early the user just
+ *  re-pastes, so this is a soft target, not a correctness dependency. */
+const SEED_PREFILL_MS = 1800;
+
+/** "✦ Start a new session with this quote": the user highlighted text in an artifact
+ *  and wants a fresh session to dig into it. Spawn a Board-owned `claude` in HOME,
+ *  navigate to it, then PRE-FILL (never send) the prompt with the attributed quote so
+ *  the user adds their own angle and submits. The quote is artifact-controlled, so it's
+ *  ESC-stripped before it touches the PTY — same paste-escape breakout guard as
+ *  submitIntoPty (see the SECURITY note in wireNavigate). No trailing CR: pre-fill only. */
+async function startSessionFromQuote(quote: string, artifact?: string): Promise<void> {
+  let home: string | null = null;
+  try {
+    home = await invoke<string | null>("resolve_home_dir");
+  } catch (e) {
+    console.error("resolve_home_dir failed", e);
+  }
+  if (!home) return;
+  const tabId = await launchSessionIn(home);
+  if (!tabId) return;
+  const attribution = artifact ? `Re: ${artifact} — ` : "";
+  const seed = `${attribution}"${quote}"\n\n`;
+  const safe = seed.split("\x1b").join(""); // ESC-strip: block paste-escape breakout
+  window.setTimeout(() => {
+    void invoke("write_pty", { tabId, data: `\x1b[200~${safe}\x1b[201~` }).catch((e) =>
+      console.error("seed pre-fill failed", e),
+    );
+  }, SEED_PREFILL_MS);
 }
 
 /** The "+ New session" menu: a small popover under the + giving the two ways to
@@ -2624,6 +2658,15 @@ function wireNavigate(): void {
       navigateTo(d.to);
       return;
     }
+    if (isNewSessionMessage(d)) {
+      // Highlight → "✦ New session with this quote". Untrusted artifact text, but
+      // lower-risk than submit: it pre-fills (never auto-Enters) a FRESH session, so
+      // nothing runs without the user typing + submitting. ESC-stripped at the PTY.
+      // (Same trust-gate caveat as submit applies before rendering 3rd-party artifacts:
+      // a hostile artifact could spam-spawn; gate the new-session channel too.)
+      void startSessionFromQuote(d.quote, d.artifact);
+      return;
+    }
     if (
       d &&
       d.source === "companion-artifact" &&
@@ -2651,6 +2694,17 @@ function wireNavigate(): void {
         submittedArtifacts.set(digestPath, art?.modified_ms ?? 0);
         awaitingAdvanceSource = art?.source ?? null;
       }
+      // SECURITY — submit→PTY trust gate (PLANNED; see codebase-audit.html). `d.text`
+      // arrived via an artifact's postMessage, which carries NO proof of a real user
+      // click: a hostile or auto-loaded artifact's JS can fire `kind:"submit"`
+      // unprompted, and the branch below pastes it + presses Enter into the live
+      // `claude` session. Today every rendered artifact is FIRST-PARTY (authored by
+      // the user's own agent), so auto-send reflects the user's intent and the
+      // ESC-strip in submitIntoPty() blocks the breakout. BEFORE we start rendering
+      // artifacts we did NOT author (hub-pulled / shared), GATE this: route a
+      // non-first-party artifact's submit through the clipboard fallback (handleSubmit)
+      // or a Board-side confirm instead of auto-Enter — detect via the artifact's
+      // source/path (hub artifacts land under the `remote/` dir).
       const v = currentView();
       const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
       const tabId = (focusPath ? ownedTabForArtifact(focusPath) : null) ?? unitTab;
@@ -2663,67 +2717,19 @@ function wireNavigate(): void {
       } else {
         void handleSubmit(d.text, focusPath ?? undefined);
       }
-      // Version-proof "On it" feedback rendered by the BOARD, over the artifact
-      // surface — so even artifacts authored before the in-page splash helper
-      // existed (the shikari-editor bug: "it said submitted but never splashed")
-      // still confirm the submit. It stacks above the iframe, so a newer
-      // artifact's own in-page splash is simply covered (no visible double).
-      showBoardSubmitted();
+      // The artifact's OWN in-page splash (the prefer-html helper's
+      // __cmpShowSubmitted, fired from its doSubmit) is the single "On it"
+      // confirmation. The Board used to render a second splash on top of the
+      // iframe — but dismissing it only revealed the in-page one underneath, so the
+      // user had to dismiss twice (the double-splash bug). nav-back still re-shows
+      // the in-page splash via restore-submitted; auto-advance clears it on reload.
     }
   });
 }
 
-/** The Board-rendered "submitted" splash — the version-proof complement to the
- *  artifact helper's in-page `__cmpShowSubmitted`. One at a time; dismiss returns
- *  to the artifact.
- *
- *  Scoped to the ARTIFACT SLOT when we're on a unit hero (not the full-screen
- *  reader): it covers only #unit-digest, so the terminal, rail, and the top-bar
- *  drag region stay live — the user can keep working while the next artifact is
- *  awaited, and it's dismissed automatically when that artifact lands. Falls back
- *  to covering `.stage` for the reader / other levels (already full-screen). */
-function showBoardSubmitted(): void {
-  if (document.querySelector(".board-submitted")) return;
-  const ov = document.createElement("div");
-  ov.className = "board-submitted";
-  ov.innerHTML =
-    '<div class="ring"></div>' +
-    '<div class="msg"><div class="t">On it.</div>' +
-    '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
-    '<button class="b" type="button">← View this artifact</button>';
-  ov.querySelector("button")?.addEventListener("click", () => dismissBoardSubmitted());
-
-  // Scope to the hero slot only when a hero artifact is actually on screen.
-  const main =
-    currentView().level === "unit" && !focusPath && unitEl && !digestEl.hasAttribute("hidden")
-      ? (unitEl.querySelector(".unit-main") as HTMLElement | null)
-      : null;
-  if (main && digestEl) {
-    ov.classList.add("scoped");
-    main.append(ov);
-    const sync = (): void => {
-      ov.style.top = `${digestEl.offsetTop}px`;
-      ov.style.left = `${digestEl.offsetLeft}px`;
-      ov.style.width = `${digestEl.offsetWidth}px`;
-      ov.style.height = `${digestEl.offsetHeight}px`;
-    };
-    sync();
-    // Observe the digest so the sheet tracks it through window resizes AND
-    // data-focus changes (the user can hit the toolbar resize buttons mid-"On it").
-    if (typeof ResizeObserver !== "undefined") {
-      const ro = new ResizeObserver(sync);
-      ro.observe(digestEl);
-      boardSubmittedCleanup = () => ro.disconnect();
-    } else {
-      window.addEventListener("resize", sync);
-      boardSubmittedCleanup = () => window.removeEventListener("resize", sync);
-    }
-  } else {
-    (document.querySelector(".stage") ?? document.body).append(ov);
-  }
-}
-
-/** Remove the "On it" splash and any listener it installed. Safe to call when
+/** Remove any "On it" splash the Board installed and its listener. The Board no
+ *  longer renders its own splash (the artifact's in-page one is canonical), so this
+ *  is now a defensive no-op kept on the nav / auto-advance paths. Safe to call when
  *  none is showing. */
 function dismissBoardSubmitted(): void {
   boardSubmittedCleanup?.();
@@ -2739,10 +2745,22 @@ function dismissBoardSubmitted(): void {
  *  then the bracketed-paste body (so internal newlines don't submit early); then —
  *  as a SEPARATE, slightly-delayed write — the carriage return. A CR riding in the
  *  same buffer as the paste-end marker gets swallowed by Claude's TUI (the turn lands
- *  in the prompt unsent); a distinct, delayed Enter reliably commits it. */
+ *  in the prompt unsent); a distinct, delayed Enter reliably commits it.
+ *
+ *  SECURITY: `text` is artifact-controlled (a sandboxed iframe posts it, and — once
+ *  hub rendering lands — an artifact can be pulled from a remote hub), so we strip
+ *  ESC (0x1B) before wrapping it. Terminal escape sequences all begin with ESC, so
+ *  this neutralises a payload that smuggles its own `\x1b[201~` to END the bracketed
+ *  paste early and inject newline-terminated commands into the live `claude` session
+ *  (the breakout), plus any cursor/title (OSC) escape. Lossless: compiled feedback
+ *  prose never contains a raw ESC. Scoped to THIS paste path ONLY — raw keystrokes
+ *  (the terminal's own `write_pty`) stay verbatim so the real ESC key still works.
+ *  (Stripped here, not in Rust, because this path builds the paste in JS to keep the
+ *  Ctrl-U-clear + separate delayed-Enter that a single Rust write can't reproduce.) */
 async function submitIntoPty(tabId: string, text: string): Promise<void> {
+  const safe = text.split("\x1b").join(""); // strip ESC: block paste-escape breakout (see above)
   await invoke("write_pty", { tabId, data: "\x15" }); // Ctrl-U: kill line, clear any typed-but-unsent input
-  await invoke("write_pty", { tabId, data: `\x1b[200~${text}\x1b[201~` });
+  await invoke("write_pty", { tabId, data: `\x1b[200~${safe}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 90));
   await invoke("write_pty", { tabId, data: "\r" });
 }

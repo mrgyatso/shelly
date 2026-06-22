@@ -339,6 +339,13 @@ an outer card won't double-icon its inner text).
       ".cmp-comment{grid-column:1/-1;margin:16px 0 0}" +
       ".cmp-comment textarea{display:block;width:100%;box-sizing:border-box;min-height:54px;resize:vertical;padding:10px 12px;border:1px solid rgba(32,27,21,.22);border-radius:9px;font:13px/1.5 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
       ".cmp-comment textarea:focus{border-color:#b0552f}" +
+      // Selection toolbar — floats above a highlight: 💬 Ask · ✦ New session.
+      ".cmp-seltb{position:fixed;z-index:10000;display:flex;align-items:center;gap:2px;padding:4px;border-radius:10px;background:#201b15;box-shadow:0 8px 22px -8px rgba(0,0,0,.5);font-family:-apple-system,system-ui,sans-serif;animation:cmpSelIn .12s ease both}" +
+      "@keyframes cmpSelIn{from{opacity:0;transform:translateY(3px) scale(.97)}to{opacity:1;transform:none}}" +
+      ".cmp-seltb button{border:0;background:transparent;color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:7px;cursor:pointer;white-space:nowrap}" +
+      ".cmp-seltb button:hover{background:rgba(255,255,255,.12)}" +
+      ".cmp-seltb .sep{width:1px;height:16px;background:rgba(255,255,255,.18)}" +
+      ".cmp-seltb-done{color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;white-space:nowrap}" +
       ".cmp-chat{display:flex;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(32,27,21,.14);grid-column:1/-1}" +
       ".cmp-chat input{flex:1;min-width:0;padding:9px 11px;border:1px solid rgba(32,27,21,.22);border-radius:8px;font:13px/1.4 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
       ".cmp-chat input:focus{border-color:#b0552f}" +
@@ -442,6 +449,76 @@ an outer card won't double-icon its inner text).
         try { window.__cmpShowSubmitted(); } catch (err) {}
       }
     });
+  })();
+
+  // --- Selection toolbar: highlight any text → 💬 Ask · ✦ New session ----------
+  // Rides the same postMessage rail. "✦ New session" asks the Board to spawn a fresh
+  // Claude session pre-filled with the quote (a tangent that deserves its own thread).
+  // "💬 Ask" drops the quoted selection into the comment field so it goes out with the
+  // next Submit (or the chat input on a pure-recap artifact). Self-contained.
+  (function () {
+    var subject = "";
+    try { subject = (JSON.parse(document.getElementById("companion-meta").textContent).subject) || ""; } catch (e) {}
+    var tb = null;
+    function clearTb() { if (tb) { tb.remove(); tb = null; } }
+    function selText() {
+      var s = window.getSelection();
+      if (!s || s.isCollapsed) return "";
+      return (s.toString() || "").replace(/\s+/g, " ").trim();
+    }
+    function flashTb(msg) {
+      if (!tb) return;
+      tb.innerHTML = '<span class="cmp-seltb-done">' + msg + "</span>";
+      setTimeout(clearTb, 1400);
+    }
+    function askAboutSelection(q) {
+      // Drop the quoted selection into the comment field so it rides the next Submit;
+      // fall back to the chat input on a pure-recap artifact.
+      var target = commentEl || document.querySelector(".cmp-chat input");
+      if (!target) return;
+      var ref = 'On: "' + (q.length > 100 ? q.slice(0, 97) + "…" : q) + '" — ';
+      target.value = (target.value ? target.value + "\n" : "") + ref;
+      target.focus();
+      try { target.setSelectionRange(target.value.length, target.value.length); } catch (e) {}
+      if (target === commentEl) refresh();
+    }
+    function showTb() {
+      var q = selText();
+      if (q.length < 3) { clearTb(); return; }
+      var sel = window.getSelection(), rect;
+      try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch (e) { return; }
+      if (!rect || (!rect.width && !rect.height)) return;
+      clearTb();
+      tb = document.createElement("div");
+      tb.className = "cmp-seltb";
+      tb.innerHTML =
+        '<button type="button" data-sel="ask">💬 Ask</button>' +
+        '<span class="sep"></span>' +
+        '<button type="button" data-sel="new">✦ New session</button>';
+      document.body.appendChild(tb);
+      var tw = tb.offsetWidth, th = tb.offsetHeight;
+      var left = Math.max(8, Math.min(rect.left + rect.width / 2 - tw / 2, window.innerWidth - tw - 8));
+      var top = rect.top - th - 8;
+      if (top < 6) top = rect.bottom + 8; // flip below the selection when no room above
+      tb.style.left = left + "px";
+      tb.style.top = top + "px";
+      // mousedown + preventDefault so clicking a button doesn't collapse the selection
+      // before the handler runs (we captured `q` already, but it keeps focus tidy).
+      tb.querySelector('[data-sel="new"]').addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        try { parent.postMessage({ source: "companion-artifact", kind: "new-session", quote: q, artifact: subject }, "*"); } catch (err) {}
+        flashTb("✦ Starting a session…");
+      });
+      tb.querySelector('[data-sel="ask"]').addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        askAboutSelection(q);
+        clearTb();
+      });
+    }
+    document.addEventListener("mouseup", function (e) { if (tb && tb.contains(e.target)) return; setTimeout(showTb, 10); });
+    document.addEventListener("selectionchange", function () { if (!selText()) clearTb(); });
+    document.addEventListener("mousedown", function (e) { if (tb && !tb.contains(e.target)) clearTb(); });
+    window.addEventListener("scroll", clearTb, true);
   })();
 
   refresh();
