@@ -136,15 +136,11 @@ pub fn run() {
             live::read_live,
             live::read_all_live,
             live::dismiss_session,
-            live::restore_session,
             live::read_unit_names,
             live::set_unit_name,
             live::resolve_home_dir,
-            live::path_is_repo,
-            windows::set_board_fullscreen,
             windows::show_board,
             windows::take_board_nav_target,
-            windows::open_history,
             pty::spawn_pty,
             pty::write_pty,
             pty::submit_pty,
@@ -179,47 +175,6 @@ pub fn run() {
             // focus is fixed by the CompanionKeyPanel subclass) but paste didn't.
             // The menu stays invisible (Accessory hides the bar); performKeyEquivalent
             // walks the main menu regardless.
-            #[cfg(target_os = "macos")]
-            {
-                use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
-                let h = app.handle();
-                let app_menu = Submenu::with_items(
-                    h,
-                    "Companion",
-                    true,
-                    &[
-                        &PredefinedMenuItem::hide(h, None)?,
-                        &PredefinedMenuItem::separator(h)?,
-                        &PredefinedMenuItem::quit(h, None)?,
-                    ],
-                )?;
-                let edit_menu = Submenu::with_items(
-                    h,
-                    "Edit",
-                    true,
-                    &[
-                        &PredefinedMenuItem::undo(h, None)?,
-                        &PredefinedMenuItem::redo(h, None)?,
-                        &PredefinedMenuItem::separator(h)?,
-                        &PredefinedMenuItem::cut(h, None)?,
-                        &PredefinedMenuItem::copy(h, None)?,
-                        &PredefinedMenuItem::paste(h, None)?,
-                        &PredefinedMenuItem::select_all(h, None)?,
-                    ],
-                )?;
-                let menu = Menu::with_items(h, &[&app_menu, &edit_menu])?;
-                app.set_menu(menu)?;
-            }
-
-            // Wire a minimal app + Edit menu so the standard editing key
-            // equivalents (⌘V paste, ⌘C copy, ⌘X cut, ⌘A select-all, ⌘Z undo)
-            // are routed to the first responder — the focused textarea inside an
-            // interactive artifact's iframe. A borderless Accessory-policy app has
-            // NO main menu by default, so AppKit had no `paste:` key equivalent to
-            // dispatch ⌘V down the responder chain: typing worked (key-window
-            // focus is fixed by the CompanionKeyPanel subclass) but paste did not.
-            // The menu need not be visible (Accessory hides the menu bar) —
-            // `performKeyEquivalent:` walks the main menu regardless.
             #[cfg(target_os = "macos")]
             {
                 use tauri::menu::{Menu, PredefinedMenuItem, Submenu};

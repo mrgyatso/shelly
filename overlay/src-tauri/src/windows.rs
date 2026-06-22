@@ -12,15 +12,9 @@ use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
-
-/// The Board's pre-fullscreen frame (physical px), saved so the fullscreen
-/// toggle can restore the window to exactly where the user had it. `None` =
-/// currently windowed.
-static BOARD_PRIOR_FRAME: Mutex<Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>> =
-    Mutex::new(None);
 
 /// A pending deep-link target (a live-source slug) the Board should navigate to
 /// the moment it opens — e.g. a menu-bar popover row click that wants to land on
@@ -114,13 +108,6 @@ pub fn open_artifact_window(app: &AppHandle, path: String) {
     // hidden here, so `apply_moves` snaps it into its slot before we reveal it.
     crate::layout::arrange(app, true);
     crate::macos_panel::order_front_without_activating(&win);
-}
-
-/// Frontend-callable wrapper to open the History HUD — used by the Board's
-/// "View all in History →" affordance (a capped L2 session links the rest here).
-#[tauri::command]
-pub fn open_history(app: AppHandle) {
-    open_history_window(&app);
 }
 
 /// Open — or toggle — the single history HUD window. Centered and larger than an
@@ -380,54 +367,6 @@ fn position_popover(win: &WebviewWindow, anchor: Option<(f64, f64)>) {
     }
 
     let _ = win.set_position(PhysicalPosition::new(x, y));
-}
-
-/// Toggle the Board between windowed and "maximized to its current monitor".
-///
-/// We deliberately do NOT use native macOS fullscreen (`set_fullscreen(true)`):
-/// that forces a Space switch and activates the app, which would steal terminal
-/// focus from the non-activating Board panel. Instead we resize/position the
-/// window to fill the monitor it's currently on (saving the prior frame to
-/// restore on toggle-off), which keeps the panel non-activating. Returns the new
-/// state (`true` = now full-screen) so the frontend can update its toggle label.
-#[tauri::command]
-pub fn set_board_fullscreen(app: AppHandle, on: bool) -> bool {
-    let win = match app.get_webview_window(BOARD_LABEL) {
-        Some(w) => w,
-        None => return false,
-    };
-    let mut prior = match BOARD_PRIOR_FRAME.lock() {
-        Ok(g) => g,
-        Err(_) => return false,
-    };
-
-    if on {
-        // Already full-screen — nothing to do.
-        if prior.is_some() {
-            return true;
-        }
-        let monitor = match win.current_monitor() {
-            Ok(Some(m)) => m,
-            _ => return false,
-        };
-        // Save the windowed frame (physical px) so we can put it back exactly.
-        if let (Ok(pos), Ok(size)) = (win.outer_position(), win.inner_size()) {
-            *prior = Some((pos, size));
-        }
-        // current_monitor() returns physical px, which is exactly what the
-        // Physical* setters consume — no scale-factor math needed.
-        let _ = win.set_position(*monitor.position());
-        let _ = win.set_size(*monitor.size());
-        crate::macos_panel::order_front_without_activating(&win);
-        true
-    } else {
-        if let Some((pos, size)) = prior.take() {
-            let _ = win.set_position(pos);
-            let _ = win.set_size(size);
-        }
-        crate::macos_panel::order_front_without_activating(&win);
-        false
-    }
 }
 
 /// Raise every panel without activating (the no-arg `companion` invocation).
