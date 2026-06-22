@@ -143,7 +143,6 @@ pub fn run() {
             windows::take_board_nav_target,
             pty::spawn_pty,
             pty::write_pty,
-            pty::submit_pty,
             pty::resize_pty,
             pty::close_pty,
             sessions::list_recent_sessions,

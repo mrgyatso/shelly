@@ -2651,6 +2651,17 @@ function wireNavigate(): void {
         submittedArtifacts.set(digestPath, art?.modified_ms ?? 0);
         awaitingAdvanceSource = art?.source ?? null;
       }
+      // SECURITY — submit→PTY trust gate (PLANNED; see codebase-audit.html). `d.text`
+      // arrived via an artifact's postMessage, which carries NO proof of a real user
+      // click: a hostile or auto-loaded artifact's JS can fire `kind:"submit"`
+      // unprompted, and the branch below pastes it + presses Enter into the live
+      // `claude` session. Today every rendered artifact is FIRST-PARTY (authored by
+      // the user's own agent), so auto-send reflects the user's intent and the
+      // ESC-strip in submitIntoPty() blocks the breakout. BEFORE we start rendering
+      // artifacts we did NOT author (hub-pulled / shared), GATE this: route a
+      // non-first-party artifact's submit through the clipboard fallback (handleSubmit)
+      // or a Board-side confirm instead of auto-Enter — detect via the artifact's
+      // source/path (hub artifacts land under the `remote/` dir).
       const v = currentView();
       const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
       const tabId = (focusPath ? ownedTabForArtifact(focusPath) : null) ?? unitTab;
@@ -2691,10 +2702,22 @@ function dismissBoardSubmitted(): void {
  *  then the bracketed-paste body (so internal newlines don't submit early); then —
  *  as a SEPARATE, slightly-delayed write — the carriage return. A CR riding in the
  *  same buffer as the paste-end marker gets swallowed by Claude's TUI (the turn lands
- *  in the prompt unsent); a distinct, delayed Enter reliably commits it. */
+ *  in the prompt unsent); a distinct, delayed Enter reliably commits it.
+ *
+ *  SECURITY: `text` is artifact-controlled (a sandboxed iframe posts it, and — once
+ *  hub rendering lands — an artifact can be pulled from a remote hub), so we strip
+ *  ESC (0x1B) before wrapping it. Terminal escape sequences all begin with ESC, so
+ *  this neutralises a payload that smuggles its own `\x1b[201~` to END the bracketed
+ *  paste early and inject newline-terminated commands into the live `claude` session
+ *  (the breakout), plus any cursor/title (OSC) escape. Lossless: compiled feedback
+ *  prose never contains a raw ESC. Scoped to THIS paste path ONLY — raw keystrokes
+ *  (the terminal's own `write_pty`) stay verbatim so the real ESC key still works.
+ *  (Stripped here, not in Rust, because this path builds the paste in JS to keep the
+ *  Ctrl-U-clear + separate delayed-Enter that a single Rust write can't reproduce.) */
 async function submitIntoPty(tabId: string, text: string): Promise<void> {
+  const safe = text.split("\x1b").join(""); // strip ESC: block paste-escape breakout (see above)
   await invoke("write_pty", { tabId, data: "\x15" }); // Ctrl-U: kill line, clear any typed-but-unsent input
-  await invoke("write_pty", { tabId, data: `\x1b[200~${text}\x1b[201~` });
+  await invoke("write_pty", { tabId, data: `\x1b[200~${safe}\x1b[201~` });
   await new Promise((r) => setTimeout(r, 90));
   await invoke("write_pty", { tabId, data: "\r" });
 }
