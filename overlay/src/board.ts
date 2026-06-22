@@ -546,15 +546,15 @@ function showLevel(level: BoardView["level"]): void {
   unitEl.toggleAttribute("hidden", level !== "unit");
 }
 
-/** Startup routing: go directly to the most recently active project when no agent
- *  has authored home.html, so the rail is immediately visible. Falls back to the
- *  Hub fallback when nothing exists yet. */
+/** Startup routing: go directly to the most recently active project only when a live
+ *  session exists. Falls back to the Hub so the user sees the waiting/empty state
+ *  rather than landing inside a closed session with no terminal. */
 async function startupNavigate(): Promise<void> {
-  // Live sessions take priority — go directly to work instead of landing on home.html.
-  const recent = findMostRecentActiveUnit();
-  if (recent) {
-    goUnit(recent);
-    return;
+  const now = Date.now();
+  const hasLive = allSources.some((s) => !isDismissed(s) && isLiveSource(s, now));
+  if (hasLive) {
+    const unit = findMostRecentActiveUnit();
+    if (unit) { goUnit(unit); return; }
   }
   await goHub();
 }
