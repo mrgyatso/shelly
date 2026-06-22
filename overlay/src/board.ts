@@ -2663,67 +2663,19 @@ function wireNavigate(): void {
       } else {
         void handleSubmit(d.text, focusPath ?? undefined);
       }
-      // Version-proof "On it" feedback rendered by the BOARD, over the artifact
-      // surface — so even artifacts authored before the in-page splash helper
-      // existed (the shikari-editor bug: "it said submitted but never splashed")
-      // still confirm the submit. It stacks above the iframe, so a newer
-      // artifact's own in-page splash is simply covered (no visible double).
-      showBoardSubmitted();
+      // The artifact's OWN in-page splash (the prefer-html helper's
+      // __cmpShowSubmitted, fired from its doSubmit) is the single "On it"
+      // confirmation. The Board used to render a second splash on top of the
+      // iframe — but dismissing it only revealed the in-page one underneath, so the
+      // user had to dismiss twice (the double-splash bug). nav-back still re-shows
+      // the in-page splash via restore-submitted; auto-advance clears it on reload.
     }
   });
 }
 
-/** The Board-rendered "submitted" splash — the version-proof complement to the
- *  artifact helper's in-page `__cmpShowSubmitted`. One at a time; dismiss returns
- *  to the artifact.
- *
- *  Scoped to the ARTIFACT SLOT when we're on a unit hero (not the full-screen
- *  reader): it covers only #unit-digest, so the terminal, rail, and the top-bar
- *  drag region stay live — the user can keep working while the next artifact is
- *  awaited, and it's dismissed automatically when that artifact lands. Falls back
- *  to covering `.stage` for the reader / other levels (already full-screen). */
-function showBoardSubmitted(): void {
-  if (document.querySelector(".board-submitted")) return;
-  const ov = document.createElement("div");
-  ov.className = "board-submitted";
-  ov.innerHTML =
-    '<div class="ring"></div>' +
-    '<div class="msg"><div class="t">On it.</div>' +
-    '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
-    '<button class="b" type="button">← View this artifact</button>';
-  ov.querySelector("button")?.addEventListener("click", () => dismissBoardSubmitted());
-
-  // Scope to the hero slot only when a hero artifact is actually on screen.
-  const main =
-    currentView().level === "unit" && !focusPath && unitEl && !digestEl.hasAttribute("hidden")
-      ? (unitEl.querySelector(".unit-main") as HTMLElement | null)
-      : null;
-  if (main && digestEl) {
-    ov.classList.add("scoped");
-    main.append(ov);
-    const sync = (): void => {
-      ov.style.top = `${digestEl.offsetTop}px`;
-      ov.style.left = `${digestEl.offsetLeft}px`;
-      ov.style.width = `${digestEl.offsetWidth}px`;
-      ov.style.height = `${digestEl.offsetHeight}px`;
-    };
-    sync();
-    // Observe the digest so the sheet tracks it through window resizes AND
-    // data-focus changes (the user can hit the toolbar resize buttons mid-"On it").
-    if (typeof ResizeObserver !== "undefined") {
-      const ro = new ResizeObserver(sync);
-      ro.observe(digestEl);
-      boardSubmittedCleanup = () => ro.disconnect();
-    } else {
-      window.addEventListener("resize", sync);
-      boardSubmittedCleanup = () => window.removeEventListener("resize", sync);
-    }
-  } else {
-    (document.querySelector(".stage") ?? document.body).append(ov);
-  }
-}
-
-/** Remove the "On it" splash and any listener it installed. Safe to call when
+/** Remove any "On it" splash the Board installed and its listener. The Board no
+ *  longer renders its own splash (the artifact's in-page one is canonical), so this
+ *  is now a defensive no-op kept on the nav / auto-advance paths. Safe to call when
  *  none is showing. */
 function dismissBoardSubmitted(): void {
   boardSubmittedCleanup?.();

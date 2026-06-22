@@ -449,58 +449,6 @@
 .ctx-item.danger { color: var(--clay-deep); }
 .ctx-item.danger:hover { background: var(--clay-deep); color: var(--card); }
 
-/* Board-rendered "submitted" splash (version-proof; see showBoardSubmitted). */
-.board-submitted {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  background: radial-gradient(120% 90% at 50% 32%, var(--card) 0%, var(--board) 72%);
-  backdrop-filter: blur(3px);
-}
-/* Scoped to the artifact slot (the hero), not the whole window: the "On it"
-   waiting scene sits exactly where the artifact was, so the terminal, rail, and
-   top-bar drag region all stay live while the next artifact is awaited. JS sizes
-   it to #unit-digest's box (top/left/width/height) inside the positioned
-   .unit-main. */
-.board-submitted.scoped {
-  position: absolute;
-  inset: auto;
-  z-index: 6;
-  border-radius: var(--radius-card);
-  outline: 1px solid var(--line-2);
-  outline-offset: -1px;
-  overflow: hidden;
-}
-.board-submitted .ring {
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  border: 3px solid color-mix(in oklch, var(--accent) 25%, transparent);
-  border-top-color: var(--accent);
-  animation: board-spin 1s linear infinite;
-}
-@keyframes board-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .board-submitted .ring { animation: none; } }
-.board-submitted .msg { text-align: center; }
-.board-submitted .t { font-size: 15px; font-weight: 650; color: var(--ink); }
-.board-submitted .s { font-size: 12px; color: var(--ink-3); margin-top: 6px; max-width: 280px; }
-.board-submitted .b {
-  margin-top: 4px;
-  padding: 8px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--line-strong);
-  background: var(--card);
-  color: var(--ink);
-  font: 600 12px/1 system-ui, sans-serif;
-  cursor: pointer;
-}
-.board-submitted .b:hover { background: var(--ink); color: var(--card); border-color: var(--ink); }
-
 /* The floating name editor (appended to .stage, positioned over the row name so
    it isn't nested in the row <button>). */
 .name-edit {
