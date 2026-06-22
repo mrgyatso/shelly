@@ -796,30 +796,11 @@
 .rail-sessions { display: flex; flex-direction: column; gap: 3px; }
 .rail-menu { display: none; flex-direction: column; gap: 3px; }
 
-/* Collapse control — pinned to the rail bottom. Hides the whole rail; a » chevron in
-   the toolbar brings it back. */
-.rail-collapse-btn {
-  flex: 0 0 auto;
-  margin-top: auto; /* push to the bottom of the rail */
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--ink-3);
-  font: 600 13px/1 "JetBrains Mono", ui-monospace, monospace;
-  cursor: pointer;
-  transition: background 0.14s, color 0.14s, border-color 0.14s;
-}
-.rail-collapse-btn span { font-family: var(--sans, inherit); font-size: 11px; font-weight: 500; }
-.rail-collapse-btn:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
-
-/* Collapsed: the rail folds away; the toolbar » appears to restore it. */
+/* Single sidebar toggle — lives in the toolbar, always visible. « hides the rail
+   (which folds to display:none), » brings it back. Same spot in both states. */
 .board-unit[data-rail-collapsed="1"] .unit-rail { display: none; }
-.rail-expand-btn {
-  display: none;
+.rail-toggle-btn {
+  display: grid;
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
@@ -833,8 +814,7 @@
   cursor: pointer;
   transition: background 0.14s, color 0.14s, border-color 0.14s;
 }
-.rail-expand-btn:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
-.board-unit[data-rail-collapsed="1"] .rail-expand-btn { display: grid; }
+.rail-toggle-btn:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
 .board-unit[data-rail="menu"] .rail-sessions { display: none; }
 .board-unit[data-rail="menu"] .rail-menu { display: flex; }
 

@@ -230,6 +230,10 @@ let currentUnitKey: string | null = null;
 let lastRailActiveUnit: string | null = null; // tracks which unit the rail was last rendered for
 /** Which recent (closed) project is expanded in the rail, or null for all collapsed. */
 let expandedRecentProject: string | null = null;
+/** Whether the ACTIVE unit's session drawer is collapsed. Click the active tab to
+ *  toggle (open → closed → open). Reset to open on every fresh unit entry; persists
+ *  across polls so the user's choice sticks. */
+let activeDrawerCollapsed = false;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
@@ -968,17 +972,23 @@ function renderUnitRail(activeUnitKey: string | null): void {
 
   for (const unit of order) {
     const sources = byUnit.get(unit) ?? [];
-    nodes.push(buildRailTab(unit, sources, bandOf.get(unit) ?? "idle", unit === activeUnitKey));
-    // Two-level: the ACTIVE project expands inline to its sessions (only when it
-    // holds more than one — a single-session project is its own tab already). The
-    // group is visible by default; .opening just adds the drop-in animation.
-    if (unit === activeUnitKey && sources.length > 1) {
+    const isActive = unit === activeUnitKey;
+    // A project's sessions are its LIVE ones plus its resumable (closed) siblings —
+    // fold them together so a sibling doesn't vanish the moment one session goes live.
+    const siblings = isActive ? recentSiblingsFor(unit) : [];
+    const hasDrawer = isActive && sources.length + siblings.length > 1;
+    nodes.push(buildRailTab(unit, sources, bandOf.get(unit) ?? "idle", isActive, hasDrawer));
+    // Two-level: the ACTIVE project expands inline to its sessions when it holds more
+    // than one. Click the active tab to collapse/reopen the drawer (chevron reflects
+    // state). The group is visible by default; .opening just adds the drop-in animation.
+    if (hasDrawer && !activeDrawerCollapsed) {
       const shownTab = ownedTabForUnit(unit);
       const group = document.createElement("div");
       group.className = "unit-subtab-group";
       const inner = document.createElement("div");
       inner.className = "unit-subtab-group-inner";
       for (const s of railSessionOrder(sources)) inner.appendChild(buildRailSessionRow(unit, s, shownTab));
+      for (const rs of siblings) inner.appendChild(buildRecentSessionRow(rs));
       group.appendChild(inner);
       nodes.push(group);
       newGroup = group;
@@ -986,7 +996,10 @@ function renderUnitRail(activeUnitKey: string | null): void {
   }
 
   // Recent (closed) projects — below live units, expand to session list on click.
-  const recentGroups = groupRecentByProject(new Set(order));
+  // Exclude by BASE project key: a project resumed under a provisional `~n` unit must
+  // drop out of Recent immediately (not 5s later when correlation re-homes it), and
+  // its siblings now live in the active unit's switcher above.
+  const recentGroups = groupRecentByProject(new Set(order.map(baseProjectOf)));
   if (recentGroups.size > 0) {
     const divider = document.createElement("div");
     divider.className = "rail-section-head";
@@ -1077,13 +1090,44 @@ function buildRailSessionRow(unitKey: string, s: LiveSource, shownTab: string | 
   return row;
 }
 
+/** The base PROJECT key for a unit key — strips the trailing provisional suffix
+ *  (`~<n>`, minted by resumeRecentSession/launchSessionIn before correlation re-homes
+ *  the unit to its real key). Lets a freshly-resumed unit match its project's recent
+ *  sessions, and lets the Recent band drop a project the instant it goes provisional.
+ *  Repo unit keys never contain `~`; non-repo keys (`slug--shortid`) are untouched. */
+function baseProjectOf(unitKey: string): string {
+  return unitKey.replace(/~\d+$/, "");
+}
+
+/** The project key a RecentSession groups under — mirrors the repo-slug rule used by
+ *  the rail's live units and resumeRecentSession's base. */
+function recentProjectKey(rs: RecentSession): string {
+  return projectSlug(rs.project) ?? rs.cwd.split("/").filter(Boolean).pop() ?? "session";
+}
+
+/** Whether a RecentSession is genuinely resumable: real cwd, substantial transcript,
+ *  not already running live. Shared by the Recent band and the active-unit sibling fold
+ *  so the two stay in lockstep — a just-resumed session won't double-count. */
+function isResumableRecent(rs: RecentSession, live: Set<string>): boolean {
+  return !!rs.cwd && rs.size_bytes >= RECENT_MIN_BYTES && !live.has(rs.session_id);
+}
+
+/** A project's resumable (closed) sessions, matched by BASE project key so they fold
+ *  into the active unit's session switcher even during the provisional resume window.
+ *  Newest-first (Rust order), capped — same dedup as the Recent band. */
+function recentSiblingsFor(unitKey: string): RecentSession[] {
+  const base = baseProjectOf(unitKey);
+  const live = liveSessionIds();
+  return allRecent.filter((rs) => isResumableRecent(rs, live) && recentProjectKey(rs) === base).slice(0, 6);
+}
+
 /** Collect recent (closed) sessions grouped by project slug, excluding live units. */
 function groupRecentByProject(excludeUnits: Set<string>): Map<string, RecentSession[]> {
   const live = liveSessionIds();
   const groups = new Map<string, RecentSession[]>();
   for (const rs of allRecent) {
-    if (!rs.cwd || rs.size_bytes < RECENT_MIN_BYTES || live.has(rs.session_id)) continue;
-    const key = projectSlug(rs.project) ?? rs.cwd.split("/").filter(Boolean).pop() ?? "session";
+    if (!isResumableRecent(rs, live)) continue;
+    const key = recentProjectKey(rs);
     if (excludeUnits.has(key)) continue;
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(rs);
   }
@@ -1145,13 +1189,15 @@ function switchToSession(unitKey: string, s: LiveSource): void {
   });
 }
 
-/** One rail tab: a state dot, the unit's mark, its name, an unread badge. The
- *  active tab is highlighted and inert; others drill in on click. */
+/** One rail tab: a state dot, the unit's mark, its name, an unread badge. Inactive
+ *  tabs drill in on click. The active tab, when it owns a multi-session drawer, gets a
+ *  chevron and toggles that drawer open/closed (same affordance as a recent project). */
 function buildRailTab(
   unitKey: string,
   sources: LiveSource[],
   band: Band,
   active: boolean,
+  hasDrawer = false,
 ): HTMLElement {
   const head = sources[0] ? makeHead(sources[0]) : ownedHead();
   const name = unitName(unitKey, sources);
@@ -1181,7 +1227,19 @@ function buildRailTab(
     tab.append(badge);
   }
 
-  if (!active) tab.addEventListener("click", () => goUnit(unitKey));
+  if (active && hasDrawer) {
+    tab.classList.toggle("expanded", !activeDrawerCollapsed);
+    const chevron = document.createElement("span");
+    chevron.className = "unit-tab-chevron";
+    chevron.textContent = activeDrawerCollapsed ? "▸" : "▾";
+    tab.append(chevron);
+    tab.addEventListener("click", () => {
+      activeDrawerCollapsed = !activeDrawerCollapsed;
+      renderUnitRail(currentUnitKey);
+    });
+  } else if (!active) {
+    tab.addEventListener("click", () => goUnit(unitKey));
+  }
   tab.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     showUnitMenu(e, unitKey, sources);
@@ -1409,6 +1467,7 @@ function enterUnit(unitKey: string): void {
   clearUnread(unitKey);
   pendingIngest.delete(unitKey);
   updateGlobalUnread();
+  activeDrawerCollapsed = false; // a fresh entry always opens the session drawer
   focusPath = null;
   currentUnitKey = unitKey;
   // Always land on the Sessions face / Session view / split surfaces on entry.
@@ -1706,12 +1765,22 @@ function wireUnitChrome(): void {
     if (nameEl) startRename(currentUnitKey, nameEl, () => renderUnitTitle(currentUnitKey!));
   });
 
-  // Collapse / expand the left rail to reclaim space. Persisted so it survives reloads;
-  // the « (rail bottom) hides it, the » (toolbar) brings it back.
+  // Collapse / expand the left rail to reclaim space, via a SINGLE toolbar toggle: the
+  // rail folds away when collapsed, so the control must live outside it (« hides, »
+  // shows — same spot in both states). Persisted so it survives reloads.
+  const railToggle = document.getElementById("unit-rail-toggle");
+  const paintRailToggle = (c: boolean): void => {
+    if (!railToggle) return;
+    railToggle.textContent = c ? "»" : "«";
+    const label = c ? "Show sidebar" : "Hide sidebar";
+    railToggle.title = label;
+    railToggle.setAttribute("aria-label", label);
+  };
   const setRailCollapsed = (c: boolean): void => {
     if (!unitEl) return;
     if (c) unitEl.dataset.railCollapsed = "1";
     else delete unitEl.dataset.railCollapsed;
+    paintRailToggle(c);
     try {
       localStorage.setItem("companion:railCollapsed", c ? "1" : "0");
     } catch {
@@ -1719,10 +1788,14 @@ function wireUnitChrome(): void {
     }
     fitShownTerminal(); // the pane just grew/shrank — refit the terminal to it
   };
-  document.getElementById("unit-rail-collapse")?.addEventListener("click", () => setRailCollapsed(true));
-  document.getElementById("unit-rail-expand")?.addEventListener("click", () => setRailCollapsed(false));
+  railToggle?.addEventListener("click", () => setRailCollapsed(unitEl?.dataset.railCollapsed !== "1"));
   try {
-    if (localStorage.getItem("companion:railCollapsed") === "1" && unitEl) unitEl.dataset.railCollapsed = "1";
+    const collapsed = localStorage.getItem("companion:railCollapsed") === "1";
+    if (unitEl) {
+      if (collapsed) unitEl.dataset.railCollapsed = "1";
+      else delete unitEl.dataset.railCollapsed;
+    }
+    paintRailToggle(collapsed); // restore glyph without refitting at wiring time
   } catch {
     /* non-fatal */
   }

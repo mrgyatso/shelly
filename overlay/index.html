@@ -141,15 +141,14 @@
               <button class="rail-nav" role="menuitem" data-dest="history"><span class="rail-nav-ico">◷</span><span>History</span></button>
               <button class="rail-nav" role="menuitem" data-dest="settings"><span class="rail-nav-ico">⚙</span><span>Settings</span></button>
             </div>
-            <!-- Collapse the sidebar to reclaim space; an expand chevron appears in the toolbar. -->
-            <button id="unit-rail-collapse" class="rail-collapse-btn" title="Collapse sidebar" aria-label="Collapse sidebar">«<span>Hide</span></button>
           </nav>
           <!-- The pane that swaps per session AND per nav destination. -->
           <div class="unit-pane">
             <!-- L2 toolbar: the in-session rename title + surface controls. -->
             <div class="unit-toolbar">
-              <!-- Shown only when the rail is collapsed — click to bring it back. -->
-              <button id="unit-rail-expand" class="rail-expand-btn" title="Show sidebar" aria-label="Show sidebar">»</button>
+              <!-- Single sidebar toggle: « hides the rail, » brings it back. Lives in the
+                   toolbar so it stays put in both states (the rail itself folds away). -->
+              <button id="unit-rail-toggle" class="rail-toggle-btn" title="Hide sidebar" aria-label="Hide sidebar">«</button>
               <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
               <!-- Surface controls: resize only (⬒/⊟/⬓). Lives in the toolbar so it
                    never overlaps the artifact/terminal pills below. -->
