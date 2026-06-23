@@ -28,6 +28,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
+import { mountClawd } from "./clawd";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   initOwnedTerminals,
@@ -698,6 +699,8 @@ function renderHubFallback(): void {
   const fallback = document.getElementById("hub-fallback");
   const hello = document.getElementById("hub-hello");
   const cta = document.getElementById("hub-sessions-btn");
+  const clawd = document.getElementById("hub-clawd");
+  if (clawd) mountClawd(clawd); // a fresh pixel-art clawd pose greets each idle landing
   if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
   if (cta) {
     const hasWork = allSources.length > 0 || recentToShow().length > 0;

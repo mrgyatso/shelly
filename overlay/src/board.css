@@ -372,6 +372,10 @@
   padding: 40px;
 }
 .hub-fallback[hidden] { display: none; }
+/* A pixel-art clawd greets the idle L0 screen (a fresh pose each landing).
+   The library CSS (clawd.ts) sizes the .cw svg; this just seats the stage. */
+.hub-clawd { margin-bottom: -4px; }
+.hub-clawd .clawd-stage { display: flex; align-items: center; justify-content: center; }
 .hub-hello {
   font-family: var(--serif);
   font-optical-sizing: auto;
