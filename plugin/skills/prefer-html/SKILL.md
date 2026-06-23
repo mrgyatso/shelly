@@ -334,6 +334,181 @@ an outer card won't double-icon its inner text).
   // Only a pure-recap artifact (no Submit button at all) gets a standalone Send
   // bar as a fallback. doSubmit() flips to a "submitted" screen either way.
   (function () {
+    // ---- Pixel-art clawd waiting-splash library (adapted from clawd-tank, MIT) ----
+    // Shared character rig — body, arms, nested eyes. Drawn once per mount.
+    var CW_RIG =
+      '<g class="cw-rig">' +
+        '<g class="cw-body" fill="#d98a5c">' +
+          '<rect x="3" y="13" width="1" height="2"/><rect x="5" y="13" width="1" height="2"/>' +
+          '<rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>' +
+          '<rect x="2" y="6" width="11" height="7"/>' +
+          '<g class="cw-arm-l"><rect x="0" y="9" width="2" height="2"/></g>' +
+          '<g class="cw-arm-r"><rect x="13" y="9" width="2" height="2"/></g>' +
+        '</g>' +
+        '<g class="cw-eyes"><g class="cw-eyes-b" fill="#2a2018">' +
+          '<rect x="4.5" y="8" width="1" height="2"/><rect x="9.5" y="8" width="1" height="2"/>' +
+        '</g></g>' +
+      '</g>';
+
+    // Base CSS shared by every scene (halo, canvas, shadow, prop defaults).
+    var CW_BASE =
+      ".cmp-submitted .halo{position:absolute;top:50%;left:50%;width:200px;height:200px;transform:translate(-50%,-64%);background:radial-gradient(circle,rgba(217,138,92,.30) 0%,transparent 62%);filter:blur(6px);animation:cwHalo 4.5s ease-in-out infinite;pointer-events:none}" +
+      "@keyframes cwHalo{0%,100%{opacity:.5;transform:translate(-50%,-64%) scale(1)}50%{opacity:.85;transform:translate(-50%,-64%) scale(1.08)}}" +
+      ".cmp-submitted .cw{width:150px;height:150px;shape-rendering:crispEdges;overflow:visible}" +
+      ".cmp-submitted .cw-shadow{fill:#201b15;opacity:.4}" +
+      // sensible idle defaults so a scene only overrides what it animates
+      ".cmp-submitted .cw-eyes-b{transform-origin:7.5px 9px;animation:cwBlink 4.2s steps(1) infinite}" +
+      "@keyframes cwBlink{0%,45%,55%,100%{transform:scaleY(1)}50%{transform:scaleY(.12)}}" +
+      // Reduced motion: freeze every pose, but keep the floating props faintly
+      // visible (they start at opacity:0 and only the animation reveals them).
+      "@media (prefers-reduced-motion:reduce){.cmp-submitted .cw *,.cmp-submitted .halo{animation:none!important}.cmp-submitted .cw-bit,.cmp-submitted .cw-load,.cmp-submitted .cw-str,.cmp-submitted .cw-pk,.cmp-submitted .cw-dust,.cmp-submitted .cw-wave,.cmp-submitted .cw-star,.cmp-submitted .cw-q,.cmp-submitted .cw-sp{opacity:.6!important}}";
+
+    // Each scene: id, caption, behind/front prop SVG, and scoped CSS.
+    var CW_SCENES = [
+      { id:"typing", cap:"Claude’s heads-down in the code",
+        behind:'<g fill="#40c4ff"><rect class="cw-bit" x="-2" y="12" width="1.4" height="1.4"/><rect class="cw-bit b2" x="6" y="11" width="1.4" height="1.4"/><rect class="cw-bit b3" x="13" y="12" width="1.4" height="1.4"/><rect class="cw-bit b4" x="3" y="10" width="1.4" height="1.4"/></g>',
+        front:'<g transform="translate(2.5 10.5)"><rect x="-0.5" y="4.6" width="11" height="1" fill="#546e7a"/><rect x="0" y="0" width="10" height="4.8" fill="#78909c"/><rect x="4.5" y="2" width="1" height="1" fill="#fff"/></g>',
+        css:
+          ".cmp-submitted .cw--typing .cw-rig{transform-origin:7.5px 15px;animation:cwJitter .09s steps(2) infinite alternate}" +
+          "@keyframes cwJitter{from{transform:translateY(0)}to{transform:translateY(.5px)}}" +
+          ".cmp-submitted .cw--typing .cw-arm-l{transform-origin:2px 10px;animation:cwTypeL .16s ease-in-out infinite}" +
+          ".cmp-submitted .cw--typing .cw-arm-r{transform-origin:13px 10px;animation:cwTypeR .13s ease-in-out infinite}" +
+          "@keyframes cwTypeL{0%,100%{transform:rotate(58deg)}50%{transform:rotate(90deg)}}" +
+          "@keyframes cwTypeR{0%,100%{transform:rotate(-58deg)}50%{transform:rotate(-90deg)}}" +
+          ".cmp-submitted .cw--typing .cw-eyes{animation:cwRead 1.2s steps(1) infinite}" +
+          "@keyframes cwRead{0%,32%{transform:translateX(-1.2px)}33%,66%{transform:translateX(0)}67%,100%{transform:translateX(1.2px)}}" +
+          ".cmp-submitted .cw--typing .cw-eyes-b{animation:none}" +
+          ".cmp-submitted .cw--typing .cw-bit{opacity:0;animation:cwBit 1s linear infinite}" +
+          ".cmp-submitted .cw--typing .cw-bit.b2{animation-delay:.33s}.cmp-submitted .cw--typing .cw-bit.b3{animation-delay:.66s}.cmp-submitted .cw--typing .cw-bit.b4{animation-delay:.85s}" +
+          "@keyframes cwBit{0%{opacity:0;transform:translateY(0) scale(.5)}25%{opacity:.85}100%{opacity:0;transform:translateY(-13px) scale(1.15)}}" },
+
+      { id:"thinking", cap:"Claude’s turning it over",
+        behind:'<g transform="translate(7 -10)"><g fill="#fff" opacity="0.95"><rect x="2" y="1" width="8" height="6"/><rect x="1" y="2" width="10" height="4"/><rect x="3" y="0" width="6" height="8"/><rect x="2" y="7" width="2" height="2"/><rect x="1" y="9" width="1" height="1"/></g><g fill="#0082fc"><rect class="cw-load" x="2.5" y="3" width="1.2" height="1.2"/><rect class="cw-load l2" x="5.4" y="3" width="1.2" height="1.2"/><rect class="cw-load l3" x="8.3" y="3" width="1.2" height="1.2"/></g></g>',
+        front:"",
+        css:
+          ".cmp-submitted .cw--thinking .cw-rig{transform-origin:7.5px 15px;animation:cwSway 4s ease-in-out infinite}" +
+          "@keyframes cwSway{0%,100%{transform:rotate(0deg)}25%{transform:rotate(-3deg)}75%{transform:rotate(3deg)}}" +
+          ".cmp-submitted .cw--thinking .cw-arm-r{transform-origin:14px 10px;animation:cwTap .8s ease-in-out infinite alternate}" +
+          "@keyframes cwTap{0%{transform:rotate(-122deg)}100%{transform:rotate(-145deg)}}" +
+          ".cmp-submitted .cw--thinking .cw-load{opacity:.15;animation:cwLoad 2s infinite}" +
+          ".cmp-submitted .cw--thinking .cw-load.l2{animation-delay:.25s}.cmp-submitted .cw--thinking .cw-load.l3{animation-delay:.5s}" +
+          "@keyframes cwLoad{0%,18%{opacity:.15}40%,80%{opacity:1}100%{opacity:.15}}" },
+
+      { id:"conducting", cap:"Claude’s orchestrating the next move",
+        behind:'<g><rect class="cw-str" x="0" y="0" width="1.5" height="1.5" fill="#0082fc"/><rect class="cw-str s2" x="0" y="0" width="1.5" height="1.5" fill="#ffc107"/><rect class="cw-str s3" x="0" y="0" width="1.5" height="1.5" fill="#ff5252"/><rect class="cw-str s4" x="0" y="0" width="1.5" height="1.5" fill="#4caf50"/><rect class="cw-str s5" x="0" y="0" width="1.5" height="1.5" fill="#9c27b0"/></g>',
+        front:"",
+        css:
+          ".cmp-submitted .cw--conducting .cw-rig{transform-origin:7.5px 15px;animation:cwBob 2s ease-in-out infinite}" +
+          "@keyframes cwBob{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(1.5px) scaleY(.98)}}" +
+          ".cmp-submitted .cw--conducting .cw-arm-l{transform-origin:1px 10px;animation:cwCondL 2s ease-in-out infinite}" +
+          ".cmp-submitted .cw--conducting .cw-arm-r{transform-origin:14px 10px;animation:cwCondR 2s ease-in-out infinite}" +
+          "@keyframes cwCondL{0%,100%{transform:rotate(15deg)}50%{transform:rotate(85deg)}}" +
+          "@keyframes cwCondR{0%,100%{transform:rotate(-85deg)}50%{transform:rotate(-15deg)}}" +
+          ".cmp-submitted .cw--conducting .cw-str{opacity:0;animation:cwStream 2s linear infinite}" +
+          ".cmp-submitted .cw--conducting .cw-str.s2{animation-delay:.4s}.cmp-submitted .cw--conducting .cw-str.s3{animation-delay:.8s}.cmp-submitted .cw--conducting .cw-str.s4{animation-delay:1.2s}.cmp-submitted .cw--conducting .cw-str.s5{animation-delay:1.6s}" +
+          "@keyframes cwStream{0%{opacity:0;transform:translate(-2px,6px) scale(0)}15%{opacity:1;transform:translate(0,1px) scale(1)}50%{opacity:1;transform:translate(7.5px,-3px) scale(1.5)}85%{opacity:1;transform:translate(15px,1px) scale(1)}100%{opacity:0;transform:translate(17px,6px) scale(0)}}" },
+
+      { id:"juggling", cap:"Claude’s juggling a few threads",
+        behind:"",
+        front:'<g><rect class="cw-pk" x="-1" y="-1" width="2" height="2" fill="#ff5252"/><rect class="cw-pk p2" x="-1" y="-1" width="2" height="2" fill="#ffc107"/><rect class="cw-pk p3" x="-1" y="-1" width="2" height="2" fill="#4caf50"/></g>',
+        css:
+          ".cmp-submitted .cw--juggling .cw-rig{transform-origin:7.5px 15px;animation:cwRock .6s ease-in-out infinite alternate}" +
+          "@keyframes cwRock{0%{transform:rotate(-5deg)}100%{transform:rotate(5deg)}}" +
+          ".cmp-submitted .cw--juggling .cw-arm-l{transform-origin:1px 10px;animation:cwJugL .6s ease-in-out infinite alternate}" +
+          ".cmp-submitted .cw--juggling .cw-arm-r{transform-origin:14px 10px;animation:cwJugR .6s ease-in-out infinite alternate}" +
+          "@keyframes cwJugL{0%{transform:rotate(60deg)}100%{transform:rotate(10deg)}}" +
+          "@keyframes cwJugR{0%{transform:rotate(-10deg)}100%{transform:rotate(-60deg)}}" +
+          ".cmp-submitted .cw--juggling .cw-eyes{animation:cwDart 1.2s infinite}" +
+          "@keyframes cwDart{0%,100%{transform:translate(-2px,-2px)}25%{transform:translate(0,-3px)}50%{transform:translate(2px,-2px)}75%{transform:translate(0,0)}}" +
+          ".cmp-submitted .cw--juggling .cw-eyes-b{animation:none}" +
+          ".cmp-submitted .cw--juggling .cw-pk{animation:cwJuggle 1.2s linear infinite}" +
+          ".cmp-submitted .cw--juggling .cw-pk.p2{animation-delay:-.4s}.cmp-submitted .cw--juggling .cw-pk.p3{animation-delay:-.8s}" +
+          "@keyframes cwJuggle{0%{transform:translate(0,9px) rotate(0deg)}25%{transform:translate(8px,0) rotate(90deg)}50%{transform:translate(15px,9px) rotate(180deg)}75%{transform:translate(8px,4px) rotate(270deg)}100%{transform:translate(0,9px) rotate(360deg)}}" },
+
+      { id:"sweeping", cap:"Claude’s sweeping up the details",
+        behind:'<g class="cw-dust" fill="#9e9e9e"><rect x="0" y="0" width="1.5" height="1.5"/></g><g class="cw-dust d2" fill="#b0bec5"><rect x="0" y="0" width="1" height="1"/></g>',
+        front:'<g class="cw-broom"><rect x="13.5" y="4" width="1" height="10" fill="#795548"/><rect x="12" y="14" width="4" height="2" fill="#ffc107"/></g>',
+        css:
+          ".cmp-submitted .cw--sweeping .cw-rig{transform-origin:7.5px 15px;animation:cwLean 1.5s ease-in-out infinite}" +
+          "@keyframes cwLean{0%,100%{transform:rotate(5deg) translate(1px,0)}50%{transform:rotate(13deg) translate(3px,1px)}}" +
+          ".cmp-submitted .cw--sweeping .cw-arm-l{transform-origin:1px 10px;transform:translate(6px,1px) rotate(-15deg)}" +
+          ".cmp-submitted .cw--sweeping .cw-arm-r{transform-origin:14px 10px;animation:cwSwArm 1.5s ease-in-out infinite}" +
+          "@keyframes cwSwArm{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-20deg)}}" +
+          ".cmp-submitted .cw--sweeping .cw-broom{transform-origin:13.5px 14px;animation:cwBroom 1.5s ease-in-out infinite}" +
+          "@keyframes cwBroom{0%,100%{transform:rotate(10deg)}50%{transform:rotate(30deg) translate(2px,-1px)}}" +
+          ".cmp-submitted .cw--sweeping .cw-dust{opacity:0;animation:cwDust 1.5s ease-out infinite}" +
+          ".cmp-submitted .cw--sweeping .cw-dust.d2{animation-delay:.3s}" +
+          "@keyframes cwDust{0%,40%{transform:translate(17px,14px) scale(0);opacity:0}50%{transform:translate(19px,14px) scale(1);opacity:1}100%{transform:translate(25px,14px) scale(.5);opacity:0}}" },
+
+      { id:"beacon", cap:"Claude’s directing the subagents",
+        behind:'<g fill="none"><circle class="cw-wave" cx="7.5" cy="5" r="3" stroke="#0082fc" stroke-width="0.6"/><circle class="cw-wave w2" cx="7.5" cy="5" r="3" stroke="#ffc107" stroke-width="0.6"/><circle class="cw-wave w3" cx="7.5" cy="5" r="3" stroke="#ff5252" stroke-width="0.6"/></g>',
+        front:'<g><rect x="7" y="2" width="1" height="4" fill="#78909c"/><circle class="cw-ant" cx="7.5" cy="1.5" r="1" fill="#ff5252"/></g>',
+        css:
+          ".cmp-submitted .cw--beacon .cw-rig{transform-origin:7.5px 15px;animation:cwBeac 1.5s ease-in-out infinite}" +
+          "@keyframes cwBeac{0%,100%{transform:translateY(0)}50%{transform:translateY(.5px)}}" +
+          ".cmp-submitted .cw--beacon .cw-arm-l{transform-origin:1px 10px;transform:rotate(15deg)}" +
+          ".cmp-submitted .cw--beacon .cw-arm-r{transform-origin:14px 10px;transform:rotate(-15deg)}" +
+          ".cmp-submitted .cw--beacon .cw-wave{transform-origin:7.5px 5px;opacity:0;animation:cwWave 2s ease-out infinite}" +
+          ".cmp-submitted .cw--beacon .cw-wave.w2{animation-delay:.5s}.cmp-submitted .cw--beacon .cw-wave.w3{animation-delay:1s}" +
+          "@keyframes cwWave{0%{transform:scale(.4);opacity:0}10%{opacity:.7}100%{transform:scale(2.6);opacity:0}}" +
+          ".cmp-submitted .cw--beacon .cw-ant{animation:cwAnt .8s ease-in-out infinite alternate}" +
+          "@keyframes cwAnt{0%{opacity:.4}100%{opacity:1}}" },
+
+      { id:"wizard", cap:"Claude’s working some magic",
+        behind:'<g class="cw-stars"><polygon class="cw-star" points="14,-6 14.5,-5.5 15,-5.5 14.6,-5.1 14.8,-4.5 14,-4.9 13.2,-4.5 13.4,-5.1 13,-5.5 13.5,-5.5" fill="#ffd700"/><polygon class="cw-star sb" points="4,-4 4.5,-3.5 5,-3.5 4.6,-3.1 4.8,-2.5 4,-2.9 3.2,-2.5 3.4,-3.1 3,-3.5 3.5,-3.5" fill="#40c4ff"/><polygon class="cw-star sc" points="19,0 19.5,.5 20,.5 19.6,.9 19.8,1.5 19,1.1 18.2,1.5 18.4,.9 18,.5 18.5,.5" fill="#b388ff"/></g>',
+        front:'<g class="cw-wand"><rect x="13.5" y="4" width="1" height="6" fill="#8d6e63"/><rect x="13.5" y="4" width="1" height="1" fill="#ffd700"/></g><g transform="translate(7.5 6)"><polygon points="-4,0 4,0 0,-6" fill="#673ab7"/><rect x="-5" y="0" width="10" height="1" fill="#512da8"/></g>',
+        css:
+          ".cmp-submitted .cw--wizard .cw-rig{transform-origin:7.5px 15px;animation:cwFloat 3s ease-in-out infinite}" +
+          "@keyframes cwFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}" +
+          ".cmp-submitted .cw--wizard .cw-arm-l{transform-origin:1px 10px;animation:cwWizL 3s ease-in-out infinite}" +
+          "@keyframes cwWizL{0%,100%{transform:rotate(20deg)}50%{transform:rotate(120deg)}}" +
+          ".cmp-submitted .cw--wizard .cw-arm-r{transform-origin:13px 10px;animation:cwWizR 3s ease-in-out infinite}" +
+          ".cmp-submitted .cw--wizard .cw-wand{transform-origin:14px 10px;animation:cwWizR 3s ease-in-out infinite}" +
+          "@keyframes cwWizR{0%,100%{transform:rotate(-20deg)}50%{transform:rotate(-120deg)}}" +
+          ".cmp-submitted .cw--wizard .cw-star{opacity:0;animation:cwSparkle 2s ease-out infinite}" +
+          ".cmp-submitted .cw--wizard .cw-star.sb{animation-delay:.6s}.cmp-submitted .cw--wizard .cw-star.sc{animation-delay:1.2s}" +
+          "@keyframes cwSparkle{0%{opacity:0;transform:translateY(4px) scale(0) rotate(0)}20%{opacity:1}100%{opacity:0;transform:translateY(-13px) scale(1.4) rotate(180deg)}}" },
+
+      { id:"confused", cap:"Claude’s puzzling it out",
+        behind:'<g class="cw-q" fill="#40c4ff"><rect x="1" y="0" width="2" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="2"/><rect x="2" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="1" y="6" width="1" height="1"/></g><g class="cw-q q2" fill="#ffc107" transform="translate(10 0)"><rect x="1" y="0" width="2" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="2"/><rect x="2" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="1" y="6" width="1" height="1"/></g>',
+        front:"",
+        css:
+          ".cmp-submitted .cw--confused .cw-rig{transform-origin:7.5px 15px;animation:cwLook 6s ease-in-out infinite}" +
+          "@keyframes cwLook{0%,10%{transform:translate(0,0)}15%,35%{transform:translate(-2px,0) rotate(-2deg)}40%,45%{transform:translate(0,0)}50%,70%{transform:translate(2px,0) rotate(2deg)}75%,100%{transform:translate(0,0)}}" +
+          ".cmp-submitted .cw--confused .cw-arm-l{transform-origin:1px 10px;transform:translate(0,-2px) rotate(18deg)}" +
+          ".cmp-submitted .cw--confused .cw-eyes{animation:cwLookEye 6s ease-in-out infinite}" +
+          "@keyframes cwLookEye{0%,10%{transform:translate(0,0)}15%,35%{transform:translate(-2px,0)}40%,45%{transform:translate(0,0)}50%,70%{transform:translate(2px,0)}75%,100%{transform:translate(0,0)}}" +
+          ".cmp-submitted .cw--confused .cw-q{opacity:0;animation:cwQL 6s ease-in-out infinite}" +
+          ".cmp-submitted .cw--confused .cw-q.q2{animation:cwQR 6s ease-in-out infinite}" +
+          "@keyframes cwQL{0%,15%{opacity:0;transform:translate(-6px,6px) scale(.5)}20%,30%{opacity:1;transform:translate(-8px,-2px) scale(1)}35%,100%{opacity:0;transform:translate(-8px,-8px) scale(1.2)}}" +
+          "@keyframes cwQR{0%,50%{opacity:0;transform:translate(16px,6px) scale(.5)}55%,65%{opacity:1;transform:translate(18px,-2px) scale(1)}70%,100%{opacity:0;transform:translate(18px,-8px) scale(1.2)}}" },
+
+      { id:"happy", cap:"Claude’s pretty pleased with that",
+        behind:'<g class="cw-sp" fill="#ffd700"><rect x="-4" y="-2" width="1.4" height="1.4"/></g><g class="cw-sp sp2" fill="#ffa000"><rect x="18" y="-4" width="1.4" height="1.4"/></g><g class="cw-sp sp3" fill="#fff59d"><rect x="19" y="9" width="1.4" height="1.4"/></g><g class="cw-sp sp4" fill="#ffc107"><rect x="-5" y="11" width="1.4" height="1.4"/></g><g class="cw-sp sp5" fill="#fff59d"><rect x="7" y="-8" width="1.4" height="1.4"/></g>',
+        front:"",
+        css:
+          ".cmp-submitted .cw--happy .cw-rig{transform-origin:7.5px 15px;animation:cwBounce 1s ease-in-out infinite}" +
+          "@keyframes cwBounce{0%,15%,100%{transform:translateY(0) scaleY(1)}20%{transform:translateY(0) scaleY(.85)}40%{transform:translateY(-9px) scaleY(1.05)}50%{transform:translateY(-11px) scaleY(1)}60%{transform:translateY(-9px) scaleY(1.05)}80%{transform:translateY(0) scaleY(.85)}85%{transform:translateY(0) scaleY(1)}}" +
+          ".cmp-submitted .cw--happy .cw-arm-l{transform-origin:2px 10px;animation:cwHapL .15s ease-in-out infinite alternate}" +
+          ".cmp-submitted .cw--happy .cw-arm-r{transform-origin:13px 10px;animation:cwHapR .15s ease-in-out infinite alternate}" +
+          "@keyframes cwHapL{0%{transform:rotate(45deg)}100%{transform:rotate(85deg)}}" +
+          "@keyframes cwHapR{0%{transform:rotate(-45deg)}100%{transform:rotate(-85deg)}}" +
+          ".cmp-submitted .cw--happy .cw-sp{opacity:0;animation:cwSpark 1.5s step-end infinite}" +
+          ".cmp-submitted .cw--happy .cw-sp.sp2{animation-delay:.3s}.cmp-submitted .cw--happy .cw-sp.sp3{animation-delay:.6s}.cmp-submitted .cw--happy .cw-sp.sp4{animation-delay:.9s}.cmp-submitted .cw--happy .cw-sp.sp5{animation-delay:1.2s}" +
+          "@keyframes cwSpark{0%{opacity:0}12%{opacity:1}30%{opacity:0}100%{opacity:0}}" },
+    ];
+
+    // Assemble the full stylesheet (base + every scene) once.
+    var CW_CSS = CW_BASE + CW_SCENES.map(function (s) { return s.css; }).join("");
+
+    // Build one scene's SVG: shadow + behind props + shared rig + front props.
+    function cwSceneSVG(scene) {
+      return '<svg class="cw cw--' + scene.id + '" viewBox="-7 -12 30 30" aria-hidden="true">' +
+        '<rect class="cw-shadow" x="3" y="15" width="9" height="1"/>' +
+        scene.behind + CW_RIG + scene.front +
+        '</svg>';
+    }
+
     var st = document.createElement("style");
     st.textContent =
       ".cmp-comment{grid-column:1/-1;margin:16px 0 0}" +
@@ -350,21 +525,13 @@ an outer card won't double-icon its inner text).
       ".cmp-chat input{flex:1;min-width:0;padding:9px 11px;border:1px solid rgba(32,27,21,.22);border-radius:8px;font:13px/1.4 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
       ".cmp-chat input:focus{border-color:#b0552f}" +
       ".cmp-chat button{flex:0 0 auto;padding:9px 14px;border-radius:8px;border:1px solid #201b15;background:#201b15;color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
-      // The post-submit "Claude is working" scene — a little Claude sipping a
-      // steaming coffee while the agent works the next step. Keeps the user on
-      // the Board, out of the terminal. All motion is transform/opacity and
-      // honors prefers-reduced-motion. (One of several state animations.)
+      // The post-submit "Claude is working" scene — a pixel-art clawd doing a
+      // random bit of work (typing, conducting, juggling, …) while the agent
+      // works the next step. A fresh pose rolls on every show, so the wait never
+      // feels stale. Keeps the user on the Board, out of the terminal. All motion
+      // is transform/opacity, scoped to .cmp-submitted, reduced-motion aware.
+      // The clawd library (CW_* above) carries the scenes + their CSS (CW_CSS).
       ".cmp-submitted{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(120% 90% at 50% 32%,#fbf8f2 0%,rgba(244,241,236,.97) 70%);backdrop-filter:blur(3px);font-family:-apple-system,system-ui,sans-serif}" +
-      ".cmp-submitted .halo{position:absolute;top:50%;left:50%;width:240px;height:240px;transform:translate(-50%,-78%);background:radial-gradient(circle,rgba(217,138,92,.32) 0%,transparent 62%);filter:blur(6px);animation:cmpHalo 4.5s ease-in-out infinite}" +
-      "@keyframes cmpHalo{0%,100%{opacity:.55;transform:translate(-50%,-78%) scale(1)}50%{opacity:.9;transform:translate(-50%,-78%) scale(1.08)}}" +
-      ".cmp-submitted .bob{animation:cmpBob 3.4s ease-in-out infinite;transform-origin:50% 90%}" +
-      "@keyframes cmpBob{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-7px) rotate(1deg)}}" +
-      ".cmp-submitted .steam{transform-box:fill-box;transform-origin:center bottom}" +
-      ".cmp-submitted .steam path{fill:none;stroke:rgba(180,170,150,.85);stroke-width:5;stroke-linecap:round;opacity:0}" +
-      ".cmp-submitted .s1{animation:cmpRise 2.8s ease-in-out infinite}.cmp-submitted .s2{animation:cmpRise 2.8s ease-in-out infinite .65s}.cmp-submitted .s3{animation:cmpRise 2.8s ease-in-out infinite 1.3s}" +
-      "@keyframes cmpRise{0%{opacity:0;transform:translateY(8px) scaleY(.7)}25%{opacity:.9}70%{opacity:.5}100%{opacity:0;transform:translateY(-26px) scaleY(1.15)}}" +
-      ".cmp-submitted .swirl{animation:cmpSpin 3.2s linear infinite;transform-box:fill-box;transform-origin:center}" +
-      "@keyframes cmpSpin{to{transform:rotate(360deg)}}" +
       ".cmp-submitted .t{font-size:16px;font-weight:650;color:#201b15;text-align:center}" +
       ".cmp-submitted .dots{margin-top:9px;text-align:center}" +
       ".cmp-submitted .dots span{display:inline-block;width:5px;height:5px;border-radius:50%;background:#c06a3a;margin:0 2px;opacity:.3;animation:cmpBlink 1.4s ease-in-out infinite}" +
@@ -372,7 +539,7 @@ an outer card won't double-icon its inner text).
       "@keyframes cmpBlink{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}" +
       ".cmp-submitted .s{font-size:12px;color:#6e655b;margin-top:8px;text-align:center;max-width:300px}" +
       ".cmp-submitted .b{margin-top:4px;padding:8px 14px;border-radius:8px;border:1px solid rgba(32,27,21,.25);background:#fff;color:#201b15;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
-      "@media (prefers-reduced-motion:reduce){.cmp-submitted .bob,.cmp-submitted .steam path,.cmp-submitted .swirl,.cmp-submitted .halo,.cmp-submitted .dots span{animation:none!important}.cmp-submitted .steam path{opacity:.5}}";
+      CW_CSS;
     document.head.appendChild(st);
 
     if (submitBtn) {
@@ -407,32 +574,14 @@ an outer card won't double-icon its inner text).
 
     window.__cmpShowSubmitted = function () {
       if (document.querySelector(".cmp-submitted")) return;
+      // Roll a fresh clawd pose every time — re-mounting the artifact (nav-back)
+      // re-rolls, which is exactly the "a new one each artifact" feel we want.
+      var scene = CW_SCENES[Math.floor(Math.random() * CW_SCENES.length)];
       var ov = document.createElement("div"); ov.className = "cmp-submitted";
       ov.innerHTML =
         '<div class="halo"></div>' +
-        '<svg class="bob" viewBox="0 0 200 170" width="200" height="170" aria-label="Claude is working">' +
-        '<ellipse cx="100" cy="158" rx="52" ry="8" fill="rgba(32,27,21,0.10)"/>' +
-        '<rect x="52" y="58" width="96" height="92" rx="40" fill="#d98a5c"/>' +
-        '<circle cx="86" cy="96" r="6.5" fill="#2a2018"/><circle cx="118" cy="96" r="6.5" fill="#2a2018"/>' +
-        '<circle cx="88" cy="94" r="2" fill="#fff" opacity="0.85"/><circle cx="120" cy="94" r="2" fill="#fff" opacity="0.85"/>' +
-        '<path d="M88 112 q14 11 28 0" fill="none" stroke="#2a2018" stroke-width="3.4" stroke-linecap="round"/>' +
-        '<circle cx="74" cy="108" r="6" fill="#e8a982" opacity="0.55"/><circle cx="130" cy="108" r="6" fill="#e8a982" opacity="0.55"/>' +
-        '<g transform="translate(150 44)" opacity="0.85"><path d="M0 -10 L2.6 -2.6 L10 0 L2.6 2.6 L0 10 L-2.6 2.6 L-10 0 L-2.6 -2.6 Z" fill="#c06a3a"/></g>' +
-        '<g transform="translate(0 2)">' +
-        '<path d="M138 120 q22 2 20 20 q-2 16 -20 14" fill="none" stroke="#cfc6b8" stroke-width="7" stroke-linecap="round"/>' +
-        '<rect x="78" y="116" width="64" height="40" rx="11" fill="#ffffff" stroke="#d9d2c6" stroke-width="2"/>' +
-        '<clipPath id="cmpRim"><ellipse cx="110" cy="124" rx="26" ry="7"/></clipPath>' +
-        '<ellipse cx="110" cy="124" rx="26" ry="7" fill="#5a3a23"/>' +
-        '<g clip-path="url(#cmpRim)"><g class="swirl">' +
-        '<path d="M110 124 m-22 0 a22 7 0 1 0 44 0" fill="none" stroke="#7a4f30" stroke-width="4"/>' +
-        '<path d="M110 124 m-12 0 a12 4 0 1 1 24 0" fill="none" stroke="#caa57f" stroke-width="3"/>' +
-        '</g></g></g>' +
-        '<g class="steam" transform="translate(0 -4)">' +
-        '<path class="s1" d="M98 110 q-7 -10 0 -20 q6 -9 0 -18"/>' +
-        '<path class="s2" d="M110 108 q7 -11 0 -22 q-6 -9 0 -18"/>' +
-        '<path class="s3" d="M122 110 q-6 -10 0 -20 q6 -9 0 -17"/></g>' +
-        '</svg>' +
-        '<div><div class="t">Claude’s brewing the next step</div>' +
+        cwSceneSVG(scene) +
+        '<div><div class="t">' + scene.cap + '</div>' +
         '<div class="dots"><span></span><span></span><span></span></div>' +
         '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
         '<button class="b" type="button">← View this artifact</button>';
