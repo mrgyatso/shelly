@@ -47,7 +47,6 @@ export interface OwnedTerminalsOpts {
 const terminals = new Map<string, OwnedTerminal>();
 
 let panelEl: HTMLElement | null = null; // #unit-terminals (the whole panel)
-let pillsEl: HTMLElement | null = null; // session switcher (>1 session per unit)
 let bodyEl: HTMLElement | null = null; // holds the .term-mount divs
 let dotEl: HTMLElement | null = null; // floating status dot (pulses on hidden activity)
 /** Per-unit active terminal (when a unit has >1 owned session). */
@@ -76,17 +75,14 @@ export function initOwnedTerminals(slot: HTMLElement, opts: OwnedTerminalsOpts):
   // No header bar: the terminal fills the surface (a unit IS a session, so there's
   // no "start a session" / "+ session" empty state). The resize / status-dot / end
   // controls live in the Board's floating cluster (wired in board.ts); the passed-in
-  // dot pulses when output arrives while the terminal is tucked away.
-  pillsEl = document.createElement("div");
-  pillsEl.className = "term-pills";
-  pillsEl.hidden = true;
-
+  // dot pulses when output arrives while the terminal is tucked away. Switching
+  // between a unit's sessions is the rail dropdown's job — there's no in-pane pill row.
   bodyEl = document.createElement("div");
   bodyEl.className = "term-body";
 
   // The embedded terminal IS claude's prompt; you type directly into it. (Artifact
   // ✓/✎/✗ answers still route into the PTY via the Board's submit handler.)
-  slot.append(pillsEl, bodyEl);
+  slot.append(bodyEl);
   applyCollapsed();
 }
 
@@ -168,7 +164,6 @@ export function showOwnedTerminals(unitKey: string): void {
   }
   panelEl.hidden = false;
   for (const t of terminals.values()) t.mount.hidden = t !== shown;
-  renderPills(unitKey);
   applyCollapsed();
   if (shown && !collapsed) {
     dotEl?.classList.remove("pulsing"); // visible now — clear any activity pulse
@@ -300,26 +295,6 @@ export function closeOwnedTerminal(tabId: string): void {
   terminals.delete(tabId);
   if (t.unitKey && activeByUnit.get(t.unitKey) === tabId) activeByUnit.delete(t.unitKey);
   if (currentUnit) showOwnedTerminals(currentUnit);
-}
-
-/** A pill switcher: one per owned session in this unit, shown only when >1. */
-function renderPills(unitKey: string): void {
-  if (!pillsEl) return;
-  const list = terminalsForUnit(unitKey);
-  pillsEl.replaceChildren();
-  pillsEl.hidden = list.length < 2;
-  if (list.length < 2) return;
-  const shown = shownForUnit(unitKey);
-  list.forEach((t, i) => {
-    const pill = document.createElement("button");
-    pill.className = "term-pill" + (t === shown ? " active" : "") + (t.exited ? " exited" : "");
-    pill.textContent = `claude ${i + 1}`;
-    pill.addEventListener("click", () => {
-      activeByUnit.set(unitKey, t.tabId);
-      showOwnedTerminals(unitKey);
-    });
-    pillsEl!.appendChild(pill);
-  });
 }
 
 function terminalsForUnit(unitKey: string): OwnedTerminal[] {

@@ -230,10 +230,11 @@ let currentUnitKey: string | null = null;
 let lastRailActiveUnit: string | null = null; // tracks which unit the rail was last rendered for
 /** Which recent (closed) project is expanded in the rail, or null for all collapsed. */
 let expandedRecentProject: string | null = null;
-/** Whether the ACTIVE unit's session drawer is collapsed. Click the active tab to
- *  toggle (open → closed → open). Reset to open on every fresh unit entry; persists
- *  across polls so the user's choice sticks. */
-let activeDrawerCollapsed = false;
+/** Which LIVE (active-section) project's session dropdown is expanded, or null for
+ *  all collapsed — symmetric with `expandedRecentProject`. Clicking a multi-session
+ *  project tab toggles this and shows its session chooser INSTEAD of navigating; you
+ *  pick a session from the dropdown, and only then does the Board move into it. */
+let expandedActiveProject: string | null = null;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
@@ -399,10 +400,18 @@ async function launchSessionIn(dir: string): Promise<string | null> {
   try {
     const tabId = await spawnOwnedSession(dir, provisional);
     if (!existing) {
-      pendingNavTab = tabId; // re-nav only when the throwaway re-homes
-      pendingNavFresh = true; // a fresh launch: the re-nav skips the digest
+      // A BRAND-NEW unit (first session of this project): re-nav when the throwaway
+      // provisional re-homes, and land terminal-focused — there's no artifact yet, so
+      // suppressing the digest just avoids an empty iframe flash.
+      pendingNavTab = tabId;
+      pendingNavFresh = true;
+      freshLaunchUnit = provisional;
     }
-    freshLaunchUnit = provisional; // land on the new terminal, not the project digest
+    // Into an EXISTING unit, just navigate: the hero is per-SESSION (it scopes to
+    // the active session's source — see activeSessionSource), so spawning a new
+    // session flips the active tab and renderHero naturally lands on a blank hero
+    // for it (no artifacts of its own yet) while the sibling sessions keep theirs.
+    // No freshLaunchUnit hack needed — and crucially no sibling's artifact bleeds in.
     goUnit(provisional);
     return tabId;
   } catch (e) {
@@ -794,6 +803,20 @@ function groupArtifactsByUnit(): Map<string, ArtifactEntry[]> {
   return m;
 }
 
+/** The SOURCE slug of the session currently shown in `unitKey`'s terminal — the
+ *  active owned tab's live source. The hero scopes to this so it follows the active
+ *  SESSION, not the unit: switching sessions swaps the artifact, and a session with
+ *  no artifacts of its own shows a blank hero instead of a sibling's work. Returns
+ *  null when that session isn't live yet (a just-launched tab, before its live file
+ *  appears) or the unit has no owned terminal — either way the active session owns
+ *  no artifacts, which is exactly the blank-hero state a fresh session should land on. */
+function activeSessionSource(unitKey: string): string | null {
+  const tab = ownedTabForUnit(unitKey);
+  if (!tab) return null;
+  const src = allSources.find((s) => parseState(s.json).companion_session === tab);
+  return src ? src.source : null;
+}
+
 /** A display name for a unit — the project name of its freshest source. */
 function unitName(unitKey: string, sources: LiveSource[]): string {
   if (unitKey === UNSOURCED) return "Unsourced";
@@ -1007,15 +1030,18 @@ function renderUnitRail(activeUnitKey: string | null): void {
   for (const unit of order) {
     const sources = byUnit.get(unit) ?? [];
     const isActive = unit === activeUnitKey;
+    const isExpanded = expandedActiveProject === unit;
     // A project's sessions are its LIVE ones plus its resumable (closed) siblings —
     // fold them together so a sibling doesn't vanish the moment one session goes live.
-    const siblings = isActive ? recentSiblingsFor(unit) : [];
-    const hasDrawer = isActive && sources.length + siblings.length > 1;
-    nodes.push(buildRailTab(unit, sources, bandOf.get(unit) ?? "idle", isActive, hasDrawer));
-    // Two-level: the ACTIVE project expands inline to its sessions when it holds more
-    // than one. Click the active tab to collapse/reopen the drawer (chevron reflects
-    // state). The group is visible by default; .opening just adds the drop-in animation.
-    if (hasDrawer && !activeDrawerCollapsed) {
+    // Computed for EVERY live project (not just the active one) so the chevron is
+    // accurate before you've entered it: any multi-session project is a dropdown.
+    const siblings = recentSiblingsFor(projectGroupKeyOf(unit, sources));
+    const hasDrawer = sources.length + siblings.length > 1;
+    nodes.push(buildRailTab(unit, sources, bandOf.get(unit) ?? "idle", isActive, hasDrawer, isExpanded));
+    // Click a multi-session project to expand its session chooser inline (this does
+    // NOT navigate — picking a session does); mirrors the Recent-project expander.
+    // .opening adds the drop-in animation on a unit switch.
+    if (hasDrawer && isExpanded) {
       const shownTab = ownedTabForUnit(unit);
       const group = document.createElement("div");
       group.className = "unit-subtab-group";
@@ -1033,7 +1059,7 @@ function renderUnitRail(activeUnitKey: string | null): void {
   // Exclude by BASE project key: a project resumed under a provisional `~n` unit must
   // drop out of Recent immediately (not 5s later when correlation re-homes it), and
   // its siblings now live in the active unit's switcher above.
-  const recentGroups = groupRecentByProject(new Set(order.map(baseProjectOf)));
+  const recentGroups = groupRecentByProject(new Set(order.map((u) => projectGroupKeyOf(u, byUnit.get(u)))));
   if (recentGroups.size > 0) {
     const divider = document.createElement("div");
     divider.className = "rail-section-head";
@@ -1116,7 +1142,10 @@ function buildRailSessionRow(unitKey: string, s: LiveSource, shownTab: string | 
   name.textContent = sessionLabel(s);
   row.append(dot, name);
 
-  if (!active) row.addEventListener("click", () => switchToSession(unitKey, s));
+  // Always clickable: even a session marked "active" here may belong to a project
+  // you're not currently viewing (its dropdown was opened cross-unit) — pickSession
+  // no-ops only when it's already the shown session of the current unit.
+  row.addEventListener("click", () => pickSession(unitKey, s));
   row.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     showRailSessionMenu(e, unitKey, s);
@@ -1124,13 +1153,40 @@ function buildRailSessionRow(unitKey: string, s: LiveSource, shownTab: string | 
   return row;
 }
 
-/** The base PROJECT key for a unit key — strips the trailing provisional suffix
- *  (`~<n>`, minted by resumeRecentSession/launchSessionIn before correlation re-homes
- *  the unit to its real key). Lets a freshly-resumed unit match its project's recent
- *  sessions, and lets the Recent band drop a project the instant it goes provisional.
- *  Repo unit keys never contain `~`; non-repo keys (`slug--shortid`) are untouched. */
+/** Pick a session from a project's rail dropdown: collapse the chooser, then show
+ *  that session. Within the current unit it's a plain session swap; from a project
+ *  you're NOT in, set the chosen session active FIRST, then navigate — so enterUnit
+ *  lands directly on it (one hero render, no race with enterUnit's own resolve). For
+ *  a live session showSessionInUnit reuses the existing terminal (no double-spawn). */
+function pickSession(unitKey: string, s: LiveSource): void {
+  expandedActiveProject = null;
+  if (currentUnitKey === unitKey) {
+    switchToSession(unitKey, s); // also re-renders the rail, collapsing the chooser
+    return;
+  }
+  const st = parseState(s.json);
+  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null).then(() =>
+    goUnit(unitKey),
+  );
+}
+
+/** The bare PROJECT-GROUP key for a unit key — the SAME key the Recent band groups
+ *  by (see recentProjectKey), so an active unit can match its own recent siblings.
+ *  Strips the provisional suffix (`~<n>`, minted by resumeRecentSession/launchSessionIn
+ *  before correlation re-homes the unit) AND a non-repo unit's `--<shortid>`
+ *  discriminator (8 chars, livepath.sh) — so `clipping--06327f95` reduces to `clipping`
+ *  and folds in its closed siblings. Repo unit keys are already bare slugs (no `~`, no
+ *  `--<shortid>`; slugs never contain `--`), so they pass through untouched. */
 function baseProjectOf(unitKey: string): string {
-  return unitKey.replace(/~\d+$/, "");
+  return unitKey.replace(/~\d+$/, "").replace(/--[A-Za-z0-9-]{8}$/, "");
+}
+
+/** The project-group key for a (possibly provisional) unit: prefer its live source's
+ *  project basename — the robust, format-independent match against recentProjectKey —
+ *  and fall back to baseProjectOf when the unit has no live source yet (the brief
+ *  provisional window after a launch/resume, before its live file appears). */
+function projectGroupKeyOf(unitKey: string, sources?: LiveSource[]): string {
+  return sources && sources[0] ? sourceProjectKey(sources[0]) : baseProjectOf(unitKey);
 }
 
 /** The project key a RecentSession groups under — mirrors the repo-slug rule used by
@@ -1146,13 +1202,12 @@ function isResumableRecent(rs: RecentSession, live: Set<string>): boolean {
   return !!rs.cwd && rs.size_bytes >= RECENT_MIN_BYTES && !live.has(rs.session_id);
 }
 
-/** A project's resumable (closed) sessions, matched by BASE project key so they fold
- *  into the active unit's session switcher even during the provisional resume window.
- *  Newest-first (Rust order), capped — same dedup as the Recent band. */
-function recentSiblingsFor(unitKey: string): RecentSession[] {
-  const base = baseProjectOf(unitKey);
+/** A project's resumable (closed) sessions, matched by its project-group key so they
+ *  fold into the active unit's session switcher even during the provisional resume
+ *  window. Newest-first (Rust order), capped — same dedup as the Recent band. */
+function recentSiblingsFor(groupKey: string): RecentSession[] {
   const live = liveSessionIds();
-  return allRecent.filter((rs) => isResumableRecent(rs, live) && recentProjectKey(rs) === base).slice(0, 6);
+  return allRecent.filter((rs) => isResumableRecent(rs, live) && recentProjectKey(rs) === groupKey).slice(0, 6);
 }
 
 /** Collect recent (closed) sessions grouped by project slug, excluding live units. */
@@ -1219,19 +1274,29 @@ function buildRecentSessionRow(rs: RecentSession): HTMLElement {
 function switchToSession(unitKey: string, s: LiveSource): void {
   const st = parseState(s.json);
   void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null).then(() => {
-    if (currentUnitKey === unitKey) renderUnitRail(unitKey);
+    if (currentUnitKey === unitKey) {
+      renderUnitRail(unitKey);
+      // The hero follows the now-active session. A click is the ONLY sanctioned
+      // hero reload while a unit is live (the poll never reloads it — see the
+      // sticky-hero note on ingestIntoUnit), so this can't wipe a comment the user
+      // was mid-typing: they chose to move to another session.
+      void renderHero(unitKey);
+    }
   });
 }
 
-/** One rail tab: a state dot, the unit's mark, its name, an unread badge. Inactive
- *  tabs drill in on click. The active tab, when it owns a multi-session drawer, gets a
- *  chevron and toggles that drawer open/closed (same affordance as a recent project). */
+/** One rail tab: a state dot, the unit's mark, its name, an unread badge. A
+ *  multi-session project owns a session-chooser drawer: clicking it toggles that
+ *  drawer (chevron reflects state) and does NOT navigate — you pick a session to
+ *  move in (same affordance as a recent project). A single-session project has
+ *  nothing to choose, so clicking it drills straight in. */
 function buildRailTab(
   unitKey: string,
   sources: LiveSource[],
   band: Band,
   active: boolean,
   hasDrawer = false,
+  expanded = false,
 ): HTMLElement {
   const head = sources[0] ? makeHead(sources[0]) : ownedHead();
   const name = unitName(unitKey, sources);
@@ -1261,17 +1326,19 @@ function buildRailTab(
     tab.append(badge);
   }
 
-  if (active && hasDrawer) {
-    tab.classList.toggle("expanded", !activeDrawerCollapsed);
+  if (hasDrawer) {
+    tab.classList.toggle("expanded", expanded);
     const chevron = document.createElement("span");
     chevron.className = "unit-tab-chevron";
-    chevron.textContent = activeDrawerCollapsed ? "▸" : "▾";
+    chevron.textContent = expanded ? "▾" : "▸";
     tab.append(chevron);
+    // Toggle THIS project's chooser; collapse any other open one (one at a time).
     tab.addEventListener("click", () => {
-      activeDrawerCollapsed = !activeDrawerCollapsed;
+      expandedActiveProject = expanded ? null : unitKey;
       renderUnitRail(currentUnitKey);
     });
   } else if (!active) {
+    // Single session — nothing to choose, so drill straight in.
     tab.addEventListener("click", () => goUnit(unitKey));
   }
   tab.addEventListener("contextmenu", (e) => {
@@ -1501,7 +1568,7 @@ function enterUnit(unitKey: string): void {
   clearUnread(unitKey);
   pendingIngest.delete(unitKey);
   updateGlobalUnread();
-  activeDrawerCollapsed = false; // a fresh entry always opens the session drawer
+  expandedActiveProject = null; // a fresh entry collapses any chooser — click a tab to reveal (like Recent)
   focusPath = null;
   currentUnitKey = unitKey;
   // Always land on the Sessions face / Session view / split surfaces on entry.
@@ -1619,9 +1686,15 @@ async function renderHero(unitKey: string): Promise<void> {
     return;
   }
 
-  // No digest — lead with the unit's most recent artifact.
+  // No digest — lead with the ACTIVE SESSION's most recent artifact. The hero
+  // follows the session shown in the terminal (matched by source slug), not the
+  // unit: a session just launched into an existing project has no artifacts of its
+  // own → blank hero, never a sibling session's last artifact (the reported bug).
   applyBar(null);
-  const arts = groupArtifactsByUnit().get(unitKey) ?? [];
+  const src = activeSessionSource(unitKey);
+  const arts = src
+    ? (groupArtifactsByUnit().get(unitKey) ?? []).filter((a) => a.source === src)
+    : [];
   const latest = arts.reduce<ArtifactEntry | null>(
     (best, a) => (best === null || a.modified_ms > best.modified_ms ? a : best),
     null,
@@ -1634,8 +1707,33 @@ async function renderHero(unitKey: string): Promise<void> {
       console.error("hero artifact load failed", e),
     );
   } else {
+    // The active session owns no artifact (and there's no unit home): blank the hero.
+    // Reset digestPath HERE (not at the top of the function — that would expose a
+    // transient null across the resolve_unit_home await for a concurrent poll to act
+    // on). Without this, switching from a session WITH an artifact to a blank one
+    // leaves digestPath pointing at the prior session's artifact, so the new session's
+    // first artifact would mis-route to the "new artifact" pill instead of auto-lighting,
+    // and maybeLightBlankHero (which guards on digestPath === null) would never fire.
+    digestPath = null;
     digestEl.setAttribute("hidden", "");
     syncSurfaceStrip(false);
+  }
+}
+
+/** Re-resolve a BLANK hero once the active session gains a paint-worthy artifact
+ *  THROUGH A PATH THAT FIRES NO ARTIFACT-INGEST — chiefly a resumed session whose
+ *  artifacts already existed on disk (so the set never "changes") and, for a repo,
+ *  binds straight to its provisional unit (so there's no re-nav to repaint either).
+ *  Cheap-guarded so the poll only pays the renderHero invoke when there's actually
+ *  something to show; honours the sticky-hero rule by acting ONLY while the hero is
+ *  blank (digestPath === null), so a genuinely-new session with no artifacts stays
+ *  blank and nothing the user is reading gets reloaded. */
+function maybeLightBlankHero(unitKey: string): void {
+  if (digestPath !== null) return;
+  const src = activeSessionSource(unitKey);
+  if (!src) return;
+  if (allArtifacts.some((a) => a.source === src && unitForArtifact(a) === unitKey)) {
+    void renderHero(unitKey);
   }
 }
 
@@ -2446,7 +2544,12 @@ async function pollLive(): Promise<void> {
     // artifact-driven, but its rail mirrors live state — refresh it so a session
     // appearing/quieting updates the switcher in place. The L0 Hub re-resolves
     // on entry only.
-    if (view.level === "unit") renderUnitRail(view.unitKey);
+    if (view.level === "unit") {
+      renderUnitRail(view.unitKey);
+      // The active session may have just come live (e.g. a resumed session whose
+      // artifacts already existed on disk). If its hero is still blank, light it up.
+      maybeLightBlankHero(view.unitKey);
+    }
   }
 
   // Live artifact ingestion — act only when the set actually changed.
@@ -2513,8 +2616,13 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
     const unit = unitForArtifact(a);
     if (unit !== viewingUnit) {
       addUnread(unit, a.path);
+    } else if (a.source && a.source !== activeSessionSource(unit)) {
+      // Same unit on screen, but produced by a SIBLING session (not the one whose
+      // hero is shown). The hero is per-session, so this isn't its hero to advance —
+      // surface it as ambient unread, exactly as a different unit's artifact would be.
+      addUnread(unit, a.path);
     } else if (digestPath !== null && a.path !== digestPath) {
-      // The on-screen unit's hero is populated + sticky. Rather than let a newer
+      // The active session's hero is populated + sticky. Rather than let a newer
       // artifact drop silently into history (the reported bug), surface the freshest
       // one as a click-to-advance pill on the hero.
       if (!heroNewCandidate || a.modified_ms > heroNewCandidate.modified_ms) heroNewCandidate = a;
@@ -2558,10 +2666,16 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
   }
 
   // Hero waiting (no reader) → load the next artifact into the slot in place.
-  // Guard on the artifact's unit matching the one on screen so a stale pending
-  // advance can never load session A's artifact into a different unit's hero.
+  // Guard on the unit matching the one on screen AND the artifact's session still
+  // being the active one, so a stale pending advance can't load session A's artifact
+  // into a different unit's hero, nor into a sibling session's hero if the user
+  // switched away after submitting (it stays ambient unread instead).
   const v = currentView();
-  if (v.level === "unit" && unitForArtifact(next) === v.unitKey) {
+  if (
+    v.level === "unit" &&
+    unitForArtifact(next) === v.unitKey &&
+    next.source === activeSessionSource(v.unitKey)
+  ) {
     awaitingAdvanceSource = null;
     dismissBoardSubmitted();
     hideHeroNewPill();
