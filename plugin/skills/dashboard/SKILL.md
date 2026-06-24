@@ -116,6 +116,21 @@ no harm but is pointless — the Hub is never measured.
   `allow-scripts` with no same-origin, so storage/fetch won't work — only postMessage,
   which the helper uses).
 
+## A clawd mascot (encouraged)
+
+Give the Hub a little life: a pixel-art **clawd** companion (the same character that
+greets the post-submit waiting splash). A ready-to-paste, self-contained block lives next
+to this skill at **`clawd-snippet.html`** (in this skill's directory) — **read that file and
+paste its whole contents into `home.html`**. It defines `<div id="clawd-mascot">` plus an
+inline script that animates a random pose on load (typing · thinking · conducting); no
+external requests, so it's safe in the sandboxed full-bleed iframe.
+
+- Place the `<div id="clawd-mascot">` where it fits your composition — beside the greeting,
+  a quiet corner, or as a hero flourish. Size it via the div's `width`/`height`.
+- It's a flourish, not the point — keep the **triage-first** content primary; clawd accents
+  it. Skip it if the layout is already dense.
+- Motion is transform/opacity only and honors `prefers-reduced-motion`.
+
 ## Minimal skeleton
 
 ```html
@@ -136,6 +151,9 @@ no harm but is pointless — the Hub is never measured.
   </style>
 </head>
 <body>
+  <!-- Optional clawd mascot: paste clawd-snippet.html's block here (or anywhere),
+       then position #clawd-mascot to taste. See "A clawd mascot" above. -->
+  <div id="clawd-mascot" class="clawd-stage" style="width:120px;height:120px"></div>
   <h1>Good morning. <em>2 agents need you.</em></h1>
   <div class="brief">helpdesk-companion is BLOCKED on the demo recording · everything else nominal.</div>
   <div class="row">

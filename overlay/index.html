@@ -179,6 +179,17 @@
                 <span class="surface-pill-cue">show</span>
               </button>
               <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+              <!-- Blank-hero band: a session with no artifact yet shows a pixel-art
+                   clawd here (the splash, for the FIRST artifact) instead of a void —
+                   it sits in the hero slot above the terminal. board.ts toggles
+                   .blank-hero on the unit and mounts a fresh clawd into #unit-blank-clawd. -->
+              <div id="unit-blank" class="unit-blank" aria-hidden="true">
+                <div id="unit-blank-clawd" class="blank-clawd"></div>
+                <div class="blank-copy">
+                  <div class="blank-t">Clawd's on it.</div>
+                  <div class="blank-s">Your first artifact will land right here — the terminal's below while it works.</div>
+                </div>
+              </div>
               <!-- Per-session embedded terminals (the real claude TUI the Board owns).
                    owned-terminals.ts mounts one div per session here; mounts persist
                    across navigation (hidden, never disposed) so PTYs stay alive. -->

@@ -1635,6 +1635,7 @@ function leaveUnit(): void {
     unitEl.dataset.view = "session";
     unitEl.dataset.focus = "split";
     unitEl.classList.remove("no-hero");
+    unitEl.classList.remove("blank-hero");
   }
   historyEl?.replaceChildren();
   digestEl?.setAttribute("hidden", "");
@@ -1665,7 +1666,15 @@ async function renderHero(unitKey: string): Promise<void> {
     digestPath = null;
     applyBar(null);
     digestEl.setAttribute("hidden", "");
-    syncSurfaceStrip(false);
+    // A fresh session with no artifact of its own → show the waiting clawd band; a
+    // resumed session that already has artifacts lands on its terminal (skip the digest
+    // iframe load flash, as before). The band is native DOM, so it adds no flash.
+    const flSrc = activeSessionSource(unitKey);
+    const flHasArt = flSrc
+      ? (groupArtifactsByUnit().get(unitKey) ?? []).some((a) => a.source === flSrc)
+      : false;
+    if (flHasArt) syncSurfaceStrip(false);
+    else showBlankHero();
     return;
   }
   let home: string | null = null;
@@ -1717,9 +1726,7 @@ async function renderHero(unitKey: string): Promise<void> {
     // leaves digestPath pointing at the prior session's artifact, so the new session's
     // first artifact would mis-route to the "new artifact" pill instead of auto-lighting,
     // and maybeLightBlankHero (which guards on digestPath === null) would never fire.
-    digestPath = null;
-    digestEl.setAttribute("hidden", "");
-    syncSurfaceStrip(false);
+    showBlankHero();
   }
 }
 
@@ -1983,7 +1990,25 @@ function endSession(): void {
 function syncSurfaceStrip(hasHero: boolean): void {
   if (!unitEl) return;
   unitEl.classList.toggle("no-hero", !hasHero);
+  if (hasHero) unitEl.classList.remove("blank-hero"); // an artifact arrived → drop the waiting band
   setFocus(hasHero ? "split" : "terminal");
+}
+
+/** A session with no artifact yet: seat a fresh pixel-art clawd in the hero slot (the
+ *  splash, for the FIRST artifact) with the terminal below — instead of a blank void.
+ *  Native DOM (no iframe), so there's no load flash. Cleared by syncSurfaceStrip(true)
+ *  the moment a real artifact lands, and by leaveUnit on exit. */
+function showBlankHero(): void {
+  digestPath = null;
+  digestEl.setAttribute("hidden", "");
+  hideHeroNewPill();
+  if (unitEl) {
+    unitEl.classList.remove("no-hero");
+    unitEl.classList.add("blank-hero");
+  }
+  const blank = document.getElementById("unit-blank-clawd");
+  if (blank) mountClawd(blank);
+  setFocus("split");
 }
 
 // ---- data → header ----------------------------------------------------------

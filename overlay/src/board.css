@@ -985,6 +985,39 @@
   isolation: isolate;
 }
 #unit-digest[hidden] { display: none; }
+
+/* Blank-hero band — a session with no artifact yet. Seats in the hero slot (same
+   compact height as #unit-digest) with a pixel-art clawd + a warm waiting line,
+   the terminal filling the rest below. Hidden unless the unit is in .blank-hero. */
+.unit-blank { display: none; }
+.board-unit.blank-hero .unit-blank {
+  flex: 0 0 auto;
+  width: 100%;
+  height: clamp(140px, 28vh, 300px);
+  border-radius: var(--radius-card);
+  background: radial-gradient(130% 120% at 50% 16%, #fffdf8 0%, var(--card) 72%);
+  outline: 1px solid var(--line-2);
+  outline-offset: -1px;
+  box-shadow: var(--sh-art);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+.board-unit.blank-hero #unit-digest { display: none; }
+/* No artifact yet → nothing to resize or restore; keep the strip quiet. */
+.board-unit.blank-hero .sc-resize,
+.board-unit.blank-hero #unit-artifact-pill,
+.board-unit.blank-hero .hero-new-pill { display: none; }
+.unit-blank .blank-copy { max-width: 240px; }
+.unit-blank .blank-t {
+  font-family: var(--serif);
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin-bottom: 5px;
+}
+.unit-blank .blank-s { font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
 /* The focus strip sizes the two surfaces. Focus terminal → the artifact tucks to
    its pill; focus artifact → the artifact grows to fill (terminal tucks to its bar). */
 .board-unit[data-focus="terminal"] #unit-digest { display: none; }

@@ -1,0 +1,65 @@
+<!-- ───────────────────────────────────────────────────────────────────────────
+     CLAWD MASCOT — a pixel-art companion for the dashboard. Paste this whole block
+     into home.html. Put the <div id="clawd-mascot"> wherever you want clawd to sit
+     (beside the greeting, a corner, the hero); the script animates a random pose on
+     each load. Self-contained, transform/opacity only, honors prefers-reduced-motion.
+     Motion adapted from marciogranzotto/clawd-tank (MIT). Size it via the div's
+     width/height (the .cw fills it). Scenes: typing · thinking · conducting.
+─────────────────────────────────────────────────────────────────────────── -->
+<div id="clawd-mascot" class="clawd-stage" style="width:128px;height:128px"></div>
+<script>
+var CW_RIG =
+  '<g class="cw-rig">' +
+    '<g class="cw-body" fill="#d98a5c">' +
+      '<rect x="3" y="13" width="1" height="2"/><rect x="5" y="13" width="1" height="2"/>' +
+      '<rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>' +
+      '<rect x="2" y="6" width="11" height="7"/>' +
+      '<g class="cw-arm-l"><rect x="0" y="9" width="2" height="2"/></g>' +
+      '<g class="cw-arm-r"><rect x="13" y="9" width="2" height="2"/></g>' +
+    '</g>' +
+    '<g class="cw-eyes"><g class="cw-eyes-b" fill="#2a2018">' +
+      '<rect x="4.5" y="8" width="1" height="2"/><rect x="9.5" y="8" width="1" height="2"/>' +
+    '</g></g>' +
+  '</g>';
+
+// Base CSS shared by every scene (halo, canvas, shadow, prop defaults).
+var CW_BASE =
+  ".clawd-stage .halo{position:absolute;top:50%;left:50%;width:200px;height:200px;transform:translate(-50%,-64%);background:radial-gradient(circle,rgba(217,138,92,.30) 0%,transparent 62%);filter:blur(6px);animation:cwHalo 4.5s ease-in-out infinite;pointer-events:none}" +
+  "@keyframes cwHalo{0%,100%{opacity:.5;transform:translate(-50%,-64%) scale(1)}50%{opacity:.85;transform:translate(-50%,-64%) scale(1.08)}}" +
+  ".clawd-stage .cw{width:150px;height:150px;shape-rendering:crispEdges;overflow:visible}" +
+  ".clawd-stage .cw-shadow{fill:#201b15;opacity:.4}" +
+  // sensible idle defaults so a scene only overrides what it animates
+  ".clawd-stage .cw-eyes-b{transform-origin:7.5px 9px;animation:cwBlink 4.2s steps(1) infinite}" +
+  "@keyframes cwBlink{0%,45%,55%,100%{transform:scaleY(1)}50%{transform:scaleY(.12)}}" +
+  // Reduced motion: freeze every pose, but keep the floating props faintly
+  // visible (they start at opacity:0 and only the animation reveals them).
+  "@media (prefers-reduced-motion:reduce){.clawd-stage .cw *,.clawd-stage .halo{animation:none!important}.clawd-stage .cw-bit,.clawd-stage .cw-load,.clawd-stage .cw-str,.clawd-stage .cw-pk,.clawd-stage .cw-dust,.clawd-stage .cw-wave,.clawd-stage .cw-star,.clawd-stage .cw-q,.clawd-stage .cw-sp{opacity:.6!important}}";
+var CW_BASE =
+  ".clawd-stage .halo{position:absolute;top:50%;left:50%;width:200px;height:200px;transform:translate(-50%,-64%);background:radial-gradient(circle,rgba(217,138,92,.30) 0%,transparent 62%);filter:blur(6px);animation:cwHalo 4.5s ease-in-out infinite;pointer-events:none}" +
+  "@keyframes cwHalo{0%,100%{opacity:.5;transform:translate(-50%,-64%) scale(1)}50%{opacity:.85;transform:translate(-50%,-64%) scale(1.08)}}" +
+  ".clawd-stage .cw{width:150px;height:150px;shape-rendering:crispEdges;overflow:visible}" +
+  ".clawd-stage .cw-shadow{fill:#201b15;opacity:.4}" +
+  // sensible idle defaults so a scene only overrides what it animates
+  ".clawd-stage .cw-eyes-b{transform-origin:7.5px 9px;animation:cwBlink 4.2s steps(1) infinite}" +
+  "@keyframes cwBlink{0%,45%,55%,100%{transform:scaleY(1)}50%{transform:scaleY(.12)}}" +
+  // Reduced motion: freeze every pose, but keep the floating props faintly
+  // visible (they start at opacity:0 and only the animation reveals them).
+  "@media (prefers-reduced-motion:reduce){.clawd-stage .cw *,.clawd-stage .halo{animation:none!important}.clawd-stage .cw-bit,.clawd-stage .cw-load,.clawd-stage .cw-str,.clawd-stage .cw-pk,.clawd-stage .cw-dust,.clawd-stage .cw-wave,.clawd-stage .cw-star,.clawd-stage .cw-q,.clawd-stage .cw-sp{opacity:.6!important}}";
+var CW_SCENES = [
+{"id":"typing","cap":"Claude’s heads-down in the code","behind":"<g fill=\"#40c4ff\"><rect class=\"cw-bit\" x=\"-2\" y=\"12\" width=\"1.4\" height=\"1.4\"/><rect class=\"cw-bit b2\" x=\"6\" y=\"11\" width=\"1.4\" height=\"1.4\"/><rect class=\"cw-bit b3\" x=\"13\" y=\"12\" width=\"1.4\" height=\"1.4\"/><rect class=\"cw-bit b4\" x=\"3\" y=\"10\" width=\"1.4\" height=\"1.4\"/></g>","front":"<g transform=\"translate(2.5 10.5)\"><rect x=\"-0.5\" y=\"4.6\" width=\"11\" height=\"1\" fill=\"#546e7a\"/><rect x=\"0\" y=\"0\" width=\"10\" height=\"4.8\" fill=\"#78909c\"/><rect x=\"4.5\" y=\"2\" width=\"1\" height=\"1\" fill=\"#fff\"/></g>","css":".cmp-submitted .cw--typing .cw-rig{transform-origin:7.5px 15px;animation:cwJitter .09s steps(2) infinite alternate}@keyframes cwJitter{from{transform:translateY(0)}to{transform:translateY(.5px)}}.cmp-submitted .cw--typing .cw-arm-l{transform-origin:2px 10px;animation:cwTypeL .16s ease-in-out infinite}.cmp-submitted .cw--typing .cw-arm-r{transform-origin:13px 10px;animation:cwTypeR .13s ease-in-out infinite}@keyframes cwTypeL{0%,100%{transform:rotate(58deg)}50%{transform:rotate(90deg)}}@keyframes cwTypeR{0%,100%{transform:rotate(-58deg)}50%{transform:rotate(-90deg)}}.cmp-submitted .cw--typing .cw-eyes{animation:cwRead 1.2s steps(1) infinite}@keyframes cwRead{0%,32%{transform:translateX(-1.2px)}33%,66%{transform:translateX(0)}67%,100%{transform:translateX(1.2px)}}.cmp-submitted .cw--typing .cw-eyes-b{animation:none}.cmp-submitted .cw--typing .cw-bit{opacity:0;animation:cwBit 1s linear infinite}.cmp-submitted .cw--typing .cw-bit.b2{animation-delay:.33s}.cmp-submitted .cw--typing .cw-bit.b3{animation-delay:.66s}.cmp-submitted .cw--typing .cw-bit.b4{animation-delay:.85s}@keyframes cwBit{0%{opacity:0;transform:translateY(0) scale(.5)}25%{opacity:.85}100%{opacity:0;transform:translateY(-13px) scale(1.15)}}"},
+{"id":"thinking","cap":"Claude’s turning it over","behind":"<g transform=\"translate(7 -10)\"><g fill=\"#fff\" opacity=\"0.95\"><rect x=\"2\" y=\"1\" width=\"8\" height=\"6\"/><rect x=\"1\" y=\"2\" width=\"10\" height=\"4\"/><rect x=\"3\" y=\"0\" width=\"6\" height=\"8\"/><rect x=\"2\" y=\"7\" width=\"2\" height=\"2\"/><rect x=\"1\" y=\"9\" width=\"1\" height=\"1\"/></g><g fill=\"#0082fc\"><rect class=\"cw-load\" x=\"2.5\" y=\"3\" width=\"1.2\" height=\"1.2\"/><rect class=\"cw-load l2\" x=\"5.4\" y=\"3\" width=\"1.2\" height=\"1.2\"/><rect class=\"cw-load l3\" x=\"8.3\" y=\"3\" width=\"1.2\" height=\"1.2\"/></g></g>","front":"","css":".cmp-submitted .cw--thinking .cw-rig{transform-origin:7.5px 15px;animation:cwSway 4s ease-in-out infinite}@keyframes cwSway{0%,100%{transform:rotate(0deg)}25%{transform:rotate(-3deg)}75%{transform:rotate(3deg)}}.cmp-submitted .cw--thinking .cw-arm-r{transform-origin:14px 10px;animation:cwTap .8s ease-in-out infinite alternate}@keyframes cwTap{0%{transform:rotate(-122deg)}100%{transform:rotate(-145deg)}}.cmp-submitted .cw--thinking .cw-load{opacity:.15;animation:cwLoad 2s infinite}.cmp-submitted .cw--thinking .cw-load.l2{animation-delay:.25s}.cmp-submitted .cw--thinking .cw-load.l3{animation-delay:.5s}@keyframes cwLoad{0%,18%{opacity:.15}40%,80%{opacity:1}100%{opacity:.15}}"},
+{"id":"conducting","cap":"Claude’s orchestrating the next move","behind":"<g><rect class=\"cw-str\" x=\"0\" y=\"0\" width=\"1.5\" height=\"1.5\" fill=\"#0082fc\"/><rect class=\"cw-str s2\" x=\"0\" y=\"0\" width=\"1.5\" height=\"1.5\" fill=\"#ffc107\"/><rect class=\"cw-str s3\" x=\"0\" y=\"0\" width=\"1.5\" height=\"1.5\" fill=\"#ff5252\"/><rect class=\"cw-str s4\" x=\"0\" y=\"0\" width=\"1.5\" height=\"1.5\" fill=\"#4caf50\"/><rect class=\"cw-str s5\" x=\"0\" y=\"0\" width=\"1.5\" height=\"1.5\" fill=\"#9c27b0\"/></g>","front":"","css":".cmp-submitted .cw--conducting .cw-rig{transform-origin:7.5px 15px;animation:cwBob 2s ease-in-out infinite}@keyframes cwBob{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(1.5px) scaleY(.98)}}.cmp-submitted .cw--conducting .cw-arm-l{transform-origin:1px 10px;animation:cwCondL 2s ease-in-out infinite}.cmp-submitted .cw--conducting .cw-arm-r{transform-origin:14px 10px;animation:cwCondR 2s ease-in-out infinite}@keyframes cwCondL{0%,100%{transform:rotate(15deg)}50%{transform:rotate(85deg)}}@keyframes cwCondR{0%,100%{transform:rotate(-85deg)}50%{transform:rotate(-15deg)}}.cmp-submitted .cw--conducting .cw-str{opacity:0;animation:cwStream 2s linear infinite}.cmp-submitted .cw--conducting .cw-str.s2{animation-delay:.4s}.cmp-submitted .cw--conducting .cw-str.s3{animation-delay:.8s}.cmp-submitted .cw--conducting .cw-str.s4{animation-delay:1.2s}.cmp-submitted .cw--conducting .cw-str.s5{animation-delay:1.6s}@keyframes cwStream{0%{opacity:0;transform:translate(-2px,6px) scale(0)}15%{opacity:1;transform:translate(0,1px) scale(1)}50%{opacity:1;transform:translate(7.5px,-3px) scale(1.5)}85%{opacity:1;transform:translate(15px,1px) scale(1)}100%{opacity:0;transform:translate(17px,6px) scale(0)}}"}
+];
+var CW_CSS = CW_BASE + CW_SCENES.map(function(s){return s.css;}).join("");
+function cwSceneSVG(scene) {
+  return '<svg class="cw cw--' + scene.id + '" viewBox="-7 -12 30 30" aria-hidden="true">' +
+    '<rect class="cw-shadow" x="3" y="15" width="9" height="1"/>' +
+    scene.behind + CW_RIG + scene.front +
+    '</svg>';
+}
+(function () {
+  var st = document.createElement("style"); st.textContent = CW_CSS; document.head.appendChild(st);
+  var el = document.getElementById("clawd-mascot");
+  if (el) el.innerHTML = cwSceneSVG(CW_SCENES[Math.floor(Math.random() * CW_SCENES.length)]);
+})();
+</script>
