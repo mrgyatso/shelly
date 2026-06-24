@@ -27,7 +27,11 @@ export const CW_RIG =
 export const CW_BASE =
   ".clawd-stage .halo{position:absolute;top:50%;left:50%;width:200px;height:200px;transform:translate(-50%,-64%);background:radial-gradient(circle,rgba(217,138,92,.30) 0%,transparent 62%);filter:blur(6px);animation:cwHalo 4.5s ease-in-out infinite;pointer-events:none}" +
   "@keyframes cwHalo{0%,100%{opacity:.5;transform:translate(-50%,-64%) scale(1)}50%{opacity:.85;transform:translate(-50%,-64%) scale(1.08)}}" +
-  ".clawd-stage .cw{width:150px;height:150px;shape-rendering:crispEdges;overflow:visible}" +
+  // Promote the animated SVG to its OWN GPU compositing layer so its per-frame
+  // transform repaints don't get stuck behind the board's main-thread mix-blend
+  // (paper-tex multiply) cycle — the same starvation that made the splash juggle
+  // crawl, fixed the same way #unit-digest / .reader-frame were (board.css).
+  ".clawd-stage .cw{width:150px;height:150px;shape-rendering:crispEdges;overflow:visible;will-change:transform;isolation:isolate;transform:translateZ(0)}" +
   ".clawd-stage .cw-shadow{fill:#201b15;opacity:.4}" +
   // sensible idle defaults so a scene only overrides what it animates
   ".clawd-stage .cw-eyes-b{transform-origin:7.5px 9px;animation:cwBlink 4.2s steps(1) infinite}" +

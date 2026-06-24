@@ -130,6 +130,10 @@ interface PaneHead {
 
 /** Unit key for artifacts that match no single live source. */
 const UNSOURCED = "__unsourced__";
+/** Sentinel "unit" for the idle home — the rail (live + Recent) with NO project
+ *  selected and a clawd splash, shown at startup when nothing substantive is live.
+ *  Never a real source/artifact key, so it highlights no tab and owns no terminal. */
+const IDLE = "__idle__";
 /** Poll cadence for live-state — matches live.ts's calm cadence. */
 const POLL_MS = 1200;
 /** An instance whose live file hasn't been touched within this window is "stale"
@@ -341,7 +345,7 @@ export async function initBoard(): Promise<void> {
   // On relaunch, skip straight to the most recently active project when no home.html
   // has been authored — the rail shows all projects and is immediately useful without
   // an extra click through the old sessions roster.
-  await startupNavigate();
+  startupNavigate();
 
   // A popover row click stores a deep-link target; drain it (fresh window). An
   // already-open Board catches the same target via the `board:navigate` event.
@@ -594,17 +598,52 @@ function showLevel(level: BoardView["level"]): void {
   unitEl.toggleAttribute("hidden", level !== "unit");
 }
 
-/** Startup routing: go directly to the most recently active project only when a live
- *  session exists. Falls back to the Hub so the user sees the waiting/empty state
- *  rather than landing inside a closed session with no terminal. */
-async function startupNavigate(): Promise<void> {
+/** A live source that's just the SessionStart stub — the "Session started" working
+ *  line, no where/next, and no artifacts of its own. It's "live" by file mtime for
+ *  the full 2h LIVENESS_MS window, but there's nothing to show: such a source must
+ *  NOT hijack the launch screen (the reported "parked on a stale clipping" bug). */
+function isStubSource(s: LiveSource): boolean {
+  const st = parseState(s.json);
+  const working = (st.working || "").trim();
+  if (working !== "" && working !== SESSION_STARTED_STUB) return false;
+  if ((st.where?.length ?? 0) > 0 || (st.next?.length ?? 0) > 0) return false;
+  return !allArtifacts.some((a) => a.source === s.source);
+}
+
+/** Startup routing: drop straight into the most-recent SUBSTANTIVE live session
+ *  (real work, not a bare stub). With none, land on the idle home (rail + clawd
+ *  splash) rather than parking on a stale "Session started" stub for the full 2h
+ *  liveness window. The L0 home.html dashboard stays reachable via explicit Home. */
+function startupNavigate(): void {
   const now = Date.now();
-  const hasLive = allSources.some((s) => !isDismissed(s) && isLiveSource(s, now));
-  if (hasLive) {
-    const unit = findMostRecentActiveUnit();
-    if (unit) { goUnit(unit); return; }
-  }
-  await goHub();
+  const substantive = allSources
+    .filter((s) => !isDismissed(s) && isLiveSource(s, now) && !isStubSource(s))
+    .sort(
+      (a, b) =>
+        Math.max(sourceUpdatedMs(b), sourceHeartbeatMs(b)) -
+        Math.max(sourceUpdatedMs(a), sourceHeartbeatMs(a)),
+    );
+  if (substantive.length) { goUnit(unitKeyOf(substantive[0])); return; }
+  goIdle();
+}
+
+/** Enter the idle home: the rail (live units + Recent projects) with NO project
+ *  selected, a clawd splash in the hero, and no terminal. Mirrors L2's shell so the
+ *  rail's right-click "New session" / resume affordances work straight from launch,
+ *  but selects nothing — a stale stub can no longer claim the launch screen. */
+function goIdle(): void {
+  leaveUnit();
+  viewStack = [{ level: "unit", unitKey: IDLE }];
+  showLevel("unit");
+  currentUnitKey = IDLE;
+  unitEl.dataset.rail = "sessions";
+  unitEl.dataset.view = "session";
+  unitEl.classList.add("is-idle");
+  renderUnitRail(IDLE);
+  renderUnitTitle(IDLE);
+  hideOwnedTerminals();
+  showBlankHero(BLANK_IDLE);
+  updateGlobalUnread();
 }
 
 /** The unit key of the most recently active project (live first, then closed).
@@ -727,11 +766,13 @@ function parseState(json: string): LiveState {
  * by its project slug so two agents in one repo collapse to one unit.
  */
 function unitKeyOf(s: LiveSource): string {
-  const st = parseState(s.json);
-  // Project-units: a repo session belongs to its PROJECT, derived from the source
-  // itself (NOT the stored unit_key) so plugin-cache drift in unit_key can't split
-  // one repo into several units. A non-repo session stays its own unit.
-  if (st.is_repo === false) return st.unit_key ?? s.source;
+  // A session belongs to its PROJECT, keyed by the project directory (the source's
+  // `project` basename, NOT the stored unit_key — so plugin-cache drift in unit_key
+  // can't split one project across units). This now applies to NON-repo dirs too: a
+  // second `claude` opened in the same folder (e.g. `clipping`) must land in the
+  // EXISTING unit, not clone a fresh tab per session. The stored non-repo unit_key
+  // carries a per-session `--<shortid>` that used to split them; per-session identity
+  // now lives in the rail's session switcher, not the unit key.
   return sourceProjectKey(s);
 }
 
@@ -780,8 +821,12 @@ function unitForArtifact(a: ArtifactEntry): string {
     if (src) return unitKeyOf(src);
   }
   // Authoritative for closed sessions: the hook stamped the writing session's unit
-  // key at create time. Immune to the project-slug ambiguity below and a volatile cwd.
-  if (a.unit_key) return a.unit_key;
+  // key at create time. Strip any non-repo `--<shortid>` discriminator (baseProjectOf)
+  // so it matches the project-grouped unit key the rail now uses — a closed non-repo
+  // session's artifact routes to its merged project unit, not an orphan. Repo keys are
+  // bare slugs (no `--`), so baseProjectOf is a no-op there. Immune to the project-slug
+  // ambiguity below and a volatile cwd.
+  if (a.unit_key) return baseProjectOf(a.unit_key);
   // Fallback for un-indexed artifacts (hub/offsite/cron, or pre-hook): match by
   // the model-stamped project. Display-only metadata, kept only as a fallback.
   const key = projectSlug(a.project);
@@ -991,18 +1036,26 @@ function computeRoster(now: number): Roster {
     (band === "needs" ? needs : band === "run" ? running : idle).push(unit);
   }
 
-  // Apply the user's manual drag order within each band (status still decides the
-  // band; the saved order decides position inside it).
+  // Keep the per-band lists (still used for the dot colours via bandOf), but the rail
+  // ORDER is now purely most-recent-first across all live units — the freshest project
+  // is always on top, regardless of status. (Supersedes the old band-grouped order.)
   const oNeeds = applyManualOrder(needs);
   const oRunning = applyManualOrder(running);
   const oIdle = applyManualOrder(idle);
+  const recencyOf = (unit: string): number => {
+    const srcs = byUnit.get(unit) ?? [];
+    // No live file yet → just-launched/owned, treat as freshest so it lands on top.
+    if (srcs.length === 0) return now;
+    return Math.max(...srcs.map((s) => Math.max(sourceUpdatedMs(s), sourceHeartbeatMs(s))));
+  };
+  const order = [...live].sort((a, b) => recencyOf(b) - recencyOf(a));
   return {
     byUnit,
     artsByUnit,
     needs: oNeeds,
     running: oRunning,
     idle: oIdle,
-    order: [...oNeeds, ...oRunning, ...oIdle],
+    order,
     bandOf,
     liveCount,
   };
@@ -1068,7 +1121,12 @@ function renderUnitRail(activeUnitKey: string | null): void {
     divider.className = "rail-section-head";
     divider.textContent = "Recent";
     nodes.push(divider);
-    for (const [projectKey, sessions] of recentGroups) {
+    // Most-recent-first across projects too — each group's sessions are already sorted,
+    // so its [0] is the project's freshest; order the projects by that.
+    const recentByRecency = [...recentGroups.entries()].sort(
+      (a, b) => (b[1][0]?.last_active_ms ?? 0) - (a[1][0]?.last_active_ms ?? 0),
+    );
+    for (const [projectKey, sessions] of recentByRecency) {
       const isExpanded = expandedRecentProject === projectKey;
       nodes.push(buildRecentProjectTab(projectKey, sessions, isExpanded));
       if (isExpanded) {
@@ -1103,6 +1161,7 @@ function renderUnitRail(activeUnitKey: string | null): void {
       setTimeout(() => exitingGroup.remove(), 220);
     }
   }
+
 }
 
 /** Sessions of a project, most-recent first (matches resume-on-entry order). */
@@ -1139,11 +1198,17 @@ function buildRailSessionRow(unitKey: string, s: LiveSource, shownTab: string | 
   row.title = `${sessionLabel(s)} — ${st.working || "session"}`;
 
   const dot = document.createElement("span");
-  dot.className = "unit-subtab-dot" + (isLiveSource(s, Date.now()) ? " live" : "");
+  // `is-live`, NOT a bare `live` — `.live` is the live-pane container selector in
+  // styles.css (position:absolute; inset:0; …) and would pull this 5px dot out of
+  // flow, misaligning live rows against their closed siblings.
+  dot.className = "unit-subtab-dot" + (isLiveSource(s, Date.now()) ? " is-live" : "");
   const name = document.createElement("span");
   name.className = "unit-subtab-name";
   name.textContent = sessionLabel(s);
-  row.append(dot, name);
+  const time = document.createElement("span");
+  time.className = "unit-subtab-time";
+  time.textContent = relTimeShort(Math.max(sourceUpdatedMs(s), sourceHeartbeatMs(s)));
+  row.append(dot, name, time);
 
   // Always clickable: even a session marked "active" here may belong to a project
   // you're not currently viewing (its dropdown was opened cross-unit) — pickSession
@@ -1207,10 +1272,14 @@ function isResumableRecent(rs: RecentSession, live: Set<string>): boolean {
 
 /** A project's resumable (closed) sessions, matched by its project-group key so they
  *  fold into the active unit's session switcher even during the provisional resume
- *  window. Newest-first (Rust order), capped — same dedup as the Recent band. */
+ *  window. Sorted newest-first by last-active (so the rail's right-aligned times read
+ *  top-to-bottom most-recent-first), capped — same dedup as the Recent band. */
 function recentSiblingsFor(groupKey: string): RecentSession[] {
   const live = liveSessionIds();
-  return allRecent.filter((rs) => isResumableRecent(rs, live) && recentProjectKey(rs) === groupKey).slice(0, 6);
+  return allRecent
+    .filter((rs) => isResumableRecent(rs, live) && recentProjectKey(rs) === groupKey)
+    .sort((a, b) => b.last_active_ms - a.last_active_ms)
+    .slice(0, 6);
 }
 
 /** Collect recent (closed) sessions grouped by project slug, excluding live units. */
@@ -1223,6 +1292,8 @@ function groupRecentByProject(excludeUnits: Set<string>): Map<string, RecentSess
     if (excludeUnits.has(key)) continue;
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(rs);
   }
+  // Most-recent-first within each project, so the rail's session times descend.
+  for (const list of groups.values()) list.sort((a, b) => b.last_active_ms - a.last_active_ms);
   return groups;
 }
 
@@ -1251,6 +1322,10 @@ function buildRecentProjectTab(projectKey: string, sessions: RecentSession[], ex
     expandedRecentProject = expanded ? null : projectKey;
     renderUnitRail(currentUnitKey);
   });
+  tab.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    showRecentProjectMenu(e, sessions);
+  });
   return tab;
 }
 
@@ -1264,8 +1339,16 @@ function buildRecentSessionRow(rs: RecentSession): HTMLElement {
   dot.className = "unit-subtab-dot";
   const name = document.createElement("span");
   name.className = "unit-subtab-name";
+  // With a title, the name carries identity and the time column shows recency; with
+  // none, fall the time INTO the name (no duplicate column) — same as before.
   name.textContent = rs.title || relTime(rs.last_active_ms);
   row.append(dot, name);
+  if (rs.title) {
+    const time = document.createElement("span");
+    time.className = "unit-subtab-time";
+    time.textContent = relTimeShort(rs.last_active_ms);
+    row.append(time);
+  }
 
   row.addEventListener("click", () => void resumeRecentSession(rs));
   return row;
@@ -1287,6 +1370,7 @@ function switchToSession(unitKey: string, s: LiveSource): void {
     }
   });
 }
+
 
 /** One rail tab: a state dot, the unit's mark, its name, an unread badge. A
  *  multi-session project owns a session-chooser drawer: clicking it toggles that
@@ -1334,14 +1418,26 @@ function buildRailTab(
     const chevron = document.createElement("span");
     chevron.className = "unit-tab-chevron";
     chevron.textContent = expanded ? "▾" : "▸";
+    chevron.title = expanded ? "Hide sessions" : "Show sessions";
+    // The chevron toggles THIS project's session switcher inline WITHOUT navigating
+    // (collapsing any other open one). stopPropagation keeps the tab-body click below
+    // from also firing — so you can peek at the sessions without leaving where you are.
+    chevron.addEventListener("click", (e) => {
+      e.stopPropagation();
+      expandedActiveProject = expanded ? null : unitKey;
+      renderUnitRail(currentUnitKey);
+    });
     tab.append(chevron);
-    // Toggle THIS project's chooser; collapse any other open one (one at a time).
+  }
+  // Active multi-session: clicking the tab body toggles the session drawer so you can
+  // pick a session (same as the chevron — the whole tab is the affordance). Active
+  // single-session: no-op (already there). Inactive: navigate into the freshest session.
+  if (active && hasDrawer) {
     tab.addEventListener("click", () => {
       expandedActiveProject = expanded ? null : unitKey;
       renderUnitRail(currentUnitKey);
     });
   } else if (!active) {
-    // Single session — nothing to choose, so drill straight in.
     tab.addEventListener("click", () => goUnit(unitKey));
   }
   tab.addEventListener("contextmenu", (e) => {
@@ -1373,36 +1469,16 @@ function unitNeedsYou(sources: LiveSource[], now: number): boolean {
  *  Board-launched terminal + drop it to Recent, where it stays one click from a
  *  `claude --resume`). One menu at a time; dismissed on any outside click, Esc, or
  *  scroll. The hover ✕ does the same close; this is the discoverable right-click. */
-function showUnitMenu(e: MouseEvent, unitKey: string, sources: LiveSource[]): void {
+interface CtxItem { label: string; fn: () => void; danger?: boolean; }
+
+/** Open a small right-click context menu at the event position. Closes on pick,
+ *  outside-click, Esc, or scroll. Shared by the rail's unit / session / recent-
+ *  project menus so the scaffolding lives in one place. No-op on empty items. */
+function openCtxMenu(e: MouseEvent, items: CtxItem[]): void {
+  if (items.length === 0) return;
   document.querySelector(".ctx-menu")?.remove();
   const menu = document.createElement("div");
   menu.className = "ctx-menu";
-
-  const add = (label: string, fn: () => void, danger = false): void => {
-    const it = document.createElement("button");
-    it.className = "ctx-item" + (danger ? " danger" : "");
-    it.textContent = label;
-    it.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      close();
-      fn();
-    });
-    menu.append(it);
-  };
-  add("Open", () => goUnit(unitKey));
-  const dir = unitDirOf(unitKey);
-  if (dir) add("New session here", () => void launchSessionIn(dir));
-  add("Close out", () => void closeUnit(unitKey, sources), true);
-
-  menu.style.left = `${e.clientX}px`;
-  menu.style.top = `${e.clientY}px`;
-  // Mount inside .stage so it inherits the board's warm design tokens (it's
-  // position:fixed, so the parent doesn't affect where it lands).
-  (document.querySelector(".stage") ?? document.body).append(menu);
-  // Clamp to the viewport so a card near the edge doesn't push the menu off-screen.
-  const r = menu.getBoundingClientRect();
-  if (r.right > window.innerWidth) menu.style.left = `${window.innerWidth - r.width - 8}px`;
-  if (r.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - r.height - 8}px`;
 
   const close = (): void => {
     menu.remove();
@@ -1416,11 +1492,43 @@ function showUnitMenu(e: MouseEvent, unitKey: string, sources: LiveSource[]): vo
   const onKey = (ev: KeyboardEvent): void => {
     if (ev.key === "Escape") close();
   };
+
+  for (const { label, fn, danger } of items) {
+    const it = document.createElement("button");
+    it.className = "ctx-item" + (danger ? " danger" : "");
+    it.textContent = label;
+    it.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      close();
+      fn();
+    });
+    menu.append(it);
+  }
+
+  menu.style.left = `${e.clientX}px`;
+  menu.style.top = `${e.clientY}px`;
+  // Mount inside .stage so it inherits the board's warm design tokens (it's
+  // position:fixed, so the parent doesn't affect where it lands).
+  (document.querySelector(".stage") ?? document.body).append(menu);
+  // Clamp to the viewport so a card near the edge doesn't push the menu off-screen.
+  const r = menu.getBoundingClientRect();
+  if (r.right > window.innerWidth) menu.style.left = `${window.innerWidth - r.width - 8}px`;
+  if (r.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - r.height - 8}px`;
+
   setTimeout(() => {
     document.addEventListener("mousedown", onDoc, true);
     document.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", close, true);
   }, 0);
+}
+
+function showUnitMenu(e: MouseEvent, unitKey: string, sources: LiveSource[]): void {
+  const dir = unitDirOf(unitKey);
+  openCtxMenu(e, [
+    { label: "Open", fn: () => goUnit(unitKey) },
+    ...(dir ? [{ label: "New session here", fn: () => void launchSessionIn(dir) }] : []),
+    { label: "Close out", fn: () => void closeUnit(unitKey, sources), danger: true },
+  ]);
 }
 
 /** Truncate a chip label so a long next-step can't blow out the row width. */
@@ -1520,48 +1628,19 @@ async function closeSession(unitKey: string, s: LiveSource): Promise<void> {
 
 /** Context menu for a session sub-row in the rail: switch to it or close just this session. */
 function showRailSessionMenu(e: MouseEvent, unitKey: string, s: LiveSource): void {
-  document.querySelector(".ctx-menu")?.remove();
-  const menu = document.createElement("div");
-  menu.className = "ctx-menu";
+  openCtxMenu(e, [
+    { label: "Switch to", fn: () => switchToSession(unitKey, s) },
+    { label: "Close session", fn: () => void closeSession(unitKey, s), danger: true },
+  ]);
+}
 
-  const add = (label: string, fn: () => void, danger = false): void => {
-    const it = document.createElement("button");
-    it.className = "ctx-item" + (danger ? " danger" : "");
-    it.textContent = label;
-    it.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      close();
-      fn();
-    });
-    menu.append(it);
-  };
-  add("Switch to", () => switchToSession(unitKey, s));
-  add("Close session", () => void closeSession(unitKey, s), true);
-
-  menu.style.left = `${e.clientX}px`;
-  menu.style.top = `${e.clientY}px`;
-  (document.querySelector(".stage") ?? document.body).append(menu);
-  const r = menu.getBoundingClientRect();
-  if (r.right > window.innerWidth) menu.style.left = `${window.innerWidth - r.width - 8}px`;
-  if (r.bottom > window.innerHeight) menu.style.top = `${window.innerHeight - r.height - 8}px`;
-
-  const close = (): void => {
-    menu.remove();
-    document.removeEventListener("mousedown", onDoc, true);
-    document.removeEventListener("keydown", onKey, true);
-    window.removeEventListener("scroll", close, true);
-  };
-  const onDoc = (ev: MouseEvent): void => {
-    if (!menu.contains(ev.target as Node)) close();
-  };
-  const onKey = (ev: KeyboardEvent): void => {
-    if (ev.key === "Escape") close();
-  };
-  setTimeout(() => {
-    document.addEventListener("mousedown", onDoc, true);
-    document.addEventListener("keydown", onKey, true);
-    window.addEventListener("scroll", close, true);
-  }, 0);
+/** Context menu for a recent (closed) PROJECT tab: start a fresh session in its
+ *  directory without first clicking into it — the common "just give me a claude in
+ *  my last project" path, reachable right from the idle launch screen. */
+function showRecentProjectMenu(e: MouseEvent, sessions: RecentSession[]): void {
+  const dir = sessions.find((s) => s.cwd)?.cwd;
+  if (!dir) return;
+  openCtxMenu(e, [{ label: "New session here", fn: () => void launchSessionIn(dir) }]);
 }
 
 // ---- L2 unit home (hero + history) ------------------------------------------
@@ -1636,6 +1715,8 @@ function leaveUnit(): void {
     unitEl.dataset.focus = "split";
     unitEl.classList.remove("no-hero");
     unitEl.classList.remove("blank-hero");
+    unitEl.classList.remove("is-idle");
+    unitEl.classList.remove("has-sessions");
   }
   historyEl?.replaceChildren();
   digestEl?.setAttribute("hidden", "");
@@ -1902,7 +1983,7 @@ function wireUnitChrome(): void {
   // rail tabs, but not this toolbar title, so the caller patches it).
   unitTitleEl = document.getElementById("unit-title");
   unitTitleEl?.addEventListener("click", () => {
-    if (!currentUnitKey || currentUnitKey === UNSOURCED) return;
+    if (!currentUnitKey || currentUnitKey === UNSOURCED || currentUnitKey === IDLE) return;
     const nameEl = unitTitleEl?.querySelector(".unit-title-name") as HTMLElement | null;
     if (nameEl) startRename(currentUnitKey, nameEl, () => renderUnitTitle(currentUnitKey!));
   });
@@ -1947,7 +2028,7 @@ function wireUnitChrome(): void {
  *  project/slug). Hidden for the Unsourced bucket (nothing to rename). */
 function renderUnitTitle(unitKey: string): void {
   if (!unitTitleEl) return;
-  if (unitKey === UNSOURCED) {
+  if (unitKey === UNSOURCED || unitKey === IDLE) {
     unitTitleEl.hidden = true;
     return;
   }
@@ -1994,11 +2075,23 @@ function syncSurfaceStrip(hasHero: boolean): void {
   setFocus(hasHero ? "split" : "terminal");
 }
 
+/** Copy for the waiting-clawd band. Default = a session waiting for its FIRST
+ *  artifact (terminal below). BLANK_IDLE = the idle home, where nothing's running. */
+const BLANK_FIRST = {
+  title: "Clawd's on it.",
+  sub: "Your first artifact will land right here — the terminal's below while it works.",
+};
+const BLANK_IDLE = {
+  title: "Nothing running right now.",
+  sub: "Pick a project from the rail, or start a new session to begin.",
+};
+
 /** A session with no artifact yet: seat a fresh pixel-art clawd in the hero slot (the
  *  splash, for the FIRST artifact) with the terminal below — instead of a blank void.
  *  Native DOM (no iframe), so there's no load flash. Cleared by syncSurfaceStrip(true)
- *  the moment a real artifact lands, and by leaveUnit on exit. */
-function showBlankHero(): void {
+ *  the moment a real artifact lands, and by leaveUnit on exit. The idle home reuses it
+ *  with BLANK_IDLE copy (no terminal, nothing working). */
+function showBlankHero(copy: { title: string; sub: string } = BLANK_FIRST): void {
   digestPath = null;
   digestEl.setAttribute("hidden", "");
   hideHeroNewPill();
@@ -2008,6 +2101,10 @@ function showBlankHero(): void {
   }
   const blank = document.getElementById("unit-blank-clawd");
   if (blank) mountClawd(blank);
+  const t = document.querySelector("#unit-blank .blank-t");
+  const s = document.querySelector("#unit-blank .blank-s");
+  if (t) t.textContent = copy.title;
+  if (s) s.textContent = copy.sub;
   setFocus("split");
 }
 
@@ -2158,6 +2255,21 @@ function relTime(ms: number): string {
   const days = Math.floor(h / 24);
   if (days < 7) return `${days}d ago`;
   return `${Math.floor(days / 7)}w ago`;
+}
+
+/** Compact recency for the rail's right-aligned session timestamps ("now", "5m",
+ *  "3h", "2d", "1w") — tight enough to sit beside an ellipsized title. 0 → "". */
+function relTimeShort(ms: number): string {
+  if (!ms) return "";
+  const d = Date.now() - ms;
+  if (d < 60_000) return "now";
+  const m = Math.floor(d / 60_000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const days = Math.floor(h / 24);
+  if (days < 7) return `${days}d`;
+  return `${Math.floor(days / 7)}w`;
 }
 
 // ---- greeting + clock -------------------------------------------------------

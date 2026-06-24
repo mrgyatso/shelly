@@ -102,6 +102,19 @@
   display: flex;
   flex-direction: column;
   transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+  /* The Board shell chrome isn't selectable — dragging across the rail/toolbar/hero
+     and highlighting the whole UI reads as broken. Only the live terminal and the
+     artifact (a separate iframe document, unaffected by this) are meant to be copied;
+     form fields stay selectable so the rename input etc. still work. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+#unit-terminals,
+#unit-terminals *,
+.board input,
+.board textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 .board.paper-tex::before {
   content: "";
@@ -792,7 +805,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  /* No width:100% — the row is a flex-column child (align stretch fills it) and the
+     14px indent is a MARGIN; width:100% + that margin overflowed the group by 14px,
+     and the group's overflow:hidden (for the drop animation) then clipped the right
+     edge — chopping the new right-aligned time stamp. Stretch respects the margin. */
   text-align: left;
   border: 0;
   background: transparent;
@@ -840,7 +856,7 @@
 @media (prefers-reduced-motion: reduce) {
   .unit-subtab-group.opening, .unit-subtab-group.closing { animation: none; }
 }
-.unit-subtab-dot.live { background: var(--ok); }
+.unit-subtab-dot.is-live { background: var(--ok); }
 .unit-subtab.active .unit-subtab-dot { background: var(--accent); }
 .unit-subtab-name {
   flex: 1 1 auto;
@@ -850,6 +866,18 @@
   white-space: nowrap;
   font: 500 11.5px/1.3 var(--ui-font, system-ui);
 }
+/* Right-aligned recency stamp ("3h", "2d") — quiet, so the title leads and the
+   descending times make the most-recent-first order legible at a glance. */
+.unit-subtab-time {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  font: 500 9.5px/1 var(--mono);
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  opacity: 0.7;
+}
+.unit-subtab:hover .unit-subtab-time,
+.unit-subtab.active .unit-subtab-time { opacity: 0.95; }
 .unit-tab-mark {
   flex: 0 0 auto;
   width: 22px;
@@ -945,7 +973,6 @@
   transition: opacity 0.14s;
 }
 .unit-title:hover .unit-title-edit { opacity: 1; }
-
 /* Stacked surfaces: compact hero over the primary terminal. Fills the unit; the
    terminal flexes to take whatever the hero leaves. */
 .unit-main {
@@ -1018,6 +1045,12 @@
   margin-bottom: 5px;
 }
 .unit-blank .blank-s { font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
+/* Idle home (no project selected): grow the clawd splash to fill the whole pane
+   and drop the (empty) terminal area below it, so it reads as a deliberate "nothing
+   running" home rather than a session waiting for its first artifact. */
+.board-unit.is-idle.blank-hero .unit-blank { height: 100%; flex: 1 1 auto; }
+.board-unit.is-idle #unit-terminals,
+.board-unit.is-idle #unit-terminal-pill { display: none; }
 /* The focus strip sizes the two surfaces. Focus terminal → the artifact tucks to
    its pill; focus artifact → the artifact grows to fill (terminal tucks to its bar). */
 .board-unit[data-focus="terminal"] #unit-digest { display: none; }

@@ -15,14 +15,13 @@
 # correct. The slug sanitizer collapses runs of '-', so a slug never contains
 # '--'; the frontend splits the stem on the first '--' to recover shortid.
 #
-# UNIT identity (for the Board's per-unit home): a unit is the PROJECT for a repo
-# session, so sessions in one repo share a project home/artifacts/rail group, with
-# the rail switching between the project's sessions. A non-repo session is its own
-# unit. is_repo is still reported (worktree-isolation decisions + display):
+# UNIT identity (for the Board's per-unit home): a unit is the PROJECT DIRECTORY,
+# so sessions in one folder (repo or not) share a project home/artifacts/rail
+# group, with the rail switching between the folder's sessions. is_repo is still
+# reported (worktree-isolation decisions + display):
 #   is_repo  = 1 when the session runs inside a git repo, else 0
-#   unit_key = <slug>            when is_repo=1 (the project — sessions share it)
-#            = <slug>--<shortid> when is_repo=0 (a bare session is its own unit)
-# Two agents in one repo share a unit; use a git worktree when they must not edit
+#   unit_key = <slug>  always (the project dir — sessions in it share one unit)
+# Two agents in one folder share a unit; use a git worktree when they must not edit
 # the same files.
 
 cwd="${1:-$(pwd)}"
@@ -38,11 +37,15 @@ slug=$(printf '%s' "$project" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-\{1,\}/-/g; s
 shortid=$(printf '%.8s' "$session_id" | tr -c 'A-Za-z0-9' '-')
 [ -n "$shortid" ] || shortid="nosessid"
 
-# Unit identity: a repo session belongs to its PROJECT (unit_key = slug), so every
-# session in one repo shares one project unit (home, artifacts, rail group); a
-# non-repo session is its own unit (slug--shortid). The Board derives this for repos
-# regardless, but we stamp it correctly so closed-session fallbacks stay right.
-if [ "$is_repo" = "1" ]; then unit_key="$slug"; else unit_key="${slug}--${shortid}"; fi
+# Unit identity: a session belongs to its PROJECT DIRECTORY (unit_key = slug),
+# repo or not — so every session in one folder shares one unit (home, artifacts,
+# rail group) and the rail switches between that folder's sessions. (Non-repo dirs
+# used to be keyed per-session as slug--shortid, which cloned a fresh unit per new
+# session in the same folder; the Board now groups non-repo dirs by slug too, so we
+# stamp the bare slug to match — keeping the home path + closed-session fallbacks
+# right.) The Board derives this from the source regardless; the stamp is the
+# authoritative copy for closed sessions and the per-unit home filename.
+unit_key="$slug"
 
 live_path="${HOME}/.claude/companion/live/${slug}--${shortid}.json"
 printf '%s\t%s\t%s\t%s\t%s\n' "$live_path" "$project" "$shortid" "$is_repo" "$unit_key"
