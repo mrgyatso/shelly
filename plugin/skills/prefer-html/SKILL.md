@@ -584,8 +584,14 @@ an outer card won't double-icon its inner text).
         '<div><div class="t">' + scene.cap + '</div>' +
         '<div class="dots"><span></span><span></span><span></span></div>' +
         '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
-        '<button class="b" type="button">← View this artifact</button>';
-      ov.querySelector("button").addEventListener("click", function () { ov.remove(); });
+        '<button class="b" type="button">← View last artifact</button>';
+      // Dismissing the waiting splash means "I'm going back to read the last artifact" —
+      // tell the Board so it disarms auto-advance and the NEXT artifact arrives as a
+      // pill instead of yanking the reader. Staying on the splash keeps auto-advance on.
+      ov.querySelector("button").addEventListener("click", function () {
+        try { parent.postMessage({ source: "companion-artifact", kind: "splash-dismissed" }, "*"); } catch (e) {}
+        ov.remove();
+      });
       document.body.appendChild(ov);
     };
 

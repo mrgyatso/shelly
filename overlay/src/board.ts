@@ -2784,6 +2784,15 @@ function wireNavigate(): void {
       void startSessionFromQuote(d.quote, d.artifact);
       return;
     }
+    if (d && d.source === "companion-artifact" && d.kind === "splash-dismissed") {
+      // The user clicked "View last artifact" on the waiting splash — they're back on
+      // the prior artifact, not waiting. Disarm auto-advance so the NEXT artifact
+      // surfaces as a click-to-view pill instead of yanking them off what they're
+      // reading. (Old artifacts never send this, so they keep the always-advance
+      // behavior — backward-compatible.)
+      awaitingAdvanceSource = null;
+      return;
+    }
     if (
       d &&
       d.source === "companion-artifact" &&
@@ -2810,6 +2819,14 @@ function wireNavigate(): void {
         const art = allArtifacts.find((a) => a.path === digestPath);
         submittedArtifacts.set(digestPath, art?.modified_ms ?? 0);
         awaitingAdvanceSource = art?.source ?? null;
+      }
+      // Fallback arm: a transient per-session hero blank can leave BOTH focusPath and
+      // digestPath null at submit time, so the branches above no-op and the next
+      // artifact mis-shows the click-to-view pill instead of auto-loading. Arm from the
+      // active session so the waiting splash still advances to its own next artifact.
+      if (awaitingAdvanceSource === null) {
+        const sv = currentView();
+        if (sv.level === "unit") awaitingAdvanceSource = activeSessionSource(sv.unitKey);
       }
       // SECURITY — submit→PTY trust gate (PLANNED; see codebase-audit.html). `d.text`
       // arrived via an artifact's postMessage, which carries NO proof of a real user
