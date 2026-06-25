@@ -1246,21 +1246,26 @@ function buildRailSessionRow(unitKey: string, s: LiveSource, shownTab: string | 
   return row;
 }
 
-/** Pick a session from a project's rail dropdown: collapse the chooser, then show
- *  that session. Within the current unit it's a plain session swap; from a project
- *  you're NOT in, set the chosen session active FIRST, then navigate — so enterUnit
- *  lands directly on it (one hero render, no race with enterUnit's own resolve). For
- *  a live session showSessionInUnit reuses the existing terminal (no double-spawn). */
+/** Pick a session from a project's rail dropdown: swap to that session but KEEP the
+ *  chooser open, so you can rip through a project's sessions without re-opening the
+ *  dropdown each time. Within the current unit it's a plain session swap; from a
+ *  project you're NOT in, set the chosen session active FIRST, then navigate — so
+ *  enterUnit lands directly on it (one hero render, no race with enterUnit's own
+ *  resolve). For a live session showSessionInUnit reuses the existing terminal (no
+ *  double-spawn). */
 function pickSession(unitKey: string, s: LiveSource): void {
-  expandedActiveProject = null;
+  // Keep this project's chooser expanded across the swap (don't collapse to null).
+  expandedActiveProject = unitKey;
   if (currentUnitKey === unitKey) {
-    switchToSession(unitKey, s); // also re-renders the rail, collapsing the chooser
+    switchToSession(unitKey, s); // re-renders the rail with the chooser still open
     return;
   }
   const st = parseState(s.json);
-  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null).then(() =>
-    goUnit(unitKey),
-  );
+  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null).then(() => {
+    goUnit(unitKey); // enterUnit collapses the chooser on a fresh entry…
+    expandedActiveProject = unitKey; // …so re-open it after landing and repaint the rail
+    renderUnitRail(unitKey);
+  });
 }
 
 /** The bare PROJECT-GROUP key for a unit key — the SAME key the Recent band groups
