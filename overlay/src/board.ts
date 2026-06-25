@@ -302,7 +302,13 @@ export async function initBoard(): Promise<void> {
   };
   document.addEventListener("click", (e) => {
     if (expandedActiveProject === null) return;
-    if ((e.target as HTMLElement | null)?.closest("#unit-rail")) return;
+    // Test rail membership via composedPath (snapshotted at dispatch), NOT
+    // e.target.closest: a tab/chevron click re-renders the rail inside its own handler,
+    // detaching e.target before this bubble handler runs — closest() would then miss the
+    // rail and wrongly collapse the chooser the click just opened. composedPath survives
+    // the mid-dispatch detach, so a click that originated in the rail stays exempt.
+    const path = e.composedPath ? e.composedPath() : [];
+    if (path.some((n) => n instanceof HTMLElement && n.id === "unit-rail")) return;
     collapseChooser();
   });
   document.addEventListener("keydown", (e) => {

@@ -38,6 +38,41 @@ fn projects_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude").join("projects"))
 }
 
+/// The set of session-ids that actually have a transcript on disk (every `<uuid>.jsonl`
+/// stem under any project dir). Cheap: streams directory entries by name only — no file
+/// reads, no metadata. Used to gate `--resume`: a stub session (registered a session-id
+/// via the SessionStart hook but never wrote a conversation) must NOT be offered for
+/// resume, or `claude --resume <id>` fails with "No conversation found" and drops the
+/// user on a bare shell.
+pub fn existing_session_ids() -> std::collections::HashSet<String> {
+    let mut ids = std::collections::HashSet::new();
+    let dir = match projects_dir() {
+        Some(d) => d,
+        None => return ids,
+    };
+    let proj_entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(_) => return ids,
+    };
+    for pe in proj_entries.flatten() {
+        let pdir = pe.path();
+        if !pdir.is_dir() {
+            continue;
+        }
+        if let Ok(files) = std::fs::read_dir(&pdir) {
+            for fe in files.flatten() {
+                let p = fe.path();
+                if p.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                    if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+                        ids.insert(stem.to_string());
+                    }
+                }
+            }
+        }
+    }
+    ids
+}
+
 /// Read `cwd` + a human title from a transcript's head only (first ~60 lines, streamed —
 /// never load a multi-MB transcript in full just for this). Returns `(cwd, title)`.
 fn head_meta(path: &Path) -> (Option<String>, Option<String>) {

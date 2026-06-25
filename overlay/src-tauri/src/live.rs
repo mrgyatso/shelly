@@ -265,6 +265,15 @@ pub fn read_all_live() -> Vec<LiveSource> {
     let dirs = session_dirs();
     let dismissed = dismissed_set();
     let sids = session_ids();
+    // Only ids with a real transcript are resumable — a stub session registers a
+    // session-id but never writes a conversation, so resuming it 404s ("No conversation
+    // found"). Validate the sidecar ids against on-disk transcripts so the Board never
+    // offers a phantom for `--resume`. Skip the scan entirely when nothing's owned.
+    let existing_ids = if sids.is_empty() {
+        std::collections::HashSet::new()
+    } else {
+        crate::sessions::existing_session_ids()
+    };
     let entries = match std::fs::read_dir(&dir) {
         Ok(e) => e,
         Err(_) => return Vec::new(),
@@ -295,7 +304,10 @@ pub fn read_all_live() -> Vec<LiveSource> {
         let companion_session = owned.get(&source).map(|s| s.as_str());
         let unit_dir = dirs.get(&source).map(|s| s.as_str());
         let is_dismissed = dismissed.contains(&source);
-        let session_id = sids.get(&source).map(|s| s.as_str());
+        let session_id = sids
+            .get(&source)
+            .map(|s| s.as_str())
+            .filter(|id| existing_ids.contains(*id));
         out.push(LiveSource {
             json: inject_fields(
                 &raw,
