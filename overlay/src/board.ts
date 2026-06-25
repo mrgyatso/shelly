@@ -141,6 +141,16 @@ const POLL_MS = 1200;
 const LIVENESS_MS = 2 * 60 * 60 * 1000;
 /** An artifact modified within this window counts as in-flight / fresh. */
 const FRESH_WINDOW_MS = 12 * 60 * 60 * 1000;
+/** A session touched (live-file mtime ∪ transcript heartbeat) within this window is
+ *  treated as STILL RUNNING, so unit-entry must not auto-resume it — that would spawn a
+ *  second claude on one transcript (the duplicate's SessionEnd then DELETES the live
+ *  session's file). Sessions idle past it are safely closed ⇒ resumable. Generous (15m,
+ *  not the live-file cadence) because BOTH freshness signals are written per-TURN, so an
+ *  agent mid-long-turn can legitimately go many minutes without touching either — the
+ *  exact case that caused the bug. Erring wide is safe: the cost is only that a genuinely
+ *  closed session shows read-only on entry until the window lapses (the rail still offers
+ *  an explicit resume); the cost of erring narrow is a duplicate + live-file loss. */
+const RESUME_LIVE_GUARD_MS = 15 * 60 * 1000;
 
 const win = getCurrentWebviewWindow();
 
@@ -860,9 +870,24 @@ function groupArtifactsByUnit(): Map<string, ArtifactEntry[]> {
  *  no artifacts, which is exactly the blank-hero state a fresh session should land on. */
 function activeSessionSource(unitKey: string): string | null {
   const tab = ownedTabForUnit(unitKey);
-  if (!tab) return null;
-  const src = allSources.find((s) => parseState(s.json).companion_session === tab);
-  return src ? src.source : null;
+  if (tab) {
+    // A terminal IS bound this run: scope the hero to ITS session. A fresh session with
+    // no live source yet ⇒ null ⇒ blank hero, never a sibling's artifact (the original
+    // per-session-scoping intent — see renderHero).
+    const src = allSources.find((s) => parseState(s.json).companion_session === tab);
+    return src ? src.source : null;
+  }
+  // No owned terminal in THIS overlay instance — e.g. after an overlay restart, when the
+  // in-memory `terminals` map is empty even though the session's artifacts persist on disk.
+  // Fall back to the source that wrote the unit's most recent artifact so the hero shows
+  // the freshest work instead of going blank. Only reachable when NO terminal is bound, so
+  // it can't reintroduce the sibling-artifact bleed the scoping above prevents.
+  const arts = groupArtifactsByUnit().get(unitKey) ?? [];
+  const freshest = arts.reduce<ArtifactEntry | null>(
+    (best, a) => (best === null || a.modified_ms > best.modified_ms ? a : best),
+    null,
+  );
+  return freshest?.source ?? null;
 }
 
 /** A display name for a unit — the project name of its freshest source. */
@@ -1687,18 +1712,28 @@ async function ensureAndShowTerminal(unitKey: string): Promise<void> {
  *  the Board launched (session-ids.json is hook-guarded on COMPANION_SESSION), so
  *  this cleanly gates resume-on-entry: Board-launched ⇒ resume; external ⇒ never. */
 function resumableSessionFor(unitKey: string): string | null {
-  // Project-units: a unit can hold several sessions — resume the MOST-RECENT one on
-  // entry (by updated_ms). Resuming by its id keeps the id ⇒ it binds back to this
-  // same unit ⇒ no clone. (Per-session switching to the others lives in the rail.)
+  // Project-units: a unit can hold several sessions — consider the MOST-RECENT one for
+  // resume on entry (by updated_ms ∪ heartbeat). Resuming by its id keeps the id ⇒ it
+  // binds back to this same unit ⇒ no clone. (Per-session switching lives in the rail.)
+  const now = Date.now();
   let best: { id: string; ms: number } | null = null;
   for (const s of allSources) {
     if (unitKeyOf(s) !== unitKey) continue;
     const id = parseState(s.json).session_id;
     if (!id) continue;
-    const ms = sourceUpdatedMs(s);
+    const ms = Math.max(sourceUpdatedMs(s), sourceHeartbeatMs(s));
     if (!best || ms > best.ms) best = { id, ms };
   }
-  return best ? best.id : null;
+  if (!best) return null;
+  // Don't auto-resume a session that's STILL RUNNING. A fresh live-file / transcript
+  // heartbeat means a claude is actively writing this session — in the user's own
+  // terminal, or another overlay instance that owns its PTY. Resuming would spawn a
+  // SECOND claude on one transcript (corruption). Show the unit's hero read-only instead
+  // (renderHero falls back to the freshest artifact); the rail still offers an explicit
+  // resume if the terminal is genuinely gone. Only auto-resume a session idle past the
+  // guard window — that's safely closed, not live.
+  if (now - best.ms < RESUME_LIVE_GUARD_MS) return null;
+  return best.id;
 }
 
 /** Tear down L2 state when leaving a unit. Clears any L2 hero bar theming so a

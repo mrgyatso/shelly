@@ -190,7 +190,9 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
 /// `{ "<abs-path>.html": { "unit_key": "...", "shortid": "...", "source": "...", "ts": ... }, ... }`.
 /// (Older entries may still be keyed by basename; `list_artifacts` falls back to that.)
 /// Returns an empty map on any failure — routing then falls back to project-slug.
-fn load_artifact_index() -> std::collections::HashMap<String, (String, Option<String>)> {
+/// The tuple is `(unit_key, source, ts)`; `ts` is the hook's stamp time (0 if absent,
+/// for legacy entries), used by `list_artifacts` to detect a stale entry.
+fn load_artifact_index() -> std::collections::HashMap<String, (String, Option<String>, u64)> {
     let mut map = std::collections::HashMap::new();
     let Some(home) = std::env::var_os("HOME") else {
         return map;
@@ -209,12 +211,19 @@ fn load_artifact_index() -> std::collections::HashMap<String, (String, Option<St
                     .get("source")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                map.insert(name.clone(), (unit.to_string(), source));
+                let ts = entry.get("ts").and_then(|v| v.as_u64()).unwrap_or(0);
+                map.insert(name.clone(), (unit.to_string(), source, ts));
             }
         }
     }
     map
 }
+
+/// Tolerance (ms) for the index-staleness check below. The hook stamps the index
+/// AFTER writing the file, so a trustworthy entry's `ts` is >= the file's mtime; a
+/// few seconds covers filesystem-mtime / wall-clock skew so a legit single write is
+/// never mistaken for stale.
+const STALE_INDEX_TOLERANCE_MS: u64 = 2_000;
 
 /// Read up to `limit` bytes of a file as lossy UTF-8. `None` on read failure.
 fn read_head(path: &Path, limit: usize) -> Option<String> {
@@ -249,9 +258,20 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
                 .file_name()
                 .and_then(|s| s.to_str())
                 .and_then(|n| index.get(n));
-            if let Some((unit, source)) = by_path.or(by_name) {
-                e.unit_key = Some(unit.clone());
-                e.source = source.clone();
+            if let Some((unit, source, ts)) = by_path.or(by_name) {
+                // Staleness guard: the index is stamped by the Write|Edit hook AFTER the
+                // file is written, so a trustworthy entry's `ts` is >= the file's mtime. If
+                // the file is NEWER than its entry, it was rewritten outside the hook (a Bash
+                // write, an external/observer writer, or a REUSED filename whose stale entry
+                // was never refreshed) — the frozen source/unit_key then belongs to a
+                // different, often dead, session. Distrust it and leave both `None` so the
+                // Board falls back to project-slug routing. `ts == 0` is a legacy (pre-ts)
+                // entry we can't date-check, so we trust it for back-compat.
+                let stale = *ts > 0 && e.modified_ms > ts.saturating_add(STALE_INDEX_TOLERANCE_MS);
+                if !stale {
+                    e.unit_key = Some(unit.clone());
+                    e.source = source.clone();
+                }
             }
         }
     }
