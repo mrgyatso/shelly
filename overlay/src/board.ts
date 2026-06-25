@@ -583,6 +583,19 @@ function toggleNotifMenu(anchor: HTMLElement): void {
       row.append(dot, name, count);
       row.addEventListener("click", () => {
         closeNotifMenu();
+        const v = currentView();
+        // Already on this unit → open the freshest unread artifact directly in the reader
+        // instead of a no-op re-nav that leaves the user wondering where it went.
+        if (v.level === "unit" && v.unitKey === unit) {
+          const unread = unreadByUnit.get(unit);
+          if (unread && unread.size > 0) {
+            const freshest = [...unread]
+              .map((p) => allArtifacts.find((a) => a.path === p))
+              .filter((a): a is ArtifactEntry => !!a)
+              .sort((a, b) => b.modified_ms - a.modified_ms)[0];
+            if (freshest) { void openReader(freshest.path); return; }
+          }
+        }
         goUnit(unit);
       });
       menu.append(row);
@@ -963,11 +976,16 @@ function rebuildHeartbeats(): void {
  *  file) — excluded from Recent so a running session never also shows as "resumable". */
 function liveSessionIds(): Set<string> {
   const set = new Set<string>();
+  const now = Date.now();
   for (const s of allSources) {
     const st = parseState(s.json);
     // A closed-out (dismissed) session is no longer live — it belongs in Recent as
     // a rejoinable session, so don't let its lingering session_id exclude it there.
     if (st.dismissed === true) continue;
+    // Only exclude from Recent when genuinely live within the liveness window.
+    // A stale live.json from a previous Board run (closed without dismissing sessions)
+    // must not suppress Recent entries — those sessions belong in Recent as resumable work.
+    if (!isLiveSource(s, now)) continue;
     if (st.session_id) set.add(st.session_id);
   }
   return set;
