@@ -292,6 +292,22 @@ export async function initBoard(): Promise<void> {
   });
   railEl = document.getElementById("unit-rail");
   railSessionsEl = document.getElementById("unit-rail-sessions");
+  // The session chooser now lingers after a swap (see pickSession), so give it a
+  // dismiss affordance: collapse it on a click outside the rail or on Escape. Clicks
+  // INSIDE the rail (a tab, the chevron, a session row) manage the chooser themselves.
+  const collapseChooser = (): void => {
+    if (expandedActiveProject === null) return;
+    expandedActiveProject = null;
+    renderUnitRail(currentUnitKey);
+  };
+  document.addEventListener("click", (e) => {
+    if (expandedActiveProject === null) return;
+    if ((e.target as HTMLElement | null)?.closest("#unit-rail")) return;
+    collapseChooser();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") collapseChooser();
+  });
   const terminalsSlot = document.getElementById("unit-terminals");
   if (terminalsSlot)
     initOwnedTerminals(terminalsSlot, {
