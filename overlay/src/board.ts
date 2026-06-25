@@ -2785,6 +2785,16 @@ async function pollLive(): Promise<void> {
     lastArtifactSig = sig;
     ingestArtifacts(artifacts);
   }
+
+  // Fresh-session startup race: the first artifact can land while the hero is
+  // still blank and neither a live-source change nor a new ingest re-triggered
+  // it (the artifact was absorbed into allArtifacts at init, or the owned-tab
+  // correlation wasn't ready the one time maybeLightBlankHero could have fired).
+  // Re-check on every poll — self-guarded (no-ops unless digestPath === null),
+  // so it only ever lights a BLANK hero, never reloads a live one or disturbs a
+  // comment in progress.
+  const v = currentView();
+  if (v.level === "unit") maybeLightBlankHero(v.unitKey);
 }
 
 /** A cheap fingerprint of the artifact set — path + mtime. */
