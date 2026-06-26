@@ -2,7 +2,7 @@
 # companion-session — Claude Code SessionStart hook.
 #
 # Hands this session its per-INSTANCE Companion live path and seeds the roster:
-#   1. derive live/<slug>--<shortid>.json (shared with companion-consider),
+#   1. derive live/<slug>--<shortid>.json (shared with the artifact observer),
 #   2. write an initial stub there if absent, so the instance shows on the Board
 #      roster before its first Stop (skip-if-exists keeps resume/compact idempotent),
 #   3. inject the path into the session context so the agent writes the right file
@@ -33,7 +33,6 @@ live_path=$(printf '%s' "$line" | cut -f1)
 project=$(printf '%s' "$line" | cut -f2)
 is_repo=$(printf '%s' "$line" | cut -f4)
 unit_key=$(printf '%s' "$line" | cut -f5)
-digest_path="${HOME}/.claude/companion/artifacts/home.${unit_key}.html"
 
 live_dir=$(dirname "$live_path")
 mkdir -p "$live_dir" 2>/dev/null
@@ -109,6 +108,10 @@ if [ -n "$COMPANION_SESSION" ] && [ -n "$session_id" ]; then
   ' 2>/dev/null
 fi
 
+# Recover observer jobs left behind by a crash. This is only a local queue check;
+# no process starts when the queue is empty and no model ever runs inline.
+node "$(dirname "$0")/../scripts/artifact-observer/start.cjs" >/dev/null 2>&1
+
 # 2. Prune dead live files (mtime older than PRUNE_DAYS) so the roster's archive
 #    list doesn't grow unbounded across crashed/abandoned sessions.
 find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exec rm -f {} + 2>/dev/null
@@ -135,21 +138,20 @@ if [ "$is_repo" = "1" ]; then
   fi
 fi
 
-# 3. Tell the agent its live path + its per-unit digest for the rest of the session.
-LIVE_PATH="$live_path" DIGEST_PATH="$digest_path" WT_NOTE="$wt_note" node -e '
-  const p=process.env.LIVE_PATH, dg=process.env.DIGEST_PATH;
+# 3. Tell the agent its live path. Artifact authorship belongs to the asynchronous
+#    observer; the primary session only needs to state durable facts clearly.
+LIVE_PATH="$live_path" WT_NOTE="$wt_note" node -e '
+  const p=process.env.LIVE_PATH;
   const wt=process.env.WT_NOTE ? "\n"+process.env.WT_NOTE : "";
   const ctx=`Companion live surface: rewrite your live state to ${p} on each work turn `+
     `(the Board roster reads it). Shape: {"working":"…","where":["…"],`+
     `"next":[{"title":"…","sub":"…","kind":"decision|todo|blocked"}],"project":"…",`+
     `"is_repo":<bool>,"unit_key":"…"}. Use exactly this path — it is keyed to this `+
     `session instance — and PRESERVE the is_repo + unit_key fields verbatim (the Board `+
-    `groups sessions into a per-unit home by them).\n`+
-    `Companion unit home (optional, recommended): the durable "home" page for this unit on the `+
-    `Board is ${dg}. Author and grow it as a living document of where this work stands — a `+
-    `full-document HTML artifact following the prefer-html home convention (data-fit-root, `+
-    `companion-bar, navigate protocol). The Board shows it full-bleed when you enter this unit; `+
-    `when it is absent the Board falls back to a native home, so it is optional but high-value.`+wt;
+    `groups sessions into a per-unit home by them). Keep final responses explicit about `+
+    `decisions, status, blockers, and next steps. A background Companion observer turns those `+
+    `facts into routine artifacts; do not author HTML unless the user explicitly asks for an `+
+    `artifact or a bespoke visual surface.`+wt;
   process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:ctx}}));
 '
 exit 0

@@ -1,0 +1,9 @@
+{
+  "name": "companion-artifact-observer",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "e2e:fake": "node e2e.cjs",
+    "e2e:live": "node e2e.cjs --live"
+  }
+}

@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Thin Stop hook: enqueue the current transcript delta and return immediately.
+# All model work and HTML rendering happens in the detached observer worker.
+node "$(dirname "$0")/../scripts/artifact-observer/capture.cjs"
+exit 0

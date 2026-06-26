@@ -1,6 +1,6 @@
 {
   "name": "claude-code-companion",
-  "description": "The Companion overlay plugin: auto-render Claude's HTML artifacts, a 'prefer HTML' skill, and a doctor health check.",
+  "description": "The Companion overlay plugin: Haiku-composed workbench artifacts, Sonnet visual escalation, bespoke HTML tools, and health checks.",
   "owner": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso"
@@ -9,7 +9,7 @@
     {
       "name": "companion",
       "source": "./plugin",
-      "description": "Auto-render Claude's HTML artifacts in the Companion overlay; adds a 'prefer HTML' skill and a doctor health-check command. Pairs with the Companion Overlay app."
+      "description": "Observe Claude sessions asynchronously, compose registered Clawd workbench components with Haiku, and escalate visual invention to Sonnet."
     }
   ]
 }
