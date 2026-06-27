@@ -62,7 +62,7 @@ struct CompanionMeta {
 /// shell `COMPANION_ARTIFACTS_DIR`, so we also probe the well-known default
 /// (`~/.claude/companion/artifacts`) and keep it if it exists — otherwise the
 /// HUD would be empty on the exact machines that have artifacts.
-fn artifact_dirs() -> Vec<PathBuf> {
+pub(crate) fn artifact_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(env) = std::env::var_os("COMPANION_ARTIFACTS_DIR") {
         dirs.push(PathBuf::from(env));

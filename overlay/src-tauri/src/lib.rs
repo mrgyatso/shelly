@@ -1,4 +1,5 @@
 mod artifact;
+mod artifact_watch;
 mod history;
 mod hub;
 mod layout;
@@ -316,6 +317,12 @@ pub fn run() {
             if let Err(e) = crate::tray::init_tray(app.handle()) {
                 eprintln!("tray init failed: {e}");
             }
+
+            // Native artifact-dir watcher → emits `board:artifacts-changed`. Surfacing
+            // otherwise rides only the webview's JS poll, which macOS throttles to
+            // minutes when the Board is occluded; a native thread (not throttled) wakes
+            // the poll promptly so new artifacts don't surface "late".
+            crate::artifact_watch::init(app.handle());
 
             Ok(())
         });

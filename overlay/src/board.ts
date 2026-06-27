@@ -369,6 +369,26 @@ export async function initBoard(): Promise<void> {
   lastArtifactSig = artifactSig(allArtifacts);
   window.setInterval(() => void pollLive(), POLL_MS);
 
+  // Surfacing must not depend solely on the JS poll. macOS throttles setInterval in a
+  // backgrounded/occluded webview (the Board's state while you work in the terminal)
+  // from 1.2s to minutes — so a freshly written artifact surfaces "late". Two cheap,
+  // additive safety nets, neither touching the ingest logic:
+  //   1. force a poll the instant the Board becomes visible/focused, so anything
+  //      pending lands immediately when the user looks at it;
+  //   2. a Rust-side watcher (timers there aren't throttled) emits
+  //      `board:artifacts-changed` on every artifact write, waking the poll even while
+  //      the Board is occluded. pollLive is sig-guarded + idempotent, so extra wakes
+  //      are free.
+  const forcePoll = (): void => void pollLive();
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) forcePoll();
+  });
+  window.addEventListener("focus", forcePoll);
+  void win.onFocusChanged(({ payload: focused }) => {
+    if (focused) forcePoll();
+  });
+  void listen("board:artifacts-changed", forcePoll);
+
   // Recent (resumable, closed) sessions change slowly — load once, then refresh on a
   // much calmer cadence than the live poll (each refresh scans transcript heads).
   void loadRecent();
