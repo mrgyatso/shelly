@@ -9,7 +9,7 @@
 # Invoked as `companion doctor` (the wrapper execs here). No args.
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/codeviz/public/artifacts}"
+ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/.claude/companion/artifacts}"
 
 # Locate the installed .app (needed for version + signing checks).
 APP=""

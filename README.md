@@ -140,7 +140,7 @@ If you'd rather wire it by hand, add a `PostToolUse` hook in `~/.claude/settings
 }
 ```
 
-The watched folder defaults to `$HOME/codeviz/public/artifacts` and can be changed with the `COMPANION_ARTIFACTS_DIR` environment variable.
+The watched folder defaults to `~/.claude/companion/artifacts` (override with `COMPANION_ARTIFACTS_DIR`). Older installs used `$HOME/codeviz/public/artifacts`; it is still honored as a legacy fallback, but `~/.claude/companion/artifacts` is the canonical path.
 
 ## Build from source
 
