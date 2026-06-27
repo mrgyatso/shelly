@@ -26,26 +26,51 @@
 
 cwd="${1:-$(pwd)}"
 session_id="$2"
-
-gitroot=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$gitroot" ]; then is_repo=1; root="$gitroot"; else is_repo=0; root="$cwd"; fi
-project=$(basename "$root" 2>/dev/null)
-[ -n "$project" ] || project="session"
-slug=$(printf '%s' "$project" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-\{1,\}/-/g; s/^-//; s/-$//')
-[ -n "$slug" ] || slug="session"
+live_dir="${HOME}/.claude/companion/live"
 
 shortid=$(printf '%.8s' "$session_id" | tr -c 'A-Za-z0-9' '-')
 [ -n "$shortid" ] || shortid="nosessid"
 
-# Unit identity: a session belongs to its PROJECT DIRECTORY (unit_key = slug),
-# repo or not — so every session in one folder shares one unit (home, artifacts,
-# rail group) and the rail switches between that folder's sessions. (Non-repo dirs
-# used to be keyed per-session as slug--shortid, which cloned a fresh unit per new
-# session in the same folder; the Board now groups non-repo dirs by slug too, so we
-# stamp the bare slug to match — keeping the home path + closed-session fallbacks
-# right.) The Board derives this from the source regardless; the stamp is the
-# authoritative copy for closed sessions and the per-unit home filename.
-unit_key="$slug"
+# IDENTITY IS FROZEN PER SESSION (session_id is the stable key, NOT the cwd).
+# SessionStart fires again on compact/resume, and the cwd may have moved across a
+# repo boundary since the session began (e.g. launched from $HOME, then cd'd into a
+# repo). Re-deriving the slug from the now-current cwd is exactly what FORKED one
+# session into two roster units (slug changed -> a second live file was born). So:
+# if this session_id ALREADY has a live file (matched by its --<shortid> suffix),
+# REUSE that file's frozen identity verbatim. Only derive fresh on a true first
+# start. The slug stays where the session started; it never follows the cwd.
+existing=""
+for f in "$live_dir"/*--"$shortid".json; do
+  [ -f "$f" ] || continue   # POSIX glob stays literal on no-match; -f filters it
+  existing="$f"
+  break                     # one file per session going forward; first match wins
+done
 
-live_path="${HOME}/.claude/companion/live/${slug}--${shortid}.json"
+if [ -n "$existing" ]; then
+  live_path="$existing"
+  stem=$(basename "$existing" .json)
+  slug=${stem%--$shortid}
+  # Freeze project / is_repo / unit_key from the existing file's JSON (the values
+  # chosen at first start); fall back to the slug when the file is unreadable.
+  meta=$(LIVE="$existing" node -e 'try{var j=JSON.parse(require("fs").readFileSync(process.env.LIVE,"utf8"))||{};process.stdout.write((j.project||"")+"\t"+(j.is_repo?"1":"0")+"\t"+(j.unit_key||""));}catch(e){process.stdout.write("\t\t");}' 2>/dev/null)
+  project=$(printf '%s' "$meta" | cut -f1)
+  is_repo=$(printf '%s' "$meta" | cut -f2)
+  unit_key=$(printf '%s' "$meta" | cut -f3)
+  [ -n "$project" ] || project="$slug"
+  [ -n "$is_repo" ] || is_repo=0
+  [ -n "$unit_key" ] || unit_key="$slug"
+else
+  gitroot=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
+  if [ -n "$gitroot" ]; then is_repo=1; root="$gitroot"; else is_repo=0; root="$cwd"; fi
+  project=$(basename "$root" 2>/dev/null)
+  [ -n "$project" ] || project="session"
+  slug=$(printf '%s' "$project" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-\{1,\}/-/g; s/^-//; s/-$//')
+  [ -n "$slug" ] || slug="session"
+  # Unit identity: a session belongs to its PROJECT DIRECTORY (unit_key = slug),
+  # repo or not — so every session that STARTS in one folder shares one unit (home,
+  # artifacts, rail group) and the rail switches between that folder's sessions.
+  unit_key="$slug"
+  live_path="${live_dir}/${slug}--${shortid}.json"
+fi
+
 printf '%s\t%s\t%s\t%s\t%s\n' "$live_path" "$project" "$shortid" "$is_repo" "$unit_key"
