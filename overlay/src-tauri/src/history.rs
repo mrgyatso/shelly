@@ -85,6 +85,18 @@ pub(crate) fn artifact_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// Unit key stamped onto remote/hub-pulled artifacts so they route to a single
+/// first-class "Cloud" unit on the Board instead of sinking into Unsourced. Kept
+/// in sync with the `CLOUD` sentinel in `board.ts`. Assigned here (not in the
+/// board.ts routing resolver) so the identity/routing logic stays untouched.
+const CLOUD_UNIT_KEY: &str = "__cloud__";
+
+/// The dir hub-pulled artifacts land in (`~/.claude/companion/remote`). An entry
+/// under it is a remote artifact with no local index identity.
+fn remote_artifacts_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|h| Path::new(&h).join(".claude/companion/remote"))
+}
+
 /// `foo-bar_baz.html` → `Foo Bar Baz`. Used when an artifact has no `<title>`.
 fn humanize_filename(stem: &str) -> String {
     let mut out = String::with_capacity(stem.len());
@@ -336,6 +348,17 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
                         ],
                     );
                 }
+            }
+        }
+    }
+    // Remote/hub-pulled artifacts carry no index identity (the local PostToolUse
+    // hook never ran for them), so they'd route to Unsourced. Give any still-unkeyed
+    // entry under the `remote/` dir a stable home unit so it surfaces as a first-class
+    // "Cloud" tile. Kept out of the board.ts resolver to leave routing identity alone.
+    if let Some(remote) = remote_artifacts_dir() {
+        for e in &mut entries {
+            if e.unit_key.is_none() && Path::new(&e.path).starts_with(&remote) {
+                e.unit_key = Some(CLOUD_UNIT_KEY.to_string());
             }
         }
     }
