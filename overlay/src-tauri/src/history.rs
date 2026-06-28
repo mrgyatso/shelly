@@ -271,11 +271,25 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
                 if !stale {
                     e.unit_key = Some(unit.clone());
                     e.source = source.clone();
+                } else {
+                    // The index entry was distrusted (file newer than its stamp) and the
+                    // artifact silently falls back to project-slug routing — a candidate
+                    // cause of "showed up under the wrong unit / not at all". Record it.
+                    crate::trace::emit(
+                        "history",
+                        "index-stale-drop",
+                        &[
+                            ("corr", e.path.as_str()),
+                            ("mtime_ms", &e.modified_ms.to_string()),
+                            ("index_ts", &ts.to_string()),
+                        ],
+                    );
                 }
             }
         }
     }
     entries.sort_by_key(|e| std::cmp::Reverse(e.modified_ms));
+    crate::trace::emit("history", "list", &[("n", &entries.len().to_string())]);
     entries
 }
 

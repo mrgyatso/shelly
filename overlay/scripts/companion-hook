@@ -15,6 +15,10 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 LIVE_DIR="$HOME/.claude/companion/live"
 INDEX_PATH="$HOME/.claude/companion/artifact-index.json"
 
+# Trace harness (no-op unless COMPANION_TRACE=1 / the trace.on flag file exists).
+CMP_HOOK_DIR="$SCRIPT_DIR"
+. "$SCRIPT_DIR/companion-trace.sh"
+
 payload=$(cat)
 
 # Cheap pre-filter: skip the JSON parse for the 99% of writes that aren't artifacts.
@@ -27,6 +31,11 @@ esac
 fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log((JSON.parse(d).tool_input||{}).file_path||"")}catch(e){}})')
 SID=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})')
 
+# `copy=overlay-scripts` distinguishes this firing from the plugin-cache copy of the
+# hook (PostToolUse is registered twice — settings.json AND the plugin), so the trace
+# shows the double-registration plainly.
+trace hook fire "corr=$fp" "file_path=$fp" "sid=$SID" "artifacts_dir=$ARTIFACTS_DIR" "hookpid=$$" "copy=overlay-scripts"
+
 case "$fp" in
   "$ARTIFACTS_DIR"/*.html)
     # Stamp the routing index so the Board groups this artifact under the WRITING
@@ -35,9 +44,17 @@ case "$fp" in
     # Skip reserved/scaffold names (home.html, home.<unit>.html, _diag-*).
     base=$(basename "$fp")
     case "$base" in
-      home.html|home.*|_*) ;;
-      *) SID="$SID" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null ;;
+      home.html|home.*|_*) trace hook skip-index "corr=$fp" "reason=reserved-name" ;;
+      *)
+        trace hook index-spawn "corr=$fp"
+        SID="$SID" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
+        trace hook index-done "corr=$fp"
+        ;;
     esac
+    # NOTE (finding, not a fix): this LIVE copy still pops a standalone artifact window
+    # via `companion open` — the obsolete pre-Board behavior the plugin/hooks copy
+    # removed. Recorded so the trace shows it firing; left intact per "observe first".
+    trace hook companion-open "corr=$fp"
     nohup "$SCRIPT_DIR/companion" open "$fp" >/dev/null 2>&1 &
     ;;
 esac

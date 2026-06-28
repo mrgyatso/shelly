@@ -7,6 +7,7 @@ mod live;
 mod macos_panel;
 mod pty;
 mod sessions;
+mod trace;
 mod tray;
 mod windows;
 
@@ -134,6 +135,8 @@ pub fn run() {
             history::reopen_artifact,
             history::resolve_home,
             history::resolve_unit_home,
+            trace::trace_event,
+            trace::trace_enabled,
             live::read_live,
             live::read_all_live,
             live::dismiss_session,

@@ -253,7 +253,36 @@ let expandedActiveProject: string | null = null;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
+// ---- trace harness ----------------------------------------------------------
+// Routes Board-side events to the SAME on-disk NDJSON the shell + Rust layers write
+// (~/.claude/companion/logs/trace.ndjson), so one artifact write yields one joined,
+// time-sorted timeline. The webview can't append to a file and its console goes
+// nowhere readable when the Board is occluded, so it ships a pre-built line to the
+// `trace_event` Rust command. Gated locally off a one-time `trace_enabled` fetch, so
+// it's a pure no-op (no invoke, no allocation) whenever the harness is off. By
+// convention `corr` carries the artifact's absolute path — the cross-layer join key.
+let traceOn = false;
+async function initTrace(): Promise<void> {
+  try {
+    traceOn = await invoke<boolean>("trace_enabled");
+  } catch {
+    traceOn = false;
+  }
+}
+function trace(evt: string, fields: Record<string, unknown> = {}): void {
+  if (!traceOn) return;
+  try {
+    const line = JSON.stringify({ ts_ms: Date.now(), layer: "board", evt, ...fields });
+    // Fire-and-forget — must NEVER block pollLive on the IPC round-trip.
+    void invoke("trace_event", { line }).catch(() => {});
+  } catch {
+    // tracing must never disturb the poll
+  }
+}
+
 export async function initBoard(): Promise<void> {
+  await initTrace();
+  trace("init.start");
   const stage = document.getElementById("board-stage");
   const board = document.getElementById("board");
   const scrim = document.getElementById("board-scrim");
@@ -379,15 +408,20 @@ export async function initBoard(): Promise<void> {
   //      `board:artifacts-changed` on every artifact write, waking the poll even while
   //      the Board is occluded. pollLive is sig-guarded + idempotent, so extra wakes
   //      are free.
-  const forcePoll = (): void => void pollLive();
+  // `why` tags each wake so the trace shows WHICH safety net fired (or didn't)
+  // during a surfacing-lag window — the whole question for the §1 repro.
+  const forcePoll = (why: string): void => {
+    trace("wake", { why, hidden: document.hidden });
+    void pollLive();
+  };
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) forcePoll();
+    if (!document.hidden) forcePoll("visibilitychange");
   });
-  window.addEventListener("focus", forcePoll);
+  window.addEventListener("focus", () => forcePoll("window-focus"));
   void win.onFocusChanged(({ payload: focused }) => {
-    if (focused) forcePoll();
+    if (focused) forcePoll("tauri-focus");
   });
-  void listen("board:artifacts-changed", forcePoll);
+  void listen("board:artifacts-changed", () => forcePoll("watcher-event"));
 
   // Recent (resumable, closed) sessions change slowly — load once, then refresh on a
   // much calmer cadence than the live poll (each refresh scans transcript heads).
@@ -2724,6 +2758,7 @@ function closeFocus(): void {
 // ---- live polling -----------------------------------------------------------
 
 async function pollLive(): Promise<void> {
+  trace("poll.start");
   let sources: LiveSource[] = [];
   try {
     sources = await invoke<LiveSource[]>("read_all_live");
@@ -2756,6 +2791,7 @@ async function pollLive(): Promise<void> {
   }
   const newlyBound = reconcileBindings(sessionToUnit);
   if (newlyBound.length) {
+    trace("bindings.newly", { bound: newlyBound.map((b) => `${b.tabId}=>${b.unitKey}`).join(",") });
     const v = currentView();
     // A globally-launched ("+ New session") terminal: jump to its unit the moment
     // it goes live, so the user lands on the session they just opened.
@@ -2801,10 +2837,17 @@ async function pollLive(): Promise<void> {
     return;
   }
   const sig = artifactSig(artifacts);
-  if (sig !== lastArtifactSig) {
+  const sigChanged = sig !== lastArtifactSig;
+  if (sigChanged) {
     lastArtifactSig = sig;
     ingestArtifacts(artifacts);
   }
+  trace("poll.end", {
+    sources: sources.length,
+    artifacts: artifacts.length,
+    changed: changed.length,
+    sigChanged,
+  });
 
   // Fresh-session startup race: the first artifact can land while the hero is
   // still blank and neither a live-source change nor a new ingest re-triggered
@@ -2861,21 +2904,55 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
 
   const view = currentView();
   const viewingUnit = view.level === "unit" ? view.unitKey : null;
+  if (newOnes.length) trace("ingest.run", { newCount: newOnes.length, viewingUnit: viewingUnit ?? "" });
   let heroNewCandidate: ArtifactEntry | null = null;
   for (const a of newOnes) {
     const unit = unitForArtifact(a);
+    // THE KEYSTONE. Two of these four roads silently `addUnread` (a dot on a unit
+    // card the user reads as "nothing showed up"). Which road an artifact takes —
+    // and the routing identity that decided it — is invisible from the code; that
+    // opacity is the whole reason for this harness. Control flow below is UNCHANGED
+    // from the original; `branch` just names the road taken.
+    let branch: string;
     if (unit !== viewingUnit) {
       addUnread(unit, a.path);
+      branch = "unread:cross-unit";
     } else if (a.source && a.source !== activeSessionSource(unit)) {
       // Same unit on screen, but produced by a SIBLING session (not the one whose
       // hero is shown). The hero is per-session, so this isn't its hero to advance —
       // surface it as ambient unread, exactly as a different unit's artifact would be.
       addUnread(unit, a.path);
+      branch = "unread:sibling-session";
     } else if (digestPath !== null && a.path !== digestPath) {
       // The active session's hero is populated + sticky. Rather than let a newer
       // artifact drop silently into history (the reported bug), surface the freshest
       // one as a click-to-advance pill on the hero.
       if (!heroNewCandidate || a.modified_ms > heroNewCandidate.modified_ms) heroNewCandidate = a;
+      branch = "hero-new-pill";
+    } else {
+      branch = "auto-advance-or-fresh";
+    }
+    if (traceOn) {
+      // The inputs that DECIDED the branch — so branch ② (silent unread) is
+      // self-explaining: was the routing identity (unit) wrong, was the active
+      // session mis-resolved, did the unit come from the index or the slug fallback?
+      const unitFrom =
+        a.source && allSources.some((s) => s.source === a.source)
+          ? "source"
+          : a.unit_key
+            ? "index"
+            : "slug-fallback";
+      trace("ingest.branch", {
+        corr: a.path,
+        unit,
+        viewingUnit: viewingUnit ?? "",
+        source: a.source ?? "",
+        activeSrc: activeSessionSource(unit) ?? "",
+        ownedTab: ownedTabForUnit(unit) ?? "",
+        unitFrom,
+        digestPath: digestPath ?? "",
+        branch,
+      });
     }
   }
   if (heroNewCandidate) showHeroNewPill(heroNewCandidate.path);
@@ -2899,10 +2976,14 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
         a.source === awaitingAdvanceSource && a.path !== focusPath && a.path !== digestPath,
     )
     .sort((x, y) => y.modified_ms - x.modified_ms)[0];
-  if (!next) return;
+  if (!next) {
+    trace("autoadvance.skip", { reason: "no-match", awaiting: awaitingAdvanceSource });
+    return;
+  }
 
   // Reader open → slide the reader to the next artifact.
   if (focusPath !== null && focusFrame) {
+    trace("autoadvance.fire", { corr: next.path, target: "reader", awaiting: awaitingAdvanceSource });
     awaitingAdvanceSource = null;
     dismissBoardSubmitted();
     readerBackStack.push(focusPath);
@@ -2926,6 +3007,7 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
     unitForArtifact(next) === v.unitKey &&
     next.source === activeSessionSource(v.unitKey)
   ) {
+    trace("autoadvance.fire", { corr: next.path, target: "hero", awaiting: awaitingAdvanceSource });
     awaitingAdvanceSource = null;
     dismissBoardSubmitted();
     hideHeroNewPill();
@@ -2935,6 +3017,13 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
       console.error("hero auto-advance failed", next.path, e),
     );
     updateGlobalUnread();
+  } else {
+    trace("autoadvance.skip", {
+      corr: next.path,
+      reason: "hero-guard",
+      level: v.level,
+      awaiting: awaitingAdvanceSource,
+    });
   }
 }
 

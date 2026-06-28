@@ -321,6 +321,14 @@ pub fn read_all_live() -> Vec<LiveSource> {
         });
     }
     out.sort_by(|a, b| a.source.cmp(&b.source));
+    crate::trace::emit(
+        "live",
+        "read",
+        &[
+            ("sources", &out.len().to_string()),
+            ("owned", &owned.len().to_string()),
+        ],
+    );
     out
 }
 

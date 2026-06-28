@@ -21,16 +21,21 @@ cwd=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c
 session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})')
 reason=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).reason||"")}catch(e){}})')
 
+# Trace harness (no-op unless enabled).
+CMP_HOOK_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)
+. "$CMP_HOOK_DIR/companion-trace.sh"
+
 # Forced/unknown exit (overlay shutdown SIGHUP, crash, signal) ⇒ keep everything and
 # let mtime-staleness reap it. Only a genuine user-initiated end removes the live file.
 case "$reason" in
   clear|logout|prompt_input_exit) : ;;  # fall through to cleanup below
-  *) exit 0 ;;
+  *) trace session end-keep "reason=$reason"; exit 0 ;;
 esac
 
 line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
 live_path=$(printf '%s' "$line" | cut -f1)
 
+trace session end-delete "reason=$reason" "live=$live_path"
 rm -f "$live_path" 2>/dev/null
 
 # Also drop this session's stem from the Board-owned sidecars so they don't

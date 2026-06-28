@@ -28,12 +28,18 @@ case "$cwd" in
   */.claude-mem/*|*/.claude-mem) exit 0 ;;
 esac
 
+# Trace harness (no-op unless enabled). companion-livepath.sh sources it too.
+CMP_HOOK_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)
+. "$CMP_HOOK_DIR/companion-trace.sh"
+
 line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
 live_path=$(printf '%s' "$line" | cut -f1)
 project=$(printf '%s' "$line" | cut -f2)
+shortid=$(printf '%s' "$line" | cut -f3)
 is_repo=$(printf '%s' "$line" | cut -f4)
 unit_key=$(printf '%s' "$line" | cut -f5)
 digest_path="${HOME}/.claude/companion/artifacts/home.${unit_key}.html"
+trace session start "sid=$shortid" "cwd=$cwd" "live=$live_path" "project=$project" "is_repo=$is_repo" "unit_key=$unit_key" "owned=${COMPANION_SESSION:-}"
 
 live_dir=$(dirname "$live_path")
 mkdir -p "$live_dir" 2>/dev/null
@@ -74,6 +80,7 @@ if [ -n "$COMPANION_SESSION" ]; then
     m[stem]=tab;
     try { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p); } catch (e) {}
   ' 2>/dev/null
+  trace session bind-owned "stem=$stem" "tab=$COMPANION_SESSION"
 fi
 
 # 1c. Record this session's project ROOT (gitroot, else cwd) keyed by its live-file
@@ -90,6 +97,7 @@ STEM="$stem" ROOT="$root" DIRS="${HOME}/.claude/companion/session-dirs.json" nod
   m[process.env.STEM]=process.env.ROOT;
   try { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p); } catch (e) {}
 ' 2>/dev/null
+trace session record-dir "stem=$stem" "root=$root"
 
 # 1d. Record this session's FULL session_id keyed by stem in session-ids.json
 #     (the stem only carries the 8-char shortid, which can't drive `claude
@@ -107,6 +115,7 @@ if [ -n "$COMPANION_SESSION" ] && [ -n "$session_id" ]; then
     m[process.env.STEM]=process.env.SID;
     try { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p); } catch (e) {}
   ' 2>/dev/null
+  trace session record-id "stem=$stem"
 fi
 
 # 2. Prune dead live files (mtime older than PRUNE_DAYS) so the roster's archive

@@ -24,40 +24,70 @@
 const fs = require("fs");
 const path = require("path");
 
+// Trace harness (no-op unless enabled). Co-located; require must never sink the
+// index write, so fall back to a noop if it can't be loaded.
+let trace = { emit() {} };
+try {
+  trace = require("./companion-trace.cjs");
+} catch (_) {}
+
 const [artifactPath, liveDir, indexPath] = process.argv.slice(2);
 if (!artifactPath || !liveDir || !indexPath) process.exit(0);
 
 const key = path.resolve(artifactPath);
 const shortid = (process.env.SID || "").slice(0, 8).replace(/[^A-Za-z0-9]/g, "-");
-if (!shortid) process.exit(0);
+trace.emit("index", "start", { corr: key, shortid });
+if (!shortid) {
+  trace.emit("index", "skip", { corr: key, reason: "no-shortid" });
+  process.exit(0);
+}
 
 // Find this session's live file by its shortid suffix and read its unit_key.
+// Collect ALL matches (not just the first) so we can flag the FORK HAZARD: more
+// than one live file sharing a shortid means two sessions could claim this artifact.
+// Behavior is unchanged — the first match still wins, as before.
 let unitKey = null;
 let source = null;
+let matches = [];
 try {
   for (const f of fs.readdirSync(liveDir)) {
-    if (f.endsWith("--" + shortid + ".json")) {
-      source = f.slice(0, -5); // strip ".json"
-      try {
-        unitKey = (JSON.parse(fs.readFileSync(path.join(liveDir, f), "utf8")) || {}).unit_key || null;
-      } catch (_) {}
-      break;
-    }
+    if (f.endsWith("--" + shortid + ".json")) matches.push(f);
   }
 } catch (_) {}
+if (matches.length) {
+  const f = matches[0]; // first match wins (preserve prior behavior)
+  source = f.slice(0, -5); // strip ".json"
+  try {
+    unitKey = (JSON.parse(fs.readFileSync(path.join(liveDir, f), "utf8")) || {}).unit_key || null;
+  } catch (_) {}
+}
+trace.emit("index", "match", {
+  corr: key,
+  shortid,
+  matchCount: matches.length,
+  chosen: source || "",
+  unit_key: unitKey || "",
+});
 
 // No live file (or no unit_key) ⇒ leave un-indexed; the project-slug fallback covers it.
-if (!unitKey) process.exit(0);
+if (!unitKey) {
+  trace.emit("index", "skip", { corr: key, reason: "no-unit-key", matchCount: matches.length });
+  process.exit(0);
+}
 
 let index = {};
 try {
   index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {};
 } catch (_) {}
-index[key] = { unit_key: unitKey, shortid, source, ts: Date.now() };
+const ts = Date.now();
+index[key] = { unit_key: unitKey, shortid, source, ts };
 
 // Atomic write (temp + rename) so a concurrent reader never sees a partial file.
 try {
   const tmp = indexPath + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(index));
   fs.renameSync(tmp, indexPath);
-} catch (_) {}
+  trace.emit("index", "stamp", { corr: key, unit_key: unitKey, source: source || "", ts });
+} catch (e) {
+  trace.emit("index", "stamp-failed", { corr: key, err: String((e && e.message) || e) });
+}

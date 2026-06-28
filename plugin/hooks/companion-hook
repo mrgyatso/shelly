@@ -15,6 +15,10 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 LIVE_DIR="$HOME/.claude/companion/live"
 INDEX_PATH="$HOME/.claude/companion/artifact-index.json"
 
+# Trace harness (no-op unless COMPANION_TRACE=1 / the trace.on flag file exists).
+CMP_HOOK_DIR="$SCRIPT_DIR"
+. "$SCRIPT_DIR/companion-trace.sh"
+
 payload=$(cat)
 
 # Cheap pre-filter: skip the JSON parse for the 99% of writes that aren't artifacts.
@@ -23,8 +27,18 @@ case "$payload" in
   *) exit 0 ;;
 esac
 
+# Record the hook firing the moment a write touches the artifacts dir — BEFORE the
+# CLI-presence guard, so an artifact write is logged even on a plugin-only machine
+# with no overlay installed. Parse fp/sid here only when tracing is on (a node spawn
+# we otherwise defer past the guard, so the no-overlay path stays cheap).
+if companion_trace_on; then
+  _t_fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log((JSON.parse(d).tool_input||{}).file_path||"")}catch(e){}})' 2>/dev/null)
+  _t_sid=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})' 2>/dev/null)
+  trace hook fire "corr=$_t_fp" "file_path=$_t_fp" "sid=$_t_sid" "artifacts_dir=$ARTIFACTS_DIR" "hookpid=$$"
+fi
+
 # Seam to the app: if the overlay CLI isn't installed, do nothing.
-command -v companion >/dev/null 2>&1 || exit 0
+command -v companion >/dev/null 2>&1 || { trace hook no-companion-cli "corr=${_t_fp:-}"; exit 0; }
 
 # Pull tool_input.file_path + session_id out of the payload (Write/Edit both carry them).
 fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log((JSON.parse(d).tool_input||{}).file_path||"")}catch(e){}})' 2>/dev/null)
@@ -39,12 +53,15 @@ case "$fp" in
   "$ARTIFACTS_DIR"/home.html|"$ARTIFACTS_DIR"/home.*.html)
     # Agent-authored Hub/unit-home surfaces — hosted by the Board, never indexed
     # as one-off artifacts. This arm sits ABOVE the *.html arm (case matches top-down).
+    trace hook skip-index "corr=$fp" "reason=unit-home"
     ;;
   "$ARTIFACTS_DIR"/_*.html)
-    : # diagnostic scaffolding — not indexed
+    trace hook skip-index "corr=$fp" "reason=diagnostic-scaffold"
     ;;
   "$ARTIFACTS_DIR"/*.html)
+    trace hook index-spawn "corr=$fp"
     SID="$SID" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
+    trace hook index-done "corr=$fp"
     ;;
 esac
 

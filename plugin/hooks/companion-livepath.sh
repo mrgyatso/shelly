@@ -28,6 +28,12 @@ cwd="${1:-$(pwd)}"
 session_id="$2"
 live_dir="${HOME}/.claude/companion/live"
 
+# Trace harness (no-op unless enabled). $0 is this script when run as a subprocess,
+# so its dirname is the hooks dir. trace() only ever touches the log FILE — never
+# stdout — so the TAB-separated identity line this script prints stays clean.
+CMP_HOOK_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)
+. "$CMP_HOOK_DIR/companion-trace.sh"
+
 shortid=$(printf '%.8s' "$session_id" | tr -c 'A-Za-z0-9' '-')
 [ -n "$shortid" ] || shortid="nosessid"
 
@@ -59,6 +65,7 @@ if [ -n "$existing" ]; then
   [ -n "$project" ] || project="$slug"
   [ -n "$is_repo" ] || is_repo=0
   [ -n "$unit_key" ] || unit_key="$slug"
+  trace livepath reuse "shortid=$shortid" "cwd=$cwd" "existing=$existing" "slug=$slug" "is_repo=$is_repo" "unit_key=$unit_key"
 else
   gitroot=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
   if [ -n "$gitroot" ]; then is_repo=1; root="$gitroot"; else is_repo=0; root="$cwd"; fi
@@ -71,6 +78,7 @@ else
   # artifacts, rail group) and the rail switches between that folder's sessions.
   unit_key="$slug"
   live_path="${live_dir}/${slug}--${shortid}.json"
+  trace livepath fresh "shortid=$shortid" "cwd=$cwd" "gitroot=$gitroot" "root=$root" "slug=$slug" "is_repo=$is_repo" "unit_key=$unit_key"
 fi
 
 printf '%s\t%s\t%s\t%s\t%s\n' "$live_path" "$project" "$shortid" "$is_repo" "$unit_key"
