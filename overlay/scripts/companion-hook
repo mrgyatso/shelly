@@ -51,11 +51,10 @@ case "$fp" in
         trace hook index-done "corr=$fp"
         ;;
     esac
-    # NOTE (finding, not a fix): this LIVE copy still pops a standalone artifact window
-    # via `companion open` — the obsolete pre-Board behavior the plugin/hooks copy
-    # removed. Recorded so the trace shows it firing; left intact per "observe first".
-    trace hook companion-open "corr=$fp"
-    nohup "$SCRIPT_DIR/companion" open "$fp" >/dev/null 2>&1 &
+    # The Board is the single surface — it ingests artifacts via the live poll +
+    # native watcher. No standalone window: the obsolete `companion open` pop was
+    # removed here (the cleanup that also dropped the redundant settings.json
+    # registration of this hook; PostToolUse now fires once, via the plugin).
     ;;
 esac
 
