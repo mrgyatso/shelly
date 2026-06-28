@@ -2862,7 +2862,21 @@ async function pollLive(): Promise<void> {
 
 /** A cheap fingerprint of the artifact set — path + mtime. */
 function artifactSig(arts: ArtifactEntry[]): string {
-  return arts.map((a) => `${a.path}:${a.modified_ms}`).join("|");
+  // Include the routing identity (source|unit_key), not just path:mtime. The
+  // PostToolUse hook stamps the index AFTER the Board has already ingested the
+  // artifact (the native watcher wakes the poll ~600ms before the stamp lands),
+  // and stamping never touches the file's mtime — so a path:mtime-only signature
+  // never moves once the index arrives, and the index-less first routing is frozen
+  // forever (the surfacing lag). Folding identity in means the late stamp changes
+  // the signature and re-triggers ingestArtifacts, which then re-routes the artifact.
+  return arts.map((a) => `${a.path}:${a.modified_ms}:${a.source ?? ""}:${a.unit_key ?? ""}`).join("|");
+}
+
+/** The routing identity of an artifact (source + unit_key) — what decides its unit.
+ *  Changing across two polls means the index landed (or was distrusted), so the
+ *  artifact must be re-routed rather than left where its first ingest put it. */
+function artifactRouteKey(a: ArtifactEntry): string {
+  return `${a.source ?? ""}|${a.unit_key ?? ""}`;
 }
 
 function addUnread(unitKey: string, path: string): void {
@@ -2891,7 +2905,18 @@ function totalUnread(): number {
  */
 function ingestArtifacts(artifacts: ArtifactEntry[]): void {
   const present = new Set(artifacts.map((a) => a.path));
+  // Snapshot the prior routing identity per path BEFORE overwriting allArtifacts.
+  const prevRouteKey = new Map(allArtifacts.map((a) => [a.path, artifactRouteKey(a)]));
   const newOnes = artifacts.filter((a) => !knownPaths.has(a.path));
+  // THE SURFACING-LAG FIX. A KNOWN artifact whose routing identity changed since the
+  // last ingest = the hook stamped the index AFTER the Board first routed it (the
+  // race). Its first ingest used an empty/slug-fallback identity and the sig-guard
+  // would otherwise freeze it there forever. Re-route it against the now-correct
+  // identity instead of leaving it stranded where it first (wrongly) landed.
+  const reRouted = artifacts.filter(
+    (a) => knownPaths.has(a.path) && prevRouteKey.has(a.path) && prevRouteKey.get(a.path) !== artifactRouteKey(a),
+  );
+  const reRoutedSet = new Set(reRouted.map((a) => a.path));
   allArtifacts = artifacts;
   for (const a of artifacts) knownPaths.add(a.path);
 
@@ -2902,17 +2927,31 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
   }
   if (heroPendingPath !== null && !present.has(heroPendingPath)) hideHeroNewPill();
 
+  // Pull every re-routed artifact out of the unread bucket its OLD identity filed it
+  // under, so the branch loop below re-files it under the corrected unit (or surfaces
+  // it). Without this it would linger as a dot on the wrong unit even after re-routing.
+  if (reRoutedSet.size) {
+    for (const [unit, set] of unreadByUnit) {
+      for (const p of [...set]) if (reRoutedSet.has(p)) set.delete(p);
+      if (set.size === 0) unreadByUnit.delete(unit);
+    }
+    trace("ingest.reroute", { count: reRouted.length });
+  }
+
   const view = currentView();
   const viewingUnit = view.level === "unit" ? view.unitKey : null;
-  if (newOnes.length) trace("ingest.run", { newCount: newOnes.length, viewingUnit: viewingUnit ?? "" });
+  const toRoute = newOnes.concat(reRouted);
+  if (toRoute.length) {
+    trace("ingest.run", { newCount: newOnes.length, reRouted: reRouted.length, viewingUnit: viewingUnit ?? "" });
+  }
   let heroNewCandidate: ArtifactEntry | null = null;
-  for (const a of newOnes) {
+  for (const a of toRoute) {
     const unit = unitForArtifact(a);
     // THE KEYSTONE. Two of these four roads silently `addUnread` (a dot on a unit
-    // card the user reads as "nothing showed up"). Which road an artifact takes —
-    // and the routing identity that decided it — is invisible from the code; that
-    // opacity is the whole reason for this harness. Control flow below is UNCHANGED
-    // from the original; `branch` just names the road taken.
+    // card the user reads as "nothing showed up"). Control flow is UNCHANGED from the
+    // original; `branch` just names the road taken. NEW artifacts and RE-ROUTED ones
+    // (identity arrived late) both flow through here — a re-routed artifact that now
+    // resolves to the viewed unit surfaces as a pill instead of staying hidden.
     let branch: string;
     if (unit !== viewingUnit) {
       addUnread(unit, a.path);
@@ -2932,10 +2971,21 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
     } else {
       branch = "auto-advance-or-fresh";
     }
+    // FAIL-LOUD GUARD. An artifact that routes with NO source or to UNSOURCED could
+    // not be firmly identified — the silent-disappearance path. Don't let it pass
+    // quietly: warn (+ trace) so an unroutable artifact is visible, not shelved. The
+    // re-route above usually rescues this once the index lands; this catches the ones
+    // that never resolve (the concrete sliver of the identity redesign we adopt now).
+    if (!a.source || unit === UNSOURCED) {
+      console.warn("[companion] artifact routed without a firm identity", {
+        path: a.path, unit, source: a.source ?? "", from: reRoutedSet.has(a.path) ? "reroute" : "new", branch,
+      });
+      trace("ingest.unrouted", { corr: a.path, unit, source: a.source ?? "", branch });
+    }
     if (traceOn) {
-      // The inputs that DECIDED the branch — so branch ② (silent unread) is
-      // self-explaining: was the routing identity (unit) wrong, was the active
-      // session mis-resolved, did the unit come from the index or the slug fallback?
+      // The inputs that DECIDED the branch — so a silent unread is self-explaining:
+      // was the routing identity (unit) wrong, the active session mis-resolved, did
+      // the unit come from the index or the slug fallback?
       const unitFrom =
         a.source && allSources.some((s) => s.source === a.source)
           ? "source"
@@ -2952,12 +3002,13 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
         unitFrom,
         digestPath: digestPath ?? "",
         branch,
+        kind: reRoutedSet.has(a.path) ? "reroute" : "new",
       });
     }
   }
   if (heroNewCandidate) showHeroNewPill(heroNewCandidate.path);
 
-  maybeAutoAdvance(newOnes);
+  maybeAutoAdvance(toRoute);
 
   if (view.level === "unit") ingestIntoUnit(view.unitKey);
   updateGlobalUnread();
