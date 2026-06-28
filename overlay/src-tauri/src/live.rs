@@ -234,7 +234,7 @@ pub fn read_live() -> String {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    inject_fields(&raw, updated_ms, None, None, false, None)
+    inject_fields(&raw, updated_ms, None, None, false, None, None)
 }
 
 /// One agent's live-state, tagged with the slug of the file it came from. The
@@ -308,6 +308,11 @@ pub fn read_all_live() -> Vec<LiveSource> {
             .get(&source)
             .map(|s| s.as_str())
             .filter(|id| existing_ids.contains(*id));
+        // Phase 2: resolve this source's unit authoritatively from the registry when its
+        // full session_id is known (owned sessions record it in session-ids.json). Uses the
+        // RAW sidecar id — resolution needs no transcript, unlike the resume `session_id`
+        // above. `None` (no record yet) leaves the live file's own unit_key in place.
+        let unit_override = sids.get(&source).and_then(|id| crate::registry::resolve_unit(id));
         out.push(LiveSource {
             json: inject_fields(
                 &raw,
@@ -316,6 +321,7 @@ pub fn read_all_live() -> Vec<LiveSource> {
                 unit_dir,
                 is_dismissed,
                 session_id,
+                unit_override.as_deref(),
             ),
             source,
         });
@@ -355,6 +361,7 @@ fn inject_fields(
     unit_dir: Option<&str>,
     dismissed: bool,
     session_id: Option<&str>,
+    unit_override: Option<&str>,
 ) -> String {
     match serde_json::from_str::<serde_json::Value>(raw) {
         Ok(mut v) => {
@@ -371,6 +378,15 @@ fn inject_fields(
                 }
                 if let Some(sid) = session_id {
                     obj.insert("session_id".into(), serde_json::json!(sid));
+                }
+                // PHASE 2 — registry first. When this source's unit was resolved
+                // authoritatively from its session record, override the live file's own
+                // `unit_key` with it. At parity they're equal (both come from the one
+                // SessionStart derivation); they differ only when the volatile live-file
+                // value drifted (the plugin-cache split a repo across two keys) — exactly
+                // the case the registry is meant to win.
+                if let Some(u) = unit_override {
+                    obj.insert("unit_key".into(), serde_json::json!(u));
                 }
             }
             v.to_string()
@@ -392,6 +408,7 @@ mod tests {
             Some("/Users/me/repo"),
             false,
             Some("abc-123-full"),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["companion_session"], "board-3");
@@ -404,7 +421,7 @@ mod tests {
 
     #[test]
     fn omits_optional_fields_when_external() {
-        let out = inject_fields(r#"{"working":"x"}"#, 7, None, None, false, None);
+        let out = inject_fields(r#"{"working":"x"}"#, 7, None, None, false, None, None);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v.get("companion_session").is_none());
         assert!(v.get("unit_dir").is_none());
@@ -415,14 +432,45 @@ mod tests {
 
     #[test]
     fn injects_dismissed_only_when_true() {
-        let out = inject_fields(r#"{"working":"x"}"#, 1, None, None, true, None);
+        let out = inject_fields(r#"{"working":"x"}"#, 1, None, None, true, None, None);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["dismissed"], true);
     }
 
     #[test]
+    fn unit_override_replaces_live_file_unit_key() {
+        // The registry-resolved unit wins over the live file's own (possibly drifted) value.
+        let out = inject_fields(
+            r#"{"working":"x","unit_key":"drifted-slug"}"#,
+            5,
+            None,
+            None,
+            false,
+            None,
+            Some("true-unit"),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["unit_key"], "true-unit");
+    }
+
+    #[test]
+    fn no_unit_override_keeps_live_file_unit_key() {
+        let out = inject_fields(
+            r#"{"working":"x","unit_key":"repo"}"#,
+            5,
+            None,
+            None,
+            false,
+            None,
+            None,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["unit_key"], "repo");
+    }
+
+    #[test]
     fn malformed_passes_through_verbatim() {
-        let out = inject_fields("not json", 1, Some("board-1"), None, true, Some("x"));
+        let out = inject_fields("not json", 1, Some("board-1"), None, true, Some("x"), Some("u"));
         assert_eq!(out, "not json");
     }
 

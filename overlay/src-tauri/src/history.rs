@@ -43,6 +43,12 @@ pub struct ArtifactEntry {
     /// index. Lets the Board send an artifact's ✓/✎/✗ answer to the EXACT session
     /// that produced it (a unit can hold several owned sessions).
     pub source: Option<String>,
+    /// The writing session's FULL `session_id`, from the routing index. The key into
+    /// the identity registry: present ⇒ `unit_key` above was resolved authoritatively
+    /// from `sessions/<session_id>.json` (no staleness guard); absent ⇒ a pre-registry
+    /// artifact that fell back to the index/slug derivation. Lets the Board label the
+    /// routing path in the trace.
+    pub session_id: Option<String>,
 }
 
 /// The subset of the `companion-meta` JSON block the HUD + Board surface. Other
@@ -182,17 +188,30 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
         // index read covers the whole listing rather than re-reading per file.
         unit_key: None,
         source: None,
+        session_id: None,
     })
 }
 
-/// The hook-written routing index: `abs-path → (unit_key, source)`. Lives next to
-/// the live dir at `~/.claude/companion/artifact-index.json`, shape
-/// `{ "<abs-path>.html": { "unit_key": "...", "shortid": "...", "source": "...", "ts": ... }, ... }`.
-/// (Older entries may still be keyed by basename; `list_artifacts` falls back to that.)
-/// Returns an empty map on any failure — routing then falls back to project-slug.
-/// The tuple is `(unit_key, source, ts)`; `ts` is the hook's stamp time (0 if absent,
-/// for legacy entries), used by `list_artifacts` to detect a stale entry.
-fn load_artifact_index() -> std::collections::HashMap<String, (String, Option<String>, u64)> {
+/// One routing-index entry, as read off disk. `unit_key` + `source` + `ts` are the
+/// pre-registry derivation (stamped by the hook AFTER the write); `session_id` is the
+/// Phase-2 link into the identity registry (present once the index hook records it).
+struct IndexEntry {
+    unit_key: String,
+    source: Option<String>,
+    /// Hook stamp time (0 for legacy pre-ts entries) — the staleness guard's input.
+    ts: u64,
+    /// Full writing-session id; `Some` ⇒ resolve `unit_key` authoritatively via the
+    /// registry, `None` ⇒ fall back to the stamped `unit_key` + staleness guard.
+    session_id: Option<String>,
+}
+
+/// The hook-written routing index: `abs-path → IndexEntry`. Lives next to the live dir at
+/// `~/.claude/companion/artifact-index.json`, shape
+/// `{ "<abs-path>.html": { "unit_key", "shortid", "source", "ts", "session_id" }, ... }`.
+/// (Older entries may still be keyed by basename and/or lack `session_id`; `list_artifacts`
+/// falls back to that.) Returns an empty map on any failure — routing then falls back to
+/// project-slug.
+fn load_artifact_index() -> std::collections::HashMap<String, IndexEntry> {
     let mut map = std::collections::HashMap::new();
     let Some(home) = std::env::var_os("HOME") else {
         return map;
@@ -212,7 +231,20 @@ fn load_artifact_index() -> std::collections::HashMap<String, (String, Option<St
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
                 let ts = entry.get("ts").and_then(|v| v.as_u64()).unwrap_or(0);
-                map.insert(name.clone(), (unit.to_string(), source, ts));
+                let session_id = entry
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                map.insert(
+                    name.clone(),
+                    IndexEntry {
+                        unit_key: unit.to_string(),
+                        source,
+                        ts,
+                        session_id,
+                    },
+                );
             }
         }
     }
@@ -258,19 +290,38 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
                 .file_name()
                 .and_then(|s| s.to_str())
                 .and_then(|n| index.get(n));
-            if let Some((unit, source, ts)) = by_path.or(by_name) {
-                // Staleness guard: the index is stamped by the Write|Edit hook AFTER the
-                // file is written, so a trustworthy entry's `ts` is >= the file's mtime. If
-                // the file is NEWER than its entry, it was rewritten outside the hook (a Bash
-                // write, an external/observer writer, or a REUSED filename whose stale entry
-                // was never refreshed) — the frozen source/unit_key then belongs to a
-                // different, often dead, session. Distrust it and leave both `None` so the
-                // Board falls back to project-slug routing. `ts == 0` is a legacy (pre-ts)
-                // entry we can't date-check, so we trust it for back-compat.
-                let stale = *ts > 0 && e.modified_ms > ts.saturating_add(STALE_INDEX_TOLERANCE_MS);
+            if let Some(entry) = by_path.or(by_name) {
+                // PHASE 2 — registry first. If the entry carries a `session_id`, resolve
+                // the unit AUTHORITATIVELY from `sessions/<id>.json`: that record was frozen
+                // at SessionStart, so it's immune to the post-write-rewrite race the staleness
+                // guard exists to catch — we trust it regardless of mtime and skip the guard
+                // entirely. A miss (no record yet) falls through to the legacy derivation.
+                let resolved = entry
+                    .session_id
+                    .as_deref()
+                    .and_then(crate::registry::resolve_unit);
+                if let Some(unit) = resolved {
+                    e.unit_key = Some(unit);
+                    e.source = entry.source.clone();
+                    // `session_id` set ONLY on the resolved path, so its presence is a clean
+                    // "routed by the registry" marker the Board can trust (and label).
+                    e.session_id = entry.session_id.clone();
+                    continue;
+                }
+                // LEGACY FALLBACK (pre-registry entry, or no record). Staleness guard: the
+                // index is stamped by the Write|Edit hook AFTER the file is written, so a
+                // trustworthy entry's `ts` is >= the file's mtime. If the file is NEWER than
+                // its entry, it was rewritten outside the hook (a Bash write, an external/
+                // observer writer, or a REUSED filename whose stale entry was never refreshed)
+                // — the frozen source/unit_key then belongs to a different, often dead,
+                // session. Distrust it and leave both `None` so the Board falls back to
+                // project-slug routing. `ts == 0` is a legacy (pre-ts) entry we can't
+                // date-check, so we trust it for back-compat. (Removed at Phase 4 cutover.)
+                let stale =
+                    entry.ts > 0 && e.modified_ms > entry.ts.saturating_add(STALE_INDEX_TOLERANCE_MS);
                 if !stale {
-                    e.unit_key = Some(unit.clone());
-                    e.source = source.clone();
+                    e.unit_key = Some(entry.unit_key.clone());
+                    e.source = entry.source.clone();
                 } else {
                     // The index entry was distrusted (file newer than its stamp) and the
                     // artifact silently falls back to project-slug routing — a candidate
@@ -281,7 +332,7 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
                         &[
                             ("corr", e.path.as_str()),
                             ("mtime_ms", &e.modified_ms.to_string()),
-                            ("index_ts", &ts.to_string()),
+                            ("index_ts", &entry.ts.to_string()),
                         ],
                     );
                 }

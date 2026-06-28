@@ -63,6 +63,11 @@ interface ArtifactEntry {
   /** The writing session's source slug — lets a ✓/✎/✗ answer go to the EXACT
    *  owned session that produced this artifact. */
   source?: string | null;
+  /** The writing session's FULL session_id — present ONLY when `unit_key` was resolved
+   *  authoritatively from the identity registry (`sessions/<id>.json`). Its presence is
+   *  the Phase-2 "routed by the registry" marker: such an artifact routes by its
+   *  `unit_key` directly, ahead of the live-source re-derivation. */
+  session_id?: string | null;
 }
 
 interface LiveSource {
@@ -911,6 +916,12 @@ function groupSourcesByUnit(): Map<string, LiveSource[]> {
  * Falls back to the unique non-repo instance's unit, else UNSOURCED.
  */
 function unitForArtifact(a: ArtifactEntry): string {
+  // PHASE 2 — registry first. A registry-resolved artifact carries a `session_id` and an
+  // authoritative `unit_key` (read from its frozen session record, immune to cwd/mtime
+  // races). The record decided this, so it WINS over the live-source re-derivation below —
+  // which is exactly what removes the surfacing-lag / drift class once every session
+  // registers. Falls through when there's no record yet (pre-registry artifacts).
+  if (a.session_id && a.unit_key) return baseProjectOf(a.unit_key);
   // Prefer the live SOURCE that wrote it: unitKeyOf derives the project unit, so an
   // artifact follows its session's unit even when the stored unit_key is stale
   // (plugin-cache drift split one repo across two keys). Falls through to the stored
@@ -2986,8 +2997,9 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
       // The inputs that DECIDED the branch — so a silent unread is self-explaining:
       // was the routing identity (unit) wrong, the active session mis-resolved, did
       // the unit come from the index or the slug fallback?
-      const unitFrom =
-        a.source && allSources.some((s) => s.source === a.source)
+      const unitFrom = a.session_id
+        ? "registry"
+        : a.source && allSources.some((s) => s.source === a.source)
           ? "source"
           : a.unit_key
             ? "index"

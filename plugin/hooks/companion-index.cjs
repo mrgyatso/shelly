@@ -36,6 +36,10 @@ if (!artifactPath || !liveDir || !indexPath) process.exit(0);
 
 const key = path.resolve(artifactPath);
 const shortid = (process.env.SID || "").slice(0, 8).replace(/[^A-Za-z0-9]/g, "-");
+// Full session_id — the Phase 2 link from artifact → identity registry record. The Rust
+// reader (history.rs) prefers resolving the unit from sessions/<session_id>.json over this
+// hook's shortid-glob unit_key (kept as the fallback until the Phase 4 cutover).
+const sessionId = process.env.SID || null;
 trace.emit("index", "start", { corr: key, shortid });
 if (!shortid) {
   trace.emit("index", "skip", { corr: key, reason: "no-shortid" });
@@ -80,7 +84,7 @@ try {
   index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {};
 } catch (_) {}
 const ts = Date.now();
-index[key] = { unit_key: unitKey, shortid, source, ts };
+index[key] = { unit_key: unitKey, shortid, source, ts, session_id: sessionId };
 
 // Atomic write (temp + rename) so a concurrent reader never sees a partial file.
 try {

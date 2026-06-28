@@ -6,6 +6,7 @@ mod layout;
 mod live;
 mod macos_panel;
 mod pty;
+mod registry;
 mod sessions;
 mod trace;
 mod tray;
