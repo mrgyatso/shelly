@@ -94,7 +94,12 @@ Branch `feat/identity-registry`. Built + STATICALLY verified, NOT yet run in a l
   into `artifactSig`. STRICTLY ADDITIVE (no event → Phase 2 behavior). The Phase 2 reroute
   machinery is deliberately untouched.
 
-**Deferred to this live session (do NOT assume done):**
+**Re-verify first (committed, deterministic, no app needed):**
+- `node plugin/hooks/__tests__/run.cjs` — the hook-integration suites (44 checks: register/
+  resolve/route round-trips under a sandboxed HOME). The §8 deterministic slice.
+- `cd overlay/src-tauri && cargo test --lib` — registry/events/live Rust units.
+
+**Then, the live pipeline (build the overlay ONCE in the main checkout, user present):**
 - The full §8 pipeline matrix with `COMPANION_TRACE=1` + the master before/after baseline diff.
 - **Phase 3 LIVE BEHAVIOR (unverified)** — the payoff "occluded write surfaces with NO
   reroute" is a live-timing property. Confirmed Phase 2 still leaves the interim reroute
