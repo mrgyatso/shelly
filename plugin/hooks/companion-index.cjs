@@ -31,6 +31,14 @@ try {
   trace = require("./companion-trace.cjs");
 } catch (_) {}
 
+// Identity registry (Phase 3). Used to append the always-on `artifact.routed` event the
+// Board tails, and to resolve the authoritative unit for that event. Best-effort require —
+// a missing lib must never sink the index write.
+let identity = { appendEvent() {}, resolveUnit() {} };
+try {
+  identity = require("./companion-identity.cjs");
+} catch (_) {}
+
 const [artifactPath, liveDir, indexPath] = process.argv.slice(2);
 if (!artifactPath || !liveDir || !indexPath) process.exit(0);
 
@@ -92,6 +100,12 @@ try {
   fs.writeFileSync(tmp, JSON.stringify(index));
   fs.renameSync(tmp, indexPath);
   trace.emit("index", "stamp", { corr: key, unit_key: unitKey, source: source || "", ts });
+  // PHASE 3 — append the authoritative routing to the source-of-truth event log the Board
+  // tails. Prefer the registry-resolved unit (the frozen record) over the shortid-glob
+  // unitKey; carry session_id so the Board can resolve identity itself with no re-derivation.
+  // Best-effort: appendEvent swallows its own errors and must not affect the index write.
+  const routedUnit = (sessionId && identity.resolveUnit(sessionId)) || unitKey;
+  identity.appendEvent({ evt: "artifact.routed", path: key, session_id: sessionId, unit_key: routedUnit });
 } catch (e) {
   trace.emit("index", "stamp-failed", { corr: key, err: String((e && e.message) || e) });
 }

@@ -1,5 +1,6 @@
 mod artifact;
 mod artifact_watch;
+mod events;
 mod history;
 mod hub;
 mod layout;
@@ -138,6 +139,7 @@ pub fn run() {
             history::resolve_unit_home,
             trace::trace_event,
             trace::trace_enabled,
+            events::poll_events,
             live::read_live,
             live::read_all_live,
             live::dismiss_session,

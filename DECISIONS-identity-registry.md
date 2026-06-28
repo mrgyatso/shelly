@@ -62,5 +62,40 @@ binary of uncertain provenance). Fast checks done now: `cargo check` (pass), `np
 
 **Open (needs user sign-off):** the visual §8 cases a headless agent can't run faithfully
 (occluded-idle no-freeze; hero vs. ambient sibling routing) bear on the user's
-"no regressions" non-negotiable. How/when are they verified — a manual pass before the
-Phase 4 cutover?
+"no regressions" non-negotiable. RESOLVED 2026-06-28: user chose a **manual pass before the
+Phase 4 cutover** — phases gate on trace-timeline routing parity (headless), user does the
+visual smoke before cutover.
+
+## D6 — No overlay build/install while the other worktree is live (user, 2026-06-28)
+
+The user has a second worktree (the main checkout) actively using the ONE installed
+`Companion Overlay.app`. Building/installing from this worktree would swap that app and
+cause "which version am I seeing?" confusion. Decision: **never build or install the app
+from here.** Write code + verify the ways that don't need a running app (cargo check,
+cargo test, tsc, sandboxed hook tests). Do the single live "watch it surface" pass —
+including the full §8 matrix + the master before/after baseline — TOGETHER in the main
+checkout after merging, when the user is present. One app, one place.
+
+## STATUS LEDGER (for the merge-and-test-together session)
+
+Branch `feat/identity-registry`. Built + STATICALLY verified, NOT yet run in a live overlay:
+
+- **Phase 1 (done, `5563e7c`)** — dual-write registry. `companion-identity.cjs` shared lib;
+  `companion-session` writes `sessions/<id>.json` + appends `session.registered`. Verified:
+  sandboxed 30/30. Nothing reads it.
+- **Phase 2 (done, `efd9745`)** — read registry first, fall back. `registry.rs` resolver;
+  `companion-index.cjs` stamps `session_id`; `history.rs`/`live.rs`/`board.ts` prefer the
+  record, fall back to the old derivation. Verified: cargo check, cargo test (registry 3/3,
+  live 7/7), tsc clean, sandboxed hook 8/8 (artifact→session_id→record→unit_key round-trip).
+
+**Deferred to this live session (do NOT assume done):**
+- The full §8 pipeline matrix with `COMPANION_TRACE=1` + the master before/after baseline diff.
+- **Phase 3** — event-log tail. NOT written. Its correctness criterion (occluded write
+  surfaces with NO reroute) is a live-timing property, unverifiable headless. Confirmed
+  Phase 2 still leaves the interim reroute (`9a37849`) firing (`artifactSig` excludes
+  `session_id`; the reroute path is untouched), so Phase 3 IS the phase that removes it —
+  best written + verified with a running app. Recommend doing 3 here alongside 4+5.
+- **Phase 4** — cutover (delete slug-fallback, staleness guard, 4 sidecars, shortid glob,
+  the `9a37849` reroute) + fail-loud error tile.
+- **Phase 5** — observer: point its plugin at the shared lib (D1), attribute artifacts to
+  the OBSERVED session_id.

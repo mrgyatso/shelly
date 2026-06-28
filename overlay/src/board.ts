@@ -225,6 +225,51 @@ const knownPaths = new Set<string>();
 const unreadByUnit = new Map<string, Set<string>>();
 /** Signature of the last-seen artifact set (path:mtime) — a cheap poll no-op guard. */
 let lastArtifactSig = "";
+
+// ---- Phase 3: event-log tail ------------------------------------------------
+// The Board tails ~/.claude/companion/events.ndjson incrementally (poll_events, by byte
+// offset) so it learns an artifact's authoritative routing from the `artifact.routed`
+// event — ideally before list_artifacts reflects the index stamp, which is what removes
+// the fallback-then-reroute. ADDITIVE: when no event has arrived for a path, routing falls
+// straight through to the Phase 2 logic, so this can't regress Phase 2.
+// [UNVERIFIED HEADLESS] the "surfaces with NO reroute" payoff is a live-timing property —
+// it proves out only at the live merge-and-test session, not in static checks.
+/** Byte offset into events.ndjson already consumed; advanced each poll by poll_events. */
+let eventOffset = 0;
+/** path → authoritative routing learned from an `artifact.routed` event (event-sourced
+ *  identity, immune to the watcher-vs-stamp race). Consulted FIRST by unitForArtifact. */
+const routedByPath = new Map<string, { session_id: string; unit_key: string }>();
+interface EventBatch {
+  events: Array<Record<string, unknown>>;
+  next: number;
+}
+/** Pull newly-appended events and fold `artifact.routed` into `routedByPath`. Returns true
+ *  if any routing was added/changed (so the caller knows to re-fingerprint + re-ingest). */
+async function pollEvents(): Promise<boolean> {
+  let batch: EventBatch;
+  try {
+    batch = await invoke<EventBatch>("poll_events", { from: eventOffset });
+  } catch (e) {
+    console.error("poll_events failed", e);
+    return false;
+  }
+  eventOffset = batch.next;
+  let changed = false;
+  for (const ev of batch.events) {
+    if (ev.evt !== "artifact.routed") continue;
+    const path = typeof ev.path === "string" ? ev.path : "";
+    const unit_key = typeof ev.unit_key === "string" ? ev.unit_key : "";
+    const session_id = typeof ev.session_id === "string" ? ev.session_id : "";
+    if (!path || !unit_key) continue;
+    const prev = routedByPath.get(path);
+    if (!prev || prev.unit_key !== unit_key || prev.session_id !== session_id) {
+      routedByPath.set(path, { session_id, unit_key });
+      changed = true;
+    }
+  }
+  if (changed) trace("events.applied", { routed: routedByPath.size });
+  return changed;
+}
 /** Units whose L2 history rebuild is deferred because the reader is open. */
 const pendingIngest = new Set<string>();
 
@@ -916,6 +961,12 @@ function groupSourcesByUnit(): Map<string, LiveSource[]> {
  * Falls back to the unique non-repo instance's unit, else UNSOURCED.
  */
 function unitForArtifact(a: ArtifactEntry): string {
+  // PHASE 3 — event-sourced identity wins. If the Board has tailed an `artifact.routed`
+  // event for this path, that routing is authoritative and may have arrived BEFORE
+  // list_artifacts reflects the index stamp — so honoring it here is what lets the first
+  // ingest land on the right unit (no fallback-then-reroute). [UNVERIFIED HEADLESS.]
+  const routed = routedByPath.get(a.path);
+  if (routed && routed.unit_key) return baseProjectOf(routed.unit_key);
   // PHASE 2 — registry first. A registry-resolved artifact carries a `session_id` and an
   // authoritative `unit_key` (read from its frozen session record, immune to cwd/mtime
   // races). The record decided this, so it WINS over the live-source re-derivation below —
@@ -2847,6 +2898,11 @@ async function pollLive(): Promise<void> {
     console.error("list_artifacts failed", e);
     return;
   }
+  // PHASE 3: tail the event log BEFORE fingerprinting, so a freshly-appended
+  // `artifact.routed` is folded into routedByPath and the sig below already reflects it —
+  // the arriving event then re-triggers ingest and routes the artifact by event identity.
+  // Additive: with no new events this is a cheap no-op and the sig is the Phase 2 sig.
+  await pollEvents();
   const sig = artifactSig(artifacts);
   const sigChanged = sig !== lastArtifactSig;
   if (sigChanged) {
@@ -2880,7 +2936,16 @@ function artifactSig(arts: ArtifactEntry[]): string {
   // never moves once the index arrives, and the index-less first routing is frozen
   // forever (the surfacing lag). Folding identity in means the late stamp changes
   // the signature and re-triggers ingestArtifacts, which then re-routes the artifact.
-  return arts.map((a) => `${a.path}:${a.modified_ms}:${a.source ?? ""}:${a.unit_key ?? ""}`).join("|");
+  // PHASE 3: also fold in the event-sourced unit (routedByPath), so an arriving
+  // `artifact.routed` event moves the signature and re-triggers ingest even when
+  // list_artifacts hasn't yet reflected the index stamp — the path by which event identity
+  // reaches routing. Empty for any path without an event, so Phase 2 sigs are unchanged.
+  return arts
+    .map((a) => {
+      const r = routedByPath.get(a.path);
+      return `${a.path}:${a.modified_ms}:${a.source ?? ""}:${a.unit_key ?? ""}:${r?.unit_key ?? ""}`;
+    })
+    .join("|");
 }
 
 /** The routing identity of an artifact (source + unit_key) — what decides its unit.
@@ -2932,6 +2997,9 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
   for (const a of artifacts) knownPaths.add(a.path);
 
   for (const p of [...knownPaths]) if (!present.has(p)) knownPaths.delete(p);
+  // Phase 3: drop event-sourced routing for artifacts that no longer exist, so routedByPath
+  // can't grow without bound as artifacts are archived/deleted.
+  for (const p of [...routedByPath.keys()]) if (!present.has(p)) routedByPath.delete(p);
   for (const [unit, set] of unreadByUnit) {
     for (const p of [...set]) if (!present.has(p)) set.delete(p);
     if (set.size === 0) unreadByUnit.delete(unit);
