@@ -118,6 +118,24 @@ if [ -n "$COMPANION_SESSION" ] && [ -n "$session_id" ]; then
   trace session record-id "stem=$stem"
 fi
 
+# 1e. REGISTER this session's identity ONCE in the authoritative registry
+#     (sessions/<session_id>.json) and append a session.registered event to the
+#     source-of-truth log (events.ndjson). This is the register-once spine of the
+#     identity redesign: the record is keyed by the FULL session_id (not the
+#     collision-prone 8-char shortid) and is IMMUTABLE — resume/compact find it and
+#     leave it untouched, so identity is frozen for the session's whole life. We do
+#     NOT re-derive identity here; we record the unit_key/is_repo/project ALREADY
+#     derived above (companion-livepath.sh), so there is exactly one derivation.
+#     DUAL-WRITE (Phase 1): the old sidecars above still carry routing; nothing reads
+#     the registry yet. Registered for every session that has a session_id (repo,
+#     non-repo, owned, external) — sits below the .claude-mem bail so the observer's
+#     own worker never self-registers.
+if [ -n "$session_id" ]; then
+  node "$CMP_HOOK_DIR/companion-identity.cjs" register \
+    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${COMPANION_SESSION:-}" 2>/dev/null
+  trace session register "sid=$shortid" "unit_key=$unit_key" "root=$root"
+fi
+
 # 2. Prune dead live files (mtime older than PRUNE_DAYS) so the roster's archive
 #    list doesn't grow unbounded across crashed/abandoned sessions.
 find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exec rm -f {} + 2>/dev/null
