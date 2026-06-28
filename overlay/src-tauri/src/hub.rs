@@ -5,8 +5,10 @@
 //! overlay reads locally. Here we GET it over HTTP with a bearer token and feed
 //! it into the *existing* pipeline: pulled live-state flows to the live pane
 //! (the frontend calls [`read_live_from_hub`] alongside the local read), and
-//! pulled artifacts are written into `~/.claude/companion/remote/` and popped
-//! via [`crate::windows::route_artifact`] — no changes to the render path.
+//! pulled artifacts are written into `~/.claude/companion/remote/` — which the
+//! native artifact watcher already scans — so they surface through the normal
+//! Board ingest path. We nudge it on each new pull with a `board:artifacts-changed`
+//! emit (no standalone window — artifacts live only inside the Board shell).
 //!
 //! Config lives at `~/.claude/companion/hub.json` and is re-read every loop, so
 //! `companion hub set …` takes effect without restarting the daemon. Nothing
@@ -17,7 +19,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 /// Never poll faster than this, even if a config asks for it.
 const POLL_FLOOR_MS: u64 = 1500;
@@ -155,16 +157,13 @@ struct ManifestEntry {
 }
 
 /// Spawn the artifact pull loop on its own thread. It downloads any new hub
-/// artifacts into `remote/` (so the history HUD shows them) and pops the ones
-/// that appear *after* the initial sync. The live pane pulls separately via
-/// [`read_live_from_hub`].
+/// artifacts into `remote/`; the native artifact watcher already scans that dir,
+/// and we also emit `board:artifacts-changed` after a pull so the Board re-scans
+/// and surfaces them through the normal ingest path (no standalone window). The
+/// live pane pulls separately via [`read_live_from_hub`].
 pub fn start_pull_loop(app: AppHandle) {
     std::thread::spawn(move || {
         let mut seen: HashSet<String> = HashSet::new();
-        // First successful poll downloads existing artifacts WITHOUT popping
-        // them — otherwise configuring a hub would flood the screen with its
-        // backlog. Only artifacts that appear after priming pop.
-        let mut primed = false;
         loop {
             let cfg = load_config();
             let interval = cfg
@@ -173,7 +172,7 @@ pub fn start_pull_loop(app: AppHandle) {
                 .unwrap_or(DEFAULT_INTERVAL_MS);
             if let Some(cfg) = cfg {
                 if is_active(&cfg) {
-                    let _ = poll_once(&app, &cfg, &mut seen, &mut primed);
+                    let _ = poll_once(&app, &cfg, &mut seen);
                 }
             }
             std::thread::sleep(Duration::from_millis(interval));
@@ -181,12 +180,7 @@ pub fn start_pull_loop(app: AppHandle) {
     });
 }
 
-fn poll_once(
-    app: &AppHandle,
-    cfg: &HubConfig,
-    seen: &mut HashSet<String>,
-    primed: &mut bool,
-) -> Result<(), String> {
+fn poll_once(app: &AppHandle, cfg: &HubConfig, seen: &mut HashSet<String>) -> Result<(), String> {
     let b = base(&cfg.url);
     let body = http_get(&format!("{b}/api/artifacts"), &cfg.token)?;
     let manifest: Vec<ManifestEntry> = serde_json::from_str(&body).map_err(|e| e.to_string())?;
@@ -194,6 +188,7 @@ fn poll_once(
     let remote = remote_dir().ok_or("no HOME")?;
     std::fs::create_dir_all(&remote).map_err(|e| e.to_string())?;
 
+    let mut wrote_new = false;
     for entry in &manifest {
         if !safe_slug(&entry.slug) {
             continue;
@@ -211,16 +206,15 @@ fn poll_once(
             continue;
         }
         seen.insert(key);
-
-        if *primed {
-            let path = dest.to_string_lossy().into_owned();
-            let handle = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                crate::windows::open_artifact_window(&handle, path);
-            });
-        }
+        wrote_new = true;
     }
 
-    *primed = true;
+    // Surface freshly pulled artifacts: wake the Board's poll so it re-scans
+    // `remote/` and ingests them through the normal pipeline. The native watcher
+    // would catch them within its scan interval anyway; this just removes that lag.
+    if wrote_new {
+        let _ = app.emit("board:artifacts-changed", ());
+    }
+
     Ok(())
 }

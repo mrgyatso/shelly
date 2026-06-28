@@ -130,6 +130,10 @@ interface PaneHead {
 
 /** Unit key for artifacts that match no single live source. */
 const UNSOURCED = "__unsourced__";
+/** Unit key for remote/hub-pulled artifacts (no local live source). Stamped by
+ *  `history.rs` (CLOUD_UNIT_KEY) so they route to one first-class "Cloud" unit via
+ *  the existing `a.unit_key` arm of `unitForArtifact` — never the resolver itself. */
+const CLOUD = "__cloud__";
 /** Sentinel "unit" for the idle home — the rail (live + Recent) with NO project
  *  selected and a clawd splash, shown at startup when nothing substantive is live.
  *  Never a real source/artifact key, so it highlights no tab and owns no terminal. */
@@ -982,6 +986,7 @@ function activeSessionSource(unitKey: string): string | null {
 /** A display name for a unit — the project name of its freshest source. */
 function unitName(unitKey: string, sources: LiveSource[]): string {
   if (unitKey === UNSOURCED) return "Unsourced";
+  if (unitKey === CLOUD) return "Cloud";
   const custom = unitNames.get(unitKey);
   if (custom) return custom; // user-assigned name wins over the folder/slug label
   const fresh = sources[0];
@@ -1140,6 +1145,13 @@ function computeRoster(now: number): Roster {
     if (!byUnit.has(ou)) byUnit.set(ou, []);
     live.add(ou);
   }
+  // Remote/hub artifacts have no live source, so the loops above never surface their
+  // unit. Add the single "Cloud" unit whenever any cloud artifact exists, so it renders
+  // as a tile (banded idle — no live sessions) and its unread dots stay visible.
+  if (artsByUnit.has(CLOUD)) {
+    if (!byUnit.has(CLOUD)) byUnit.set(CLOUD, []);
+    live.add(CLOUD);
+  }
 
   const needs: string[] = [];
   const running: string[] = [];
@@ -1163,8 +1175,16 @@ function computeRoster(now: number): Roster {
   const oIdle = applyManualOrder(idle);
   const recencyOf = (unit: string): number => {
     const srcs = byUnit.get(unit) ?? [];
-    // No live file yet → just-launched/owned, treat as freshest so it lands on top.
-    if (srcs.length === 0) return now;
+    if (srcs.length === 0) {
+      // The source-less Cloud unit orders by its freshest artifact, not `now` — else it
+      // would always pin to the top of the rail. Other source-less units (just-launched
+      // or owned, no live file yet) keep `now` so they still land on top.
+      if (unit === CLOUD) {
+        const arts = artsByUnit.get(unit) ?? [];
+        return arts.length ? Math.max(...arts.map((a) => a.modified_ms)) : now;
+      }
+      return now;
+    }
     return Math.max(...srcs.map((s) => Math.max(sourceUpdatedMs(s), sourceHeartbeatMs(s))));
   };
   const order = [...live].sort((a, b) => recencyOf(b) - recencyOf(a));
@@ -2976,7 +2996,10 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
     // quietly: warn (+ trace) so an unroutable artifact is visible, not shelved. The
     // re-route above usually rescues this once the index lands; this catches the ones
     // that never resolve (the concrete sliver of the identity redesign we adopt now).
-    if (!a.source || unit === UNSOURCED) {
+    // A Cloud (remote/hub) artifact legitimately has no local source but IS firmly
+    // routed to its Cloud unit — so it's not "unidentified". Only flag a missing source
+    // for non-Cloud units, plus anything that still lands in UNSOURCED.
+    if (unit === UNSOURCED || (!a.source && unit !== CLOUD)) {
       console.warn("[companion] artifact routed without a firm identity", {
         path: a.path, unit, source: a.source ?? "", from: reRoutedSet.has(a.path) ? "reroute" : "new", branch,
       });
