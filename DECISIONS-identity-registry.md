@@ -88,13 +88,19 @@ Branch `feat/identity-registry`. Built + STATICALLY verified, NOT yet run in a l
   record, fall back to the old derivation. Verified: cargo check, cargo test (registry 3/3,
   live 7/7), tsc clean, sandboxed hook 8/8 (artifact→session_id→record→unit_key round-trip).
 
+- **Phase 3 (plumbing done, `ec01b6c`)** — event-log tail. `companion-index.cjs` appends
+  `artifact.routed`; `events.rs` `poll_events(from)` tails by byte offset (unit-tested 4/4);
+  `board.ts` folds events into `routedByPath`, consulted first by `unitForArtifact` + folded
+  into `artifactSig`. STRICTLY ADDITIVE (no event → Phase 2 behavior). The Phase 2 reroute
+  machinery is deliberately untouched.
+
 **Deferred to this live session (do NOT assume done):**
 - The full §8 pipeline matrix with `COMPANION_TRACE=1` + the master before/after baseline diff.
-- **Phase 3** — event-log tail. NOT written. Its correctness criterion (occluded write
-  surfaces with NO reroute) is a live-timing property, unverifiable headless. Confirmed
-  Phase 2 still leaves the interim reroute (`9a37849`) firing (`artifactSig` excludes
-  `session_id`; the reroute path is untouched), so Phase 3 IS the phase that removes it —
-  best written + verified with a running app. Recommend doing 3 here alongside 4+5.
+- **Phase 3 LIVE BEHAVIOR (unverified)** — the payoff "occluded write surfaces with NO
+  reroute" is a live-timing property. Confirmed Phase 2 still leaves the interim reroute
+  (`9a37849`) firing; the watcher still wakes the poll before the stamp+event land, so a
+  first ingest can still fall back + reroute. Making the EVENT the trigger (and deleting the
+  watcher-first-ingest / the `9a37849` reroute) is the Phase 4 cutover. Verify no-reroute then.
 - **Phase 4** — cutover (delete slug-fallback, staleness guard, 4 sidecars, shortid glob,
   the `9a37849` reroute) + fail-loud error tile.
 - **Phase 5** — observer: point its plugin at the shared lib (D1), attribute artifacts to
