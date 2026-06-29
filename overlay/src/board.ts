@@ -2001,9 +2001,19 @@ async function renderHero(unitKey: string): Promise<void> {
   // own → blank hero, never a sibling session's last artifact (the reported bug).
   applyBar(null);
   const src = activeSessionSource(unitKey);
+  const unitArts = groupArtifactsByUnit().get(unitKey) ?? [];
+  // Source-bound units scope the hero to the ACTIVE session's own artifacts (a fresh
+  // session that owns none → blank, never a sibling's — the original per-session rule).
+  // But a unit with NO owned terminal AND no active source — the Cloud unit (remote/hub
+  // artifacts have no `source`), or a closed external session — has no session to scope
+  // to, so lead with its freshest artifact instead of blanking (else entering it looks
+  // empty). The `!ownedTabForUnit` guard keeps fresh-LAUNCHED units (which DO have an
+  // owned tab, just no live file yet) blank, so the sibling-artifact bug stays fixed.
   const arts = src
-    ? (groupArtifactsByUnit().get(unitKey) ?? []).filter((a) => a.source === src)
-    : [];
+    ? unitArts.filter((a) => a.source === src)
+    : ownedTabForUnit(unitKey)
+      ? []
+      : unitArts;
   const latest = arts.reduce<ArtifactEntry | null>(
     (best, a) => (best === null || a.modified_ms > best.modified_ms ? a : best),
     null,
