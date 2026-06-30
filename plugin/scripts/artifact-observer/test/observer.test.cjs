@@ -394,6 +394,38 @@ test("capture stamps alwaysWrite only in always mode (selective default does not
   assert.equal(queued(captureInMode(null)).alwaysWrite, false); // absent file → selective default
 });
 
+test("resolveMode: per-unit override wins, else global, else selective", () => {
+  const { resolveMode } = require("../capture.cjs");
+  const dir = tempDir();
+  const modeFile = path.join(dir, "mode");
+  const unitFile = path.join(dir, "mode.proj");
+  // absent files → selective default
+  assert.equal(resolveMode(dir, "proj"), "selective");
+  // global only
+  fs.writeFileSync(modeFile, "always");
+  assert.equal(resolveMode(dir, "proj"), "always");
+  // per-unit override beats global for THIS unit only
+  fs.writeFileSync(unitFile, "manual");
+  assert.equal(resolveMode(dir, "proj"), "manual");
+  assert.equal(resolveMode(dir, "other"), "always"); // a different unit still sees global
+  // `agent` is a real override (→ selective), not a fall-through to global
+  fs.writeFileSync(unitFile, "agent");
+  assert.equal(resolveMode(dir, "proj"), "selective");
+  // empty/garbage per-unit file falls through to global
+  fs.writeFileSync(unitFile, "  \n");
+  assert.equal(resolveMode(dir, "proj"), "always");
+});
+
+test("globallyDisabled is true only for global-manual with no per-unit overrides", () => {
+  const { globallyDisabled } = require("../capture.cjs");
+  const dir = tempDir();
+  assert.equal(globallyDisabled(dir), false); // no mode file → selective default, not disabled
+  fs.writeFileSync(path.join(dir, "mode"), "manual");
+  assert.equal(globallyDisabled(dir), true); // global manual, no overrides → off
+  fs.writeFileSync(path.join(dir, "mode.proj"), "always");
+  assert.equal(globallyDisabled(dir), false); // an override exists → must fall through
+});
+
 test("always mode forces a write even when the director vetoes should_write", () => {
   const home = tempDir();
   const stateDir = path.join(home, "observer");
