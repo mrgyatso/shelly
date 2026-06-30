@@ -80,10 +80,19 @@ code_diff. Use only facts supported by the turn. Choose family by information sh
 Choose a Clawd pose reflecting the work: thinking, typing, conducting, juggling, sweeping, beacon,
 wizard, confused, or happy.
 
+next_steps is the load-bearing surface — it renders as an elevated "Decide" ballot the user acts on
+without touching the terminal, so make it genuinely propulsive. Write moves that ADVANCE the work,
+not restate it: concrete actions and the real decisions to make, phrased as imperatives, the
+strongest option first. Prefer kind=decision when the user must choose; kind=blocked only for a true
+blocker. 1–4 sharp moves beat 8 vague ones. If the goal is unclear, make a next step that asks for it.
+
 Choose presentation=bespoke only when the interface itself is the deliverable: visual variants,
 mockups, animation, live preview, spatial interaction, or a choice that depends on seeing the result.
-Provide a precise bespoke_brief and escalation_reason; a separate Sonnet designer will author it.
-The routine/composed renderer creates HTML locally; you only return schema data.`;
+Provide a precise bespoke_brief and escalation_reason; a separate Sonnet designer authors it in the
+house "Broadsheet" style (editorial page that dissolves into the board; the decision is the loudest
+element). In the brief, say which mode fits: "steer" when the turn is one dominant choice, "canvas"
+when the user is living in the board and needs the moves always in reach. The routine/composed
+renderer creates HTML locally; you only return schema data.`;
 
 function observerPrompt(prior, turns) {
   return JSON.stringify({
@@ -114,7 +123,7 @@ function cleanClaudeEnv() {
   return env;
 }
 
-function callObserver({ prior, turns, timeoutMs = 120000 }) {
+function callObserver({ prior, turns, model, timeoutMs = 120000 }) {
   if (process.env.COMPANION_OBSERVER_FAKE_RESPONSE) {
     return Promise.resolve({
       state: JSON.parse(process.env.COMPANION_OBSERVER_FAKE_RESPONSE),
@@ -124,9 +133,11 @@ function callObserver({ prior, turns, timeoutMs = 120000 }) {
   }
 
   const command = process.env.COMPANION_OBSERVER_CLAUDE_BIN || "claude";
-  const model = process.env.COMPANION_OBSERVER_MODEL || "haiku";
+  // The quality dial (worker.cjs) passes an explicit director model; fall back to
+  // the env/default Haiku when it doesn't.
+  const resolvedModel = model || process.env.COMPANION_OBSERVER_MODEL || "haiku";
   const args = [
-    "--safe-mode", "--print", "--model", model, "--effort", "low", "--tools", "",
+    "--safe-mode", "--print", "--model", resolvedModel, "--effort", "low", "--tools", "",
     // Disable the user's global advisorModel for this call: --safe-mode and
     // --tools "" do not suppress the advisor (it's gated by the setting, not the
     // tool list), and inheriting it pulls Opus into every routine turn — which
