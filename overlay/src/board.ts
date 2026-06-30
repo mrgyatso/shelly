@@ -177,6 +177,24 @@ function currentView(): BoardView {
   return viewStack[viewStack.length - 1];
 }
 
+/** When you enter through a home "door", navigation scopes to one ROOM: "sessions"
+ *  = repo/coding units, "agenthub" = connected-agent (non-repo) units. null at the
+ *  L0 home / idle (no filter — the rail shows every unit). Cleared by goHub/goIdle. */
+let roomFilter: "sessions" | "agenthub" | null = null;
+
+/** Which room a unit belongs to, given an already-computed source grouping. Repo-backed
+ *  units are coding Sessions; everything else (non-repo / cloud / connected agents) is
+ *  the Agent Hub. A unit with no live source yet (a just-launched coding tab) defaults
+ *  to "sessions". */
+function unitKindWith(
+  byUnit: Map<string, LiveSource[]>,
+  unitKey: string,
+): "sessions" | "agenthub" {
+  const sources = byUnit.get(unitKey) ?? [];
+  if (sources.length === 0) return "sessions";
+  return sources.some((s) => parseState(s.json).is_repo === true) ? "sessions" : "agenthub";
+}
+
 /** Last-rendered live JSON per source, so a poll only re-renders what changed. */
 const lastJsonBySource = new Map<string, string>();
 
@@ -834,6 +852,7 @@ function startupNavigate(): void {
  *  rail's right-click "New session" / resume affordances work straight from launch,
  *  but selects nothing — a stale stub can no longer claim the launch screen. */
 function goIdle(): void {
+  roomFilter = null;
   leaveUnit();
   viewStack = [{ level: "unit", unitKey: IDLE }];
   showLevel("unit");
@@ -869,6 +888,7 @@ function findMostRecentActiveUnit(): string | null {
 
 /** Enter L0. Resolves home.html (Rust) → full-bleed iframe, else native fallback. */
 async function goHub(): Promise<void> {
+  roomFilter = null;
   leaveUnit();
   viewStack = [{ level: "hub" }];
   showLevel("hub");
@@ -882,10 +902,25 @@ async function goHub(): Promise<void> {
  *  Falls back to findMostRecentActiveUnit() so the button works even when the poll
  *  hasn't yet propagated freshness (e.g. immediately after Board launch). */
 function goSessions(): void {
-  const order = computeRoster(Date.now()).order;
-  if (order.length > 0) { goUnit(order[0]); return; }
+  roomFilter = "sessions";
+  const { order, byUnit } = computeRoster(Date.now());
+  const first = order.find((u) => unitKindWith(byUnit, u) === "sessions");
+  if (first) { goUnit(first); return; }
   const u = findMostRecentActiveUnit();
-  if (u) goUnit(u);
+  if (u) { goUnit(u); return; }
+  void newHomeSession();
+}
+
+/** Enter the Agent Hub room: scope navigation to connected-agent (non-repo) units and
+ *  land on the freshest. With none yet, stay on the (beautiful) home — the door count
+ *  reads "none yet" and connected agents populate it as they surface artifacts. */
+function goAgentHub(): void {
+  roomFilter = "agenthub";
+  const { order, byUnit } = computeRoster(Date.now());
+  const first = order.find((u) => unitKindWith(byUnit, u) === "agenthub");
+  if (first) { goUnit(first); return; }
+  roomFilter = null;
+  renderHubFallback();
 }
 
 /** Enter L2 — one unit's home. Replace rather than stack if already at a unit.
@@ -939,14 +974,18 @@ async function renderHub(): Promise<void> {
 function renderHubFallback(): void {
   const fallback = document.getElementById("hub-fallback");
   const hello = document.getElementById("hub-hello");
-  const cta = document.getElementById("hub-sessions-btn");
   const clawd = document.getElementById("hub-clawd");
   if (clawd) mountClawd(clawd); // a fresh pixel-art clawd pose greets each idle landing
   if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
-  if (cta) {
-    const hasWork = allSources.length > 0 || recentToShow().length > 0;
-    cta.textContent = hasWork ? "Open recent sessions →" : "Start a session →";
-  }
+  // Live counts behind each door, split by room kind.
+  const { order, byUnit } = computeRoster(Date.now());
+  let sessions = 0;
+  let agents = 0;
+  for (const u of order) unitKindWith(byUnit, u) === "agenthub" ? agents++ : sessions++;
+  const sc = document.getElementById("hub-door-sessions-count");
+  const ac = document.getElementById("hub-door-agenthub-count");
+  if (sc) sc.textContent = sessions > 0 ? `${sessions} live` : "none live";
+  if (ac) ac.textContent = agents > 0 ? `${agents} active` : "none yet";
   fallback?.removeAttribute("hidden");
 }
 
@@ -1391,7 +1430,12 @@ function buildUnroutedRow(count: number, isActive: boolean): HTMLElement {
 function renderUnitRail(activeUnitKey: string | null): void {
   if (!railSessionsEl) return;
   const now = Date.now();
-  const { order, byUnit, bandOf } = computeRoster(now);
+  const { order: allOrder, byUnit, bandOf } = computeRoster(now);
+  // Scope the rail to the active ROOM when entered via a home door; the L0 home / idle
+  // (roomFilter null) shows every unit, exactly as before.
+  const order = roomFilter
+    ? allOrder.filter((u) => unitKindWith(byUnit, u) === roomFilter)
+    : allOrder;
   const prevActiveUnit = lastRailActiveUnit;
   const unitChanged = activeUnitKey !== prevActiveUnit;
   lastRailActiveUnit = activeUnitKey;
@@ -2363,7 +2407,8 @@ function wireUnitChrome(): void {
   railEl?.addEventListener("click", (e) => {
     const nav = (e.target as HTMLElement).closest<HTMLElement>(".rail-nav");
     const dest = nav?.dataset.dest;
-    if (dest === "sessions") setRailMode("sessions");
+    if (dest === "hub") void goHub();
+    else if (dest === "sessions") setRailMode("sessions");
     else if (dest === "history") setUnitView("history");
     else if (dest === "settings") setUnitView("settings");
   });
@@ -3538,10 +3583,8 @@ function wireControls(): void {
     e.stopPropagation();
     toggleNotifMenu(e.currentTarget as HTMLElement);
   });
-  document.getElementById("hub-sessions-btn")?.addEventListener("click", () => {
-    const u = findMostRecentActiveUnit();
-    if (u) goUnit(u); else void newHomeSession();
-  });
+  document.getElementById("hub-door-sessions")?.addEventListener("click", () => goSessions());
+  document.getElementById("hub-door-agenthub")?.addEventListener("click", () => goAgentHub());
   scrimEl?.addEventListener("click", closeFocus);
 }
 
