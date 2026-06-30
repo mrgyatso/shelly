@@ -1308,6 +1308,25 @@
   color: var(--ink-4);
   padding: 14px 8px;
 }
+.history-more {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--line-2);
+  margin-top: 4px;
+  padding: 10px 8px;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.history-more:hover {
+  color: var(--accent);
+}
 
 /* SETTINGS view — Companion preferences. Placeholder rows for now (no wiring),
    styled as real settings so the surface reads as designed, not "coming soon".
