@@ -1641,29 +1641,6 @@ front page, not a spreadsheet:
   the tell of a template.
 - Idle / low-priority items collapse to **chips or a single line**, not full cards.
 
-### The L2 unit home (`home.<unit_key>.html`) — a durable per-project digest
-
-`home.html` is the cross-project L0 hub. One level deeper, each **unit** (a project/git repo,
-or a bare non-repo session) has its OWN durable home: write it to the reserved slug
-**`home.<unit_key>.html`** in the same artifacts dir (e.g.
-`~/.claude/companion/artifacts/home.canvas-board.html`). The Board loads it as the unit's
-**HERO** — shown large at the top of the L2 view, above a readable **history** list of the
-unit's artifacts (size your content to flow; the hero is tall but not the whole screen).
-
-- **`unit_key`** is handed to you at session start (the `companion-session` hook injects it
-  alongside the live-surface path) and is written into your live JSON. Use it verbatim as the
-  filename suffix — it's the same key the Board groups sessions by.
-- Same mechanics as `home.html`: a `companion-bar` block themes the top bar at L2 too; the
-  `navigate` protocol works; include the `data-fit-root` + size-reporter snippet.
-- It's a **digest**, not a dashboard-of-everything: "where this project's work stands now" —
-  current focus, open decisions, what shipped, what's next. It **grows across sessions** (read
-  the existing file, regenerate it richer), so it's the project's living memory on the Board.
-- It is **optional**: when absent, the Board falls back to showing the unit's most recent
-  artifact as the hero (with history below), so author one only when a curated digest adds
-  real signal over "just show my latest artifact."
-- **Concurrency:** two agents in one repo share one `home.<unit_key>.html` — last-writer-wins is
-  fine (it's slow, curated, read-then-regenerate content). Don't try to lock it.
-
 (This applies to any artifact, but dashboards are where the grid reflex is strongest — see
 the design-quality rules: *default card grids with uniform spacing and no hierarchy* are
 explicitly banned.) Pair this with the bundled fonts below — real type is half of looking

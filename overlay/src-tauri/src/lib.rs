@@ -134,7 +134,6 @@ pub fn run() {
             history::sweep_artifacts,
             history::reopen_artifact,
             history::resolve_home,
-            history::resolve_unit_home,
             trace::trace_event,
             trace::trace_enabled,
             live::read_live,
