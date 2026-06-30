@@ -186,9 +186,13 @@ async function processGroup(group) {
       return;
     }
 
-    const result = await callObserver({ prior, turns, model: directorModel });
+    // The agent's own brief (live state) is the richest signal for the turn; take the
+    // freshest one in the batch and hand it to the director so it authors from the
+    // agent's framing instead of reverse-engineering tool deltas. Informs, never forces.
+    const brief = [...group].reverse().map((item) => item.brief).find(Boolean) || null;
+    const result = await callObserver({ prior, turns, brief, model: directorModel });
     const state = normalizeState(result.state, { title: `${job.project} update` });
-    appendMetric(job, "observer", turns, result, { model: directorModel, quality, shouldWrite: state.should_write, presentation: state.presentation, family: state.family });
+    appendMetric(job, "observer", turns, result, { model: directorModel, quality, brief: Boolean(brief), shouldWrite: state.should_write, presentation: state.presentation, family: state.family });
     // `always` mode (job.alwaysWrite) overrides the director's veto — but capture.cjs's
     // isSubstantive pre-filter still applies, so it's "always when there's something."
     if (state.should_write || job.alwaysWrite) {

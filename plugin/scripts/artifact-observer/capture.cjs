@@ -33,9 +33,26 @@ function unitInfo(cwd, sessionId) {
     // the worker can stamp the REAL source; otherwise a fabricated slug never matches the
     // session and every observer artifact lands behind a blank hero.
     const source = fields[0] ? path.basename(fields[0]).replace(/\.json$/, "") : null;
-    return { project: fields[1] || path.basename(cwd), unitKey: fields[4] || fields[1], source };
+    return { project: fields[1] || path.basename(cwd), unitKey: fields[4] || fields[1], source, livePath: fields[0] || null };
   } catch (_) {
-    return { project: path.basename(cwd) || "session", unitKey: path.basename(cwd) || "session", source: null };
+    return { project: path.basename(cwd) || "session", unitKey: path.basename(cwd) || "session", source: null, livePath: null };
+  }
+}
+
+// The agent's own live state file (the roster brief) is the richest signal we have for
+// a turn — first-person working/where/next, often with a recommendation and why. The
+// agent writes it DURING the turn, so it's fresh on disk by the Stop hook. Read it here
+// and attach it to the job so the director can author from the agent's framing instead
+// of reverse-engineering tool deltas. Size-guarded; any failure falls back to deltas-only.
+function readBrief(livePath) {
+  if (!livePath) return null;
+  try {
+    const raw = fs.readFileSync(livePath, "utf8");
+    if (raw.length > 64 * 1024) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch (_) {
+    return null;
   }
 }
 
@@ -135,6 +152,7 @@ async function main() {
     project: info.project,
     unitKey: info.unitKey,
     source: info.source,
+    brief: readBrief(info.livePath),
     createdAt: Date.now(),
     availableAt: Date.now(),
     attempts: 0,
@@ -154,4 +172,4 @@ if (require.main === module) {
   main().catch(() => {});
 }
 
-module.exports = { resolveMode, normMode, globallyDisabled };
+module.exports = { resolveMode, normMode, globallyDisabled, readBrief };
