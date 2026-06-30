@@ -1,32 +1,22 @@
 ---
 name: prefer-html
-description: MANDATORY before writing any `.html` artifact into the Companion artifacts dir (`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}` — that default is the canonical path the PostToolUse hook watches; `companion doctor` only echoes it as a convenience). The skill carries the unified helper script, the required DOM markers (`data-companion-commentable`, `data-companion-item`, `data-companion-submit`, `data-fit-root`), the size-reporter snippet, and the pill / full-document / multi-page templates. Writing an HTML artifact without first loading this skill ships a static page with no commentable blocks, no review form, and no submit — the user cannot interact with it. Use BEFORE the Write call, not after. Also use when responding to `/companion:html`, when emitting a heads-up after a non-trivial change, or when a response would otherwise be a standalone document (plans, reviews, comparisons, diagrams, reports). Decides between a pill heads-up, a full document, and a multi-page document by content density.
+description: MANDATORY before writing any bespoke `.html` artifact into the Companion artifacts dir (`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}` — confirm the live path with `companion doctor`). Routine status artifacts are produced by the asynchronous observer and do not use this skill. Use it for `/companion:html` or an explicitly requested custom visual surface. It carries the unified interaction helper, required DOM markers, size reporter, and document templates.
 ---
 
 # Prefer HTML — render what changed in the Companion overlay
 
-The Companion overlay auto-renders any `.html` file written into the artifacts dir,
-floating it over the terminal without stealing focus. This skill makes Claude *use*
-that surface: emit an artifact after meaningful work, sized to the work.
+The Companion overlay renders any `.html` file written into the artifacts dir. Routine
+status artifacts come from the background observer. This skill is the bespoke path: use it
+when the user explicitly requests an artifact or the work needs a custom visual surface.
 
-## First — check the mode
+## First — confirm this is the bespoke path
 
-Before deciding whether to render anything, read `~/.claude/companion/mode` with a
-quick Bash call: `cat "$HOME/.claude/companion/mode" 2>/dev/null || echo agent`. The
-file's content is one word and controls the rest of this skill.
+Proceed when the user invoked `/companion:html`, explicitly asked for an artifact, or asked
+for a visual/interactive deliverable the observer template cannot express. Otherwise reply
+normally: the asynchronous observer owns routine cadence and will decide whether to update
+the session artifact. Agent/manual mode controls that observer, not explicit user requests.
 
-- **`agent`** (default; the file may not exist) — Follow the cadence rules below.
-  Claude judges when an artifact helps and renders one.
-- **`manual`** — **Render nothing in this skill.** No auto-rendered HTML on this
-  turn, period. The user controls rendering explicitly via the `/companion:html` slash
-  command (which bypasses this mode check and always renders). Skip the rest of this
-  skill's cadence advice and reply in plain chat instead. Exception: if the user *did*
-  run `/companion:html` (or its deprecated alias `/companion:render`) this turn, that
-  command's own prompt overrides — render the artifact it asked for.
-
-The user flips between modes with `/companion:mode agent|manual|status`.
-
-## The default shape: DRIVE THE WORK FORWARD — inform + propel, every substantive turn
+## The default shape: DRIVE THE WORK FORWARD — inform + propel, every substantive artifact
 
 **The Companion's job is to move the project toward shipping — solve the problem, build the
 feature, ship the product — not to recap.** On any substantive turn (real work OR real
@@ -47,8 +37,8 @@ step**, as a single multi-page document:
 
 This is the standing format for *steering* artifacts: **informative AND goal-oriented**,
 always handing the user a clear next thing to act on. It governs **shape, not frequency** —
-whether a turn deserves an artifact at all is the cadence judgment below — but when an
-artifact IS warranted, a substantive turn earns this forward-driving surface, **not a thin
+the observer or explicit user request decides whether an artifact is warranted — but when a
+bespoke artifact IS warranted, substantive work earns this forward-driving surface, **not a thin
 info block**.
 
 **The combined shape is a DEFAULT, not a cage — choose it by intent.** Reach for it when the
@@ -688,25 +678,18 @@ above supersedes them whenever a single artifact carries both.
 Skip the dual shape only for genuine one-liners (a pill status flip) — nothing to question,
 nothing to decide.
 
-## The cadence (agent mode only): consider an artifact after every change
+## The cadence: the observer owns routine artifacts
 
-When you finish a change, run a quick meta-check — *"is this worth a heads-up?"* —
-and **emit an artifact when real work was done.** The overlay is meant to be a
-"here's what just changed" feed for the user; default toward showing something when
-there's something to show.
+Do **not** generate routine recap/status HTML after each change. In agent mode, a thin
+Stop hook queues the new transcript delta and a background observer decides whether
+state meaningfully advanced. It emits compact structured data; deterministic code renders
+the routine Companion artifact. This keeps HTML and observer reasoning out of the primary
+session's context.
 
-**Always render for strategic / vision / direction-setting turns.** When the turn is a
-*discussion* rather than a change — weighing big directions, exploring a grand-scheme
-idea, evaluating options/trade-offs, doing multi-point analysis, planning architecture,
-or any reply the user will want to revisit, share, or react to point-by-point — produce
-the artifact (informative content pages + a Next-steps page carrying the decisions/fork).
-A long, opinionated reply in chat is exactly the case that belongs on the surface, not in
-the terminal scrollback. This is a primary trigger, not an edge case — don't leave a
-substantive strategy answer as prose just because no file changed.
-
-**Skip it** for: trivial conversational answers, pure code edits the user is actively
-watching, one-line lookups, or when the user has said they don't want artifacts. (And
-of course in **manual mode**, skip every time.)
+Use this skill directly only when the user explicitly requests an artifact (`/companion:html`)
+or when the task needs a bespoke visual surface that the deterministic observer template
+cannot express (a diagram, comparison, design exploration, or interactive decision model).
+In those cases, the quality and interaction requirements below still apply.
 
 > **The pull verb.** Regardless of mode, the user can run `/companion:html` to ask
 > for an artifact about the current turn. `/companion:html` bypasses the mode check —
