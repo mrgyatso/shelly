@@ -1,7 +1,7 @@
 const { slug } = require("./lib.cjs");
 const { CLAWD_CSS, poseName } = require("./clawd.cjs");
-const { RENDERERS, esc, renderVisual } = require("./components.cjs");
-const { masthead, lead, evidence, ballot } = require("./blocks.cjs");
+const { RENDERERS, esc } = require("./components.cjs");
+const { assemble } = require("./blocks.cjs");
 
 const FAMILIES = new Set(["answer", "brief", "comparison", "timeline", "gallery", "metrics", "decision"]);
 const ACCENTS = new Set(["blue", "amber", "clay", "mint", "violet"]);
@@ -122,11 +122,10 @@ function renderArtifact(state, job) {
     created: new Date().toISOString(),
     observer: { model: process.env.COMPANION_OBSERVER_MODEL || "haiku", session_id: job.sessionId, family: state.family },
   };
-  const visuals = state.visuals.map(renderVisual).filter(Boolean).join("");
   const edition = new Date().toISOString().slice(0, 10);
-  // Compose the Broadsheet preset from the block kit (blocks.cjs): masthead -> lead ->
-  // visuals -> evidence -> ballot. The interaction script for the ballot follows below.
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(state.title)}</title>${fontUrl ? `<link rel="stylesheet" href="${esc(fontUrl)}">` : ""}<script type="application/json" id="companion-meta">${safeJson(meta)}</script><style>${rendererCss()}</style></head><body><main class="paper family-${esc(state.family)} accent-${esc(state.accent)}" data-fit-root>${masthead(state, job, edition)}${lead(state)}${visuals ? `<div class="visuals">${visuals}</div>` : ""}${evidence(state)}${ballot(state)}</main><script>
+  // Assemble the layout from the block kit (blocks.cjs). Today every artifact uses the
+  // "broadsheet" preset; a later phase lets the director supply a custom block array.
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(state.title)}</title>${fontUrl ? `<link rel="stylesheet" href="${esc(fontUrl)}">` : ""}<script type="application/json" id="companion-meta">${safeJson(meta)}</script><style>${rendererCss()}</style></head><body><main class="paper family-${esc(state.family)} accent-${esc(state.accent)}" data-fit-root>${assemble("broadsheet", state, { job, edition })}</main><script>
 (function(){
 document.querySelectorAll('[data-option]').forEach(function(btn){btn.addEventListener('click',function(){document.querySelectorAll('[data-option]').forEach(function(b){b.classList.remove('selected')});btn.classList.add('selected');refresh()})});
 document.querySelectorAll('.step').forEach(function(row){row.querySelectorAll('[data-choice]').forEach(function(btn){btn.addEventListener('click',function(){var on=btn.classList.contains('active');row.querySelectorAll('[data-choice]').forEach(function(b){b.classList.remove('active')});if(!on)btn.classList.add('active');refresh()})})});

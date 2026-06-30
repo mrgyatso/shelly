@@ -4,12 +4,16 @@
 // rendererCss tokens, so a layout can be assembled by composing blocks. renderArtifact
 // composes the Broadsheet preset (masthead -> lead -> visuals -> evidence -> ballot);
 // later phases let the director choose a custom arrangement from this same kit.
-const { esc } = require("./components.cjs");
+const { esc, renderVisual } = require("./components.cjs");
 const { renderClawd } = require("./clawd.cjs");
 
+// Every block is a pure (state, ctx) -> HTML function — ctx carries render-time
+// context (the job + the edition date) so blocks can be composed in any order by
+// assemble() below, regardless of which fields each one happens to read.
+
 // Masthead — Clawd as the publication emblem + project + edition line.
-function masthead(state, job, edition) {
-  return `<header class="plate"><div class="brand">${renderClawd(state.clawd_pose)}<div class="word"><b>Companion</b><span>${esc(job.project)}</span></div></div><div class="ed">${esc(edition)}<span>${esc(state.presentation)}</span></div></header>`;
+function masthead(state, ctx) {
+  return `<header class="plate"><div class="brand">${renderClawd(state.clawd_pose)}<div class="word"><b>Companion</b><span>${esc(ctx.job.project)}</span></div></div><div class="ed">${esc(ctx.edition)}<span>${esc(state.presentation)}</span></div></header>`;
 }
 
 // Touches — the files this turn concerns, as compact mono chips (max 5 + overflow).
@@ -21,6 +25,12 @@ function touches(files) {
 // Lead — kicker (family) + dominant headline + standfirst + working chip + touches.
 function lead(state) {
   return `<section class="lead"><p class="kicker">${esc(state.family)}</p><h1>${esc(state.title)}</h1>${state.summary ? `<p class="summary">${esc(state.summary)}</p>` : ""}${state.working ? `<p class="working">${esc(state.working)}</p>` : ""}${touches(state.files)}</section>`;
+}
+
+// Visuals — the registered visual blocks (components.cjs) the director selected.
+function visuals(state) {
+  const inner = state.visuals.map(renderVisual).filter(Boolean).join("");
+  return inner ? `<div class="visuals">${inner}</div>` : "";
 }
 
 function evidenceBlock(title, items, tone = "") {
@@ -46,4 +56,26 @@ function ballot(state) {
   return `<section class="ballot" aria-label="Decide"><header class="ballot-head"><h2>Decide</h2><span class="sub">${n} move${n === 1 ? "" : "s"} · steer the work</span></header><div class="steps">${moves}</div><label class="comment"><span>Add context</span><textarea id="comment" placeholder="A tweak, a constraint, or a note for the agent…"></textarea></label><div class="ballot-foot"><span class="tally" id="tally">Nothing marked yet</span><div class="foot-btns"><button id="doall" type="button" class="doall">✓ Do all</button><button id="submit" type="button" class="commit">Commit &amp; continue</button></div></div></section>`;
 }
 
-module.exports = { masthead, touches, lead, evidence, evidenceBlock, ballot };
+// The kit — every page-level block, keyed by name, all sharing the (state, ctx)
+// signature so a layout is just an ordered list of names.
+const BLOCKS = { masthead, lead, visuals, evidence, ballot };
+
+// Presets — named block-arrays. "broadsheet" is today's skeleton, byte-for-byte.
+// steer (decision-hero) and canvas (persistent rail) are the same kit in a different
+// arrangement; they get their hero/frame block variants in a later phase, so for now
+// they alias the broadsheet order (the registry + assemble are the Phase-2 deliverable;
+// the distinct layouts come next).
+const PRESETS = {
+  broadsheet: ["masthead", "lead", "visuals", "evidence", "ballot"],
+  steer: ["masthead", "lead", "visuals", "evidence", "ballot"],
+  canvas: ["masthead", "lead", "visuals", "evidence", "ballot"],
+};
+
+// Assemble a layout from a preset name OR an explicit block-name array (the future
+// model-chosen arrangement). Unknown names are skipped; unknown preset -> broadsheet.
+function assemble(layout, state, ctx) {
+  const names = Array.isArray(layout) ? layout : (PRESETS[layout] || PRESETS.broadsheet);
+  return names.map((name) => (BLOCKS[name] ? BLOCKS[name](state, ctx) : "")).join("");
+}
+
+module.exports = { masthead, touches, lead, visuals, evidence, evidenceBlock, ballot, BLOCKS, PRESETS, assemble };
