@@ -8,8 +8,8 @@
 //   L1 SESSIONS — a light native roster of UNITS with live activity. A unit is
 //                 a project (git repo) when its sessions run in one, else a bare
 //                 session; two agents in one repo = one card reading "2 live".
-//   L2 UNIT     — one unit's living HOME, layered: a durable agent-authored
-//                 DIGEST (home.<unit_key>.html) at the top, a strip of live
+//   L2 UNIT     — one unit's living HOME, layered: a large HERO (the active
+//                 session's most recent artifact) at the top, a strip of live
 //                 LANES (one per active session — its working/where/next +
 //                 ✓/✎/✗ decisions + in-flight artifacts), and a readable text
 //                 HISTORY of the unit's artifacts. Opening any artifact opens a
@@ -1892,28 +1892,7 @@ async function renderHero(unitKey: string): Promise<void> {
     else showBlankHero();
     return;
   }
-  let home: string | null = null;
-  if (unitKey !== UNSOURCED) {
-    try {
-      home = await invoke<string | null>("resolve_unit_home", { unitKey });
-    } catch {
-      home = null;
-    }
-  }
-  // A late resolve from a unit we've since left must not paint here.
-  const v = currentView();
-  if (v.level !== "unit" || v.unitKey !== unitKey) return;
-
-  if (home) {
-    digestEl.removeAttribute("hidden");
-    syncSurfaceStrip(true);
-    applyBar(await barSpecFor(home));
-    digestPath = home;
-    await loadArtifactInto(home, digestEl).catch((e) => console.error("hero digest load failed", e));
-    return;
-  }
-
-  // No digest — lead with the ACTIVE SESSION's most recent artifact. The hero
+  // Lead with the ACTIVE SESSION's most recent artifact. The hero
   // follows the session shown in the terminal (matched by source slug), not the
   // unit: a session just launched into an existing project has no artifacts of its
   // own → blank hero, never a sibling session's last artifact (the reported bug).
@@ -1934,10 +1913,10 @@ async function renderHero(unitKey: string): Promise<void> {
       console.error("hero artifact load failed", e),
     );
   } else {
-    // The active session owns no artifact (and there's no unit home): blank the hero.
+    // The active session owns no artifact: blank the hero.
     // Reset digestPath HERE (not at the top of the function — that would expose a
-    // transient null across the resolve_unit_home await for a concurrent poll to act
-    // on). Without this, switching from a session WITH an artifact to a blank one
+    // transient null for a concurrent poll to act on). Without this, switching
+    // from a session WITH an artifact to a blank one
     // leaves digestPath pointing at the prior session's artifact, so the new session's
     // first artifact would mis-route to the "new artifact" pill instead of auto-lighting,
     // and maybeLightBlankHero (which guards on digestPath === null) would never fire.

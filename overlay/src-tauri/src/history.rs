@@ -379,29 +379,6 @@ pub fn resolve_home() -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-/// Resolve a UNIT's home digest (`home.<unit_key>.html`), if the agent has
-/// authored one. The Board loads it full-bleed at L2 when you enter the unit;
-/// `None` ⇒ the native fallback (lanes + history alone). Mirrors [`resolve_home`]
-/// — same reserved-slug family, same artifacts-dir scope requirement.
-#[tauri::command]
-pub fn resolve_unit_home(unit_key: String) -> Option<String> {
-    // unit_key comes from the live JSON / hook; keep it filename-safe so it can't
-    // escape the artifacts dir.
-    let safe: String = unit_key
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        .collect();
-    if safe.is_empty() {
-        return None;
-    }
-    let name = format!("home.{safe}.html");
-    artifact_dirs()
-        .iter()
-        .map(|d| d.join(&name))
-        .find(|p| p.is_file())
-        .map(|p| p.to_string_lossy().into_owned())
-}
-
 /// Re-open an artifact as a normal panel and dismiss the HUD. The HUD is hidden
 /// (not closed) so the next ⌘8 re-shows it warm without rebuilding.
 #[tauri::command]
