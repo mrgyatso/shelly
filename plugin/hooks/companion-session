@@ -38,7 +38,22 @@ project=$(printf '%s' "$line" | cut -f2)
 shortid=$(printf '%s' "$line" | cut -f3)
 is_repo=$(printf '%s' "$line" | cut -f4)
 unit_key=$(printf '%s' "$line" | cut -f5)
+root=$(printf '%s' "$line" | cut -f6)
 digest_path="${HOME}/.claude/companion/artifacts/home.${unit_key}.html"
+
+# 1a. REGISTER FIRST — write the authoritative identity record BEFORE the
+#     best-effort sidecars below. register() is the source of truth of the
+#     identity redesign, so it must be the most-protected step, not the last.
+#     The record is keyed by the FULL session_id and IMMUTABLE (resume/compact
+#     find it and leave it untouched), so one early write per session is enough.
+#     Running it ahead of the sidecar node-spawns means a short-lived session
+#     (which can be torn down mid-hook) still gets registered. Sits below the
+#     .claude-mem bail so the observer's own worker never self-registers.
+if [ -n "$session_id" ]; then
+  node "$CMP_HOOK_DIR/companion-identity.cjs" register \
+    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${COMPANION_SESSION:-}" 2>/dev/null
+  trace session register "sid=$shortid" "unit_key=$unit_key" "root=$root"
+fi
 trace session start "sid=$shortid" "cwd=$cwd" "live=$live_path" "project=$project" "is_repo=$is_repo" "unit_key=$unit_key" "owned=${COMPANION_SESSION:-}"
 
 live_dir=$(dirname "$live_path")
@@ -87,8 +102,7 @@ fi
 #     stem in session-dirs.json — a Board-owned, agent-proof sidecar the Board reads
 #     (via live.rs) to resolve a unit's absolute directory, so "+ session in this
 #     project" knows where to spawn. Written for EVERY session (external too).
-root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
-[ -n "$root" ] || root="$cwd"
+#     (root is derived once in companion-livepath.sh and parsed above — no second git call.)
 STEM="$stem" ROOT="$root" DIRS="${HOME}/.claude/companion/session-dirs.json" node -e '
   const fs=require("fs");
   const p=process.env.DIRS;
@@ -118,23 +132,8 @@ if [ -n "$COMPANION_SESSION" ] && [ -n "$session_id" ]; then
   trace session record-id "stem=$stem"
 fi
 
-# 1e. REGISTER this session's identity ONCE in the authoritative registry
-#     (sessions/<session_id>.json) and append a session.registered event to the
-#     source-of-truth log (events.ndjson). This is the register-once spine of the
-#     identity redesign: the record is keyed by the FULL session_id (not the
-#     collision-prone 8-char shortid) and is IMMUTABLE — resume/compact find it and
-#     leave it untouched, so identity is frozen for the session's whole life. We do
-#     NOT re-derive identity here; we record the unit_key/is_repo/project ALREADY
-#     derived above (companion-livepath.sh), so there is exactly one derivation.
-#     DUAL-WRITE (Phase 1): the old sidecars above still carry routing; nothing reads
-#     the registry yet. Registered for every session that has a session_id (repo,
-#     non-repo, owned, external) — sits below the .claude-mem bail so the observer's
-#     own worker never self-registers.
-if [ -n "$session_id" ]; then
-  node "$CMP_HOOK_DIR/companion-identity.cjs" register \
-    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${COMPANION_SESSION:-}" 2>/dev/null
-  trace session register "sid=$shortid" "unit_key=$unit_key" "root=$root"
-fi
+# (REGISTER now runs FIRST — see section 1a above. It was moved out of this
+#  last-step slot so a short-lived session can't be torn down before it registers.)
 
 # 2. Prune dead live files (mtime older than PRUNE_DAYS) so the roster's archive
 #    list doesn't grow unbounded across crashed/abandoned sessions.
