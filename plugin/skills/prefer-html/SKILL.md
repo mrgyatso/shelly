@@ -759,6 +759,14 @@ ${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/<kebab-slug>.html
 Use a descriptive slug (e.g. `auth-fix-heads-up.html`, `migration-plan.html`). Writing the
 file is what pops the overlay — no other action needed.
 
+> **Write it with the `Write` tool — not `Bash` (`cat >`, `cp`, a node/python script).**
+> A `PostToolUse(Write|Edit)` hook auto-stamps `artifact-index.json` so the Board maps the
+> artifact to *this* session's unit. That hook only fires for the `Write`/`Edit` tools — an
+> artifact created via `Bash` is never indexed, so it lands in the Board's UNSOURCED bucket
+> instead of your session (it may still flash up transiently via the live poll, then vanish
+> from the unit's history). If you must template/substitute, build the final HTML string,
+> then emit it through the `Write` tool.
+
 ### Required in every artifact (so the overlay sizes it)
 
 The overlay loads artifacts in a sandboxed, opaque-origin iframe and **cannot measure
