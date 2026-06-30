@@ -2029,8 +2029,12 @@ function buildArtRow(a: ArtifactEntry): HTMLElement {
   return row;
 }
 
-/** Render the HISTORY — the unit's artifacts as a readable text list (no iframes). */
-function renderHistory(unitKey: string): void {
+/** How many history rows show before "Show more" expands the rest in place. */
+const HISTORY_COLLAPSED_ROWS = 5;
+
+/** Render the HISTORY — the unit's artifacts as a readable text list (no iframes).
+ *  Capped to the most recent few; "Show more" expands THIS unit's full list in place. */
+function renderHistory(unitKey: string, expanded = false): void {
   const arts = groupArtifactsByUnit().get(unitKey) ?? [];
   const frag = document.createDocumentFragment();
   const head = document.createElement("div");
@@ -2045,7 +2049,19 @@ function renderHistory(unitKey: string): void {
     empty.textContent = "No artifacts yet — they'll appear here as agents author them.";
     frag.append(empty);
   } else {
-    for (const a of arts) frag.append(buildArtRow(a));
+    // arts is sorted most-recent-first (groupArtifactsByUnit). Show a capped slice,
+    // then a "Show N more" row that expands this unit's full history in place.
+    const shown = expanded ? arts : arts.slice(0, HISTORY_COLLAPSED_ROWS);
+    for (const a of shown) frag.append(buildArtRow(a));
+    const hidden = arts.length - shown.length;
+    if (hidden > 0) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "history-more";
+      more.textContent = `Show ${hidden} more`;
+      more.addEventListener("click", () => renderHistory(unitKey, true));
+      frag.append(more);
+    }
   }
   historyEl.replaceChildren(frag);
 }
