@@ -87,6 +87,24 @@ function loadPrior(job) {
   }
 }
 
+// The quality dial — a sibling of the mode file. `fast` (default) keeps the cheap
+// Haiku director + the local Broadsheet renderer (Sonnet only for true bespoke
+// escalations). `pretty` raises the director to Sonnet for sharper judgment while
+// still rendering through the local template (scope "director"); set
+// COMPANION_QUALITY_SCOPE=all to instead route every should_write turn through the
+// Sonnet designer (scope "all"). Read per-job so flipping the dial needs no restart.
+const qualityPath = process.env.COMPANION_QUALITY_PATH || path.join(process.env.HOME, ".claude", "companion", "quality");
+function readQuality() {
+  let raw = process.env.COMPANION_QUALITY || "";
+  if (!raw) { try { raw = fs.readFileSync(qualityPath, "utf8"); } catch (_) {} }
+  return raw.trim().toLowerCase() === "pretty" ? "pretty" : "fast";
+}
+
+function directorModelFor(quality) {
+  if (quality === "pretty") return process.env.COMPANION_PRETTY_DIRECTOR_MODEL || "sonnet";
+  return process.env.COMPANION_OBSERVER_MODEL || "haiku";
+}
+
 function updateIndex(artifactPath, job) {
   let index = {};
   try { index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {}; } catch (_) {}
@@ -109,7 +127,7 @@ function appendMetric(job, stage, turns, result, extra = {}) {
     at: Date.now(),
     sessionId: job.sessionId,
     stage,
-    model: stage === "designer" ? (process.env.COMPANION_DESIGNER_MODEL || "sonnet") : (process.env.COMPANION_OBSERVER_MODEL || "haiku"),
+    model: extra.model || (stage === "designer" ? (process.env.COMPANION_DESIGNER_MODEL || "sonnet") : (process.env.COMPANION_OBSERVER_MODEL || "haiku")),
     batchedTurns: turns.length,
     usage: result.usage,
     totalCostUsd: result.totalCostUsd,
@@ -154,6 +172,11 @@ async function processGroup(group) {
   const job = group[group.length - 1];
   const turns = group.flatMap((item) => item.turns || []).slice(-8);
   const prior = loadPrior(job);
+  const quality = readQuality();
+  const directorModel = directorModelFor(quality);
+  // pretty + scope "all" routes every should_write turn through the Sonnet designer;
+  // otherwise pretty just sharpens the director and we keep the local renderer.
+  const forceBespoke = quality === "pretty" && (process.env.COMPANION_QUALITY_SCOPE || "director") === "all";
   try {
     const hardBespoke = [...group].reverse().find((item) => item.hardBespokeReason);
     if (hardBespoke) {
@@ -163,14 +186,17 @@ async function processGroup(group) {
       return;
     }
 
-    const result = await callObserver({ prior, turns });
+    const result = await callObserver({ prior, turns, model: directorModel });
     const state = normalizeState(result.state, { title: `${job.project} update` });
-    appendMetric(job, "observer", turns, result, { shouldWrite: state.should_write, presentation: state.presentation, family: state.family });
+    appendMetric(job, "observer", turns, result, { model: directorModel, quality, shouldWrite: state.should_write, presentation: state.presentation, family: state.family });
     // `always` mode (job.alwaysWrite) overrides the director's veto — but capture.cjs's
     // isSubstantive pre-filter still applies, so it's "always when there's something."
     if (state.should_write || job.alwaysWrite) {
-      if (state.presentation === "bespoke") {
-        await publishBespoke(job, turns, prior, state.escalation_reason || "observer requested a bespoke surface", state.bespoke_brief || state.summary);
+      if (state.presentation === "bespoke" || forceBespoke) {
+        const reason = state.presentation === "bespoke"
+          ? (state.escalation_reason || "observer requested a bespoke surface")
+          : "quality=pretty (scope all): authored by the Sonnet designer";
+        await publishBespoke(job, turns, prior, reason, state.bespoke_brief || state.summary);
       } else {
         const artifactPath = path.join(artifactsDir, artifactFilename(job));
         atomicWrite(artifactPath, renderArtifact(state, job));

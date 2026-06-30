@@ -722,6 +722,31 @@ A full document is correct when there's real substance. Density decides — and 
 substance is several *independent* things, the right shape is multi-page, not a longer
 scroll.
 
+## House style — "Broadsheet" (match the other two authoring paths)
+
+Companion artifacts are authored by three paths — this inline one, the observer's local
+renderer, and the Sonnet designer — and they must feel like **one product**. The shared style is
+**Broadsheet**: an editorial page, not a floating UI card. The one rule: **make the decision the
+loudest thing on the page.** (Full spec: `plugin/scripts/artifact-observer/FEEL-SPEC.md`.)
+
+- **Dissolve into the board.** Set `html, body` background to the exact board shade
+  `oklch(0.945 0.014 60)` (the opaque-origin iframe can't read the parent's vars — hardcode it).
+  No outer card border or page-wide drop shadow; the artifact fills the window edge to edge.
+- **Hierarchy through scale.** One dominant **Newsreader** headline earns its size
+  (clamp ~34–60px, letter-spacing ~-.03em); everything else steps down hard.
+- **Palette** (one semantic accent per artifact): board `oklch(0.945 0.014 60)`, paper `#FBFAF6`,
+  ink `#171A1F`, soft `#39404A`, muted `#646C76`, hairline `#CDC8BC`; accent ∈ blue `#3D7EFF`,
+  amber `#F2B84B`, clay `#D98158`, mint `#4DAA7D`.
+- **Type:** Newsreader = display, Inter = reading, JetBrains Mono = kickers/labels/file chips.
+  Load the bundled faces via `asset://localhost$HOME/.claude/companion/vendor/fonts.css` with
+  system fallbacks. Small-caps mono kickers + hairline rules carry the texture.
+- **The Decide ballot is load-bearing.** When the artifact carries next moves, end on an
+  **elevated** decision panel (accent top-rule, a real "Decide" header, ~42px ✓/✎/✗ targets, a
+  Do-all and a primary dark Commit) — never a footer of tiny buttons. This is where you spend
+  boldness; keep the rest disciplined. The unified helper below wires it.
+- **Modes:** decision-dominant turn → make the recommendation the headline ("Steer"); a surface
+  the user lives in → keep a persistent steer rail in reach ("Canvas").
+
 ## How to emit
 
 Write one **self-contained** `.html` file (inline all CSS/JS, no build step, no external
@@ -733,6 +758,14 @@ ${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/<kebab-slug>.html
 
 Use a descriptive slug (e.g. `auth-fix-heads-up.html`, `migration-plan.html`). Writing the
 file is what pops the overlay — no other action needed.
+
+> **Write it with the `Write` tool — not `Bash` (`cat >`, `cp`, a node/python script).**
+> A `PostToolUse(Write|Edit)` hook auto-stamps `artifact-index.json` so the Board maps the
+> artifact to *this* session's unit. That hook only fires for the `Write`/`Edit` tools — an
+> artifact created via `Bash` is never indexed, so it lands in the Board's UNSOURCED bucket
+> instead of your session (it may still flash up transiently via the live poll, then vanish
+> from the unit's history). If you must template/substitute, build the final HTML string,
+> then emit it through the `Write` tool.
 
 ### Required in every artifact (so the overlay sizes it)
 

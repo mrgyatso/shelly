@@ -449,3 +449,43 @@ test("always mode forces a write even when the director vetoes should_write", ()
   assert.equal(fs.existsSync(artifact), true);
   assert.match(fs.readFileSync(artifact, "utf8"), /Forced update/);
 });
+
+test("quality=pretty (scope all) routes a routine turn through the Sonnet designer and records the director model", () => {
+  const home = tempDir();
+  const stateDir = path.join(home, "observer");
+  const queueDir = path.join(stateDir, "queue");
+  const artifactsDir = path.join(home, "artifacts");
+  fs.mkdirSync(queueDir, { recursive: true });
+  fs.writeFileSync(path.join(queueDir, "pretty.json"), JSON.stringify({
+    version: 1, id: "pretty", sessionId: "0ddba11a-rest", shortid: "0ddba11a",
+    cwd: home, project: "companion", unitKey: "companion", createdAt: Date.now() - 100,
+    availableAt: 0, attempts: 0, hardBespokeReason: null,
+    turns: [{ user: "ship it", assistant: "Shipped the renderer.", tools: [{ name: "Edit", file: "x" }], files: ["x"] }],
+  }));
+  // A perfectly ordinary "composed" turn — under fast it would render locally;
+  // under pretty+all it must be forced through the designer instead.
+  const response = {
+    should_write: true, presentation: "composed", family: "brief", clawd_pose: "happy", accent: "blue",
+    escalation_reason: "", bespoke_brief: "", title: "Shipped", summary: "Done.", working: "",
+    changes: [], decisions: [], blockers: [], next_steps: [], files: ["x"], visuals: [],
+  };
+  const bespoke = '<!doctype html><html><head><title>Pretty</title><script type="application/json" id="companion-meta">{}</script></head><body><main data-fit-root>Pretty surface</main><script>new ResizeObserver(function(){parent.postMessage({source:"companion-artifact",kind:"size"},"*")}).observe(document.querySelector("main"))</script></body></html>';
+  const result = spawnSync(process.execPath, [path.join(observerDir, "worker.cjs")], {
+    env: {
+      ...process.env, HOME: home, COMPANION_OBSERVER_STATE_DIR: stateDir,
+      COMPANION_ARTIFACTS_DIR: artifactsDir, COMPANION_OBSERVER_DEBOUNCE_MS: "0",
+      COMPANION_OBSERVER_IDLE_EXIT_MS: "20", COMPANION_OBSERVER_POLL_MS: "5",
+      COMPANION_QUALITY: "pretty", COMPANION_QUALITY_SCOPE: "all",
+      COMPANION_OBSERVER_FAKE_RESPONSE: JSON.stringify(response), COMPANION_DESIGNER_FAKE_HTML: bespoke,
+    }, timeout: 5000,
+  });
+  assert.equal(result.status, 0, result.stderr.toString());
+  const files = fs.readdirSync(artifactsDir);
+  assert.equal(files.length, 1);
+  assert.match(files[0], /^bespoke-companion-/);
+  const metrics = fs.readFileSync(path.join(stateDir, "metrics.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+  const observer = metrics.find((m) => m.stage === "observer");
+  assert.equal(observer.model, "sonnet");
+  assert.equal(observer.quality, "pretty");
+  assert.deepEqual(metrics.map((m) => m.stage), ["observer", "designer"]);
+});
