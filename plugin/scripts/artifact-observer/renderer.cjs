@@ -1,6 +1,7 @@
 const { slug } = require("./lib.cjs");
-const { CLAWD_CSS, poseName, renderClawd } = require("./clawd.cjs");
+const { CLAWD_CSS, poseName } = require("./clawd.cjs");
 const { RENDERERS, esc, renderVisual } = require("./components.cjs");
+const { masthead, lead, evidence, ballot } = require("./blocks.cjs");
 
 const FAMILIES = new Set(["answer", "brief", "comparison", "timeline", "gallery", "metrics", "decision"]);
 const ACCENTS = new Set(["blue", "amber", "clay", "mint", "violet"]);
@@ -55,26 +56,6 @@ function normalizeState(raw, fallback = {}) {
   };
 }
 
-function evidenceBlock(title, items, tone = "") {
-  if (!items.length) return "";
-  return `<section class="evidence ${tone}"><h3>${esc(title)}</h3><ul>${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>`;
-}
-
-// The Decide ballot — the load-bearing decision surface. "Spend boldness on one
-// memorable interaction": this is it. Elevated panel with an accent top-rule, a
-// real header, generous tap targets, Do-all + Commit. Each move is ✓ do / ✎ note
-// / ✗ skip (one choice per move). One shared comment rides the same Submit.
-function nextSteps(state) {
-  if (!state.next_steps.length) return "";
-  const n = state.next_steps.length;
-  const moves = state.next_steps.map((item, index) => `<article class="step k-${esc(item.kind)}" data-item data-label="${esc(item.title)}" data-step="${index}"><div class="meta"><span class="kind">${esc(item.kind)}</span><h3>${esc(item.title)}</h3><p>${esc(item.detail)}</p></div><div class="acts" aria-label="Choose what to do"><button type="button" class="do" data-choice="do" title="Do it" aria-label="Do it">✓</button><button type="button" class="note" data-choice="note" title="Add a note" aria-label="Add note">✎</button><button type="button" class="skip" data-choice="skip" title="Skip" aria-label="Skip">✗</button></div></article>`).join("");
-  return `<section class="ballot" aria-label="Decide"><header class="ballot-head"><h2>Decide</h2><span class="sub">${n} move${n === 1 ? "" : "s"} · steer the work</span></header><div class="steps">${moves}</div><label class="comment"><span>Add context</span><textarea id="comment" placeholder="A tweak, a constraint, or a note for the agent…"></textarea></label><div class="ballot-foot"><span class="tally" id="tally">Nothing marked yet</span><div class="foot-btns"><button id="doall" type="button" class="doall">✓ Do all</button><button id="submit" type="button" class="commit">Commit &amp; continue</button></div></div></section>`;
-}
-
-// Broadsheet — the gold-standard feel (see memory artifact-feel-gold-standard).
-// The artifact dissolves into the board canvas (oklch(0.945 0.014 60)); a single
-// editorial column carries a dominant Newsreader headline; the decision lands as
-// an elevated "Decide" ballot. Clawd rides the masthead as the publication emblem.
 function rendererCss() {
   return `
 :root{color-scheme:light;--board:oklch(0.945 0.014 60);--paper:#fbfaf6;--ink:#171a1f;--soft:#39404a;--muted:#646c76;--faint:#8c939d;--line:#cdc8bc;--hair:rgba(23,26,31,.10);--rule:#171a1f;--blue:#3d7eff;--amber:#f2b84b;--clay:#d98158;--mint:#4daa7d;--violet:#8c6ee8;--accent:var(--blue);--accent-ink:#1f57cf;--accent-wash:#e8eeff}
@@ -142,12 +123,10 @@ function renderArtifact(state, job) {
     observer: { model: process.env.COMPANION_OBSERVER_MODEL || "haiku", session_id: job.sessionId, family: state.family },
   };
   const visuals = state.visuals.map(renderVisual).filter(Boolean).join("");
-  const evidence = [evidenceBlock("What changed", state.changes), evidenceBlock("Decisions", state.decisions), evidenceBlock("Blockers", state.blockers, "alert")].filter(Boolean).join("");
   const edition = new Date().toISOString().slice(0, 10);
-  const touches = state.files.length
-    ? `<div class="touches"><span class="tl">Touches</span>${state.files.slice(0, 5).map((file) => `<code title="${esc(file)}">${esc(file.split("/").pop() || file)}</code>`).join("")}${state.files.length > 5 ? `<code>+${state.files.length - 5}</code>` : ""}</div>`
-    : "";
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(state.title)}</title>${fontUrl ? `<link rel="stylesheet" href="${esc(fontUrl)}">` : ""}<script type="application/json" id="companion-meta">${safeJson(meta)}</script><style>${rendererCss()}</style></head><body><main class="paper family-${esc(state.family)} accent-${esc(state.accent)}" data-fit-root><header class="plate"><div class="brand">${renderClawd(state.clawd_pose)}<div class="word"><b>Companion</b><span>${esc(job.project)}</span></div></div><div class="ed">${esc(edition)}<span>${esc(state.presentation)}</span></div></header><section class="lead"><p class="kicker">${esc(state.family)}</p><h1>${esc(state.title)}</h1>${state.summary ? `<p class="summary">${esc(state.summary)}</p>` : ""}${state.working ? `<p class="working">${esc(state.working)}</p>` : ""}${touches}</section>${visuals ? `<div class="visuals">${visuals}</div>` : ""}${evidence ? `<details class="evidence-wrap"><summary class="evidence-toggle">Evidence &amp; work log</summary><div class="evidence-grid">${evidence}</div></details>` : ""}${nextSteps(state)}</main><script>
+  // Compose the Broadsheet preset from the block kit (blocks.cjs): masthead -> lead ->
+  // visuals -> evidence -> ballot. The interaction script for the ballot follows below.
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(state.title)}</title>${fontUrl ? `<link rel="stylesheet" href="${esc(fontUrl)}">` : ""}<script type="application/json" id="companion-meta">${safeJson(meta)}</script><style>${rendererCss()}</style></head><body><main class="paper family-${esc(state.family)} accent-${esc(state.accent)}" data-fit-root>${masthead(state, job, edition)}${lead(state)}${visuals ? `<div class="visuals">${visuals}</div>` : ""}${evidence(state)}${ballot(state)}</main><script>
 (function(){
 document.querySelectorAll('[data-option]').forEach(function(btn){btn.addEventListener('click',function(){document.querySelectorAll('[data-option]').forEach(function(b){b.classList.remove('selected')});btn.classList.add('selected');refresh()})});
 document.querySelectorAll('.step').forEach(function(row){row.querySelectorAll('[data-choice]').forEach(function(btn){btn.addEventListener('click',function(){var on=btn.classList.contains('active');row.querySelectorAll('[data-choice]').forEach(function(b){b.classList.remove('active')});if(!on)btn.classList.add('active');refresh()})})});
