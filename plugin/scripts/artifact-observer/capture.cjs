@@ -39,22 +39,53 @@ function unitInfo(cwd, sessionId) {
   }
 }
 
-// App-owned generation mode, read every Stop. The dial advertises four positions,
-// but `agent` (inline working-agent authoring) has no machinery yet, so it aliases
-// to `selective` — selecting it never goes silent, and any legacy `agent` mode file
-// keeps getting observer artifacts.
-//   manual    → observer disabled (only the /companion:html pull renders)
+// App-owned generation dial, read every Stop. Four advertised positions; `agent`
+// (inline working-agent authoring) has no machinery yet, so it ALIASES to
+// `selective` — selecting it never goes silent, and legacy `agent` files keep
+// producing artifacts.
+//   manual    → observer off (only the /companion:html pull renders)
 //   selective → observer runs; the director's should_write decides (default)
 //   always    → observer runs; force a write on any substantive turn
-function resolveMode(companionDir) {
-  if (process.env.COMPANION_OBSERVER_IGNORE_MODE === "1") return "selective";
-  let raw = "";
+function normMode(raw) {
+  const w = String(raw || "").trim().toLowerCase();
+  if (w === "manual" || w === "always" || w === "selective") return w;
+  if (w === "agent") return "selective"; // reserved alias until inline authoring lands
+  return null; // empty/unknown → no opinion (fall through)
+}
+
+function readModeFile(file) {
   try {
-    raw = fs.readFileSync(path.join(companionDir, "mode"), "utf8").trim().toLowerCase();
-  } catch (_) {}
-  if (raw === "manual") return "manual";
-  if (raw === "always") return "always";
-  return "selective";
+    return normMode(fs.readFileSync(file, "utf8"));
+  } catch (_) {
+    return null;
+  }
+}
+
+function safeUnit(unitKey) {
+  return String(unitKey || "").replace(/[^A-Za-z0-9._-]/g, "");
+}
+
+// Hybrid scope: a per-unit override (`mode.<unit_key>`) wins, else the global
+// `mode` file, else `selective`.
+function resolveMode(companionDir, unitKey) {
+  if (process.env.COMPANION_OBSERVER_IGNORE_MODE === "1") return "selective";
+  const safe = safeUnit(unitKey);
+  const perUnit = safe ? readModeFile(path.join(companionDir, `mode.${safe}`)) : null;
+  return perUnit || readModeFile(path.join(companionDir, "mode")) || "selective";
+}
+
+// Cheap fast-path: observer globally OFF (`mode` = manual) AND no per-unit
+// overrides exist at all ⇒ skip every Stop before the costly transcript read +
+// unit lookup. (With overrides present, a unit could re-enable itself, so we
+// fall through and resolve per-unit after unitInfo.)
+function globallyDisabled(companionDir) {
+  if (process.env.COMPANION_OBSERVER_IGNORE_MODE === "1") return false;
+  if (readModeFile(path.join(companionDir, "mode")) !== "manual") return false;
+  try {
+    return !fs.readdirSync(companionDir).some((f) => f.startsWith("mode."));
+  } catch (_) {
+    return true;
+  }
 }
 
 async function main() {
@@ -67,8 +98,7 @@ async function main() {
 
   const home = process.env.HOME || os.homedir();
   const companionDir = path.join(home, ".claude", "companion");
-  const mode = resolveMode(companionDir);
-  if (mode === "manual") return;
+  if (globallyDisabled(companionDir)) return;
 
   const transcript = payload.transcript_path;
   const sessionId = String(payload.session_id || "");
@@ -94,6 +124,8 @@ async function main() {
   } catch (_) {}
 
   const info = unitInfo(cwd, sessionId);
+  const mode = resolveMode(companionDir, info.unitKey);
+  if (mode === "manual") return;
   const job = {
     version: 1,
     id: `${Date.now()}-${hash.slice(0, 12)}`,
@@ -118,4 +150,8 @@ async function main() {
   }
 }
 
-main().catch(() => {});
+if (require.main === module) {
+  main().catch(() => {});
+}
+
+module.exports = { resolveMode, normMode, globallyDisabled };
