@@ -12,8 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 
 /// A pending deep-link target (a live-source slug) the Board should navigate to
