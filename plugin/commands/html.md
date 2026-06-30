@@ -2,7 +2,7 @@
 description: Render an HTML artifact summarising the most recent work, decisions, or status from this conversation
 ---
 
-Render a self-contained HTML artifact that summarises the most recent meaningful work, decisions, or status from this conversation. The user has invoked this verb explicitly — they want a visual summary on the overlay instead of more terminal text. **Render the artifact regardless of the current Companion mode** (this is the user pull verb; it bypasses `agent`/`manual` mode entirely).
+Render a self-contained HTML artifact that summarises the most recent meaningful work, decisions, or status from this conversation. The user has invoked this verb explicitly — they want a visual summary on the overlay instead of more terminal text. **Render the artifact regardless of the current Companion mode** (this is the user pull verb; it bypasses the mode dial entirely — `manual`, `selective`, and `always` alike).
 
 **Use the `prefer-html` skill's default shape** — see its "The default shape (MANDATORY): brief + a Next steps page" section. For anything substantive the standing format is a **single multi-page artifact that both informs and propels**:
 

@@ -166,7 +166,9 @@ async function processGroup(group) {
     const result = await callObserver({ prior, turns });
     const state = normalizeState(result.state, { title: `${job.project} update` });
     appendMetric(job, "observer", turns, result, { shouldWrite: state.should_write, presentation: state.presentation, family: state.family });
-    if (state.should_write) {
+    // `always` mode (job.alwaysWrite) overrides the director's veto — but capture.cjs's
+    // isSubstantive pre-filter still applies, so it's "always when there's something."
+    if (state.should_write || job.alwaysWrite) {
       if (state.presentation === "bespoke") {
         await publishBespoke(job, turns, prior, state.escalation_reason || "observer requested a bespoke surface", state.bespoke_brief || state.summary);
       } else {

@@ -39,6 +39,24 @@ function unitInfo(cwd, sessionId) {
   }
 }
 
+// App-owned generation mode, read every Stop. The dial advertises four positions,
+// but `agent` (inline working-agent authoring) has no machinery yet, so it aliases
+// to `selective` — selecting it never goes silent, and any legacy `agent` mode file
+// keeps getting observer artifacts.
+//   manual    → observer disabled (only the /companion:html pull renders)
+//   selective → observer runs; the director's should_write decides (default)
+//   always    → observer runs; force a write on any substantive turn
+function resolveMode(companionDir) {
+  if (process.env.COMPANION_OBSERVER_IGNORE_MODE === "1") return "selective";
+  let raw = "";
+  try {
+    raw = fs.readFileSync(path.join(companionDir, "mode"), "utf8").trim().toLowerCase();
+  } catch (_) {}
+  if (raw === "manual") return "manual";
+  if (raw === "always") return "always";
+  return "selective";
+}
+
 async function main() {
   let payload;
   try {
@@ -49,12 +67,8 @@ async function main() {
 
   const home = process.env.HOME || os.homedir();
   const companionDir = path.join(home, ".claude", "companion");
-  const modeFile = path.join(companionDir, "mode");
-  if (process.env.COMPANION_OBSERVER_IGNORE_MODE !== "1") {
-    try {
-      if (fs.readFileSync(modeFile, "utf8").trim() === "manual") return;
-    } catch (_) {}
-  }
+  const mode = resolveMode(companionDir);
+  if (mode === "manual") return;
 
   const transcript = payload.transcript_path;
   const sessionId = String(payload.session_id || "");
@@ -93,6 +107,7 @@ async function main() {
     availableAt: Date.now(),
     attempts: 0,
     hardBespokeReason,
+    alwaysWrite: mode === "always",
     turns: [turn],
   };
   const queueFile = path.join(stateDir, "queue", `${job.id}.json`);

@@ -347,3 +347,105 @@ test("worker retries model failures and dead-letters after the third attempt", (
   assert.equal(job.attempts, 3);
   assert.match(job.lastError, /Unexpected token|not-json/);
 });
+
+const MODE_TURN = [
+  { message: { role: "user", content: "implement the observer" } },
+  { message: { role: "assistant", content: [
+    { type: "tool_use", name: "Edit", input: { file_path: "/repo/worker.cjs" } },
+    { type: "text", text: "Implemented the worker and tests." },
+  ] } },
+];
+
+function captureInMode(mode) {
+  const home = tempDir();
+  const stateDir = path.join(home, "observer");
+  if (mode) {
+    fs.mkdirSync(path.join(home, ".claude", "companion"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".claude", "companion", "mode"), `${mode}\n`);
+  }
+  const file = transcript(MODE_TURN);
+  const payload = JSON.stringify({ session_id: `${mode || "default"}01-rest`, cwd: home, transcript_path: file });
+  const result = spawnSync(process.execPath, [path.join(observerDir, "capture.cjs")], {
+    input: payload,
+    env: {
+      ...process.env,
+      HOME: home,
+      COMPANION_OBSERVER_STATE_DIR: stateDir,
+      COMPANION_ARTIFACTS_DIR: path.join(home, "artifacts"),
+      COMPANION_OBSERVER_NO_START: "1",
+      COMPANION_OBSERVER_IGNORE_MODE: "",
+    },
+  });
+  assert.equal(result.status, 0, result.stderr.toString());
+  return stateDir;
+}
+
+test("capture hook stays silent in manual mode", () => {
+  const stateDir = captureInMode("manual");
+  assert.equal(fs.existsSync(path.join(stateDir, "queue")), false);
+});
+
+test("capture stamps alwaysWrite only in always mode (selective default does not)", () => {
+  function queued(stateDir) {
+    const [queueFile] = fs.readdirSync(path.join(stateDir, "queue"));
+    return JSON.parse(fs.readFileSync(path.join(stateDir, "queue", queueFile), "utf8"));
+  }
+  assert.equal(queued(captureInMode("always")).alwaysWrite, true);
+  assert.equal(queued(captureInMode(null)).alwaysWrite, false); // absent file → selective default
+});
+
+test("always mode forces a write even when the director vetoes should_write", () => {
+  const home = tempDir();
+  const stateDir = path.join(home, "observer");
+  const queueDir = path.join(stateDir, "queue");
+  const artifactsDir = path.join(home, ".claude", "companion", "artifacts");
+  fs.mkdirSync(queueDir, { recursive: true });
+  fs.writeFileSync(path.join(queueDir, "always.json"), JSON.stringify({
+    version: 1,
+    id: "always",
+    sessionId: "feedf00d-rest",
+    shortid: "feedf00d",
+    cwd: home,
+    project: "companion",
+    unitKey: "companion",
+    createdAt: Date.now() - 100,
+    availableAt: 0,
+    attempts: 0,
+    alwaysWrite: true,
+    turns: [{ user: "u", assistant: "a", tools: [], files: [] }],
+  }));
+  const response = {
+    should_write: false,
+    presentation: "routine",
+    family: "brief",
+    clawd_pose: "happy",
+    accent: "blue",
+    title: "Forced update",
+    summary: "Always mode wrote anyway.",
+    working: "Ready",
+    changes: [],
+    decisions: [],
+    blockers: [],
+    next_steps: [],
+    files: [],
+    visuals: [],
+  };
+  const result = spawnSync(process.execPath, [path.join(observerDir, "worker.cjs")], {
+    env: {
+      ...process.env,
+      HOME: home,
+      COMPANION_OBSERVER_STATE_DIR: stateDir,
+      COMPANION_ARTIFACTS_DIR: artifactsDir,
+      COMPANION_OBSERVER_DEBOUNCE_MS: "0",
+      COMPANION_OBSERVER_IDLE_EXIT_MS: "20",
+      COMPANION_OBSERVER_POLL_MS: "5",
+      COMPANION_OBSERVER_FAKE_RESPONSE: JSON.stringify(response),
+    },
+    timeout: 5000,
+  });
+  assert.equal(result.status, 0, result.stderr.toString());
+  assert.deepEqual(fs.readdirSync(queueDir), []);
+  const artifact = path.join(artifactsDir, "observer-companion-feedf00d.html");
+  assert.equal(fs.existsSync(artifact), true);
+  assert.match(fs.readFileSync(artifact, "utf8"), /Forced update/);
+});
