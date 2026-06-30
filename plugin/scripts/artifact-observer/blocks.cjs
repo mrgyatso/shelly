@@ -60,14 +60,14 @@ function ballot(state) {
 // signature so a layout is just an ordered list of names.
 const BLOCKS = { masthead, lead, visuals, evidence, ballot };
 
-// Presets — named block-arrays. "broadsheet" is today's skeleton, byte-for-byte.
-// steer (decision-hero) and canvas (persistent rail) are the same kit in a different
-// arrangement; they get their hero/frame block variants in a later phase, so for now
-// they alias the broadsheet order (the registry + assemble are the Phase-2 deliverable;
-// the distinct layouts come next).
+// Presets — named block-arrays, paired with a `frame-<layout>` CSS variant (renderer.cjs).
+// broadsheet: the editorial column. steer: decision-hero — the ballot is promoted right
+// under the lead so the next move is the loudest thing (the frame amps it + shrinks the
+// headline). canvas: the same order, but frame-canvas re-lays it as a reading column +
+// a persistent ballot rail. The frame does the visual layout; the array sets block order.
 const PRESETS = {
   broadsheet: ["masthead", "lead", "visuals", "evidence", "ballot"],
-  steer: ["masthead", "lead", "visuals", "evidence", "ballot"],
+  steer: ["masthead", "lead", "ballot", "visuals", "evidence"],
   canvas: ["masthead", "lead", "visuals", "evidence", "ballot"],
 };
 

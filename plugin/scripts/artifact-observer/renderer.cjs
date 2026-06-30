@@ -6,6 +6,7 @@ const { assemble } = require("./blocks.cjs");
 const FAMILIES = new Set(["answer", "brief", "comparison", "timeline", "gallery", "metrics", "decision"]);
 const ACCENTS = new Set(["blue", "amber", "clay", "mint", "violet"]);
 const PRESENTATIONS = new Set(["routine", "composed", "bespoke"]);
+const LAYOUTS = new Set(["broadsheet", "steer", "canvas"]);
 
 function safeJson(value) {
   return JSON.stringify(value).replace(/<\//g, "<\\/");
@@ -30,6 +31,7 @@ function normalizeState(raw, fallback = {}) {
   return {
     should_write: Boolean(raw && raw.should_write),
     presentation: PRESENTATIONS.has(raw && raw.presentation) ? raw.presentation : "routine",
+    layout: LAYOUTS.has(raw && raw.layout) ? raw.layout : "broadsheet",
     family: FAMILIES.has(raw && raw.family) ? raw.family : "answer",
     clawd_pose: poseName(raw && raw.clawd_pose),
     accent: ACCENTS.has(raw && raw.accent) ? raw.accent : "blue",
@@ -106,8 +108,18 @@ h1{margin:14px 0 0;font:560 clamp(34px,5.2vw,58px)/1.0 Newsreader,Georgia,serif;
 .doall{appearance:none;cursor:pointer;border:1.5px solid var(--line);background:#fff;color:var(--soft);font:650 13px/1 Inter,sans-serif;padding:13px 18px;border-radius:11px;transition:.12s}.doall:hover,.doall:focus-visible{border-color:var(--ink);color:var(--ink);outline:none}
 .commit{appearance:none;cursor:pointer;border:0;background:var(--ink);color:#fff;font:650 14px/1 Inter,sans-serif;padding:14px 24px;border-radius:11px;box-shadow:0 10px 22px -12px rgba(23,26,31,.6);transition:transform .14s,background .14s}.commit:hover,.commit:focus-visible{transform:translateY(-2px);background:var(--accent);outline:none}.commit.ready{background:var(--accent)}
 .status-good{--status:#4daa7d}.status-warn{--status:#f2b84b}.status-bad{--status:#d75d55}.status-active{--status:var(--blue)}
+/* Phase-3 frames. broadsheet = base (no rules). steer = decision-hero: the ballot is
+   promoted under the lead (preset order) and amped; the headline steps down so the next
+   move is the loudest thing. canvas = edge-to-edge reading column + a persistent ballot rail. */
+.frame-steer h1{font-size:clamp(30px,4.4vw,44px)}.frame-steer .lead{padding-bottom:16px}
+.frame-steer .ballot{margin-top:20px;border-top-width:5px}.frame-steer .ballot-head{padding:24px 28px 16px}.frame-steer .ballot-head h2{font:600 30px/1 Newsreader,serif}
+.frame-steer .ballot .step{padding:18px 28px}.frame-steer .ballot .step h3{font-size:17px}.frame-steer .ballot .acts button{width:46px;height:46px;font-size:18px}
+.frame-steer .visuals{padding-top:16px}.frame-steer .viz-head h2{font-size:19px}
+.paper.frame-canvas{width:min(1180px,100%);display:grid;grid-template-columns:minmax(0,1fr) 348px;column-gap:42px;align-items:start}
+.frame-canvas .plate,.frame-canvas .lead{grid-column:1/-1}.frame-canvas .visuals,.frame-canvas .evidence-wrap{grid-column:1;min-width:0}
+.frame-canvas .ballot{grid-column:2;margin-top:0;position:sticky;top:16px;align-self:start;border-radius:5px}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-@media(max-width:720px){.paper{padding:22px 20px}.visuals,.family-comparison .visuals,.family-gallery .visuals,.family-metrics .visuals{grid-template-columns:1fr}.evidence-grid{grid-template-columns:1fr}.bar-row{grid-template-columns:90px 1fr}.bar-row strong{display:none}.step{flex-direction:column;align-items:flex-start;gap:12px}.ballot-foot{flex-direction:column;align-items:stretch}.foot-btns{display:grid;grid-template-columns:1fr 1fr}}
+@media(max-width:720px){.paper{padding:22px 20px}.paper.frame-canvas{display:block;width:min(1000px,100%)}.frame-canvas .ballot{position:static}.visuals,.family-comparison .visuals,.family-gallery .visuals,.family-metrics .visuals{grid-template-columns:1fr}.evidence-grid{grid-template-columns:1fr}.bar-row{grid-template-columns:90px 1fr}.bar-row strong{display:none}.step{flex-direction:column;align-items:flex-start;gap:12px}.ballot-foot{flex-direction:column;align-items:stretch}.foot-btns{display:grid;grid-template-columns:1fr 1fr}}
 ${CLAWD_CSS}`;
 }
 
@@ -125,7 +137,7 @@ function renderArtifact(state, job) {
   const edition = new Date().toISOString().slice(0, 10);
   // Assemble the layout from the block kit (blocks.cjs). Today every artifact uses the
   // "broadsheet" preset; a later phase lets the director supply a custom block array.
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(state.title)}</title>${fontUrl ? `<link rel="stylesheet" href="${esc(fontUrl)}">` : ""}<script type="application/json" id="companion-meta">${safeJson(meta)}</script><style>${rendererCss()}</style></head><body><main class="paper family-${esc(state.family)} accent-${esc(state.accent)}" data-fit-root>${assemble("broadsheet", state, { job, edition })}</main><script>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(state.title)}</title>${fontUrl ? `<link rel="stylesheet" href="${esc(fontUrl)}">` : ""}<script type="application/json" id="companion-meta">${safeJson(meta)}</script><style>${rendererCss()}</style></head><body><main class="paper frame-${esc(state.layout)} family-${esc(state.family)} accent-${esc(state.accent)}" data-fit-root>${assemble(state.layout, state, { job, edition })}</main><script>
 (function(){
 document.querySelectorAll('[data-option]').forEach(function(btn){btn.addEventListener('click',function(){document.querySelectorAll('[data-option]').forEach(function(b){b.classList.remove('selected')});btn.classList.add('selected');refresh()})});
 document.querySelectorAll('.step').forEach(function(row){row.querySelectorAll('[data-choice]').forEach(function(btn){btn.addEventListener('click',function(){var on=btn.classList.contains('active');row.querySelectorAll('[data-choice]').forEach(function(b){b.classList.remove('active')});if(!on)btn.classList.add('active');refresh()})})});

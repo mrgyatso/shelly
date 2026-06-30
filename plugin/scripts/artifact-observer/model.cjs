@@ -18,6 +18,7 @@ const OBSERVER_SCHEMA = {
   properties: {
     should_write: { type: "boolean" },
     presentation: { enum: ["routine", "composed", "bespoke"] },
+    layout: { enum: ["broadsheet", "steer", "canvas"] },
     family: { enum: ["answer", "brief", "comparison", "timeline", "gallery", "metrics", "decision"] },
     clawd_pose: { enum: ["thinking", "typing", "conducting", "juggling", "sweeping", "beacon", "wizard", "confused", "happy"] },
     accent: { enum: ["blue", "amber", "clay", "mint", "violet"] },
@@ -79,6 +80,12 @@ metric_strip, bar_chart, line_chart, timeline, comparison, option_gallery, befor
 code_diff. Use only facts supported by the turn. Choose family by information shape, not decoration.
 Choose a Clawd pose reflecting the work: thinking, typing, conducting, juggling, sweeping, beacon,
 wizard, confused, or happy.
+
+Choose layout = the page shape. Default "broadsheet" (editorial column — almost always right). Use
+"steer" when the turn is dominated by ONE decision the user should act on now — it promotes the
+"Decide" ballot to the top as the hero and quiets everything else (great for lazy-vibecode "just
+tell me the next move" turns). Use "canvas" when there's substantial reading AND ongoing decisions —
+it splits into a reading column plus a persistent ballot rail so the next move stays in reach.
 
 next_steps is the load-bearing surface — it renders as an elevated "Decide" ballot the user acts on
 without touching the terminal, so make it genuinely propulsive. Write moves that ADVANCE the work,
