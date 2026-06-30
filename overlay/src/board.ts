@@ -366,6 +366,7 @@ export async function initBoard(): Promise<void> {
   wireNavigate();
   wireHistoryClicks();
   wireUnitChrome();
+  wireSettings();
   wireScrollGating();
 
   setStatus(status, "Loading…");
@@ -2077,6 +2078,46 @@ function setUnitView(view: "session" | "history" | "settings"): void {
   unitEl.dataset.view = view;
   if (view !== "session") unitEl.dataset.rail = "menu";
   if (view === "history" && currentUnitKey) renderHistory(currentUnitKey);
+  if (view === "settings") void syncDials();
+}
+
+/** Highlight the active button in a `.settings-seg` segmented control. */
+function setSeg(dial: string, value: string): void {
+  document.querySelectorAll<HTMLElement>(`.settings-seg[data-dial="${dial}"] button`).forEach((b) => {
+    b.classList.toggle("on", b.dataset.value === value);
+  });
+}
+
+/** Read the dial files (mode + quality) and reflect them in the Settings panel. */
+async function syncDials(): Promise<void> {
+  try {
+    const d = await invoke<{ mode: string; quality: string }>("read_dials");
+    setSeg("mode", d.mode);
+    setSeg("quality", d.quality);
+  } catch (e) {
+    console.error("read_dials failed", e);
+  }
+}
+
+/** Wire the Settings segmented controls: a click writes the dial file (optimistic,
+ *  re-syncs on failure). The plugin observer reads these files per-job, so no restart. */
+function wireSettings(): void {
+  document.querySelectorAll<HTMLElement>(".settings-seg").forEach((seg) => {
+    const dial = seg.dataset.dial;
+    seg.addEventListener("click", async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>("button[data-value]");
+      if (!btn || !dial) return;
+      const value = btn.dataset.value ?? "";
+      setSeg(dial, value);
+      try {
+        await invoke("set_dial", { name: dial, value });
+      } catch (err) {
+        console.error("set_dial failed", err);
+        void syncDials();
+      }
+    });
+  });
+  void syncDials();
 }
 
 /** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the floating

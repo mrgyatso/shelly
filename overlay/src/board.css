@@ -1356,6 +1356,29 @@
   border-radius: 999px;
   padding: 5px 10px;
 }
+/* Segmented control for a live dial (Render mode, Artifact quality). */
+.settings-seg {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.settings-seg button {
+  appearance: none;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: 600 11.5px/1 var(--ui-font);
+  padding: 6px 11px;
+  border-radius: 7px;
+  transition: background 0.12s, color 0.12s;
+}
+.settings-seg button:hover { color: var(--ink); }
+.settings-seg button.on { background: var(--accent, #3d7eff); color: #fff; }
 .settings-foot {
   margin-top: 16px;
   font: 400 11px/1.5 var(--mono);

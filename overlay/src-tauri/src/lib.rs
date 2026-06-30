@@ -1,5 +1,6 @@
 mod artifact;
 mod artifact_watch;
+mod dials;
 mod history;
 mod hub;
 mod layout;
@@ -130,6 +131,8 @@ pub fn run() {
             artifact::read_artifact,
             artifact::artifact_in_scope,
             layout::notify_fit,
+            dials::read_dials,
+            dials::set_dial,
             history::list_artifacts,
             history::sweep_artifacts,
             history::reopen_artifact,
