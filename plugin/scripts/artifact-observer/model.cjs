@@ -74,6 +74,15 @@ implementation, diagnosis, a durable decision, a blocker, or a useful plan. Do n
 acknowledgements, repetition, status polling, or prose with no durable project signal. When it did
 advance, return a concise CURRENT snapshot that merges prior state with new facts. Never invent.
 
+You may also receive agent_brief — the working agent's own first-person account of THIS turn, the same
+live state it writes for the roster: what it is doing (working), where things stand (where), what
+changed (changed), and the real next moves (next, often with a recommendation and why). When present it
+is your most authoritative signal: the agent already reasoned the propulsion you would otherwise have to
+infer from raw tool deltas. Let it anchor the title/summary and especially next_steps — carry the
+agent's recommendation and reasoning into the moves rather than re-deriving weaker ones. Still
+cross-check against the deltas and never invent beyond what they support; the brief informs your
+judgment, it does not force a write — if nothing materially advanced, stay silent.
+
 Choose presentation=routine for ordinary answers/status with no useful visualization. Choose
 presentation=composed when a registered component clarifies real data. Available components:
 metric_strip, bar_chart, line_chart, timeline, comparison, option_gallery, before_after, checklist,
@@ -101,9 +110,10 @@ element). In the brief, say which mode fits: "steer" when the turn is one domina
 when the user is living in the board and needs the moves always in reach. The routine/composed
 renderer creates HTML locally; you only return schema data.`;
 
-function observerPrompt(prior, turns) {
+function observerPrompt(prior, turns, brief) {
   return JSON.stringify({
     prior_state: prior || null,
+    agent_brief: brief || null,
     new_turn_deltas: turns.map((turn) => ({
       user: turn.user,
       assistant: turn.assistant,
@@ -130,7 +140,7 @@ function cleanClaudeEnv() {
   return env;
 }
 
-function callObserver({ prior, turns, model, timeoutMs = 120000 }) {
+function callObserver({ prior, turns, brief, model, timeoutMs = 120000 }) {
   if (process.env.COMPANION_OBSERVER_FAKE_RESPONSE) {
     return Promise.resolve({
       state: JSON.parse(process.env.COMPANION_OBSERVER_FAKE_RESPONSE),
@@ -174,7 +184,7 @@ function callObserver({ prior, turns, model, timeoutMs = 120000 }) {
       try { resolve(parseClaudeOutput(stdout)); }
       catch (error) { reject(new Error(`invalid observer response: ${error.message}`)); }
     });
-    child.stdin.end(observerPrompt(prior, turns));
+    child.stdin.end(observerPrompt(prior, turns, brief));
   });
 }
 

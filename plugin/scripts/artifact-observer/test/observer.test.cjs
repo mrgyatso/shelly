@@ -521,3 +521,92 @@ test("quality=pretty (scope all) routes a routine turn through the Sonnet design
   assert.equal(observer.quality, "pretty");
   assert.deepEqual(metrics.map((m) => m.stage), ["observer", "designer"]);
 });
+
+// ── Phase 2: the agent brief (live state) informs the director ────────────────
+
+test("observer prompt carries the agent brief when present and null when absent", () => {
+  const turn = [{ user: "u", assistant: "a", tools: [], files: [] }];
+  const withBrief = JSON.parse(observerPrompt(null, turn, { working: "shipping #6", next: [{ title: "verify", kind: "decision" }] }));
+  assert.equal(withBrief.agent_brief.working, "shipping #6");
+  assert.equal(withBrief.agent_brief.next[0].kind, "decision");
+  assert.equal(withBrief.new_turn_deltas.length, 1);
+  const without = JSON.parse(observerPrompt(null, turn));
+  assert.equal(without.agent_brief, null);
+});
+
+test("readBrief parses a live brief object and guards bad or absent input", () => {
+  const { readBrief } = require("../capture.cjs");
+  assert.equal(readBrief(null), null);
+  const dir = tempDir();
+  const file = path.join(dir, "live.json");
+  fs.writeFileSync(file, JSON.stringify({ working: "wiring the brief", next: [{ title: "ship" }] }));
+  assert.equal(readBrief(file).working, "wiring the brief");
+  fs.writeFileSync(file, "not json");
+  assert.equal(readBrief(file), null);
+  fs.writeFileSync(file, JSON.stringify([1, 2, 3])); // array, not an object
+  assert.equal(readBrief(file), null);
+});
+
+test("capture attaches the agent's live brief to the queued job", () => {
+  const home = tempDir();
+  const stateDir = path.join(home, "observer");
+  const liveDir = path.join(home, ".claude", "companion", "live");
+  fs.mkdirSync(liveDir, { recursive: true });
+  // The live-path helper reuses any file matching *--<shortid>.json (shortid = first
+  // 8 chars of session_id), so pre-seeding one makes the brief read deterministic.
+  fs.writeFileSync(path.join(liveDir, "proj--br1efced.json"), JSON.stringify({
+    working: "wiring the artifact brief",
+    where: ["director now reads the brief"],
+    next: [{ title: "ship #6", sub: "verify with a before/after", kind: "decision" }],
+    project: "companion", is_repo: true, unit_key: "companion",
+  }));
+  const file = transcript(MODE_TURN);
+  const payload = JSON.stringify({ session_id: "br1efced-feed", cwd: home, transcript_path: file });
+  const result = spawnSync(process.execPath, [path.join(observerDir, "capture.cjs")], {
+    input: payload,
+    env: {
+      ...process.env,
+      HOME: home,
+      COMPANION_OBSERVER_STATE_DIR: stateDir,
+      COMPANION_ARTIFACTS_DIR: path.join(home, "artifacts"),
+      COMPANION_OBSERVER_NO_START: "1",
+    },
+  });
+  assert.equal(result.status, 0, result.stderr.toString());
+  const [queueFile] = fs.readdirSync(path.join(stateDir, "queue"));
+  const queued = JSON.parse(fs.readFileSync(path.join(stateDir, "queue", queueFile), "utf8"));
+  assert.equal(queued.brief.working, "wiring the artifact brief");
+  assert.equal(queued.brief.next[0].kind, "decision");
+});
+
+test("worker threads the agent brief through to the director (metric records it)", () => {
+  const home = tempDir();
+  const stateDir = path.join(home, "observer");
+  const queueDir = path.join(stateDir, "queue");
+  const artifactsDir = path.join(home, "artifacts");
+  fs.mkdirSync(queueDir, { recursive: true });
+  fs.writeFileSync(path.join(queueDir, "brief.json"), JSON.stringify({
+    version: 1, id: "brief", sessionId: "br1efced-rest", shortid: "br1efced",
+    cwd: home, project: "companion", unitKey: "companion", createdAt: Date.now() - 100,
+    availableAt: 0, attempts: 0, hardBespokeReason: null,
+    brief: { working: "wiring the brief", next: [{ title: "ship", sub: "verify", kind: "todo" }] },
+    turns: [{ user: "do it", assistant: "Wired it.", tools: [{ name: "Edit", file: "x" }], files: ["x"] }],
+  }));
+  const response = {
+    should_write: true, presentation: "routine", family: "brief", clawd_pose: "happy", accent: "blue",
+    escalation_reason: "", bespoke_brief: "", title: "Brief-informed", summary: "x", working: "",
+    changes: [], decisions: [], blockers: [], next_steps: [], files: [], visuals: [],
+  };
+  const result = spawnSync(process.execPath, [path.join(observerDir, "worker.cjs")], {
+    env: {
+      ...process.env, HOME: home, COMPANION_OBSERVER_STATE_DIR: stateDir,
+      COMPANION_ARTIFACTS_DIR: artifactsDir, COMPANION_OBSERVER_DEBOUNCE_MS: "0",
+      COMPANION_OBSERVER_IDLE_EXIT_MS: "20", COMPANION_OBSERVER_POLL_MS: "5",
+      COMPANION_OBSERVER_FAKE_RESPONSE: JSON.stringify(response),
+    },
+    timeout: 5000,
+  });
+  assert.equal(result.status, 0, result.stderr.toString());
+  const metric = JSON.parse(fs.readFileSync(path.join(stateDir, "metrics.jsonl"), "utf8").trim());
+  assert.equal(metric.brief, true);
+});
