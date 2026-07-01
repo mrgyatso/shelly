@@ -21,6 +21,13 @@ CMP_HOOK_DIR="$SCRIPT_DIR"
 
 payload=$(cat)
 
+# External-terminal handling (default OFF) — do not index artifacts written by a
+# terminal the Board did not spawn (no COMPANION_SESSION). See companion-session
+# for the full note; opt in via ~/.claude/companion/external-terminals = "on".
+if [ -z "$COMPANION_SESSION" ] && [ "$(cat "${HOME}/.claude/companion/external-terminals" 2>/dev/null)" != "on" ]; then
+  exit 0
+fi
+
 # Cheap pre-filter: skip the JSON parse for the 99% of writes that aren't artifacts.
 case "$payload" in
   *"$ARTIFACTS_DIR"/*) ;;

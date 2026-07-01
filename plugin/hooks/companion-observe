@@ -1,5 +1,15 @@
 #!/usr/bin/env sh
 # Thin Stop hook: enqueue the current transcript delta and return immediately.
 # All model work and HTML rendering happens in the detached observer worker.
+
+# External-terminal handling (default OFF) — do not enqueue observer jobs for a
+# terminal the Board did not spawn (no COMPANION_SESSION), so a plain terminal
+# that merely has the plugin installed never spins up artifact generation. See
+# companion-session for the full note; opt in via
+# ~/.claude/companion/external-terminals = "on".
+if [ -z "$COMPANION_SESSION" ] && [ "$(cat "${HOME}/.claude/companion/external-terminals" 2>/dev/null)" != "on" ]; then
+  exit 0
+fi
+
 node "$(dirname "$0")/../scripts/artifact-observer/capture.cjs"
 exit 0

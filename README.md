@@ -121,6 +121,19 @@ That gives you:
 
 The plugin's watched folder defaults to `~/.claude/companion/artifacts` (override with `COMPANION_ARTIFACTS_DIR`).
 
+#### External terminals (off by default)
+
+The plugin only acts in terminals the **Board itself spawns** (they carry a `COMPANION_SESSION` marker). A plain terminal that merely has the plugin installed — an "external" terminal — is **ignored by default**: it never joins the Board roster, never has its artifacts indexed, and never spins up the artifact observer. This keeps sessions that aren't using the app from generating artifacts or cluttering the Board.
+
+To opt a machine back into external-terminal handling, write `on` to the flag file:
+
+```bash
+echo on > ~/.claude/companion/external-terminals   # re-enable
+rm ~/.claude/companion/external-terminals           # back to off (default)
+```
+
+(External *agents* that push artifacts into the `remote/` dir are a separate path and are unaffected by this setting.)
+
 ### Manual
 
 If you'd rather wire it by hand, add a `PostToolUse` hook in `~/.claude/settings.json`:

@@ -1,7 +1,7 @@
 {
   "name": "companion",
   "description": "Render Claude's work as HTML artifacts in the Companion overlay. Agent mode queues transcript deltas, lets Haiku compose beautiful prebuilt Clawd workbench components, and escalates visual invention to an isolated Sonnet designer. The primary session never writes routine HTML. Manual /companion:html remains available.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso/claude-code-companion"

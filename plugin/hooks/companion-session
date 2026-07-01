@@ -28,6 +28,17 @@ case "$cwd" in
   */.claude-mem/*|*/.claude-mem) exit 0 ;;
 esac
 
+# External-terminal handling (default OFF). A terminal the Board did not spawn
+# carries no COMPANION_SESSION; by default the Companion ignores such external
+# terminals entirely — no roster entry, no sidecars, no artifact observer — so a
+# plain terminal that merely has the plugin installed stays silent (no takeover,
+# no artifacts generated for sessions not using the app). Opt back in per-machine
+# by writing "on" to ~/.claude/companion/external-terminals. This gates only
+# hook-driven terminals; external *agents* (the remote/ push path) are unaffected.
+if [ -z "$COMPANION_SESSION" ] && [ "$(cat "${HOME}/.claude/companion/external-terminals" 2>/dev/null)" != "on" ]; then
+  exit 0
+fi
+
 # Trace harness (no-op unless enabled). companion-livepath.sh sources it too.
 CMP_HOOK_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)
 . "$CMP_HOOK_DIR/companion-trace.sh"
