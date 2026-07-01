@@ -27,6 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
+import { rewritesNeedingReload, retainedIdentity, type Identity } from "./ingest-logic";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { mountClawd } from "./clawd";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -224,6 +225,10 @@ const knownPaths = new Set<string>();
 const unreadByUnit = new Map<string, Set<string>>();
 /** Signature of the last-seen artifact set (path:mtime) — a cheap poll no-op guard. */
 let lastArtifactSig = "";
+/** Last-seen modified_ms per artifact path. Lets ingest detect an in-place rewrite
+ *  (same path, newer mtime) of the artifact on screen and reload it — which the
+ *  path-keyed routing roads never do. Seeded at init alongside knownPaths. */
+const lastMtimeByPath = new Map<string, number>();
 /** Units whose L2 history rebuild is deferred because the reader is open. */
 const pendingIngest = new Set<string>();
 
@@ -399,7 +404,10 @@ export async function initBoard(): Promise<void> {
   }
 
   for (const s of allSources) lastJsonBySource.set(s.source, s.json);
-  for (const a of allArtifacts) knownPaths.add(a.path);
+  for (const a of allArtifacts) {
+    knownPaths.add(a.path);
+    lastMtimeByPath.set(a.path, a.modified_ms);
+  }
   lastArtifactSig = artifactSig(allArtifacts);
   window.setInterval(() => void pollLive(), POLL_MS);
 
@@ -2959,7 +2967,28 @@ function totalUnread(): number {
  * Reconcile a fresh artifact list: route NEW artifacts to their unit (unread
  * unless that unit is on screen), prune deleted ones, then refresh the level.
  */
-function ingestArtifacts(artifacts: ArtifactEntry[]): void {
+function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
+  // FIX #2 — rewrite identity-flap. history.rs blanks source/unit_key for the one
+  // poll between an in-place rewrite and the hook's re-stamp (the `index-stale-drop`
+  // trace). Patch a still-live prior identity back BEFORE any routing so the rewrite
+  // doesn't flap through __unsourced__ and flash a phantom cross-unit dot. A reused
+  // filename from a DEAD session is not retained (retainedIdentity), so it still falls
+  // through to the staleness guard + slug routing as intended.
+  const priorIdentity = new Map<string, Identity>(
+    allArtifacts
+      .filter((a) => a.source)
+      .map((a) => [a.path, { source: a.source, unit_key: a.unit_key }]),
+  );
+  const isLiveSource = (source: string): boolean => allSources.some((s) => s.source === source);
+  const artifacts = rawArtifacts.map((a) => {
+    const keep = retainedIdentity(
+      { source: a.source, unit_key: a.unit_key },
+      priorIdentity.get(a.path),
+      isLiveSource,
+    );
+    return keep.source === a.source ? a : { ...a, source: keep.source, unit_key: keep.unit_key };
+  });
+
   const present = new Set(artifacts.map((a) => a.path));
   // Snapshot the prior routing identity per path BEFORE overwriting allArtifacts.
   const prevRouteKey = new Map(allArtifacts.map((a) => [a.path, artifactRouteKey(a)]));
@@ -2975,6 +3004,24 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
   const reRoutedSet = new Set(reRouted.map((a) => a.path));
   allArtifacts = artifacts;
   for (const a of artifacts) knownPaths.add(a.path);
+
+  // FIX #1 — content refresh. An artifact rewritten IN PLACE while it is the one on
+  // the hero (or open in the reader) is invisible to the four routing roads below
+  // (they key on path-novelty/difference). Detect it by mtime and reload that frame
+  // in place — silently, since it's the same doc with fresh content; the reported bug
+  // was the stale first render sticking. Capture display state BEFORE updating mtimes.
+  const reloads = rewritesNeedingReload(lastMtimeByPath, artifacts, { digestPath, focusPath });
+  for (const a of artifacts) lastMtimeByPath.set(a.path, a.modified_ms);
+  for (const p of [...lastMtimeByPath.keys()]) if (!present.has(p)) lastMtimeByPath.delete(p);
+  for (const r of reloads) {
+    const frame = r.target === "reader" ? focusFrame : digestEl;
+    if (!frame) continue;
+    if (r.target === "hero" && currentView().level !== "unit") continue;
+    trace("ingest.content-refresh", { corr: r.path, target: r.target });
+    void loadArtifactInto(r.path, frame).catch((e) =>
+      console.error("content-refresh reload failed", r.path, e),
+    );
+  }
 
   for (const p of [...knownPaths]) if (!present.has(p)) knownPaths.delete(p);
   for (const [unit, set] of unreadByUnit) {
