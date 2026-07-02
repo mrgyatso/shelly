@@ -140,7 +140,12 @@ function cleanClaudeEnv() {
   return env;
 }
 
-function callObserver({ prior, turns, brief, model, timeoutMs = 120000 }) {
+// 240s default (was 120s): the director is output-bound — dense `composed`/`visuals`
+// turns emit 10k+ tokens and legitimately run ~140s (measured), so 120s killed
+// slow-but-completing jobs and dead-lettered the artifact. Env-overridable for tuning.
+const OBSERVER_TIMEOUT_MS = Number(process.env.COMPANION_OBSERVER_TIMEOUT_MS) || 240000;
+
+function callObserver({ prior, turns, brief, model, timeoutMs = OBSERVER_TIMEOUT_MS }) {
   if (process.env.COMPANION_OBSERVER_FAKE_RESPONSE) {
     return Promise.resolve({
       state: JSON.parse(process.env.COMPANION_OBSERVER_FAKE_RESPONSE),

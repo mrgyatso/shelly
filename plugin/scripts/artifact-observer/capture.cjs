@@ -143,6 +143,14 @@ async function main() {
   const info = unitInfo(cwd, sessionId);
   const mode = resolveMode(companionDir, info.unitKey);
   if (mode === "manual") return;
+  // The agent authors the artifact in its own live-state: brief.artifact carries the tier
+  // (cheap | mid | high | skip) plus any rich fields. tier defaults to cheap at the worker;
+  // "skip" is the agent judging this turn not worth an artifact — honor it and enqueue
+  // nothing. An explicit user visual request (hardBespokeReason) overrides a skip.
+  const brief = readBrief(info.livePath);
+  const authoredTier = brief && brief.artifact && typeof brief.artifact.tier === "string"
+    ? brief.artifact.tier.trim().toLowerCase() : "";
+  if (authoredTier === "skip" && !hardBespokeReason) return;
   const job = {
     version: 1,
     id: `${Date.now()}-${hash.slice(0, 12)}`,
@@ -152,7 +160,8 @@ async function main() {
     project: info.project,
     unitKey: info.unitKey,
     source: info.source,
-    brief: readBrief(info.livePath),
+    brief,
+    tier: authoredTier || null,
     createdAt: Date.now(),
     availableAt: Date.now(),
     attempts: 0,

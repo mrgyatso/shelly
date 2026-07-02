@@ -25,6 +25,34 @@ function normalizeItem(item) {
   };
 }
 
+// Map the agent's live-state brief into a `normalizeState`-ready raw object. The brief
+// (working/where[]/next[]) IS the artifact content and the floor — no second model
+// re-derives it: working→banner, where→changes (cumulative this session), next→the Decide
+// ballot. Any rich fields the agent authored in brief.artifact (title/summary/decisions/
+// visuals/accent/family/layout/presentation) merge on top, but working/changes/next_steps
+// stay owned by the mapped brief so the agent never has to author a parallel structure.
+// Returns null when there is no brief to render from (worker then skips — never a fallback
+// to a blind summarizer, which is what re-introduced mis-attribution).
+function mapBriefToState(brief) {
+  if (!brief || typeof brief !== "object") return null;
+  const art = brief.artifact && typeof brief.artifact === "object" ? brief.artifact : {};
+  const nextSource = Array.isArray(brief.next) ? brief.next : [];
+  const tier = String(art.tier || "").trim().toLowerCase();
+  const base = {
+    should_write: true,
+    // mid turns are "composed" editions; routine turns stay "routine". The agent's own
+    // presentation (in brief.artifact) still wins via the rich merge below.
+    presentation: tier === "mid" ? "composed" : "routine",
+    working: brief.working,
+    changes: Array.isArray(brief.where) ? brief.where : [],
+    next_steps: nextSource.map((n) => ({ title: n && n.title, detail: n && n.sub, kind: n && n.kind })),
+  };
+  // The mapped base owns working/changes/next_steps; strip them from the authored fields
+  // so a stray copy in brief.artifact can't shadow the real live-state.
+  const { working: _w, changes: _c, next_steps: _n, ...rich } = art;
+  return { ...base, ...rich };
+}
+
 function normalizeState(raw, fallback = {}) {
   const next = Array.isArray(raw && raw.next_steps) ? raw.next_steps : [];
   const visuals = Array.isArray(raw && raw.visuals) ? raw.visuals : [];
@@ -160,4 +188,4 @@ function bespokeFilename(job, at = Date.now()) {
   return `bespoke-${slug(job.unitKey || job.project)}-${at}-${slug(job.shortid || job.sessionId.slice(0, 8))}.html`;
 }
 
-module.exports = { ACCENTS, FAMILIES, PRESENTATIONS, artifactFilename, bespokeFilename, normalizeState, renderArtifact, rendererCss };
+module.exports = { ACCENTS, FAMILIES, PRESENTATIONS, artifactFilename, bespokeFilename, mapBriefToState, normalizeState, renderArtifact, rendererCss };

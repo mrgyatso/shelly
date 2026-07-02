@@ -2,9 +2,8 @@
 const fs = require("fs");
 const path = require("path");
 const { atomicJson, atomicWrite, safeId } = require("./lib.cjs");
-const { callObserver } = require("./model.cjs");
 const { callDesigner } = require("./designer.cjs");
-const { artifactFilename, bespokeFilename, normalizeState, renderArtifact } = require("./renderer.cjs");
+const { artifactFilename, bespokeFilename, mapBriefToState, normalizeState, renderArtifact } = require("./renderer.cjs");
 
 const stateDir = process.env.COMPANION_OBSERVER_STATE_DIR || path.join(process.env.HOME, ".claude", "companion", "observer");
 const queueDir = path.join(stateDir, "queue");
@@ -87,22 +86,67 @@ function loadPrior(job) {
   }
 }
 
-// The quality dial — a sibling of the mode file. `fast` (default) keeps the cheap
-// Haiku director + the local Broadsheet renderer (Sonnet only for true bespoke
-// escalations). `pretty` raises the director to Sonnet for sharper judgment while
-// still rendering through the local template (scope "director"); set
-// COMPANION_QUALITY_SCOPE=all to instead route every should_write turn through the
-// Sonnet designer (scope "all"). Read per-job so flipping the dial needs no restart.
-const qualityPath = process.env.COMPANION_QUALITY_PATH || path.join(process.env.HOME, ".claude", "companion", "quality");
-function readQuality() {
-  let raw = process.env.COMPANION_QUALITY || "";
-  if (!raw) { try { raw = fs.readFileSync(qualityPath, "utf8"); } catch (_) {} }
-  return raw.trim().toLowerCase() === "pretty" ? "pretty" : "fast";
+// The tier dial — a sibling of the mode file, read per-job so flipping it needs no restart.
+// `agent` (default) lets the agent's own per-turn tier choice win; `cheap` forces the
+// deterministic code render (never spend on a model); `bespoke` forces the Sonnet/Opus
+// designer on every turn; `off` suppresses artifacts entirely. A per-unit `tier.<unit>`
+// override wins over the global `tier` file, mirroring resolveMode's hybrid scope.
+const companionDir = path.join(process.env.HOME, ".claude", "companion");
+const tierPath = process.env.COMPANION_TIER_PATH || path.join(companionDir, "tier");
+const bespokeModelPath = process.env.COMPANION_BESPOKE_MODEL_PATH || path.join(companionDir, "bespoke-model");
+const qualityPath = process.env.COMPANION_QUALITY_PATH || path.join(companionDir, "quality");
+
+function normTierDial(raw) {
+  const w = String(raw || "").trim().toLowerCase();
+  return ["agent", "cheap", "bespoke", "off"].includes(w) ? w : null;
 }
 
-function directorModelFor(quality) {
-  if (quality === "pretty") return process.env.COMPANION_PRETTY_DIRECTOR_MODEL || "sonnet";
-  return process.env.COMPANION_OBSERVER_MODEL || "haiku";
+function readTierFile(file) {
+  try { return normTierDial(fs.readFileSync(file, "utf8")); } catch (_) { return null; }
+}
+
+function safeUnit(unitKey) {
+  return String(unitKey || "").replace(/[^A-Za-z0-9._-]/g, "");
+}
+
+// Backward-compat bridge for the legacy quality dial (fast|pretty), which predates the tier
+// dial but still has an overlay UI segment and a /companion:quality command. With the Haiku
+// director gone, `pretty` no longer means "Sonnet director"; its closest surviving meaning is
+// "always the bespoke designer", so map pretty → bespoke. `fast` falls through to the
+// agent-decides default. Retire once the overlay ships a native `tier` segment.
+function readQualityAsTier() {
+  let raw = process.env.COMPANION_QUALITY || "";
+  if (!raw) { try { raw = fs.readFileSync(qualityPath, "utf8"); } catch (_) {} }
+  return raw.trim().toLowerCase() === "pretty" ? "bespoke" : null;
+}
+
+function resolveTierDial(unitKey) {
+  // Env override wins (matches readQuality/resolveMode — env is the ops/test lever), then a
+  // per-unit `tier.<unit>` file, then the global `tier` file, then the legacy quality bridge,
+  // else default `agent`.
+  const envDial = normTierDial(process.env.COMPANION_TIER);
+  if (envDial) return envDial;
+  const safe = safeUnit(unitKey);
+  const perUnit = safe ? readTierFile(path.join(companionDir, `tier.${safe}`)) : null;
+  return perUnit || readTierFile(tierPath) || readQualityAsTier() || "agent";
+}
+
+// Resolve the effective build path for a job from the dial + the agent's authored tier.
+// Returns "cheap" (code render), "high" (bespoke designer), or "off" (skip).
+function resolveTier(authoredTier, dial) {
+  if (dial === "off") return "off";
+  if (dial === "cheap") return "cheap";
+  if (dial === "bespoke") return "high";
+  // dial === "agent": the agent's per-turn choice wins; cheap/mid both code-render.
+  const t = String(authoredTier || "").trim().toLowerCase();
+  return t === "high" || t === "bespoke" ? "high" : "cheap";
+}
+
+// Bespoke model dial: `sonnet` (default) | `opus`. Env override then the sibling file.
+function readBespokeModel() {
+  let raw = process.env.COMPANION_BESPOKE_MODEL || "";
+  if (!raw) { try { raw = fs.readFileSync(bespokeModelPath, "utf8"); } catch (_) {} }
+  return raw.trim().toLowerCase() === "opus" ? "opus" : "sonnet";
 }
 
 function updateIndex(artifactPath, job) {
@@ -127,7 +171,8 @@ function appendMetric(job, stage, turns, result, extra = {}) {
     at: Date.now(),
     sessionId: job.sessionId,
     stage,
-    model: extra.model || (stage === "designer" ? (process.env.COMPANION_DESIGNER_MODEL || "sonnet") : (process.env.COMPANION_OBSERVER_MODEL || "haiku")),
+    // Deterministic renders carry no model; only the designer stage has one.
+    model: extra.model || (stage === "designer" ? (process.env.COMPANION_DESIGNER_MODEL || "sonnet") : null),
     batchedTurns: turns.length,
     usage: result.usage,
     totalCostUsd: result.totalCostUsd,
@@ -135,12 +180,12 @@ function appendMetric(job, stage, turns, result, extra = {}) {
   })}\n`);
 }
 
-async function publishBespoke(job, turns, prior, reason, brief) {
-  const result = await callDesigner({ prior, turns, reason, brief, project: job.project });
+async function publishBespoke(job, turns, prior, reason, brief, model) {
+  const result = await callDesigner({ prior, turns, reason, brief, project: job.project, model });
   const artifactPath = path.join(artifactsDir, bespokeFilename(job));
   atomicWrite(artifactPath, result.html);
   updateIndex(artifactPath, job);
-  appendMetric(job, "designer", turns, result, { reason, artifactPath });
+  appendMetric(job, "designer", turns, result, { reason, artifactPath, model });
   return artifactPath;
 }
 
@@ -153,15 +198,21 @@ function removeJobs(group) {
 function retryGroup(group, error) {
   const first = group[0];
   const attempts = Math.max(...group.map((job) => job.attempts || 0)) + 1;
+  const message = String(error && error.message || error);
+  // A timeout won't succeed on an identical retry, and the worker is single-threaded
+  // (processGroup blocks the main loop), so 3× full-timeout attempts stall every other
+  // session's artifacts for minutes. Cap timeout failures at 2 attempts; other
+  // (possibly transient) errors keep the full 3-attempt budget.
+  const maxAttempts = /timed out/.test(message) ? 2 : 3;
   const combined = {
     ...first,
     attempts,
     availableAt: Date.now() + Math.min(60000, retryBaseMs * 2 ** (attempts - 1)),
     turns: group.flatMap((job) => job.turns || []),
-    lastError: String(error && error.message || error).slice(0, 1000),
+    lastError: message.slice(0, 1000),
   };
   removeJobs(group);
-  if (attempts >= 3) {
+  if (attempts >= maxAttempts) {
     atomicJson(path.join(deadDir, path.basename(first._file)), combined);
   } else {
     atomicJson(first._file, combined);
@@ -172,42 +223,48 @@ async function processGroup(group) {
   const job = group[group.length - 1];
   const turns = group.flatMap((item) => item.turns || []).slice(-8);
   const prior = loadPrior(job);
-  const quality = readQuality();
-  const directorModel = directorModelFor(quality);
-  // pretty + scope "all" routes every should_write turn through the Sonnet designer;
-  // otherwise pretty just sharpens the director and we keep the local renderer.
-  const forceBespoke = quality === "pretty" && (process.env.COMPANION_QUALITY_SCOPE || "director") === "all";
   try {
+    // An explicit user visual request always wins — a bespoke surface the user asked for,
+    // regardless of the agent's tier or the dial.
     const hardBespoke = [...group].reverse().find((item) => item.hardBespokeReason);
     if (hardBespoke) {
       const latestUser = [...turns].reverse().find((turn) => turn.user)?.user || "Create the requested visual artifact.";
-      await publishBespoke(job, turns, prior, hardBespoke.hardBespokeReason, latestUser);
+      await publishBespoke(job, turns, prior, hardBespoke.hardBespokeReason, latestUser, readBespokeModel());
       removeJobs(group);
       return;
     }
 
-    // The agent's own brief (live state) is the richest signal for the turn; take the
-    // freshest one in the batch and hand it to the director so it authors from the
-    // agent's framing instead of reverse-engineering tool deltas. Informs, never forces.
+    // The agent authors the artifact in its live-state. Take the freshest brief in the batch
+    // and read ITS OWN authored tier — coupled, so a high tier and its bespoke_brief always
+    // come from the same object (never a high paired with an older brief lacking the brief).
     const brief = [...group].reverse().map((item) => item.brief).find(Boolean) || null;
-    const result = await callObserver({ prior, turns, brief, model: directorModel });
-    const state = normalizeState(result.state, { title: `${job.project} update` });
-    appendMetric(job, "observer", turns, result, { model: directorModel, quality, brief: Boolean(brief), shouldWrite: state.should_write, presentation: state.presentation, family: state.family });
-    // `always` mode (job.alwaysWrite) overrides the director's veto — but capture.cjs's
-    // isSubstantive pre-filter still applies, so it's "always when there's something."
-    if (state.should_write || job.alwaysWrite) {
-      if (state.presentation === "bespoke" || forceBespoke) {
-        const reason = state.presentation === "bespoke"
-          ? (state.escalation_reason || "observer requested a bespoke surface")
-          : "quality=pretty (scope all): authored by the Sonnet designer";
-        await publishBespoke(job, turns, prior, reason, state.bespoke_brief || state.summary);
-      } else {
-        const artifactPath = path.join(artifactsDir, artifactFilename(job));
-        atomicWrite(artifactPath, renderArtifact(state, job));
-        updateIndex(artifactPath, job);
-        atomicJson(path.join(sessionDir, `${safeId(job.sessionId)}.json`), state);
-      }
+    const authoredTier = (brief && brief.artifact && brief.artifact.tier) || null;
+    const tier = resolveTier(authoredTier, resolveTierDial(job.unitKey));
+
+    if (tier === "off") { removeJobs(group); return; }
+
+    if (tier === "high") {
+      // Agent-authored bespoke: the curated bespoke_brief is the PRIMARY signal, not blind
+      // deltas — so the designer builds from the agent's full-context framing.
+      const art = (brief && brief.artifact) || {};
+      const designBrief = art.bespoke_brief || art.summary || (brief && brief.working) || "Author a bespoke view of this turn.";
+      const reason = art.escalation_reason || "agent selected the high (bespoke) tier";
+      await publishBespoke(job, turns, prior, reason, designBrief, readBespokeModel());
+      removeJobs(group);
+      return;
     }
+
+    // cheap | mid — deterministic code render straight from the agent-authored brief. No
+    // model call: correct attribution, instant, ~free. No brief to render from ⇒ skip
+    // (never fall back to a blind summarizer, which is what re-introduced hallucination).
+    const raw = mapBriefToState(brief);
+    if (!raw) { removeJobs(group); return; }
+    const state = normalizeState(raw, { title: `${job.project} update` });
+    appendMetric(job, "render", turns, { usage: null, totalCostUsd: null }, { tier: authoredTier || "cheap", brief: Boolean(brief), family: state.family, presentation: state.presentation });
+    const artifactPath = path.join(artifactsDir, artifactFilename(job));
+    atomicWrite(artifactPath, renderArtifact(state, job));
+    updateIndex(artifactPath, job);
+    atomicJson(path.join(sessionDir, `${safeId(job.sessionId)}.json`), state);
     removeJobs(group);
   } catch (error) {
     retryGroup(group, error);
