@@ -16,6 +16,16 @@ function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "companion-observer-"));
 }
 
+// A stub `claude` binary that trips <home>/model-was-called if it is EVER spawned. The
+// cheap/mid render path must never invoke a model, so tests point the observer bin at this
+// and assert the sentinel stays absent.
+function sentinelBin(home) {
+  const bin = path.join(home, "claude-stub.sh");
+  fs.writeFileSync(bin, `#!/bin/sh\ntouch "${path.join(home, "model-was-called")}"\necho '{"result":"stub"}'\n`);
+  fs.chmodSync(bin, 0o755);
+  return bin;
+}
+
 function transcript(entries) {
   const dir = tempDir();
   const file = path.join(dir, "session.jsonl");
@@ -173,7 +183,7 @@ test("capture hook keeps explicit visual requests even when the reply is short",
   assert.match(queued.hardBespokeReason, /visual|variant/);
 });
 
-test("worker coalesces jobs, renders locally, indexes output, and exits idle", () => {
+test("worker coalesces jobs, renders locally from the brief (no model), indexes output, and exits idle", () => {
   const home = tempDir();
   const stateDir = path.join(home, "observer");
   const queueDir = path.join(stateDir, "queue");
@@ -188,6 +198,19 @@ test("worker coalesces jobs, renders locally, indexes output, and exits idle", (
     unitKey: "companion",
     availableAt: 0,
     attempts: 0,
+    // The agent authors the artifact in its live brief; a mid tier renders locally, no model.
+    brief: {
+      working: "Ready",
+      where: ["Queue", "Renderer"],
+      next: [{ title: "Verify", sub: "Run the suite", kind: "todo" }],
+      artifact: {
+        tier: "mid", title: "Observer shipped", summary: "The isolated observer works.",
+        accent: "blue", family: "brief", decisions: ["Code render by default"],
+        visuals: [{ type: "checklist", title: "Verification", items: [
+          { label: "Tests", value: "pass", detail: "Suite is green", status: "good" },
+        ] }],
+      },
+    },
   };
   for (let i = 0; i < 2; i += 1) {
     fs.writeFileSync(path.join(queueDir, `${i}.json`), JSON.stringify({
@@ -197,26 +220,6 @@ test("worker coalesces jobs, renders locally, indexes output, and exits idle", (
       turns: [{ user: `u${i}`, assistant: `a${i}`, tools: [], files: [] }],
     }));
   }
-  const response = {
-    should_write: true,
-    presentation: "composed",
-    family: "brief",
-    clawd_pose: "happy",
-    accent: "blue",
-    escalation_reason: "",
-    bespoke_brief: "",
-    title: "Observer shipped",
-    summary: "The isolated observer works.",
-    working: "Ready",
-    changes: ["Queue", "Renderer"],
-    decisions: ["Haiku by default"],
-    blockers: [],
-    next_steps: [{ title: "Verify", detail: "Run the suite", kind: "todo" }],
-    files: ["worker.cjs"],
-    visuals: [{ type: "checklist", title: "Verification", note: "", items: [
-      { label: "Tests", value: "pass", detail: "Suite is green", status: "good" },
-    ] }],
-  };
   const result = spawnSync(process.execPath, [path.join(observerDir, "worker.cjs")], {
     env: {
       ...process.env,
@@ -226,7 +229,7 @@ test("worker coalesces jobs, renders locally, indexes output, and exits idle", (
       COMPANION_OBSERVER_DEBOUNCE_MS: "0",
       COMPANION_OBSERVER_IDLE_EXIT_MS: "20",
       COMPANION_OBSERVER_POLL_MS: "5",
-      COMPANION_OBSERVER_FAKE_RESPONSE: JSON.stringify(response),
+      COMPANION_OBSERVER_CLAUDE_BIN: sentinelBin(home),
     },
     timeout: 5000,
   });
@@ -235,12 +238,13 @@ test("worker coalesces jobs, renders locally, indexes output, and exits idle", (
   const artifact = path.join(artifactsDir, "observer-companion-abcd1234.html");
   assert.equal(fs.existsSync(artifact), true);
   assert.match(fs.readFileSync(artifact, "utf8"), /Observer shipped/);
+  assert.equal(fs.existsSync(path.join(home, "model-was-called")), false); // zero model spawns
   const index = JSON.parse(fs.readFileSync(path.join(home, ".claude", "companion", "artifact-index.json"), "utf8"));
   assert.equal(index[path.resolve(artifact)].unit_key, "companion");
   const metric = JSON.parse(fs.readFileSync(path.join(stateDir, "metrics.jsonl"), "utf8").trim());
   assert.equal(metric.batchedTurns, 2);
-  assert.equal(metric.shouldWrite, true);
-  assert.equal(metric.stage, "observer");
+  assert.equal(metric.stage, "render");
+  assert.equal(metric.model, null);
 });
 
 test("hard visual intent bypasses Haiku and publishes a one-off Sonnet artifact", () => {
@@ -275,43 +279,46 @@ test("hard visual intent bypasses Haiku and publishes a one-off Sonnet artifact"
   assert.equal(metric.stage, "designer");
 });
 
-test("Haiku may escalate a non-obvious request to the Sonnet designer", () => {
+test("an agent-selected high tier routes the turn to the Sonnet designer (dial=agent default)", () => {
   const home = tempDir();
   const stateDir = path.join(home, "observer");
   const queueDir = path.join(stateDir, "queue");
   const artifactsDir = path.join(home, "artifacts");
   fs.mkdirSync(queueDir, { recursive: true });
+  // No dial file in this HOME ⇒ default `agent` ⇒ the brief's own tier:high drives the route.
   fs.writeFileSync(path.join(queueDir, "soft.json"), JSON.stringify({
     version: 1, id: "soft", sessionId: "cafebabe-rest", shortid: "cafebabe",
     cwd: home, project: "companion", unitKey: "companion", createdAt: Date.now() - 100,
-    availableAt: 0, attempts: 0, hardBespokeReason: null,
+    availableAt: 0, attempts: 0, hardBespokeReason: null, tier: "high",
+    brief: { working: "Designing", where: [], next: [], artifact: {
+      tier: "high", bespoke_brief: "Build an interactive spatial comparison of the two layouts",
+    } },
     turns: [{ user: "Help me explore the feel of this", assistant: "The choice depends on spatial interaction.", tools: [{ name: "Edit", file: "x" }], files: ["x"] }],
   }));
-  const response = {
-    should_write: true, presentation: "bespoke", family: "gallery", clawd_pose: "wizard", accent: "violet",
-    escalation_reason: "the choice depends on spatial interaction", bespoke_brief: "Build an interactive spatial comparison",
-    title: "Explore the feel", summary: "A live comparison is needed.", working: "Designing", changes: [], decisions: [], blockers: [], next_steps: [], files: ["x"], visuals: [],
-  };
   const bespoke = '<!doctype html><html><head><title>Spatial comparison</title><script type="application/json" id="companion-meta">{}</script></head><body><main data-fit-root>Interactive comparison</main><script>new ResizeObserver(function(){parent.postMessage({source:"companion-artifact",kind:"size"},"*")}).observe(document.querySelector("main"))</script></body></html>';
   const result = spawnSync(process.execPath, [path.join(observerDir, "worker.cjs")], {
     env: {
       ...process.env, HOME: home, COMPANION_OBSERVER_STATE_DIR: stateDir,
       COMPANION_ARTIFACTS_DIR: artifactsDir, COMPANION_OBSERVER_DEBOUNCE_MS: "0",
       COMPANION_OBSERVER_IDLE_EXIT_MS: "20", COMPANION_OBSERVER_POLL_MS: "5",
-      COMPANION_OBSERVER_FAKE_RESPONSE: JSON.stringify(response), COMPANION_DESIGNER_FAKE_HTML: bespoke,
+      COMPANION_DESIGNER_FAKE_HTML: bespoke,
     }, timeout: 5000,
   });
   assert.equal(result.status, 0, result.stderr.toString());
+  const files = fs.readdirSync(artifactsDir);
+  assert.equal(files.length, 1);
+  assert.match(files[0], /^bespoke-companion-/);
   const metrics = fs.readFileSync(path.join(stateDir, "metrics.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
-  assert.deepEqual(metrics.map((metric) => metric.stage), ["observer", "designer"]);
+  assert.deepEqual(metrics.map((metric) => metric.stage), ["designer"]);
 });
 
-test("worker retries model failures and dead-letters after the third attempt", () => {
+test("worker retries designer failures and dead-letters after the third attempt", () => {
   const home = tempDir();
   const stateDir = path.join(home, "observer");
   const queueDir = path.join(stateDir, "queue");
   fs.mkdirSync(queueDir, { recursive: true });
   fs.writeFileSync(path.join(stateDir, "worker.lock"), "99999999");
+  // A high-tier job whose designer output never validates ⇒ callDesigner rejects every attempt.
   fs.writeFileSync(path.join(queueDir, "failed.json"), JSON.stringify({
     version: 1,
     id: "failed",
@@ -323,6 +330,8 @@ test("worker retries model failures and dead-letters after the third attempt", (
     createdAt: Date.now() - 100,
     availableAt: 0,
     attempts: 0,
+    tier: "high",
+    brief: { working: "x", where: [], next: [], artifact: { tier: "high", bespoke_brief: "make it" } },
     turns: [{ user: "u", assistant: "a", tools: [{ name: "Edit", file: "x" }], files: ["x"] }],
   }));
   const result = spawnSync(process.execPath, [path.join(observerDir, "worker.cjs")], {
@@ -335,7 +344,8 @@ test("worker retries model failures and dead-letters after the third attempt", (
       COMPANION_OBSERVER_RETRY_BASE_MS: "1",
       COMPANION_OBSERVER_IDLE_EXIT_MS: "20",
       COMPANION_OBSERVER_POLL_MS: "2",
-      COMPANION_OBSERVER_FAKE_RESPONSE: "not-json",
+      COMPANION_TIER: "bespoke",
+      COMPANION_DESIGNER_FAKE_HTML: "<p>not a complete document</p>", // fails validateBespokeHtml
     },
     timeout: 5000,
   });
@@ -345,7 +355,7 @@ test("worker retries model failures and dead-letters after the third attempt", (
   assert.equal(dead.length, 1);
   const job = JSON.parse(fs.readFileSync(path.join(stateDir, "dead", dead[0]), "utf8"));
   assert.equal(job.attempts, 3);
-  assert.match(job.lastError, /Unexpected token|not-json/);
+  assert.match(job.lastError, /complete HTML document|designer/);
 });
 
 const MODE_TURN = [
@@ -426,15 +436,16 @@ test("globallyDisabled is true only for global-manual with no per-unit overrides
   assert.equal(globallyDisabled(dir), false); // an override exists → must fall through
 });
 
-test("always mode forces a write even when the director vetoes should_write", () => {
+test("the off tier dial suppresses the artifact entirely (no write, no model)", () => {
   const home = tempDir();
   const stateDir = path.join(home, "observer");
   const queueDir = path.join(stateDir, "queue");
   const artifactsDir = path.join(home, ".claude", "companion", "artifacts");
   fs.mkdirSync(queueDir, { recursive: true });
-  fs.writeFileSync(path.join(queueDir, "always.json"), JSON.stringify({
+  // The agent authored a high tier, but the dial=off must override and write nothing.
+  fs.writeFileSync(path.join(queueDir, "off.json"), JSON.stringify({
     version: 1,
-    id: "always",
+    id: "off",
     sessionId: "feedf00d-rest",
     shortid: "feedf00d",
     cwd: home,
@@ -443,25 +454,10 @@ test("always mode forces a write even when the director vetoes should_write", ()
     createdAt: Date.now() - 100,
     availableAt: 0,
     attempts: 0,
-    alwaysWrite: true,
+    tier: "high",
+    brief: { working: "Ready", where: ["a"], next: [], artifact: { tier: "high", bespoke_brief: "x" } },
     turns: [{ user: "u", assistant: "a", tools: [], files: [] }],
   }));
-  const response = {
-    should_write: false,
-    presentation: "routine",
-    family: "brief",
-    clawd_pose: "happy",
-    accent: "blue",
-    title: "Forced update",
-    summary: "Always mode wrote anyway.",
-    working: "Ready",
-    changes: [],
-    decisions: [],
-    blockers: [],
-    next_steps: [],
-    files: [],
-    visuals: [],
-  };
   const result = spawnSync(process.execPath, [path.join(observerDir, "worker.cjs")], {
     env: {
       ...process.env,
@@ -471,44 +467,38 @@ test("always mode forces a write even when the director vetoes should_write", ()
       COMPANION_OBSERVER_DEBOUNCE_MS: "0",
       COMPANION_OBSERVER_IDLE_EXIT_MS: "20",
       COMPANION_OBSERVER_POLL_MS: "5",
-      COMPANION_OBSERVER_FAKE_RESPONSE: JSON.stringify(response),
+      COMPANION_TIER: "off",
+      COMPANION_OBSERVER_CLAUDE_BIN: sentinelBin(home),
     },
     timeout: 5000,
   });
   assert.equal(result.status, 0, result.stderr.toString());
-  assert.deepEqual(fs.readdirSync(queueDir), []);
-  const artifact = path.join(artifactsDir, "observer-companion-feedf00d.html");
-  assert.equal(fs.existsSync(artifact), true);
-  assert.match(fs.readFileSync(artifact, "utf8"), /Forced update/);
+  assert.deepEqual(fs.readdirSync(queueDir), []); // job consumed
+  assert.equal(fs.existsSync(artifactsDir) ? fs.readdirSync(artifactsDir).length : 0, 0); // nothing written
+  assert.equal(fs.existsSync(path.join(home, "model-was-called")), false); // and no model spawned
 });
 
-test("quality=pretty (scope all) routes a routine turn through the Sonnet designer and records the director model", () => {
+test("quality=pretty (legacy compat) forces a cheap turn through the Sonnet designer", () => {
   const home = tempDir();
   const stateDir = path.join(home, "observer");
   const queueDir = path.join(stateDir, "queue");
   const artifactsDir = path.join(home, "artifacts");
   fs.mkdirSync(queueDir, { recursive: true });
+  // The agent authored a cheap tier; the legacy quality=pretty dial must still bridge to bespoke.
   fs.writeFileSync(path.join(queueDir, "pretty.json"), JSON.stringify({
     version: 1, id: "pretty", sessionId: "0ddba11a-rest", shortid: "0ddba11a",
     cwd: home, project: "companion", unitKey: "companion", createdAt: Date.now() - 100,
-    availableAt: 0, attempts: 0, hardBespokeReason: null,
+    availableAt: 0, attempts: 0, hardBespokeReason: null, tier: "cheap",
+    brief: { working: "Shipped the renderer", where: [], next: [], artifact: { tier: "cheap" } },
     turns: [{ user: "ship it", assistant: "Shipped the renderer.", tools: [{ name: "Edit", file: "x" }], files: ["x"] }],
   }));
-  // A perfectly ordinary "composed" turn — under fast it would render locally;
-  // under pretty+all it must be forced through the designer instead.
-  const response = {
-    should_write: true, presentation: "composed", family: "brief", clawd_pose: "happy", accent: "blue",
-    escalation_reason: "", bespoke_brief: "", title: "Shipped", summary: "Done.", working: "",
-    changes: [], decisions: [], blockers: [], next_steps: [], files: ["x"], visuals: [],
-  };
   const bespoke = '<!doctype html><html><head><title>Pretty</title><script type="application/json" id="companion-meta">{}</script></head><body><main data-fit-root>Pretty surface</main><script>new ResizeObserver(function(){parent.postMessage({source:"companion-artifact",kind:"size"},"*")}).observe(document.querySelector("main"))</script></body></html>';
   const result = spawnSync(process.execPath, [path.join(observerDir, "worker.cjs")], {
     env: {
       ...process.env, HOME: home, COMPANION_OBSERVER_STATE_DIR: stateDir,
       COMPANION_ARTIFACTS_DIR: artifactsDir, COMPANION_OBSERVER_DEBOUNCE_MS: "0",
       COMPANION_OBSERVER_IDLE_EXIT_MS: "20", COMPANION_OBSERVER_POLL_MS: "5",
-      COMPANION_QUALITY: "pretty", COMPANION_QUALITY_SCOPE: "all",
-      COMPANION_OBSERVER_FAKE_RESPONSE: JSON.stringify(response), COMPANION_DESIGNER_FAKE_HTML: bespoke,
+      COMPANION_QUALITY: "pretty", COMPANION_DESIGNER_FAKE_HTML: bespoke,
     }, timeout: 5000,
   });
   assert.equal(result.status, 0, result.stderr.toString());
@@ -516,10 +506,7 @@ test("quality=pretty (scope all) routes a routine turn through the Sonnet design
   assert.equal(files.length, 1);
   assert.match(files[0], /^bespoke-companion-/);
   const metrics = fs.readFileSync(path.join(stateDir, "metrics.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
-  const observer = metrics.find((m) => m.stage === "observer");
-  assert.equal(observer.model, "sonnet");
-  assert.equal(observer.quality, "pretty");
-  assert.deepEqual(metrics.map((m) => m.stage), ["observer", "designer"]);
+  assert.deepEqual(metrics.map((m) => m.stage), ["designer"]);
 });
 
 // ── Phase 2: the agent brief (live state) informs the director ────────────────
@@ -579,7 +566,7 @@ test("capture attaches the agent's live brief to the queued job", () => {
   assert.equal(queued.brief.next[0].kind, "decision");
 });
 
-test("worker threads the agent brief through to the director (metric records it)", () => {
+test("worker threads the agent brief through and the metric records it", () => {
   const home = tempDir();
   const stateDir = path.join(home, "observer");
   const queueDir = path.join(stateDir, "queue");
@@ -609,4 +596,30 @@ test("worker threads the agent brief through to the director (metric records it)
   assert.equal(result.status, 0, result.stderr.toString());
   const metric = JSON.parse(fs.readFileSync(path.join(stateDir, "metrics.jsonl"), "utf8").trim());
   assert.equal(metric.brief, true);
+});
+
+// ── Tiered dispatch: the agent authors, the pipeline renders ──────────────────
+
+test("mapBriefToState maps the live brief and lets authored fields enrich it", () => {
+  const { mapBriefToState } = require("../renderer.cjs");
+  assert.equal(mapBriefToState(null), null);
+  assert.equal(mapBriefToState("nope"), null);
+  const raw = mapBriefToState({
+    working: "wiring",
+    where: ["a", "b"],
+    next: [{ title: "ship", sub: "verify", kind: "decision" }],
+    artifact: { tier: "mid", title: "T", summary: "S", accent: "mint" },
+  });
+  assert.equal(raw.should_write, true);
+  assert.equal(raw.working, "wiring");
+  assert.deepEqual(raw.changes, ["a", "b"]);        // where -> changes (cumulative)
+  assert.equal(raw.next_steps[0].detail, "verify"); // sub -> detail
+  assert.equal(raw.next_steps[0].kind, "decision");
+  assert.equal(raw.title, "T");                     // authored fields merge on top
+  assert.equal(raw.accent, "mint");
+  assert.equal(raw.presentation, "composed");       // mid -> composed edition
+  // A legacy brief with no artifact still maps to a renderable card.
+  assert.equal(mapBriefToState({ working: "w", where: [], next: [] }).presentation, "routine");
+  // A stray base key inside artifact must not shadow the mapped live-state.
+  assert.equal(mapBriefToState({ working: "real", artifact: { working: "stray" } }).working, "real");
 });

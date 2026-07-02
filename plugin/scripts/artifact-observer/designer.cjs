@@ -89,7 +89,7 @@ function validateBespokeHtml(value) {
   return html;
 }
 
-function callDesigner({ prior, turns, brief, reason, project, timeoutMs }) {
+function callDesigner({ prior, turns, brief, reason, project, timeoutMs, model: modelArg }) {
   if (process.env.COMPANION_DESIGNER_FAKE_HTML) {
     return Promise.resolve({ html: validateBespokeHtml(process.env.COMPANION_DESIGNER_FAKE_HTML), usage: null, totalCostUsd: null });
   }
@@ -101,7 +101,7 @@ function callDesigner({ prior, turns, brief, reason, project, timeoutMs }) {
   const limitMs = timeoutMs || Number(process.env.COMPANION_DESIGNER_TIMEOUT) || 300000;
   const effort = process.env.COMPANION_DESIGNER_EFFORT || "low";
   const command = process.env.COMPANION_OBSERVER_CLAUDE_BIN || "claude";
-  const model = process.env.COMPANION_DESIGNER_MODEL || "sonnet";
+  const model = modelArg || process.env.COMPANION_DESIGNER_MODEL || "sonnet";
   const args = [
     "--safe-mode", "--print", "--model", model, "--effort", effort, "--tools", "",
     // Same advisor-leak guard as the observer (model.cjs): never inherit the
