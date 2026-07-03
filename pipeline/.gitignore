@@ -1,0 +1,2 @@
+# Worker logs are runtime artifacts, not source.
+logs/*.log
