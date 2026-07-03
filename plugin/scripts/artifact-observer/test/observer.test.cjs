@@ -75,6 +75,19 @@ test("hard visual intent catches mockups and variants without escalating ordinar
   assert.equal(detectVisualIntent({ user: "What caused the build to fail?" }), null);
 });
 
+test("visual intent gates on genuine build/show intent, not a bare project noun (D1)", () => {
+  // Bare/incidental nouns must NOT trigger — the regression: injected memory, status text,
+  // or a project name that merely mentions prototype/mockup/wireframe forced a write before.
+  assert.equal(detectVisualIntent({ user: "the tiered dispatch prototype shipped" }), null);
+  assert.equal(detectVisualIntent({ user: "the design system prototype shipped" }), null);
+  assert.equal(detectVisualIntent({ user: "we merged the mockup branch and the wireframe doc" }), null);
+  assert.equal(detectVisualIntent({ user: "draft prototype review is done" }), null);
+  // Genuine build/show requests STILL trigger.
+  assert.match(detectVisualIntent({ user: "build me a prototype of the login screen" }), /mockup or prototype/);
+  assert.match(detectVisualIntent({ user: "show me three mockups" }), /mockup or prototype/);
+  assert.match(detectVisualIntent({ user: "can you wireframe for the dashboard?" }), /mockup or prototype/);
+});
+
 test("model prompt contains only prior compact state and supplied deltas", () => {
   const prompt = JSON.parse(observerPrompt({ title: "Prior" }, [{ user: "u", assistant: "a", tools: [], files: [] }]));
   assert.equal(prompt.prior_state.title, "Prior");
@@ -181,6 +194,69 @@ test("capture hook keeps explicit visual requests even when the reply is short",
   const [queueFile] = fs.readdirSync(path.join(stateDir, "queue"));
   const queued = JSON.parse(fs.readFileSync(path.join(stateDir, "queue", queueFile), "utf8"));
   assert.match(queued.hardBespokeReason, /visual|variant/);
+});
+
+test("capture honors an authored tier:skip and enqueues nothing when there is no genuine visual intent (D1)", () => {
+  const home = tempDir();
+  const stateDir = path.join(home, "observer");
+  const liveDir = path.join(home, ".claude", "companion", "live");
+  fs.mkdirSync(liveDir, { recursive: true });
+  // The agent authored skip for this turn; shortid = first 8 chars of session_id.
+  fs.writeFileSync(path.join(liveDir, "proj--5c1ffeed.json"), JSON.stringify({
+    working: "closed out the turn", where: ["nothing worth an artifact"], next: [],
+    artifact: { tier: "skip" }, project: "companion", is_repo: true, unit_key: "companion",
+  }));
+  // A SUBSTANTIVE turn (Edit tool) whose text mentions "prototype" only as a project noun.
+  // Substance is present, so the ONLY thing that can suppress the write is honoring the skip —
+  // and the old bare-noun rule would have produced a hardBespokeReason that overrode it.
+  const file = transcript([
+    { message: { role: "user", content: "the tiered dispatch prototype shipped" } },
+    { message: { role: "assistant", content: [
+      { type: "tool_use", name: "Edit", input: { file_path: "/repo/worker.cjs" } },
+      { type: "text", text: "Bumped the plugin version and refreshed the manifest." },
+    ] } },
+  ]);
+  const payload = JSON.stringify({ session_id: "5c1ffeed-rest", cwd: home, transcript_path: file });
+  const result = spawnSync(process.execPath, [path.join(observerDir, "capture.cjs")], {
+    input: payload,
+    env: {
+      ...process.env, HOME: home,
+      COMPANION_OBSERVER_STATE_DIR: stateDir,
+      COMPANION_ARTIFACTS_DIR: path.join(home, "artifacts"),
+      COMPANION_OBSERVER_NO_START: "1",
+    },
+  });
+  assert.equal(result.status, 0, result.stderr.toString());
+  assert.equal(fs.existsSync(path.join(stateDir, "queue")), false); // nothing enqueued
+});
+
+test("a genuine visual request overrides an authored tier:skip and still enqueues (D1)", () => {
+  const home = tempDir();
+  const stateDir = path.join(home, "observer");
+  const liveDir = path.join(home, ".claude", "companion", "live");
+  fs.mkdirSync(liveDir, { recursive: true });
+  fs.writeFileSync(path.join(liveDir, "proj--b111d5ee.json"), JSON.stringify({
+    working: "closing out", where: [], next: [], artifact: { tier: "skip" },
+    project: "companion", is_repo: true, unit_key: "companion",
+  }));
+  const file = transcript([
+    { message: { role: "user", content: "build me a prototype of the login screen" } },
+    { message: { role: "assistant", content: "Sketching the direction." } },
+  ]);
+  const payload = JSON.stringify({ session_id: "b111d5ee-rest", cwd: home, transcript_path: file });
+  const result = spawnSync(process.execPath, [path.join(observerDir, "capture.cjs")], {
+    input: payload,
+    env: {
+      ...process.env, HOME: home,
+      COMPANION_OBSERVER_STATE_DIR: stateDir,
+      COMPANION_ARTIFACTS_DIR: path.join(home, "artifacts"),
+      COMPANION_OBSERVER_NO_START: "1",
+    },
+  });
+  assert.equal(result.status, 0, result.stderr.toString());
+  const [queueFile] = fs.readdirSync(path.join(stateDir, "queue"));
+  const queued = JSON.parse(fs.readFileSync(path.join(stateDir, "queue", queueFile), "utf8"));
+  assert.match(queued.hardBespokeReason, /mockup or prototype/);
 });
 
 test("worker coalesces jobs, renders locally from the brief (no model), indexes output, and exits idle", () => {

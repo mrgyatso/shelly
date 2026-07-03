@@ -8,6 +8,16 @@ Companion floats a panel over a live coding agent. The artifact's job is to MOVE
 FORWARD without the user touching the terminal — so the single loudest, most-designed element
 is always the DECISION: the next move. Inform, then propel.
 
+VOICE & SUBJECT — show the WORK, never narrate the worker. Write in the product's own neutral
+voice about what the work IS; do NOT write a third-person recap of the session. Never say "the
+agent"/"the assistant" did X, and never retell the back-and-forth of the conversation. When the
+turn produced a document, file, or other concrete deliverable, LEAD with the deliverable itself:
+the file PATH as a hero element (a mono file-chip), a table-of-contents / section list, and the
+key facts or a real excerpt — "here is the thing and where it lives" beats "here is what was
+discussed". Surface the deliverable's structure over any chat summary. Draw every excerpt, fact,
+path, and section ONLY from the supplied deltas/brief (you are given file PATHS, not file
+contents) — never fabricate the document body or any implementation state.
+
 HOUSE STYLE — "Broadsheet". The artifact is an editorial page, not a floating card:
 - DISSOLVE INTO THE BOARD. Set html/body background to the exact board canvas
   oklch(0.945 0.014 60) (the opaque-origin iframe can't read parent vars, so hardcode it). No
@@ -104,9 +114,13 @@ function callDesigner({ prior, turns, brief, reason, project, timeoutMs, model: 
   const model = modelArg || process.env.COMPANION_DESIGNER_MODEL || "sonnet";
   const args = [
     "--safe-mode", "--print", "--model", model, "--effort", effort, "--tools", "",
-    // Same advisor-leak guard as the observer (model.cjs): never inherit the
-    // user's global advisorModel, or the Sonnet design pass also drags in Opus.
-    "--settings", JSON.stringify({ advisorModel: null }),
+    // Advisor-leak guard (two levers). The user's global advisorModel:"opus" otherwise pulls
+    // Opus into this Sonnet pass — measured: 3 advisor_message passes, ~$0.14 of Opus per
+    // artifact. The old `advisorModel:null` was INERT: advisorModel is a string().optional()
+    // setting, so null fails the schema, is dropped, and the global leaks back in. Fix with an
+    // EMPTY string (valid + falsy, so the activation check `if(advisorModel && …)` skips it)
+    // AND the `--advisor` flag (a CLI flag outranks user settings whatever the merge order).
+    "--advisor", "", "--settings", JSON.stringify({ advisorModel: "" }),
     "--no-session-persistence", "--output-format", "json", "--system-prompt", DESIGN_SYSTEM,
   ];
   return new Promise((resolve, reject) => {
