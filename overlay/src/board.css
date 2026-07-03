@@ -1016,7 +1016,7 @@
 /* Blank-hero band — a session with no artifact yet. Seats in the hero slot (same
    compact height as #unit-digest) with a pixel-art clawd + a warm waiting line,
    the terminal filling the rest below. Hidden unless the unit is in .blank-hero. */
-.unit-blank { display: none; }
+.unit-blank { display: none; position: relative; }
 .board-unit.blank-hero .unit-blank {
   flex: 0 0 auto;
   width: 100%;
@@ -1045,6 +1045,23 @@
   margin-bottom: 5px;
 }
 .unit-blank .blank-s { font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
+/* Live "working" status line — pinned in the top-left corner, mono + faint, so the
+   splash says what the active session is on right now. Hidden when empty (idle home
+   / not-yet-live session), so it never leaves a stray box. */
+.unit-blank .blank-working {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  max-width: calc(100% - 28px);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.unit-blank .blank-working:empty { display: none; }
 /* Idle home (no project selected): grow the clawd splash to fill the whole pane
    and drop the (empty) terminal area below it, so it reads as a deliberate "nothing
    running" home rather than a session waiting for its first artifact. */

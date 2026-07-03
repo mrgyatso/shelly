@@ -184,6 +184,10 @@
                    it sits in the hero slot above the terminal. board.ts toggles
                    .blank-hero on the unit and mounts a fresh clawd into #unit-blank-clawd. -->
               <div id="unit-blank" class="unit-blank" aria-hidden="true">
+                <!-- Corner-pinned live "working" line: the active session's current
+                     `working` field, so the splash says what we're on at a glance.
+                     Empty (and hidden) on the idle home / a not-yet-live session. -->
+                <div class="blank-working"></div>
                 <div id="unit-blank-clawd" class="blank-clawd"></div>
                 <div class="blank-copy">
                   <div class="blank-t">Clawd's on it.</div>
