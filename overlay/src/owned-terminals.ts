@@ -35,6 +35,20 @@ export interface NewBinding {
   unitKey: string;
 }
 
+/** What to show in a unit's terminal panel when it has NO live terminal (external
+ *  session, or a Board session whose PTY is gone after a restart) — instead of a
+ *  bare hidden panel that reads as a broken/empty project. The Board builds this
+ *  (it knows the unit's name, dir, and resumable session); the buttons close over
+ *  the Board's spawn/resume. `null` from the provider ⇒ keep the panel hidden. */
+export interface EmptyUnitState {
+  /** The project/unit display name, shown under the heading. */
+  name: string;
+  /** Spawn a fresh Board session in this unit's dir; null ⇒ omit the Start button. */
+  onStart: (() => void) | null;
+  /** Resume the unit's most recent (safely idle) session; null ⇒ omit the button. */
+  onResume: (() => void) | null;
+}
+
 export interface OwnedTerminalsOpts {
   /** Resolve the absolute dir to spawn `claude` in for the given unit (from the
    *  Board's unit_dir, injected per live source). null ⇒ can't auto-start here. */
@@ -42,12 +56,17 @@ export interface OwnedTerminalsOpts {
   /** The Board's floating status dot — pulses when output arrives while the
    *  terminal is tucked away (the panel itself carries no header now). */
   statusDot?: HTMLElement | null;
+  /** Build the empty-state CTA for a unit with no live terminal, or null to keep the
+   *  panel hidden (the idle home / hub sentinels). */
+  emptyState?: (unitKey: string) => EmptyUnitState | null;
 }
 
 const terminals = new Map<string, OwnedTerminal>();
 
 let panelEl: HTMLElement | null = null; // #unit-terminals (the whole panel)
 let bodyEl: HTMLElement | null = null; // holds the .term-mount divs
+let emptyEl: HTMLElement | null = null; // the empty-state CTA (built lazily, reused)
+let emptyStateFor: ((unitKey: string) => EmptyUnitState | null) | null = null;
 let dotEl: HTMLElement | null = null; // floating status dot (pulses on hidden activity)
 /** Per-unit active terminal (when a unit has >1 owned session). */
 const activeByUnit = new Map<string, string>();
@@ -70,6 +89,7 @@ export function initOwnedTerminals(slot: HTMLElement, opts: OwnedTerminalsOpts):
   panelEl = slot;
   resolveDir = opts.resolveDir;
   dotEl = opts.statusDot ?? null;
+  emptyStateFor = opts.emptyState ?? null;
   slot.replaceChildren();
 
   // No header bar: the terminal fills the surface (a unit IS a session, so there's
@@ -155,13 +175,22 @@ export function showOwnedTerminals(unitKey: string): void {
   if (!panelEl) return;
   currentUnit = unitKey;
   const shown = shownForUnit(unitKey);
-  // No live terminal to show → keep the panel hidden (no "start a session" empty
-  // box). Auto-start spawns one on entry; this is re-called once it exists.
+  // No live terminal to show. Rather than a bare hidden panel that reads as a broken
+  // project, render an empty-state CTA ("Start session here" / "Resume last") when
+  // the Board supplies one; a null provider (idle home / hub) keeps the panel hidden.
   if (!shown) {
     for (const t of terminals.values()) t.mount.hidden = true;
-    panelEl.hidden = true;
+    const empty = emptyStateFor ? emptyStateFor(unitKey) : null;
+    if (empty) {
+      renderEmptyState(empty);
+      panelEl.hidden = false;
+    } else {
+      hideEmptyState();
+      panelEl.hidden = true;
+    }
     return;
   }
+  hideEmptyState();
   panelEl.hidden = false;
   for (const t of terminals.values()) t.mount.hidden = t !== shown;
   applyCollapsed();
@@ -176,7 +205,57 @@ export function showOwnedTerminals(unitKey: string): void {
 export function hideOwnedTerminals(): void {
   currentUnit = null;
   for (const t of terminals.values()) t.mount.hidden = true;
+  hideEmptyState();
   if (panelEl) panelEl.hidden = true;
+}
+
+/** Render (or refresh) the empty-state CTA inside the terminal body — built lazily
+ *  and reused across units. Sits absolutely over the body; the term-mounts are all
+ *  hidden when it shows. */
+function renderEmptyState(state: EmptyUnitState): void {
+  if (!bodyEl) return;
+  if (!emptyEl) {
+    emptyEl = document.createElement("div");
+    emptyEl.className = "term-empty";
+    bodyEl.appendChild(emptyEl);
+  }
+  const card = document.createElement("div");
+  card.className = "term-empty-card";
+
+  const title = document.createElement("div");
+  title.className = "term-empty-title";
+  title.textContent = "No active session";
+  const sub = document.createElement("div");
+  sub.className = "term-empty-sub";
+  sub.textContent = state.name;
+  card.append(title, sub);
+
+  const actions = document.createElement("div");
+  actions.className = "term-empty-actions";
+  // Resume (when a safely-idle prior session exists) is the primary action; else
+  // Start takes the primary slot so the panel always offers one obvious next move.
+  if (state.onResume) {
+    actions.appendChild(emptyButton("Resume last session", true, state.onResume));
+  }
+  if (state.onStart) {
+    actions.appendChild(emptyButton("Start session here", !state.onResume, state.onStart));
+  }
+  card.appendChild(actions);
+
+  emptyEl.replaceChildren(card);
+  emptyEl.hidden = false;
+}
+
+function emptyButton(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.className = "term-empty-btn" + (primary ? " primary" : "");
+  b.textContent = label;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function hideEmptyState(): void {
+  if (emptyEl) emptyEl.hidden = true;
 }
 
 /** Whether `unitKey` has any owned terminal (drives the L1 "terminal" badge). */

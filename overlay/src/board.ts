@@ -46,6 +46,7 @@ import {
   ensureOwnedTerminal,
   endShownTerminal,
   showSessionInUnit,
+  type EmptyUnitState,
 } from "./owned-terminals";
 
 interface ArtifactEntry {
@@ -262,6 +263,19 @@ let expandedActiveProject: string | null = null;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
+/** The user's $HOME as an absolute path (loaded once at init from resolve_home_dir).
+ *  A session whose recorded project root equals this was launched from ~ and must NOT
+ *  share a unit with other home-launched sessions — see unitKeyOf / isHomeRooted. */
+let homeDir: string | null = null;
+
+/** Strip trailing slashes so a recorded root and $HOME compare equal regardless of a
+ *  stray trailing separator. Returns null for a null/empty input. */
+function normalizeDir(dir: string | null | undefined): string | null {
+  if (!dir) return null;
+  const trimmed = dir.replace(/\/+$/, "");
+  return trimmed || "/";
+}
+
 // ---- trace harness ----------------------------------------------------------
 // Routes Board-side events to the SAME on-disk NDJSON the shell + Rust layers write
 // (~/.claude/companion/logs/trace.ndjson), so one artifact write yields one joined,
@@ -357,6 +371,7 @@ export async function initBoard(): Promise<void> {
     initOwnedTerminals(terminalsSlot, {
       resolveDir: unitDirOf,
       statusDot: document.getElementById("unit-term-dot"),
+      emptyState: buildEmptyUnitState,
     });
   stage.removeAttribute("hidden");
 
@@ -401,6 +416,12 @@ export async function initBoard(): Promise<void> {
     for (const [k, v] of Object.entries(names)) unitNames.set(k, v);
   } catch (e) {
     console.error("read_unit_names failed", e);
+  }
+
+  try {
+    homeDir = normalizeDir(await invoke<string | null>("resolve_home_dir"));
+  } catch (e) {
+    console.error("resolve_home_dir failed", e);
   }
 
   for (const s of allSources) lastJsonBySource.set(s.source, s.json);
@@ -878,14 +899,30 @@ function parseState(json: string): LiveState {
  * by its project slug so two agents in one repo collapse to one unit.
  */
 function unitKeyOf(s: LiveSource): string {
-  // A session belongs to its PROJECT, keyed by the project directory (the source's
-  // `project` basename, NOT the stored unit_key — so plugin-cache drift in unit_key
-  // can't split one project across units). This now applies to NON-repo dirs too: a
-  // second `claude` opened in the same folder (e.g. `clipping`) must land in the
-  // EXISTING unit, not clone a fresh tab per session. The stored non-repo unit_key
-  // carries a per-session `--<shortid>` that used to split them; per-session identity
-  // now lives in the rail's session switcher, not the unit key.
+  // A session launched from $HOME is NOT a shared project. Without this, every
+  // ~-launched session collapses into one "gyatso" unit (basename of $HOME) — and an
+  // agent's cosmetic `project` label ("whatnot-api") floats over a unit whose real
+  // dir is still ~, so "+ session here" spawns in ~ and the card reverts to the home
+  // slug the moment the labelling session dies (the whatnot-api → gyatso bug). Give
+  // each home-rooted session its OWN unit (its stem); its display name still comes
+  // from `project`, so the card can read "whatnot-api" while standing alone.
+  if (isHomeRooted(s)) return s.source;
+  // Otherwise a session belongs to its PROJECT, keyed by the project directory (the
+  // source's `project` basename, NOT the stored unit_key — so plugin-cache drift in
+  // unit_key can't split one project across units). This applies to NON-repo dirs
+  // too: a second `claude` opened in the same folder (e.g. `clipping`) must land in
+  // the EXISTING unit, not clone a fresh tab per session. Per-session identity lives
+  // in the rail's session switcher, not the unit key.
   return sourceProjectKey(s);
+}
+
+/** True when this session's recorded project root is the user's $HOME — i.e. it was
+ *  launched from ~ and has no real project directory of its own, so it must stand as
+ *  its own unit rather than merge into a shared home card. */
+function isHomeRooted(s: LiveSource): boolean {
+  if (!homeDir) return false;
+  const dir = normalizeDir(parseState(s.json).unit_dir);
+  return dir !== null && dir === homeDir;
 }
 
 /** The absolute project dir for a unit — the `unit_dir` of any live source that
@@ -898,6 +935,35 @@ function unitDirOf(unitKey: string): string | null {
     if (dir) return dir;
   }
   return null;
+}
+
+/** Every live source that belongs to `unitKey`. */
+function sourcesForUnit(unitKey: string): LiveSource[] {
+  return allSources.filter((s) => unitKeyOf(s) === unitKey);
+}
+
+/** The empty-state CTA for a unit with no live terminal (external session, or a
+ *  Board session whose PTY was dropped on restart). Returns null for the idle-home /
+ *  hub sentinels and for a unit with nothing actionable — those keep the bare panel.
+ *  onStart spawns in the unit's dir; onResume rejoins its most recent SAFELY-IDLE
+ *  session (resumableSessionFor already withholds a still-running one, so we never
+ *  double-spawn a claude onto one transcript). */
+function buildEmptyUnitState(unitKey: string): EmptyUnitState | null {
+  if (unitKey === IDLE || unitKey === CLOUD || unitKey === UNSOURCED) return null;
+  const dir = unitDirOf(unitKey);
+  const resumeId = resumableSessionFor(unitKey);
+  if (!dir && !resumeId) return null;
+  return {
+    name: unitName(unitKey, sourcesForUnit(unitKey)),
+    onStart: dir ? () => void launchSessionIn(dir) : null,
+    onResume: resumeId ? () => void resumeSessionInUnit(unitKey, resumeId) : null,
+  };
+}
+
+/** Resume `resumeId` into `unitKey` from the empty-state, then reveal it. */
+async function resumeSessionInUnit(unitKey: string, resumeId: string): Promise<void> {
+  await ensureOwnedTerminal(unitKey, resumeId);
+  if (currentUnitKey === unitKey) showOwnedTerminals(unitKey);
 }
 
 /** unitKeyOf for a source slug (looks it up); falls back to the slug itself. */
@@ -1818,8 +1884,20 @@ function enterUnit(unitKey: string): void {
   // entry never FRESH-spawns: an existing Board terminal shows immediately; a
   // Board-launched session whose terminal is gone (e.g. after a Board restart) is
   // RESUMED (same id ⇒ same unit ⇒ reusable); an external session has no terminal
-  // the Board can attach to, so it shows its hero + history only.
-  void ensureAndShowTerminal(unitKey);
+  // the Board can attach to, so it shows its hero + history only (with an empty-state
+  // CTA in the panel). When a unit ends up with no terminal AND has more than one
+  // session to choose from, pop its session chooser so it's obvious you pick one.
+  void ensureAndShowTerminal(unitKey).then(() => {
+    if (
+      currentUnitKey === unitKey &&
+      !ownedTabForUnit(unitKey) &&
+      sourcesForUnit(unitKey).length > 1 &&
+      expandedActiveProject !== unitKey
+    ) {
+      expandedActiveProject = unitKey;
+      renderUnitRail(unitKey);
+    }
+  });
 }
 
 /** Reveal the unit's terminal. Resume a Board-launched session if its terminal is
