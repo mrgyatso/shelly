@@ -1918,7 +1918,7 @@ async function renderHero(unitKey: string): Promise<void> {
       ? (groupArtifactsByUnit().get(unitKey) ?? []).some((a) => a.source === flSrc)
       : false;
     if (flHasArt) syncSurfaceStrip(false);
-    else showBlankHero();
+    else showBlankHero(BLANK_FIRST, blankWorkingLine(flSrc));
     return;
   }
   // Lead with the ACTIVE SESSION's most recent artifact. The hero
@@ -1949,7 +1949,7 @@ async function renderHero(unitKey: string): Promise<void> {
     // leaves digestPath pointing at the prior session's artifact, so the new session's
     // first artifact would mis-route to the "new artifact" pill instead of auto-lighting,
     // and maybeLightBlankHero (which guards on digestPath === null) would never fire.
-    showBlankHero();
+    showBlankHero(BLANK_FIRST, blankWorkingLine(src));
   }
 }
 
@@ -2289,7 +2289,7 @@ const BLANK_IDLE = {
  *  Native DOM (no iframe), so there's no load flash. Cleared by syncSurfaceStrip(true)
  *  the moment a real artifact lands, and by leaveUnit on exit. The idle home reuses it
  *  with BLANK_IDLE copy (no terminal, nothing working). */
-function showBlankHero(copy: { title: string; sub: string } = BLANK_FIRST): void {
+function showBlankHero(copy: { title: string; sub: string } = BLANK_FIRST, working = ""): void {
   digestPath = null;
   digestEl.setAttribute("hidden", "");
   hideHeroNewPill();
@@ -2303,7 +2303,36 @@ function showBlankHero(copy: { title: string; sub: string } = BLANK_FIRST): void
   const s = document.querySelector("#unit-blank .blank-s");
   if (t) t.textContent = copy.title;
   if (s) s.textContent = copy.sub;
+  setBlankWorking(working);
   setFocus("split");
+}
+
+/** The active session's live `working` line for a unit's blank splash — mirrors
+ *  makeHead's status text (working, else the top `next` item, else "Idle"). Returns
+ *  "" when the unit has no live source (the idle home / a not-yet-live session), so
+ *  the corner pin stays hidden. `src` is a source slug (from activeSessionSource). */
+function blankWorkingLine(src: string | null): string {
+  if (!src) return "";
+  const s = allSources.find((x) => x.source === src);
+  if (!s) return "";
+  const st = parseState(s.json);
+  return st.working || st.next?.[0]?.title || "Idle";
+}
+
+/** Paint the splash's corner "working" line (bold-run markup, escaped). Empty ⇒
+ *  cleared, so CSS `:empty` hides the pin entirely. */
+function setBlankWorking(working: string): void {
+  const w = document.querySelector("#unit-blank .blank-working");
+  if (w) w.innerHTML = working ? boldRuns(working) : "";
+}
+
+/** Keep the splash's corner "working" line current without a full hero re-render —
+ *  called from the poll when a source's live state changes. No-op unless the blank
+ *  splash is actually showing, and never on the idle home (which carries no line). */
+function refreshBlankWorking(unitKey: string): void {
+  if (!unitEl?.classList.contains("blank-hero")) return;
+  if (unitEl.classList.contains("is-idle")) return;
+  setBlankWorking(blankWorkingLine(activeSessionSource(unitKey)));
 }
 
 // ---- data → header ----------------------------------------------------------
@@ -2889,6 +2918,8 @@ async function pollLive(): Promise<void> {
       // The active session may have just come live (e.g. a resumed session whose
       // artifacts already existed on disk). If its hero is still blank, light it up.
       maybeLightBlankHero(view.unitKey);
+      // Track the active session's `working` line on the blank splash each turn.
+      refreshBlankWorking(view.unitKey);
     }
   }
 
