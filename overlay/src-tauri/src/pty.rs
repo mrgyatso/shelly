@@ -159,7 +159,17 @@ fn claude_then_shell_script(claude: &str, shell: &str, resume: Option<&str>) -> 
         Some(id) => format!("{} --resume {}", shell_quote(claude), shell_quote(id)),
         None => shell_quote(claude),
     };
-    format!("{}; exec {} -i -l", launch, shell_quote(shell))
+    // Between claude exiting and the drop-to-shell, proactively disable mouse
+    // tracking + bracketed paste and restore the cursor/screen buffer. A `claude`
+    // that dies WITHOUT running its own cleanup (e.g. SIGABRT) otherwise leaves the
+    // tty in mouse-report mode; at the bare prompt every mouse MOVE then prints its
+    // coordinates as text — the "terminal typing random characters" failure. Each
+    // is a no-op when the mode is already off, so a clean claude exit is unaffected,
+    // and the interactive shell we exec re-enables bracketed paste itself. `\033`
+    // (octal ESC) keeps this portable across any POSIX `printf`.
+    let tty_reset =
+        "printf '\\033[?1000l\\033[?1002l\\033[?1003l\\033[?1006l\\033[?1015l\\033[?1049l\\033[?2004l\\033[?25h\\033[0m'";
+    format!("{}; {}; exec {} -i -l", launch, tty_reset, shell_quote(shell))
 }
 
 /// Spawn a `claude` PTY for `tab_id`. The PTY runs an interactive login shell
@@ -329,6 +339,9 @@ mod tests {
         assert!(s.contains("exec '/bin/zsh' -i -l"), "got: {s}");
         // `;` not `&&` — drop to the shell however claude exited.
         assert!(!s.contains("&&"), "got: {s}");
+        // and it disables mouse-report mode before the drop-to-shell, so a crashed
+        // claude can't leave the tty printing mouse coordinates as text.
+        assert!(s.contains("[?1003l") && s.contains("[?1006l"), "got: {s}");
     }
 
     #[test]
