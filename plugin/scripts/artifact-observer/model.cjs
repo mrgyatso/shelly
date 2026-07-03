@@ -160,11 +160,13 @@ function callObserver({ prior, turns, brief, model, timeoutMs = OBSERVER_TIMEOUT
   const resolvedModel = model || process.env.COMPANION_OBSERVER_MODEL || "haiku";
   const args = [
     "--safe-mode", "--print", "--model", resolvedModel, "--effort", "low", "--tools", "",
-    // Disable the user's global advisorModel for this call: --safe-mode and
-    // --tools "" do not suppress the advisor (it's gated by the setting, not the
-    // tool list), and inheriting it pulls Opus into every routine turn — which
-    // defeats the cheap-Haiku design this worker exists to deliver.
-    "--settings", JSON.stringify({ advisorModel: null }),
+    // Advisor-leak guard (see designer.cjs for the full write-up): --safe-mode and --tools ""
+    // do NOT suppress the advisor (it's gated by the setting), and the old advisorModel:null was
+    // inert — null fails the string().optional() schema and is dropped, so the global (opus)
+    // leaks back. Use an EMPTY string (valid + falsy → activation skips it) AND the --advisor
+    // flag (outranks user settings). NOTE: callObserver is a bench-only path today — the Haiku
+    // director was retired and worker.cjs uses callDesigner — but keep it guarded for defense.
+    "--advisor", "", "--settings", JSON.stringify({ advisorModel: "" }),
     "--no-session-persistence", "--output-format", "json", "--json-schema",
     JSON.stringify(OBSERVER_SCHEMA), "--system-prompt", SYSTEM_PROMPT,
   ];

@@ -112,7 +112,12 @@ function turnHash(turn) {
 function detectVisualIntent(turn) {
   const text = String((turn && turn.user) || "").toLowerCase();
   const rules = [
-    [/(?:mock\s?up|wireframe|prototype)\b/, "requested a mockup or prototype"],
+    // Intent-gated, not bare noun: a build/show verb must sit in the same clause just
+    // before the noun ("build me a prototype", "show me three mockups"), or the noun must
+    // take a phrasal object ("prototype of the login screen", "wireframe for the dashboard").
+    // The old bare-noun rule fired on any incidental "prototype"/"mockup"/"wireframe" —
+    // including injected memory/context text — and forced/overrode the pipeline on non-requests.
+    [/\b(?:build|make|create|show me|put together)\b[^.!?\n]{0,30}\b(?:mock\s?up|wireframe|prototype)|\b(?:mock\s?up|wireframe|prototype)s?\s+(?:of|for)\b/, "requested a mockup or prototype"],
     [/\b(?:interactive|clickable|live)\s+(?:preview|demo|experience|version)/, "requested a live interactive preview"],
     [/\b(?:animate|animation|motion study|animated)\b/, "animation is central to the request"],
     [/\b(?:mascot|pose|character)\s+(?:options|variants|concepts|designs)/, "requested visual character variants"],
