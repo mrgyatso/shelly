@@ -88,7 +88,7 @@ pub fn safe_slug(slug: &str) -> Option<&str> {
 }
 
 /// Epoch-millis mtime of a path, or `0` if unavailable.
-fn modified_ms(meta: &std::fs::Metadata) -> u64 {
+pub(crate) fn modified_ms(meta: &std::fs::Metadata) -> u64 {
     meta.modified()
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
@@ -96,7 +96,7 @@ fn modified_ms(meta: &std::fs::Metadata) -> u64 {
         .unwrap_or(0)
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

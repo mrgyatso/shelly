@@ -6,10 +6,12 @@
 //! bearer token. Clients dial *out* to wherever the user runs this (a public
 //! host, a Tailscale IP, a LAN address) — the hub is URL-agnostic.
 
+mod agents;
 mod config;
 mod data;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     extract::{Path as AxPath, Query, Request, State},
@@ -46,6 +48,8 @@ async fn main() {
     println!("  artifacts: {}", cfg.artifacts_dir.display());
     println!("  live:      {}", cfg.live_dir.display());
     println!("  routines:  {}", cfg.routines_dir.display());
+    println!("  agents:    {}", cfg.agents_dir.display());
+    println!("  inbox:     {}", cfg.inbox_dir.display());
     println!("  web ui:    {}", cfg.webui_dir.display());
     println!("  pair this hub with the overlay:");
     println!("      companion hub set <this-hub-url> {}", cfg.token);
@@ -56,6 +60,10 @@ async fn main() {
         .route("/live", get(get_live))
         .route("/routines", get(get_routines))
         .route("/routines/:id", get(get_routine).put(put_routine))
+        .route("/agents", get(get_agents))
+        .route("/agents/:id", get(get_agent).put(put_agent))
+        .route("/inbox/:agent", get(get_inbox).post(post_inbox))
+        .route("/inbox/:agent/:id", axum::routing::delete(delete_inbox))
         .route("/artifacts", get(get_artifacts))
         .route("/artifacts/:slug", get(get_artifact))
         .layer(axum::middleware::from_fn_with_state(cfg.clone(), auth));
@@ -69,17 +77,39 @@ async fn main() {
         .fallback_service(ServeDir::new(&cfg.webui_dir).fallback(ServeFile::new(webui_index)))
         .with_state(cfg.clone());
 
-    let listener = match tokio::net::TcpListener::bind((cfg.bind.as_str(), cfg.port)).await {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("companion-hub: failed to bind port {}: {e}", cfg.port);
-            std::process::exit(1);
-        }
-    };
+    let listener = bind_with_retry(&cfg.bind, cfg.port).await;
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("companion-hub: server error: {e}");
         std::process::exit(1);
     }
+}
+
+/// Bind, retrying for up to ~5 minutes. A hub pinned to a tailnet IP via
+/// COMPANION_HUB_BIND races tailscale0 at boot ("Cannot assign requested
+/// address") — that's transient, so wait for the interface instead of dying
+/// into systemd's start-limit. Persistent failures still exit non-zero.
+async fn bind_with_retry(bind: &str, port: u16) -> tokio::net::TcpListener {
+    const RETRY_EVERY: Duration = Duration::from_secs(3);
+    const MAX_ATTEMPTS: u32 = 100;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match tokio::net::TcpListener::bind((bind, port)).await {
+            Ok(l) => return l,
+            Err(e) if attempt < MAX_ATTEMPTS => {
+                if attempt == 1 || attempt % 10 == 0 {
+                    eprintln!(
+                        "companion-hub: bind {bind}:{port} failed ({e}); retrying every {}s (attempt {attempt}/{MAX_ATTEMPTS})",
+                        RETRY_EVERY.as_secs()
+                    );
+                }
+                tokio::time::sleep(RETRY_EVERY).await;
+            }
+            Err(e) => {
+                eprintln!("companion-hub: failed to bind port {port}: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+    unreachable!("bind loop returns or exits");
 }
 
 /// `GET /api/health` — unauthenticated reachability probe.
@@ -151,6 +181,78 @@ async fn put_routine(
         Err(data::WriteRoutineError::Io(err)) => {
             (StatusCode::INTERNAL_SERVER_ERROR, err).into_response()
         }
+    }
+}
+
+/// `GET /api/agents` — every registered agent + liveness, freshest first.
+async fn get_agents(State(cfg): State<Shared>) -> Json<Vec<agents::AgentInfo>> {
+    Json(agents::list_agents(
+        &cfg.agents_dir,
+        &cfg.live_dir,
+        &cfg.artifacts_dir,
+    ))
+}
+
+/// `GET /api/agents/<id>` — one agent + liveness.
+async fn get_agent(State(cfg): State<Shared>, AxPath(id): AxPath<String>) -> Response {
+    match agents::get_agent_info(&cfg.agents_dir, &cfg.live_dir, &cfg.artifacts_dir, &id) {
+        Some(info) => Json(info).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `PUT /api/agents/<id>` — register or update an agent's identity card.
+async fn put_agent(
+    State(cfg): State<Shared>,
+    AxPath(id): AxPath<String>,
+    Json(input): Json<agents::AgentUpsert>,
+) -> Response {
+    match agents::write_agent(&cfg.agents_dir, &id, input) {
+        Ok(reg) => Json(reg).into_response(),
+        Err(e) => agent_error(e),
+    }
+}
+
+/// `POST /api/inbox/<agent>` — queue a reply envelope for an agent and wake it
+/// if its registration has a wake command. Returns the stored envelope plus
+/// how it was delivered (`woken` | `queued` | `wake_failed`).
+async fn post_inbox(
+    State(cfg): State<Shared>,
+    AxPath(agent): AxPath<String>,
+    Json(payload): Json<serde_json::Value>,
+) -> Response {
+    match agents::deliver(&cfg.inbox_dir, &cfg.agents_dir, &agent, payload) {
+        Ok((envelope, delivery)) => Json(serde_json::json!({
+            "envelope": envelope,
+            "delivery": delivery,
+        }))
+        .into_response(),
+        Err(e) => agent_error(e),
+    }
+}
+
+/// `GET /api/inbox/<agent>` — pending envelopes, oldest first. For agents on
+/// other machines; co-located agents read `inbox/<agent>/` directly.
+async fn get_inbox(State(cfg): State<Shared>, AxPath(agent): AxPath<String>) -> Response {
+    Json(agents::list_inbox(&cfg.inbox_dir, &agent)).into_response()
+}
+
+/// `DELETE /api/inbox/<agent>/<id>` — the agent acks a processed envelope.
+async fn delete_inbox(
+    State(cfg): State<Shared>,
+    AxPath((agent, id)): AxPath<(String, String)>,
+) -> Response {
+    match agents::ack_inbox(&cfg.inbox_dir, &agent, &id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => agent_error(e),
+    }
+}
+
+fn agent_error(e: agents::AgentError) -> Response {
+    match e {
+        agents::AgentError::InvalidId => (StatusCode::BAD_REQUEST, "invalid id").into_response(),
+        agents::AgentError::NotFound => StatusCode::NOT_FOUND.into_response(),
+        agents::AgentError::Io(err) => (StatusCode::INTERNAL_SERVER_ERROR, err).into_response(),
     }
 }
 
