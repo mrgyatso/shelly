@@ -45,6 +45,7 @@ async fn main() {
     );
     println!("  artifacts: {}", cfg.artifacts_dir.display());
     println!("  live:      {}", cfg.live_dir.display());
+    println!("  routines:  {}", cfg.routines_dir.display());
     println!("  web ui:    {}", cfg.webui_dir.display());
     println!("  pair this hub with the overlay:");
     println!("      companion hub set <this-hub-url> {}", cfg.token);
@@ -53,6 +54,8 @@ async fn main() {
     // can probe reachability before it has a (valid) token.
     let authed = Router::new()
         .route("/live", get(get_live))
+        .route("/routines", get(get_routines))
+        .route("/routines/:id", get(get_routine).put(put_routine))
         .route("/artifacts", get(get_artifacts))
         .route("/artifacts/:slug", get(get_artifact))
         .layer(axum::middleware::from_fn_with_state(cfg.clone(), auth));
@@ -119,6 +122,36 @@ async fn get_live(
     Query(q): Query<LiveQuery>,
 ) -> Json<serde_json::Value> {
     Json(data::read_live(&cfg.live_dir, q.project.as_deref()))
+}
+
+/// `GET /api/routines` — all routine-state objects, newest first.
+async fn get_routines(State(cfg): State<Shared>) -> Json<Vec<data::RoutineState>> {
+    Json(data::list_routines(&cfg.routines_dir))
+}
+
+/// `GET /api/routines/<id>` — one routine-state object.
+async fn get_routine(State(cfg): State<Shared>, AxPath(id): AxPath<String>) -> Response {
+    match data::read_routine(&cfg.routines_dir, &id) {
+        Some(routine) => Json(routine).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `PUT /api/routines/<id>` — upsert one routine-state object.
+async fn put_routine(
+    State(cfg): State<Shared>,
+    AxPath(id): AxPath<String>,
+    Json(input): Json<data::RoutineUpsert>,
+) -> Response {
+    match data::write_routine(&cfg.routines_dir, &id, input) {
+        Ok(routine) => Json(routine).into_response(),
+        Err(data::WriteRoutineError::InvalidId) => {
+            (StatusCode::BAD_REQUEST, "invalid routine id").into_response()
+        }
+        Err(data::WriteRoutineError::Io(err)) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, err).into_response()
+        }
+    }
 }
 
 /// `GET /api/artifacts` — manifest of all artifacts, newest first.
