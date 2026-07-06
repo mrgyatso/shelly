@@ -159,8 +159,14 @@
                   <button class="surface-focus" type="button" data-focus="split" title="Split evenly" aria-label="Split evenly">⊟</button>
                   <button class="surface-focus" type="button" data-focus="terminal" title="Focus the terminal" aria-label="Focus the terminal">⬓</button>
                 </div>
+                <!-- Code peek: slide out the read-only file viewer for this session. -->
+                <button id="unit-code-toggle" class="surface-code-btn" type="button" title="Peek at the code" aria-label="Peek at the code">&lt;/&gt;</button>
               </div>
             </div>
+            <!-- Content row: the active view (session / history / settings) on the
+                 left, and the code-peek viewer sharing the width on the right when
+                 open — so the artifact + terminal stay visible, just narrower. -->
+            <div class="unit-body">
             <!-- SESSION view: the artifact hero + the live terminal (always present —
                  a unit IS a session). -->
             <div class="unit-main">
@@ -254,6 +260,23 @@
                 </div>
                 <div class="settings-foot">Mode &amp; quality are live; retention &amp; appearance are previews.</div>
               </div>
+            </div>
+            <!-- CODE PEEK: lists this session's changed files ("in play"); click
+                 one to read it in Monaco. Shares the content row — opening it grows
+                 the viewer in from the right (data-code="open" on #board-unit) while
+                 the session view stays visible, just narrower. Read-only for now;
+                 edit is a fast-follow. -->
+            <aside id="unit-code" class="unit-code" aria-label="Code peek">
+              <div class="code-head">
+                <span class="code-brand">&lt;/&gt;&nbsp;Code</span>
+                <div id="code-files" class="code-files" role="tablist"></div>
+                <button id="code-close" class="code-close" type="button" title="Close (Esc)" aria-label="Close code peek">✕</button>
+              </div>
+              <div class="code-body">
+                <div id="code-editor" class="code-editor"></div>
+                <div id="code-status" class="code-status" hidden></div>
+              </div>
+            </aside>
             </div>
           </div>
         </div>

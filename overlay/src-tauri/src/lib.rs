@@ -1,5 +1,6 @@
 mod artifact;
 mod artifact_watch;
+mod code_peek;
 mod dials;
 mod history;
 mod hub;
@@ -155,7 +156,9 @@ pub fn run() {
             hub::read_live_from_hub,
             hub::hub_config_get,
             hub::hub_config_set,
-            hub::hub_test_connection
+            hub::hub_test_connection,
+            code_peek::list_changed_files,
+            code_peek::read_source_file
         ])
         .setup(|app| {
             // Regular activation policy: the Board is a normal app now — it gets a

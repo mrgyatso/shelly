@@ -990,9 +990,22 @@
 .unit-title:hover .unit-title-edit { opacity: 1; }
 /* Stacked surfaces: compact hero over the primary terminal. Fills the unit; the
    terminal flexes to take whatever the hero leaves. */
+/* Content row: the active view + the code-peek viewer share the width side by
+   side (the code viewer grows in from the right; the view compresses but stays
+   visible). Only one of main/history/settings shows at a time via data-view. */
+.unit-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+}
+
 .unit-main {
   position: relative; /* anchor for the floating surface controls */
   flex: 1 1 auto;
+  min-width: 0; /* let it compress when the code viewer opens beside it */
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1711,3 +1724,157 @@
 .pop-open:hover { background: var(--accent); transform: translateY(-1px); }
 .pop-arrow { transition: transform 0.2s; }
 .pop-open:hover .pop-arrow { transform: translateX(3px); }
+
+/* =========================================================================
+   CODE PEEK — a read-only Monaco slide-over listing the session's changed
+   files ("in play"). Opened from the toolbar </> toggle; overlays the pane and
+   slides in via transform (data-code="open" on #board-unit). "Peek and nudge,"
+   not an IDE: a flat file strip (no tree), one file at a time, read-only for now.
+   ========================================================================= */
+
+/* Toolbar </> toggle — sits beside the resize group, same machined language. */
+.surface-code-btn {
+  height: 22px;
+  padding: 0 8px;
+  margin-left: 6px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-2);
+  background: var(--card);
+  color: var(--ink-4);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.surface-code-btn:hover { color: var(--ink); border-color: var(--ink-3); }
+.surface-code-btn.on {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 0 0 3px oklch(from var(--accent) l c h / 0.16);
+}
+
+/* The code viewer shares the content row. Closed = zero-width (collapsed); open =
+   grows in from the right to ~half the pane while the session view compresses but
+   stays visible. Animating flex-basis keeps the reveal smooth; Monaco's
+   automaticLayout + the terminal's ResizeObserver refit to the new width. Only
+   opens in the session view (the toggle is hidden elsewhere anyway). */
+.unit-code {
+  flex: 0 0 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--board);
+  transition: flex-basis 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.board-unit[data-view="session"][data-code="open"] .unit-code {
+  flex-basis: 52%;
+  border-left: 1px solid var(--line-2);
+}
+
+.code-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px 9px 16px;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--board);
+}
+.code-brand {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* Flat, horizontally-scrolling strip of the files in play — NOT a tree. */
+.code-files {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.code-files::-webkit-scrollbar { display: none; }
+.code-file {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-2);
+  background: var(--card);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.code-file:hover { border-color: var(--ink-4); color: var(--ink); }
+.code-file.on {
+  background: oklch(from var(--accent) l c h / 0.1);
+  border-color: oklch(from var(--accent) l c h / 0.4);
+  color: var(--ink);
+}
+.code-file .cf-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--accent);
+  width: 10px;
+  text-align: center;
+}
+.code-file .cf-name { overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+
+.code-close {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  border-radius: 7px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+.code-close:hover { background: var(--sunk); color: var(--ink); }
+
+.code-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #fff; /* Monaco 'vs' light — a crisp code surface under the paper chrome */
+}
+.code-editor { position: absolute; inset: 0; }
+
+/* Empty / error state — covers the editor area with paper-toned copy. */
+.code-status {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  background: var(--board);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.code-status[hidden] { display: none; }

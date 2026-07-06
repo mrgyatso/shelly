@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Board harness (browser, mocked IPC)</title>
+    <style>
+      /* The real window is transparent + rounded; in a browser give the page a
+         neutral backdrop so the stage's rounded corners read like the app. */
+      html, body { background: #3a3632 !important; }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      // 1. Mock the Tauri IPC BEFORE any @tauri-apps/api import runs.
+      const { installTauriMock } = await import("/dev/tauri-mock.ts");
+      installTauriMock();
+      window.__BOARD_MODE__ = true;
+
+      // 2. Adopt the real shell: fetch index.html, clone its head links (fonts,
+      //    stylesheets) and its body DOM — zero duplication, always in sync.
+      const doc = new DOMParser().parseFromString(
+        await (await fetch("/index.html")).text(),
+        "text/html",
+      );
+      for (const link of doc.head.querySelectorAll("link")) {
+        document.head.appendChild(link.cloneNode(true));
+      }
+      for (const node of doc.body.children) {
+        if (node.tagName !== "SCRIPT") document.body.appendChild(node.cloneNode(true));
+      }
+
+      // 3. Chromium-only workaround: a RECYCLED sandboxed srcdoc iframe stops
+      //    painting after its first content swap (production is WKWebView, which
+      //    repaints fine). Re-inserting the element in place discards + recreates
+      //    its browsing context — same element object, so board.ts's references
+      //    stay valid. Reinsertion doesn't mutate attributes, so no loop.
+      const reviveOnSwap = (el) => {
+        if (!el) return;
+        new MutationObserver(() => {
+          el.parentElement?.insertBefore(el, el.nextSibling);
+        }).observe(el, { attributeFilter: ["srcdoc", "src"] });
+      };
+      reviveOnSwap(document.getElementById("unit-digest"));
+      reviveOnSwap(document.getElementById("hub-frame"));
+
+      // 4. Boot the real bundle.
+      await import("/src/main.ts");
+    </script>
+  </body>
+</html>
