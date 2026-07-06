@@ -267,18 +267,25 @@ mod tests {
         let sysrem = serde_json::json!({"type":"user","message":{"role":"user","content":"<system-reminder>hi"}});
         assert_eq!(extract_user_title(&sysrem), None);
         let real = serde_json::json!({"type":"user","message":{"role":"user","content":"fix the roster bug"}});
-        assert_eq!(extract_user_title(&real).as_deref(), Some("fix the roster bug"));
+        assert_eq!(
+            extract_user_title(&real).as_deref(),
+            Some("fix the roster bug")
+        );
     }
 
     #[test]
     fn title_reads_text_blocks_in_array_content() {
         let arr = serde_json::json!({"type":"user","message":{"role":"user","content":[{"type":"text","text":"add recent sessions"}]}});
-        assert_eq!(extract_user_title(&arr).as_deref(), Some("add recent sessions"));
+        assert_eq!(
+            extract_user_title(&arr).as_deref(),
+            Some("add recent sessions")
+        );
     }
 
     #[test]
     fn non_user_lines_have_no_title() {
-        let asst = serde_json::json!({"type":"assistant","message":{"role":"assistant","content":"sure"}});
+        let asst =
+            serde_json::json!({"type":"assistant","message":{"role":"assistant","content":"sure"}});
         assert_eq!(extract_user_title(&asst), None);
         let meta = serde_json::json!({"type":"mode","mode":"default","sessionId":"x"});
         assert_eq!(extract_user_title(&meta), None);

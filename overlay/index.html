@@ -184,6 +184,10 @@
                    it sits in the hero slot above the terminal. board.ts toggles
                    .blank-hero on the unit and mounts a fresh clawd into #unit-blank-clawd. -->
               <div id="unit-blank" class="unit-blank" aria-hidden="true">
+                <!-- Corner-pinned live "working" line: the active session's current
+                     `working` field, so the splash says what we're on at a glance.
+                     Empty (and hidden) on the idle home / a not-yet-live session. -->
+                <div class="blank-working"></div>
                 <div id="unit-blank-clawd" class="blank-clawd"></div>
                 <div class="blank-copy">
                   <div class="blank-t">Clawd's on it.</div>
@@ -208,15 +212,30 @@
               <div class="settings-inner">
                 <header class="settings-head">
                   <h2>Settings</h2>
-                  <p>Companion preferences live here. Nothing to change yet — these are previews.</p>
+                  <p>Companion preferences. These write the same dial files the plugin reads.</p>
                 </header>
                 <div class="settings-group">
-                  <div class="settings-row is-soon">
+                  <div class="settings-row">
                     <div class="settings-row-main">
                       <div class="settings-row-title">Render mode</div>
-                      <div class="settings-row-sub">Let agents auto-render artifacts, or render only when you ask.</div>
+                      <div class="settings-row-sub">When the background observer renders artifacts.</div>
                     </div>
-                    <span class="settings-pill">Agent</span>
+                    <div class="settings-seg" data-dial="mode">
+                      <button type="button" data-value="manual">Manual</button>
+                      <button type="button" data-value="selective">Selective</button>
+                      <button type="button" data-value="always">Always</button>
+                      <button type="button" data-value="agent">Agent</button>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div class="settings-row-main">
+                      <div class="settings-row-title">Artifact quality</div>
+                      <div class="settings-row-sub">Fast (Haiku + local template) or pretty (Sonnet director).</div>
+                    </div>
+                    <div class="settings-seg" data-dial="quality">
+                      <button type="button" data-value="fast">Fast</button>
+                      <button type="button" data-value="pretty">Pretty</button>
+                    </div>
                   </div>
                   <div class="settings-row is-soon">
                     <div class="settings-row-main">
@@ -233,7 +252,7 @@
                     <span class="settings-pill">Auto</span>
                   </div>
                 </div>
-                <div class="settings-foot">Wiring comes next.</div>
+                <div class="settings-foot">Mode &amp; quality are live; retention &amp; appearance are previews.</div>
               </div>
             </div>
           </div>

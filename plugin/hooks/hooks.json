@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/companion-consider"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/companion-observe"
           }
         ]
       }

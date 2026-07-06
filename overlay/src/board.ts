@@ -8,8 +8,8 @@
 //   L1 SESSIONS — a light native roster of UNITS with live activity. A unit is
 //                 a project (git repo) when its sessions run in one, else a bare
 //                 session; two agents in one repo = one card reading "2 live".
-//   L2 UNIT     — one unit's living HOME, layered: a durable agent-authored
-//                 DIGEST (home.<unit_key>.html) at the top, a strip of live
+//   L2 UNIT     — one unit's living HOME, layered: a large HERO (the active
+//                 session's most recent artifact) at the top, a strip of live
 //                 LANES (one per active session — its working/where/next +
 //                 ✓/✎/✗ decisions + in-flight artifacts), and a readable text
 //                 HISTORY of the unit's artifacts. Opening any artifact opens a
@@ -27,6 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
+import { rewritesNeedingReload, retainedIdentity, type Identity } from "./ingest-logic";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { mountClawd } from "./clawd";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -45,6 +46,7 @@ import {
   ensureOwnedTerminal,
   endShownTerminal,
   showSessionInUnit,
+  type EmptyUnitState,
 } from "./owned-terminals";
 
 interface ArtifactEntry {
@@ -274,6 +276,10 @@ async function pollEvents(): Promise<boolean> {
   if (changed) trace("events.applied", { routed: routedByPath.size });
   return changed;
 }
+/** Last-seen modified_ms per artifact path. Lets ingest detect an in-place rewrite
+ *  (same path, newer mtime) of the artifact on screen and reload it — which the
+ *  path-keyed routing roads never do. Seeded at init alongside knownPaths. */
+const lastMtimeByPath = new Map<string, number>();
 /** Units whose L2 history rebuild is deferred because the reader is open. */
 const pendingIngest = new Set<string>();
 
@@ -306,6 +312,19 @@ let expandedRecentProject: string | null = null;
 let expandedActiveProject: string | null = null;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
+
+/** The user's $HOME as an absolute path (loaded once at init from resolve_home_dir).
+ *  A session whose recorded project root equals this was launched from ~ and must NOT
+ *  share a unit with other home-launched sessions — see unitKeyOf / isHomeRooted. */
+let homeDir: string | null = null;
+
+/** Strip trailing slashes so a recorded root and $HOME compare equal regardless of a
+ *  stray trailing separator. Returns null for a null/empty input. */
+function normalizeDir(dir: string | null | undefined): string | null {
+  if (!dir) return null;
+  const trimmed = dir.replace(/\/+$/, "");
+  return trimmed || "/";
+}
 
 // ---- trace harness ----------------------------------------------------------
 // Routes Board-side events to the SAME on-disk NDJSON the shell + Rust layers write
@@ -402,6 +421,7 @@ export async function initBoard(): Promise<void> {
     initOwnedTerminals(terminalsSlot, {
       resolveDir: unitDirOf,
       statusDot: document.getElementById("unit-term-dot"),
+      emptyState: buildEmptyUnitState,
     });
   stage.removeAttribute("hidden");
 
@@ -416,6 +436,7 @@ export async function initBoard(): Promise<void> {
   wireNavigate();
   wireHistoryClicks();
   wireUnitChrome();
+  wireSettings();
   wireScrollGating();
 
   setStatus(status, "Loading…");
@@ -447,8 +468,17 @@ export async function initBoard(): Promise<void> {
     console.error("read_unit_names failed", e);
   }
 
+  try {
+    homeDir = normalizeDir(await invoke<string | null>("resolve_home_dir"));
+  } catch (e) {
+    console.error("resolve_home_dir failed", e);
+  }
+
   for (const s of allSources) lastJsonBySource.set(s.source, s.json);
-  for (const a of allArtifacts) knownPaths.add(a.path);
+  for (const a of allArtifacts) {
+    knownPaths.add(a.path);
+    lastMtimeByPath.set(a.path, a.modified_ms);
+  }
   lastArtifactSig = artifactSig(allArtifacts);
   window.setInterval(() => void pollLive(), POLL_MS);
 
@@ -919,14 +949,30 @@ function parseState(json: string): LiveState {
  * by its project slug so two agents in one repo collapse to one unit.
  */
 function unitKeyOf(s: LiveSource): string {
-  // A session belongs to its PROJECT, keyed by the project directory (the source's
-  // `project` basename, NOT the stored unit_key — so plugin-cache drift in unit_key
-  // can't split one project across units). This now applies to NON-repo dirs too: a
-  // second `claude` opened in the same folder (e.g. `clipping`) must land in the
-  // EXISTING unit, not clone a fresh tab per session. The stored non-repo unit_key
-  // carries a per-session `--<shortid>` that used to split them; per-session identity
-  // now lives in the rail's session switcher, not the unit key.
+  // A session launched from $HOME is NOT a shared project. Without this, every
+  // ~-launched session collapses into one "gyatso" unit (basename of $HOME) — and an
+  // agent's cosmetic `project` label ("whatnot-api") floats over a unit whose real
+  // dir is still ~, so "+ session here" spawns in ~ and the card reverts to the home
+  // slug the moment the labelling session dies (the whatnot-api → gyatso bug). Give
+  // each home-rooted session its OWN unit (its stem); its display name still comes
+  // from `project`, so the card can read "whatnot-api" while standing alone.
+  if (isHomeRooted(s)) return s.source;
+  // Otherwise a session belongs to its PROJECT, keyed by the project directory (the
+  // source's `project` basename, NOT the stored unit_key — so plugin-cache drift in
+  // unit_key can't split one project across units). This applies to NON-repo dirs
+  // too: a second `claude` opened in the same folder (e.g. `clipping`) must land in
+  // the EXISTING unit, not clone a fresh tab per session. Per-session identity lives
+  // in the rail's session switcher, not the unit key.
   return sourceProjectKey(s);
+}
+
+/** True when this session's recorded project root is the user's $HOME — i.e. it was
+ *  launched from ~ and has no real project directory of its own, so it must stand as
+ *  its own unit rather than merge into a shared home card. */
+function isHomeRooted(s: LiveSource): boolean {
+  if (!homeDir) return false;
+  const dir = normalizeDir(parseState(s.json).unit_dir);
+  return dir !== null && dir === homeDir;
 }
 
 /** The absolute project dir for a unit — the `unit_dir` of any live source that
@@ -939,6 +985,35 @@ function unitDirOf(unitKey: string): string | null {
     if (dir) return dir;
   }
   return null;
+}
+
+/** Every live source that belongs to `unitKey`. */
+function sourcesForUnit(unitKey: string): LiveSource[] {
+  return allSources.filter((s) => unitKeyOf(s) === unitKey);
+}
+
+/** The empty-state CTA for a unit with no live terminal (external session, or a
+ *  Board session whose PTY was dropped on restart). Returns null for the idle-home /
+ *  hub sentinels and for a unit with nothing actionable — those keep the bare panel.
+ *  onStart spawns in the unit's dir; onResume rejoins its most recent SAFELY-IDLE
+ *  session (resumableSessionFor already withholds a still-running one, so we never
+ *  double-spawn a claude onto one transcript). */
+function buildEmptyUnitState(unitKey: string): EmptyUnitState | null {
+  if (unitKey === IDLE || unitKey === CLOUD || unitKey === UNSOURCED) return null;
+  const dir = unitDirOf(unitKey);
+  const resumeId = resumableSessionFor(unitKey);
+  if (!dir && !resumeId) return null;
+  return {
+    name: unitName(unitKey, sourcesForUnit(unitKey)),
+    onStart: dir ? () => void launchSessionIn(dir) : null,
+    onResume: resumeId ? () => void resumeSessionInUnit(unitKey, resumeId) : null,
+  };
+}
+
+/** Resume `resumeId` into `unitKey` from the empty-state, then reveal it. */
+async function resumeSessionInUnit(unitKey: string, resumeId: string): Promise<void> {
+  await ensureOwnedTerminal(unitKey, resumeId);
+  if (currentUnitKey === unitKey) showOwnedTerminals(unitKey);
 }
 
 /** unitKeyOf for a source slug (looks it up); falls back to the slug itself. */
@@ -1871,8 +1946,20 @@ function enterUnit(unitKey: string): void {
   // entry never FRESH-spawns: an existing Board terminal shows immediately; a
   // Board-launched session whose terminal is gone (e.g. after a Board restart) is
   // RESUMED (same id ⇒ same unit ⇒ reusable); an external session has no terminal
-  // the Board can attach to, so it shows its hero + history only.
-  void ensureAndShowTerminal(unitKey);
+  // the Board can attach to, so it shows its hero + history only (with an empty-state
+  // CTA in the panel). When a unit ends up with no terminal AND has more than one
+  // session to choose from, pop its session chooser so it's obvious you pick one.
+  void ensureAndShowTerminal(unitKey).then(() => {
+    if (
+      currentUnitKey === unitKey &&
+      !ownedTabForUnit(unitKey) &&
+      sourcesForUnit(unitKey).length > 1 &&
+      expandedActiveProject !== unitKey
+    ) {
+      expandedActiveProject = unitKey;
+      renderUnitRail(unitKey);
+    }
+  });
 }
 
 /** Reveal the unit's terminal. Resume a Board-launched session if its terminal is
@@ -1971,31 +2058,10 @@ async function renderHero(unitKey: string): Promise<void> {
       ? (groupArtifactsByUnit().get(unitKey) ?? []).some((a) => a.source === flSrc)
       : false;
     if (flHasArt) syncSurfaceStrip(false);
-    else showBlankHero();
+    else showBlankHero(BLANK_FIRST, blankWorkingLine(flSrc));
     return;
   }
-  let home: string | null = null;
-  if (unitKey !== UNSOURCED) {
-    try {
-      home = await invoke<string | null>("resolve_unit_home", { unitKey });
-    } catch {
-      home = null;
-    }
-  }
-  // A late resolve from a unit we've since left must not paint here.
-  const v = currentView();
-  if (v.level !== "unit" || v.unitKey !== unitKey) return;
-
-  if (home) {
-    digestEl.removeAttribute("hidden");
-    syncSurfaceStrip(true);
-    applyBar(await barSpecFor(home));
-    digestPath = home;
-    await loadArtifactInto(home, digestEl).catch((e) => console.error("hero digest load failed", e));
-    return;
-  }
-
-  // No digest — lead with the ACTIVE SESSION's most recent artifact. The hero
+  // Lead with the ACTIVE SESSION's most recent artifact. The hero
   // follows the session shown in the terminal (matched by source slug), not the
   // unit: a session just launched into an existing project has no artifacts of its
   // own → blank hero, never a sibling session's last artifact (the reported bug).
@@ -2026,14 +2092,14 @@ async function renderHero(unitKey: string): Promise<void> {
       console.error("hero artifact load failed", e),
     );
   } else {
-    // The active session owns no artifact (and there's no unit home): blank the hero.
+    // The active session owns no artifact: blank the hero.
     // Reset digestPath HERE (not at the top of the function — that would expose a
-    // transient null across the resolve_unit_home await for a concurrent poll to act
-    // on). Without this, switching from a session WITH an artifact to a blank one
+    // transient null for a concurrent poll to act on). Without this, switching
+    // from a session WITH an artifact to a blank one
     // leaves digestPath pointing at the prior session's artifact, so the new session's
     // first artifact would mis-route to the "new artifact" pill instead of auto-lighting,
     // and maybeLightBlankHero (which guards on digestPath === null) would never fire.
-    showBlankHero();
+    showBlankHero(BLANK_FIRST, blankWorkingLine(src));
   }
 }
 
@@ -2122,8 +2188,12 @@ function buildArtRow(a: ArtifactEntry): HTMLElement {
   return row;
 }
 
-/** Render the HISTORY — the unit's artifacts as a readable text list (no iframes). */
-function renderHistory(unitKey: string): void {
+/** How many history rows show before "Show more" expands the rest in place. */
+const HISTORY_COLLAPSED_ROWS = 5;
+
+/** Render the HISTORY — the unit's artifacts as a readable text list (no iframes).
+ *  Capped to the most recent few; "Show more" expands THIS unit's full list in place. */
+function renderHistory(unitKey: string, expanded = false): void {
   const arts = groupArtifactsByUnit().get(unitKey) ?? [];
   const frag = document.createDocumentFragment();
   const head = document.createElement("div");
@@ -2138,7 +2208,19 @@ function renderHistory(unitKey: string): void {
     empty.textContent = "No artifacts yet — they'll appear here as agents author them.";
     frag.append(empty);
   } else {
-    for (const a of arts) frag.append(buildArtRow(a));
+    // arts is sorted most-recent-first (groupArtifactsByUnit). Show a capped slice,
+    // then a "Show N more" row that expands this unit's full history in place.
+    const shown = expanded ? arts : arts.slice(0, HISTORY_COLLAPSED_ROWS);
+    for (const a of shown) frag.append(buildArtRow(a));
+    const hidden = arts.length - shown.length;
+    if (hidden > 0) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "history-more";
+      more.textContent = `Show ${hidden} more`;
+      more.addEventListener("click", () => renderHistory(unitKey, true));
+      frag.append(more);
+    }
   }
   historyEl.replaceChildren(frag);
 }
@@ -2170,6 +2252,46 @@ function setUnitView(view: "session" | "history" | "settings"): void {
   unitEl.dataset.view = view;
   if (view !== "session") unitEl.dataset.rail = "menu";
   if (view === "history" && currentUnitKey) renderHistory(currentUnitKey);
+  if (view === "settings") void syncDials();
+}
+
+/** Highlight the active button in a `.settings-seg` segmented control. */
+function setSeg(dial: string, value: string): void {
+  document.querySelectorAll<HTMLElement>(`.settings-seg[data-dial="${dial}"] button`).forEach((b) => {
+    b.classList.toggle("on", b.dataset.value === value);
+  });
+}
+
+/** Read the dial files (mode + quality) and reflect them in the Settings panel. */
+async function syncDials(): Promise<void> {
+  try {
+    const d = await invoke<{ mode: string; quality: string }>("read_dials");
+    setSeg("mode", d.mode);
+    setSeg("quality", d.quality);
+  } catch (e) {
+    console.error("read_dials failed", e);
+  }
+}
+
+/** Wire the Settings segmented controls: a click writes the dial file (optimistic,
+ *  re-syncs on failure). The plugin observer reads these files per-job, so no restart. */
+function wireSettings(): void {
+  document.querySelectorAll<HTMLElement>(".settings-seg").forEach((seg) => {
+    const dial = seg.dataset.dial;
+    seg.addEventListener("click", async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>("button[data-value]");
+      if (!btn || !dial) return;
+      const value = btn.dataset.value ?? "";
+      setSeg(dial, value);
+      try {
+        await invoke("set_dial", { name: dial, value });
+      } catch (err) {
+        console.error("set_dial failed", err);
+        void syncDials();
+      }
+    });
+  });
+  void syncDials();
 }
 
 /** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the floating
@@ -2317,7 +2439,7 @@ const BLANK_IDLE = {
  *  Native DOM (no iframe), so there's no load flash. Cleared by syncSurfaceStrip(true)
  *  the moment a real artifact lands, and by leaveUnit on exit. The idle home reuses it
  *  with BLANK_IDLE copy (no terminal, nothing working). */
-function showBlankHero(copy: { title: string; sub: string } = BLANK_FIRST): void {
+function showBlankHero(copy: { title: string; sub: string } = BLANK_FIRST, working = ""): void {
   digestPath = null;
   digestEl.setAttribute("hidden", "");
   hideHeroNewPill();
@@ -2331,7 +2453,36 @@ function showBlankHero(copy: { title: string; sub: string } = BLANK_FIRST): void
   const s = document.querySelector("#unit-blank .blank-s");
   if (t) t.textContent = copy.title;
   if (s) s.textContent = copy.sub;
+  setBlankWorking(working);
   setFocus("split");
+}
+
+/** The active session's live `working` line for a unit's blank splash — mirrors
+ *  makeHead's status text (working, else the top `next` item, else "Idle"). Returns
+ *  "" when the unit has no live source (the idle home / a not-yet-live session), so
+ *  the corner pin stays hidden. `src` is a source slug (from activeSessionSource). */
+function blankWorkingLine(src: string | null): string {
+  if (!src) return "";
+  const s = allSources.find((x) => x.source === src);
+  if (!s) return "";
+  const st = parseState(s.json);
+  return st.working || st.next?.[0]?.title || "Idle";
+}
+
+/** Paint the splash's corner "working" line (bold-run markup, escaped). Empty ⇒
+ *  cleared, so CSS `:empty` hides the pin entirely. */
+function setBlankWorking(working: string): void {
+  const w = document.querySelector("#unit-blank .blank-working");
+  if (w) w.innerHTML = working ? boldRuns(working) : "";
+}
+
+/** Keep the splash's corner "working" line current without a full hero re-render —
+ *  called from the poll when a source's live state changes. No-op unless the blank
+ *  splash is actually showing, and never on the idle home (which carries no line). */
+function refreshBlankWorking(unitKey: string): void {
+  if (!unitEl?.classList.contains("blank-hero")) return;
+  if (unitEl.classList.contains("is-idle")) return;
+  setBlankWorking(blankWorkingLine(activeSessionSource(unitKey)));
 }
 
 // ---- data → header ----------------------------------------------------------
@@ -2917,6 +3068,8 @@ async function pollLive(): Promise<void> {
       // The active session may have just come live (e.g. a resumed session whose
       // artifacts already existed on disk). If its hero is still blank, light it up.
       maybeLightBlankHero(view.unitKey);
+      // Track the active session's `working` line on the blank splash each turn.
+      refreshBlankWorking(view.unitKey);
     }
   }
 
@@ -3009,7 +3162,28 @@ function totalUnread(): number {
  * Reconcile a fresh artifact list: route NEW artifacts to their unit (unread
  * unless that unit is on screen), prune deleted ones, then refresh the level.
  */
-function ingestArtifacts(artifacts: ArtifactEntry[]): void {
+function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
+  // FIX #2 — rewrite identity-flap. history.rs blanks source/unit_key for the one
+  // poll between an in-place rewrite and the hook's re-stamp (the `index-stale-drop`
+  // trace). Patch a still-live prior identity back BEFORE any routing so the rewrite
+  // doesn't flap through __unsourced__ and flash a phantom cross-unit dot. A reused
+  // filename from a DEAD session is not retained (retainedIdentity), so it still falls
+  // through to the staleness guard + slug routing as intended.
+  const priorIdentity = new Map<string, Identity>(
+    allArtifacts
+      .filter((a) => a.source)
+      .map((a) => [a.path, { source: a.source, unit_key: a.unit_key }]),
+  );
+  const isLiveSource = (source: string): boolean => allSources.some((s) => s.source === source);
+  const artifacts = rawArtifacts.map((a) => {
+    const keep = retainedIdentity(
+      { source: a.source, unit_key: a.unit_key },
+      priorIdentity.get(a.path),
+      isLiveSource,
+    );
+    return keep.source === a.source ? a : { ...a, source: keep.source, unit_key: keep.unit_key };
+  });
+
   const present = new Set(artifacts.map((a) => a.path));
   // Snapshot the prior routing identity per path BEFORE overwriting allArtifacts.
   const prevRouteKey = new Map(allArtifacts.map((a) => [a.path, artifactRouteKey(a)]));
@@ -3025,6 +3199,24 @@ function ingestArtifacts(artifacts: ArtifactEntry[]): void {
   const reRoutedSet = new Set(reRouted.map((a) => a.path));
   allArtifacts = artifacts;
   for (const a of artifacts) knownPaths.add(a.path);
+
+  // FIX #1 — content refresh. An artifact rewritten IN PLACE while it is the one on
+  // the hero (or open in the reader) is invisible to the four routing roads below
+  // (they key on path-novelty/difference). Detect it by mtime and reload that frame
+  // in place — silently, since it's the same doc with fresh content; the reported bug
+  // was the stale first render sticking. Capture display state BEFORE updating mtimes.
+  const reloads = rewritesNeedingReload(lastMtimeByPath, artifacts, { digestPath, focusPath });
+  for (const a of artifacts) lastMtimeByPath.set(a.path, a.modified_ms);
+  for (const p of [...lastMtimeByPath.keys()]) if (!present.has(p)) lastMtimeByPath.delete(p);
+  for (const r of reloads) {
+    const frame = r.target === "reader" ? focusFrame : digestEl;
+    if (!frame) continue;
+    if (r.target === "hero" && currentView().level !== "unit") continue;
+    trace("ingest.content-refresh", { corr: r.path, target: r.target });
+    void loadArtifactInto(r.path, frame).catch((e) =>
+      console.error("content-refresh reload failed", r.path, e),
+    );
+  }
 
   for (const p of [...knownPaths]) if (!present.has(p)) knownPaths.delete(p);
   // Phase 3: drop event-sourced routing for artifacts that no longer exist, so routedByPath

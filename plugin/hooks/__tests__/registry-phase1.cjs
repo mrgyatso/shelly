@@ -30,6 +30,10 @@ function ok(cond, msg) {
 function mkSandbox(tag) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `cmp-id-${tag}-`));
   fs.mkdirSync(path.join(home, ".claude", "companion", "logs"), { recursive: true });
+  // Opt the sandbox machine into external terminals: most cases here simulate
+  // sessions the Board did NOT spawn, and without this flag companion-session
+  // exits at the external-terminal gate before registering anything (031e588).
+  fs.writeFileSync(path.join(home, ".claude", "companion", "external-terminals"), "on");
   return home;
 }
 
@@ -177,6 +181,22 @@ console.log("\nCase 6 — missing session_id → graceful skip:");
   const n = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(".json")).length : 0;
   ok(n === 0, "no record written when session_id is empty");
   ok(liveStems(home).length === 1, "old live stub still written (old path unaffected)");
+}
+
+// ---- Case 7: external terminal, opt-in flag OFF → gate exits, nothing written ----
+console.log("\nCase 7 — external terminal with flag off → silent:");
+{
+  const home = mkSandbox("gated");
+  fs.rmSync(path.join(home, ".claude", "companion", "external-terminals"));
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "cmp-gated-"));
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  const sid = "77777777-aaaa-bbbb-cccc-000000000007";
+  runSession({ home, cwd: repo, session_id: sid });
+  ok(recordOf(home, sid) === null, "no record (gate exits before register)");
+  ok(liveStems(home).length === 0, "no live stub either (fully silent)");
+  // A Board-owned session passes the gate regardless of the flag:
+  runSession({ home, cwd: repo, session_id: sid, owned_tab: "board-9" });
+  ok(recordOf(home, sid) !== null, "Board-owned session registers with flag off");
 }
 
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);

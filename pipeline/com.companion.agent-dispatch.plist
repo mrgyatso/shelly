@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Standing watcher for the agent-issue pipeline (OFF by default — DO NOT auto-load).
+
+  This runs `dispatch.mjs --go` every 5 minutes: a LIVE run that claims agent-ready
+  issues, creates worktrees, and launches real autonomous worker agents. Enabling it
+  turns on continuous, unattended agent spawning. Switch it on deliberately.
+
+  Before enabling:
+   1. Set the two absolute paths below to where the pipeline lives on THIS machine.
+      After the scripts are promoted to master they live at:
+         /Users/gyatso/claude-code-companion/pipeline/dispatch.mjs
+      Until then, point at the worktree checkout, e.g.:
+         /Users/gyatso/companion-pipeline/pipeline/dispatch.mjs
+   2. Confirm `node` and `claude` resolve in the launchd PATH (see EnvironmentVariables).
+   3. Do a first REAL dispatch by hand once (see pipeline/README.md "first real run")
+      to confirm the headless worker isn't gated on a permission prompt.
+
+  Enable:
+    cp pipeline/com.companion.agent-dispatch.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.companion.agent-dispatch.plist
+
+  Disable:
+    launchctl unload ~/Library/LaunchAgents/com.companion.agent-dispatch.plist
+    rm ~/Library/LaunchAgents/com.companion.agent-dispatch.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.companion.agent-dispatch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/gyatso/claude-code-companion/pipeline/dispatch.mjs</string>
+    <string>--go</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/gyatso/claude-code-companion</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/Users/gyatso/.local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>300</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/gyatso/claude-code-companion/pipeline/logs/watcher.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/gyatso/claude-code-companion/pipeline/logs/watcher.err.log</string>
+</dict>
+</plist>

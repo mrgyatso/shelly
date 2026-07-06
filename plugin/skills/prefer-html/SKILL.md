@@ -1,32 +1,22 @@
 ---
 name: prefer-html
-description: MANDATORY before writing any `.html` artifact into the Companion artifacts dir (`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}` — that default is the canonical path the PostToolUse hook watches; `companion doctor` only echoes it as a convenience). The skill carries the unified helper script, the required DOM markers (`data-companion-commentable`, `data-companion-item`, `data-companion-submit`, `data-fit-root`), the size-reporter snippet, and the pill / full-document / multi-page templates. Writing an HTML artifact without first loading this skill ships a static page with no commentable blocks, no review form, and no submit — the user cannot interact with it. Use BEFORE the Write call, not after. Also use when responding to `/companion:html`, when emitting a heads-up after a non-trivial change, or when a response would otherwise be a standalone document (plans, reviews, comparisons, diagrams, reports). Decides between a pill heads-up, a full document, and a multi-page document by content density.
+description: MANDATORY before writing any bespoke `.html` artifact into the Companion artifacts dir (`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}` — confirm the live path with `companion doctor`). Routine status artifacts are produced by the asynchronous observer and do not use this skill. Use it for `/companion:html` or an explicitly requested custom visual surface. It carries the unified interaction helper, required DOM markers, size reporter, and document templates.
 ---
 
 # Prefer HTML — render what changed in the Companion overlay
 
-The Companion overlay auto-renders any `.html` file written into the artifacts dir,
-floating it over the terminal without stealing focus. This skill makes Claude *use*
-that surface: emit an artifact after meaningful work, sized to the work.
+The Companion overlay renders any `.html` file written into the artifacts dir. Routine
+status artifacts come from the background observer. This skill is the bespoke path: use it
+when the user explicitly requests an artifact or the work needs a custom visual surface.
 
-## First — check the mode
+## First — confirm this is the bespoke path
 
-Before deciding whether to render anything, read `~/.claude/companion/mode` with a
-quick Bash call: `cat "$HOME/.claude/companion/mode" 2>/dev/null || echo agent`. The
-file's content is one word and controls the rest of this skill.
+Proceed when the user invoked `/companion:html`, explicitly asked for an artifact, or asked
+for a visual/interactive deliverable the observer template cannot express. Otherwise reply
+normally: the asynchronous observer owns routine cadence and will decide whether to update
+the session artifact. Agent/manual mode controls that observer, not explicit user requests.
 
-- **`agent`** (default; the file may not exist) — Follow the cadence rules below.
-  Claude judges when an artifact helps and renders one.
-- **`manual`** — **Render nothing in this skill.** No auto-rendered HTML on this
-  turn, period. The user controls rendering explicitly via the `/companion:html` slash
-  command (which bypasses this mode check and always renders). Skip the rest of this
-  skill's cadence advice and reply in plain chat instead. Exception: if the user *did*
-  run `/companion:html` (or its deprecated alias `/companion:render`) this turn, that
-  command's own prompt overrides — render the artifact it asked for.
-
-The user flips between modes with `/companion:mode agent|manual|status`.
-
-## The default shape: DRIVE THE WORK FORWARD — inform + propel, every substantive turn
+## The default shape: DRIVE THE WORK FORWARD — inform + propel, every substantive artifact
 
 **The Companion's job is to move the project toward shipping — solve the problem, build the
 feature, ship the product — not to recap.** On any substantive turn (real work OR real
@@ -47,8 +37,8 @@ step**, as a single multi-page document:
 
 This is the standing format for *steering* artifacts: **informative AND goal-oriented**,
 always handing the user a clear next thing to act on. It governs **shape, not frequency** —
-whether a turn deserves an artifact at all is the cadence judgment below — but when an
-artifact IS warranted, a substantive turn earns this forward-driving surface, **not a thin
+the observer or explicit user request decides whether an artifact is warranted — but when a
+bespoke artifact IS warranted, substantive work earns this forward-driving surface, **not a thin
 info block**.
 
 **The combined shape is a DEFAULT, not a cage — choose it by intent.** Reach for it when the
@@ -688,25 +678,18 @@ above supersedes them whenever a single artifact carries both.
 Skip the dual shape only for genuine one-liners (a pill status flip) — nothing to question,
 nothing to decide.
 
-## The cadence (agent mode only): consider an artifact after every change
+## The cadence: the observer owns routine artifacts
 
-When you finish a change, run a quick meta-check — *"is this worth a heads-up?"* —
-and **emit an artifact when real work was done.** The overlay is meant to be a
-"here's what just changed" feed for the user; default toward showing something when
-there's something to show.
+Do **not** generate routine recap/status HTML after each change. In agent mode, a thin
+Stop hook queues the new transcript delta and a background observer decides whether
+state meaningfully advanced. It emits compact structured data; deterministic code renders
+the routine Companion artifact. This keeps HTML and observer reasoning out of the primary
+session's context.
 
-**Always render for strategic / vision / direction-setting turns.** When the turn is a
-*discussion* rather than a change — weighing big directions, exploring a grand-scheme
-idea, evaluating options/trade-offs, doing multi-point analysis, planning architecture,
-or any reply the user will want to revisit, share, or react to point-by-point — produce
-the artifact (informative content pages + a Next-steps page carrying the decisions/fork).
-A long, opinionated reply in chat is exactly the case that belongs on the surface, not in
-the terminal scrollback. This is a primary trigger, not an edge case — don't leave a
-substantive strategy answer as prose just because no file changed.
-
-**Skip it** for: trivial conversational answers, pure code edits the user is actively
-watching, one-line lookups, or when the user has said they don't want artifacts. (And
-of course in **manual mode**, skip every time.)
+Use this skill directly only when the user explicitly requests an artifact (`/companion:html`)
+or when the task needs a bespoke visual surface that the deterministic observer template
+cannot express (a diagram, comparison, design exploration, or interactive decision model).
+In those cases, the quality and interaction requirements below still apply.
 
 > **The pull verb.** Regardless of mode, the user can run `/companion:html` to ask
 > for an artifact about the current turn. `/companion:html` bypasses the mode check —
@@ -739,6 +722,31 @@ A full document is correct when there's real substance. Density decides — and 
 substance is several *independent* things, the right shape is multi-page, not a longer
 scroll.
 
+## House style — "Broadsheet" (match the other two authoring paths)
+
+Companion artifacts are authored by three paths — this inline one, the observer's local
+renderer, and the Sonnet designer — and they must feel like **one product**. The shared style is
+**Broadsheet**: an editorial page, not a floating UI card. The one rule: **make the decision the
+loudest thing on the page.** (Full spec: `plugin/scripts/artifact-observer/FEEL-SPEC.md`.)
+
+- **Dissolve into the board.** Set `html, body` background to the exact board shade
+  `oklch(0.945 0.014 60)` (the opaque-origin iframe can't read the parent's vars — hardcode it).
+  No outer card border or page-wide drop shadow; the artifact fills the window edge to edge.
+- **Hierarchy through scale.** One dominant **Newsreader** headline earns its size
+  (clamp ~34–60px, letter-spacing ~-.03em); everything else steps down hard.
+- **Palette** (one semantic accent per artifact): board `oklch(0.945 0.014 60)`, paper `#FBFAF6`,
+  ink `#171A1F`, soft `#39404A`, muted `#646C76`, hairline `#CDC8BC`; accent ∈ blue `#3D7EFF`,
+  amber `#F2B84B`, clay `#D98158`, mint `#4DAA7D`.
+- **Type:** Newsreader = display, Inter = reading, JetBrains Mono = kickers/labels/file chips.
+  Load the bundled faces via `asset://localhost$HOME/.claude/companion/vendor/fonts.css` with
+  system fallbacks. Small-caps mono kickers + hairline rules carry the texture.
+- **The Decide ballot is load-bearing.** When the artifact carries next moves, end on an
+  **elevated** decision panel (accent top-rule, a real "Decide" header, ~42px ✓/✎/✗ targets, a
+  Do-all and a primary dark Commit) — never a footer of tiny buttons. This is where you spend
+  boldness; keep the rest disciplined. The unified helper below wires it.
+- **Modes:** decision-dominant turn → make the recommendation the headline ("Steer"); a surface
+  the user lives in → keep a persistent steer rail in reach ("Canvas").
+
 ## How to emit
 
 Write one **self-contained** `.html` file (inline all CSS/JS, no build step, no external
@@ -750,6 +758,14 @@ ${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/<kebab-slug>.html
 
 Use a descriptive slug (e.g. `auth-fix-heads-up.html`, `migration-plan.html`). Writing the
 file is what pops the overlay — no other action needed.
+
+> **Write it with the `Write` tool — not `Bash` (`cat >`, `cp`, a node/python script).**
+> A `PostToolUse(Write|Edit)` hook auto-stamps `artifact-index.json` so the Board maps the
+> artifact to *this* session's unit. That hook only fires for the `Write`/`Edit` tools — an
+> artifact created via `Bash` is never indexed, so it lands in the Board's UNSOURCED bucket
+> instead of your session (it may still flash up transiently via the live poll, then vanish
+> from the unit's history). If you must template/substitute, build the final HTML string,
+> then emit it through the `Write` tool.
 
 ### Required in every artifact (so the overlay sizes it)
 
@@ -1624,29 +1640,6 @@ front page, not a spreadsheet:
 - **Vary rhythm** — whitespace, asymmetry, a center of gravity. Uniform padding everywhere is
   the tell of a template.
 - Idle / low-priority items collapse to **chips or a single line**, not full cards.
-
-### The L2 unit home (`home.<unit_key>.html`) — a durable per-project digest
-
-`home.html` is the cross-project L0 hub. One level deeper, each **unit** (a project/git repo,
-or a bare non-repo session) has its OWN durable home: write it to the reserved slug
-**`home.<unit_key>.html`** in the same artifacts dir (e.g.
-`~/.claude/companion/artifacts/home.canvas-board.html`). The Board loads it as the unit's
-**HERO** — shown large at the top of the L2 view, above a readable **history** list of the
-unit's artifacts (size your content to flow; the hero is tall but not the whole screen).
-
-- **`unit_key`** is handed to you at session start (the `companion-session` hook injects it
-  alongside the live-surface path) and is written into your live JSON. Use it verbatim as the
-  filename suffix — it's the same key the Board groups sessions by.
-- Same mechanics as `home.html`: a `companion-bar` block themes the top bar at L2 too; the
-  `navigate` protocol works; include the `data-fit-root` + size-reporter snippet.
-- It's a **digest**, not a dashboard-of-everything: "where this project's work stands now" —
-  current focus, open decisions, what shipped, what's next. It **grows across sessions** (read
-  the existing file, regenerate it richer), so it's the project's living memory on the Board.
-- It is **optional**: when absent, the Board falls back to showing the unit's most recent
-  artifact as the hero (with history below), so author one only when a curated digest adds
-  real signal over "just show my latest artifact."
-- **Concurrency:** two agents in one repo share one `home.<unit_key>.html` — last-writer-wins is
-  fine (it's slow, curated, read-then-regenerate content). Don't try to lock it.
 
 (This applies to any artifact, but dashboards are where the grid reflex is strongest — see
 the design-quality rules: *default card grids with uniform spacing and no hierarchy* are

@@ -1,6 +1,6 @@
 {
   "name": "claude-code-companion",
-  "description": "The Companion overlay plugin: auto-render Claude's HTML artifacts, a 'prefer HTML' skill, and a doctor health check.",
+  "description": "The Companion overlay plugin: agent-authored tiered artifacts, deterministic rendering, Sonnet/Opus visual escalation, bespoke HTML tools, and health checks.",
   "owner": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso"
@@ -9,7 +9,7 @@
     {
       "name": "companion",
       "source": "./plugin",
-      "description": "Auto-render Claude's HTML artifacts in the Companion overlay; adds a 'prefer HTML' skill and a doctor health-check command. Pairs with the Companion Overlay app."
+      "description": "Observe Claude sessions asynchronously: the agent authors artifact content, a deterministic renderer builds routine cards with no model call, and intense turns escalate to a Sonnet/Opus designer."
     }
   ]
 }
