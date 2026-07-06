@@ -87,6 +87,14 @@
 .stage[hidden] { display: none; }
 .stage button { font-family: inherit; color: inherit; cursor: pointer; }
 
+/* Keyboard focus — one visible ring language across the whole Board. Mouse
+   clicks stay clean (:focus-visible only). Active hairlines below use inset
+   box-shadows, never `outline`, so the ring never collides with them. */
+.stage :focus-visible {
+  outline: 2px solid oklch(from var(--accent) l c h / 0.55);
+  outline-offset: 2px;
+}
+
 /* =========================================================================
    THE BOARD SURFACE
    ========================================================================= */
@@ -97,7 +105,10 @@
   width: 100%;
   height: 100%;
   background: var(--board);
-  border: 2px solid #000;
+  /* Machined edge: a warm-dark hairline + a 1px inner top highlight instead of
+     the old 2px marker-black outline. */
+  border: 1px solid oklch(0.32 0.015 55 / 0.8);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.5);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -132,29 +143,31 @@
   position: relative;
   z-index: 6;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  padding: 22px 26px 6px;
+  padding: 14px 18px 10px 24px;
   flex: 0 0 auto;
 }
-.greeting { display: flex; flex-direction: column; gap: 2px; }
+.greeting { display: flex; flex-direction: column; gap: 3px; }
 .greeting .hello {
   font-family: var(--serif);
   font-optical-sizing: auto;
-  font-size: 23px;
-  font-weight: 420;
-  letter-spacing: -0.01em;
+  font-size: 21px;
+  font-weight: 450;
+  letter-spacing: -0.012em;
+  line-height: 1.1;
   color: var(--ink);
 }
 .greeting .hello em { font-style: italic; color: var(--accent); }
 .greeting .sub {
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.02em;
+  font-size: 10px;
+  letter-spacing: 0.08em;
   color: var(--ink-3);
   text-transform: uppercase;
   white-space: nowrap;
 }
+.greeting .sub:empty { display: none; }
 .greeting .sub b { color: var(--ink-2); font-weight: 500; }
 
 /* ── Agent-composed bar (L0) — themed from home.html's companion-bar block ── */
@@ -225,19 +238,33 @@
 }
 .bar-item-link:hover { opacity: 0.7; }
 
-.board-controls { display: flex; align-items: center; gap: 6px; }
+/* Control cluster — one quiet machined pill, not four floating glyphs. */
+.board-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: color-mix(in oklab, var(--card) 65%, transparent);
+  border: 1px solid var(--line-2);
+  border-radius: 13px;
+  box-shadow: 0 1px 2px oklch(0.265 0.012 55 / 0.04);
+}
 .ctl {
   width: 30px;
   height: 30px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 10px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--ink-3);
-  transition: background 0.18s, color 0.18s, border-color 0.18s;
+  transition: background 0.16s, color 0.16s, border-color 0.16s, transform 0.12s var(--ease);
 }
+/* An author display beats the UA [hidden] rule — restore the hide explicitly
+   (same fix as .bar-custom[hidden]; this was the phantom "0" unread bell). */
+.ctl[hidden] { display: none; }
 .ctl:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
+.ctl:active { transform: scale(0.94); }
 .ctl svg { width: 16px; height: 16px; display: block; }
 
 /* The "+ New session" menu — a small popover under the + offering the two ways
@@ -631,46 +658,62 @@
    ========================================================================= */
 .unit-rail {
   flex: 0 0 auto;
-  width: 208px;
+  width: 226px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 10px 8px 16px;
+  gap: 2px;
+  padding: 8px 10px 10px;
   overflow-y: auto;
   border-right: 1px solid var(--line-2);
   background: var(--board);
+  /* Scrollbar only under the pointer — a resting track reads as clutter. */
   scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-color: transparent transparent;
 }
+.unit-rail:hover { scrollbar-color: var(--line-strong) transparent; }
 
 /* ☰ menu toggle — flips the rail's two faces; sits at the top of the frame. */
 .rail-menu-btn {
   flex: 0 0 auto;
   align-self: flex-start;
-  width: 34px;
+  width: 32px;
   height: 30px;
-  margin: 0 0 6px 2px;
+  margin: 0 0 8px 0;
   display: grid;
   place-items: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 9px;
   color: var(--ink-3);
-  font: 600 14px/1 "JetBrains Mono", ui-monospace, monospace;
   cursor: pointer;
-  transition: background 0.14s, color 0.14s, border-color 0.14s;
+  transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.12s var(--ease);
 }
+.rail-menu-btn svg { width: 16px; height: 16px; display: block; }
 .rail-menu-btn:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
+.rail-menu-btn:active { transform: scale(0.94); }
 .board-unit[data-rail="menu"] .rail-menu-btn { background: var(--ink); color: var(--card); border-color: var(--ink); }
 
 /* Section divider inside the rail (e.g. "Recent" below live projects). */
 .rail-section-head {
-  font: 600 9.5px/1 var(--mono);
-  letter-spacing: .1em;
+  font: 600 9px/1 var(--mono);
+  letter-spacing: .13em;
   text-transform: uppercase;
   color: var(--ink-4);
-  padding: 10px 10px 4px;
-  opacity: 0.7;
+  padding: 16px 10px 6px;
+}
+
+/* Bottom-anchored rail foot — Settings always one click away (pinned when the
+   list is short; scrolls with it when long). */
+.rail-foot {
+  margin-top: auto;
+  padding-top: 6px;
+}
+.rail-foot::before {
+  content: "";
+  display: block;
+  height: 1px;
+  background: var(--line-2);
+  margin: 0 2px 6px;
 }
 
 /* The two faces share the frame; data-rail toggles which one shows. */
@@ -685,17 +728,20 @@
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
-  margin-right: 4px;
+  margin-right: 2px;
   place-items: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 9px;
   color: var(--ink-3);
-  font: 600 14px/1 "JetBrains Mono", ui-monospace, monospace;
   cursor: pointer;
-  transition: background 0.14s, color 0.14s, border-color 0.14s;
+  transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.12s var(--ease);
 }
+.rail-toggle-btn svg { width: 16px; height: 16px; display: block; }
+/* Collapsed → the panel's fill flips sides (same icon, mirrored). */
+.rail-toggle-btn[data-collapsed="1"] svg { transform: scaleX(-1); }
 .rail-toggle-btn:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
+.rail-toggle-btn:active { transform: scale(0.94); }
 .board-unit[data-rail="menu"] .rail-sessions { display: none; }
 .board-unit[data-rail="menu"] .rail-menu { display: flex; }
 
@@ -731,15 +777,14 @@
   transition: height 0.16s var(--ease);
 }
 .rail-nav:hover { background: var(--card); color: var(--ink); }
-.rail-nav-ico { flex: 0 0 auto; width: 18px; text-align: center; font-size: 12px; color: var(--ink-4); }
+.rail-nav-ico { flex: 0 0 auto; width: 18px; display: grid; place-items: center; color: var(--ink-4); }
+.rail-nav-ico svg { width: 15px; height: 15px; display: block; }
 .board-unit[data-view="session"] .rail-nav[data-dest="sessions"],
 .board-unit[data-view="history"] .rail-nav[data-dest="history"],
 .board-unit[data-view="settings"] .rail-nav[data-dest="settings"] {
   background: var(--card);
   color: var(--ink);
-  box-shadow: var(--sh-art);
-  outline: 1px solid var(--line-2);
-  outline-offset: -1px;
+  box-shadow: inset 0 0 0 1px var(--line-2), var(--sh-art);
 }
 .board-unit[data-view="session"] .rail-nav[data-dest="sessions"]::before,
 .board-unit[data-view="history"] .rail-nav[data-dest="history"]::before,
@@ -752,15 +797,17 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   width: 100%;
   text-align: left;
   border: 0;
   background: transparent;
-  border-radius: 9px;
-  padding: 8px 10px 8px 12px;
+  border-radius: 10px;
+  padding: 7px 9px;
   cursor: pointer;
   color: var(--ink-2);
+  /* The state dot's cut-out ring matches the row surface as it changes. */
+  --tab-bg: var(--board);
   transition: background 0.14s var(--ease), color 0.14s var(--ease);
 }
 /* Active-tab accent bar, browser style — grows in when selected. */
@@ -776,13 +823,12 @@
   background: var(--accent);
   transition: height 0.16s var(--ease);
 }
-.unit-tab:hover { background: var(--card); color: var(--ink); }
+.unit-tab:hover { background: var(--card); color: var(--ink); --tab-bg: var(--card); }
 .unit-tab.active {
   background: var(--card);
   color: var(--ink);
-  box-shadow: var(--sh-art);
-  outline: 1px solid var(--line-2);
-  outline-offset: -1px;
+  box-shadow: inset 0 0 0 1px var(--line-2), var(--sh-art);
+  --tab-bg: var(--card);
   cursor: default;
 }
 .unit-tab.active::before { height: 26px; }
@@ -794,7 +840,21 @@
 }
 .unit-tab.active .unit-tab-name { font-weight: 650; }
 
-.unit-tab-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--idle); }
+/* State dot rides the avatar's corner (one aligned element per row, not two) —
+   the ring cuts it out of the mark, matching the row surface via --tab-bg. */
+.unit-tab-dot {
+  position: absolute;
+  left: 27px;
+  bottom: 6px;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--idle);
+  box-shadow: 0 0 0 2px var(--tab-bg);
+  transition: box-shadow 0.14s var(--ease);
+}
 .unit-tab-dot.needs { background: var(--accent); }
 .unit-tab-dot.run { background: var(--ok); }
 
@@ -880,14 +940,14 @@
 .unit-subtab.active .unit-subtab-time { opacity: 0.95; }
 .unit-tab-mark {
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: 8px;
   font-family: var(--serif);
   font-weight: 600;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-2);
   background: var(--sunk);
   box-shadow: inset 0 0 0 1px var(--line);
@@ -902,17 +962,21 @@
   font: 500 12.5px/1.3 var(--ui-font);
   letter-spacing: -0.01em;
 }
-/* Recent (closed) project tab — slightly muted to distinguish from live units. */
+/* Recent (closed) project tab — slightly muted to distinguish from live units.
+   Closed = no state worth a dot; hiding it keeps the resting rail quiet. */
 .unit-tab.recent-project { opacity: 0.65; }
 .unit-tab.recent-project:hover { opacity: 1; }
 .unit-tab.recent-project.expanded { opacity: 1; }
-/* Expand/collapse chevron at the right of a recent-project tab. */
+.unit-tab.recent-project .unit-tab-dot { display: none; }
+/* Expand/collapse chevron at the right of a recent-project tab — hover-revealed
+   (persistent only while expanded), so the resting rail stays clean. */
 .unit-tab-chevron {
   flex: 0 0 auto;
   margin-left: auto;
   font-size: 9px;
-  opacity: 0.55;
-  transition: opacity 100ms;
+  color: var(--ink-4);
+  opacity: 0;
+  transition: opacity 120ms;
 }
 .unit-tab:hover .unit-tab-chevron,
 .unit-tab.expanded .unit-tab-chevron { opacity: 0.9; }
@@ -937,7 +1001,8 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-height: 38px;
 }
 /* In-session title — shows the unit's name in the L2 toolbar and doubles as a
    rename button (no need to go back to the roster). The ✎ stays faint until the
@@ -947,13 +1012,14 @@
   align-items: center;
   gap: 7px;
   max-width: 320px;
-  margin-left: 2px;
-  padding: 7px 11px;
+  padding: 7px 10px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 9px;
   color: var(--ink);
-  font: 600 13px/1 var(--serif);
+  /* Chrome text is sans — serif is reserved for content + display type. */
+  font: 550 13px/1 var(--ui-font);
+  letter-spacing: -0.01em;
   cursor: pointer;
   transition: background 0.14s, border-color 0.14s;
 }
@@ -1036,15 +1102,16 @@
 .board-unit.blank-hero .sc-resize,
 .board-unit.blank-hero #unit-artifact-pill,
 .board-unit.blank-hero .hero-new-pill { display: none; }
-.unit-blank .blank-copy { max-width: 240px; }
+.unit-blank .blank-copy { max-width: 260px; }
 .unit-blank .blank-t {
   font-family: var(--serif);
-  font-size: 19px;
-  letter-spacing: -0.01em;
+  font-size: 21px;
+  font-weight: 480;
+  letter-spacing: -0.012em;
   color: var(--ink);
-  margin-bottom: 5px;
+  margin-bottom: 6px;
 }
-.unit-blank .blank-s { font-size: 12.5px; line-height: 1.5; color: var(--ink-3); }
+.unit-blank .blank-s { font-size: 13px; line-height: 1.55; color: var(--ink-3); }
 /* Live "working" status line — pinned in the top-left corner, mono + faint, so the
    splash says what the active session is on right now. Hidden when empty (idle home
    / not-yet-live session), so it never leaves a stray box. */
@@ -1080,43 +1147,43 @@
 /* Surface controls — inline in the unit toolbar, right-justified.
    Resize the two surfaces (⬒/⊟/⬓), a live status dot, and ✕ to end the
    session. Toolbar placement prevents overlap with the artifact/terminal pills. */
+/* One quiet segmented control (sunk track, ink-filled active) — matches the
+   Settings dials, so the chrome reads as one system. */
 .surface-controls {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 4px 6px;
-  background: var(--card);
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
-  box-shadow: 0 8px 22px -14px rgba(40, 30, 20, 0.5);
+  gap: 4px;
+  padding: 2px;
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 9px;
 }
 .board-unit:not([data-view="session"]) .surface-controls { display: none; }
-.sc-resize { display: flex; align-items: center; gap: 4px; }
+.sc-resize { display: flex; align-items: center; gap: 2px; }
 /* No hero → nothing to split; drop the resize group. */
 .board-unit.no-hero .sc-resize { display: none; }
 
 .surface-focus {
-  width: 30px;
+  width: 28px;
   height: 22px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--line-2);
-  background: var(--card);
+  border: 0;
+  background: transparent;
   color: var(--ink-4);
   border-radius: 7px;
-  font-size: 12px;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.14s, color 0.14s, border-color 0.14s;
+  transition: background 0.14s, color 0.14s;
 }
-.surface-focus:hover { color: var(--ink); border-color: var(--ink-3); }
+.surface-focus svg { width: 14px; height: 14px; display: block; }
+.surface-focus:hover { color: var(--ink); }
 .board-unit[data-focus="split"] .surface-focus[data-focus="split"],
 .board-unit[data-focus="artifact"] .surface-focus[data-focus="artifact"],
 .board-unit[data-focus="terminal"] .surface-focus[data-focus="terminal"] {
   background: var(--ink);
   color: var(--card);
-  border-color: var(--ink);
 }
 
 /* Warm restore pill for a tucked surface (artifact OR terminal): shows in place of
@@ -1213,9 +1280,11 @@
   min-height: 0;
   width: 100%;
   border-radius: var(--radius-card);
-  background: #1d1b19;
-  box-shadow: var(--sh-art);
-  outline: 1px solid var(--line-2);
+  background: #1b1917;
+  /* Machined inset: soft drop + a 1px inner top highlight so the dark slab
+     reads as set INTO the paper, not laid on it. */
+  box-shadow: var(--sh-art), inset 0 1px 0 oklch(1 0 0 / 0.06);
+  outline: 1px solid oklch(0.265 0.012 55 / 0.35);
   outline-offset: -1px;
   overflow: hidden;
   display: flex;
@@ -1268,15 +1337,17 @@
   text-align: center;
   max-width: 340px;
 }
+/* The CTA sits on the DARK terminal slab — light ink, not the paper palette. */
 .term-empty-title {
   font-family: var(--serif);
-  font-size: 19px;
-  color: var(--ink);
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  color: oklch(0.93 0.008 60);
 }
 .term-empty-sub {
   font-family: var(--ui-font);
   font-size: 13px;
-  color: var(--ink-3);
+  color: oklch(0.68 0.008 60);
   margin-bottom: 14px;
 }
 .term-empty-actions {
@@ -1288,16 +1359,18 @@
 .term-empty-btn {
   font-family: var(--ui-font);
   font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-2);
-  background: var(--card);
-  border: 1px solid var(--line-strong);
-  border-radius: 9px;
-  padding: 8px 14px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  color: oklch(0.85 0.008 60);
+  background: oklch(1 0 0 / 0.07);
+  border: 1px solid oklch(1 0 0 / 0.14);
+  border-radius: 10px;
+  padding: 8px 15px;
   cursor: pointer;
   transition: background 0.14s var(--ease), border-color 0.14s var(--ease), transform 0.14s var(--ease);
 }
-.term-empty-btn:hover { background: var(--sunk); transform: translateY(-1px); }
+.term-empty-btn:hover { background: oklch(1 0 0 / 0.12); transform: translateY(-1px); }
+.term-empty-btn:active { transform: translateY(0) scale(0.98); }
 .term-empty-btn.primary {
   color: #fff;
   background: var(--accent);
@@ -1471,7 +1544,9 @@
   transition: background 0.12s, color 0.12s;
 }
 .settings-seg button:hover { color: var(--ink); }
-.settings-seg button.on { background: var(--accent, #3d7eff); color: #fff; }
+/* Ink fill, matching the toolbar's resize segments — chrome selection is ink;
+   the accent stays reserved for live/unread signals. */
+.settings-seg button.on { background: var(--ink); color: var(--card); }
 .settings-foot {
   margin-top: 16px;
   font: 400 11px/1.5 var(--mono);

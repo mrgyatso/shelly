@@ -33,7 +33,8 @@ function artifactHtml(title: string, summary: string, items: [string, string][])
       </div>`,
     )
     .join("");
-  return `<!doctype html><html><head><meta charset="utf-8"></head>
+  return `<!doctype html><html><head><meta charset="utf-8">
+  <style>html{scrollbar-width:none}html::-webkit-scrollbar{display:none}</style></head>
   <body style="margin:0;background:oklch(0.945 0.014 60);font-family:-apple-system,system-ui,sans-serif;">
     <div style="max-width:660px;margin:0 auto;padding:28px 32px;">
       <div style="font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;
@@ -72,7 +73,9 @@ const ARTIFACTS: MockArtifact[] = [
 ];
 
 /** One more artifact lands ~6s after boot — exercises the live-ingest path
- *  (unread bell + "New artifact" pill) so those states can be screenshotted. */
+ *  (unread bell + "New artifact" pill) so those states can be screenshotted.
+ *  Routed to unit 1 so helpdesk-companion stays artifact-less (its blank hero
+ *  "Clawd's on it" composition needs a unit with no artifacts). */
 const LATE_ARTIFACT: MockArtifact = {
   path: "/mock/artifacts/harness-live-ingest.html",
   title: "Harness — live ingest check",
@@ -80,9 +83,9 @@ const LATE_ARTIFACT: MockArtifact = {
   summary: "This artifact arrived after boot to light the unread affordances.",
   modified_ms: now + 6_000,
   size_bytes: 9_000,
-  project: "~/helpdesk-companion",
-  unit_key: "helpdesk-companion",
-  source: "helpdesk-companion--b41c9d22",
+  project: "~/claude-code-companion",
+  unit_key: "claude-code-companion",
+  source: "claude-code-companion--e6e63a83",
 };
 
 const LIVE_SOURCES = [
@@ -135,15 +138,21 @@ const RECENT_SESSIONS = [
 export function installTauriMock(): void {
   const listeners = new Map<number, (msg: unknown) => void>();
   let cbId = 1;
-  let artifacts = [...ARTIFACTS];
-  setTimeout(() => {
-    artifacts = [...artifacts, LATE_ARTIFACT];
-  }, 6_000);
+  // ?idle=1 boots the Board with nothing live and nothing recent-fresh — the
+  // idle-home hero (clawd splash, no project selected) for screenshots.
+  const idle = new URLSearchParams(location.search).has("idle");
+  let artifacts = idle ? [] : [...ARTIFACTS];
+  if (!idle) {
+    setTimeout(() => {
+      artifacts = [...artifacts, LATE_ARTIFACT];
+    }, 6_000);
+  }
+  const liveSources = idle ? [] : LIVE_SOURCES;
 
   const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     trace_enabled: () => false,
     sweep_artifacts: () => 0,
-    read_all_live: () => LIVE_SOURCES,
+    read_all_live: () => liveSources,
     list_artifacts: () => artifacts,
     read_unit_names: () => ({}),
     resolve_home_dir: () => "/Users/gyatso",

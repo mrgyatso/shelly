@@ -953,10 +953,15 @@ function buildEmptyUnitState(unitKey: string): EmptyUnitState | null {
   const dir = unitDirOf(unitKey);
   const resumeId = resumableSessionFor(unitKey);
   if (!dir && !resumeId) return null;
+  const sources = sourcesForUnit(unitKey);
+  const nowMs = Date.now();
   return {
-    name: unitName(unitKey, sourcesForUnit(unitKey)),
+    name: unitName(unitKey, sources),
     onStart: dir ? () => void launchSessionIn(dir) : null,
     onResume: resumeId ? () => void resumeSessionInUnit(unitKey, resumeId) : null,
+    // A live source with no owned terminal = the session runs in an external
+    // terminal — the CTA heading says so instead of "No active session".
+    externalLive: sources.some((s) => isLiveSource(s, nowMs)),
   };
 }
 
@@ -2270,7 +2275,8 @@ function wireUnitChrome(): void {
   const railToggle = document.getElementById("unit-rail-toggle");
   const paintRailToggle = (c: boolean): void => {
     if (!railToggle) return;
-    railToggle.textContent = c ? "»" : "«";
+    // Data attr, not textContent — the button holds an inline SVG (CSS mirrors it).
+    railToggle.dataset.collapsed = c ? "1" : "0";
     const label = c ? "Show sidebar" : "Hide sidebar";
     railToggle.title = label;
     railToggle.setAttribute("aria-label", label);
@@ -2579,7 +2585,12 @@ function relTimeShort(ms: number): string {
 
 // ---- greeting + clock -------------------------------------------------------
 
+let lastGreetingKey = "";
 function renderGreeting(fresh: number, agents: number): void {
+  // Idempotence guard — called from the 1.2s poll; only touch the DOM on change.
+  const key = `${timeGreeting()}|${fresh}|${agents}`;
+  if (key === lastGreetingKey) return;
+  lastGreetingKey = key;
   const hello = document.getElementById("board-hello");
   const sub = document.getElementById("board-sub");
   if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
@@ -2938,6 +2949,10 @@ async function pollLive(): Promise<void> {
     return;
   }
   allSources = sources;
+
+  // The greeting's status line is live in EVERY view (it previously refreshed
+  // only on L0 entry, so the unit view showed the stale boot default).
+  renderGreeting(freshCount(), allSources.length);
 
   // Correlate Board-owned terminals to the live sources their spawned claude
   // produced: companion_session (a tabId, injected by read_all_live) → unit_key.
