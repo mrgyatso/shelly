@@ -85,11 +85,25 @@ pub(crate) fn artifact_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// Unit key stamped onto remote/hub-pulled artifacts so they route to a single
-/// first-class "Cloud" unit on the Board instead of sinking into Unsourced. Kept
-/// in sync with the `CLOUD` sentinel in `board.ts`. Assigned here (not in the
+/// Unit key stamped onto remote/hub-pulled artifacts so they route to first-class
+/// Board units instead of sinking into Unsourced. An artifact whose companion-meta
+/// carries a slug-safe `project` (the connected agent's id — e.g. `hermes`) gets a
+/// per-agent unit `__cloud__:<agent>`; anything unattributed gets the bare key.
+/// Kept in sync with the `CLOUD` sentinel in `board.ts`. Assigned here (not in the
 /// board.ts routing resolver) so the identity/routing logic stays untouched.
 const CLOUD_UNIT_KEY: &str = "__cloud__";
+
+/// True when a remote artifact's `project` can serve as a per-agent unit suffix
+/// (same alphabet as the hub's `safe_slug` — never a path, never `..`).
+fn is_agent_slug(project: &str) -> bool {
+    !project.is_empty()
+        && project.len() <= 200
+        && project != "."
+        && project != ".."
+        && project
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+}
 
 /// The dir hub-pulled artifacts land in (`~/.claude/companion/remote`). An entry
 /// under it is a remote artifact with no local index identity.
@@ -329,7 +343,10 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
     if let Some(remote) = remote_artifacts_dir() {
         for e in &mut entries {
             if e.unit_key.is_none() && Path::new(&e.path).starts_with(&remote) {
-                e.unit_key = Some(CLOUD_UNIT_KEY.to_string());
+                e.unit_key = Some(match e.project.as_deref().filter(|p| is_agent_slug(p)) {
+                    Some(agent) => format!("{CLOUD_UNIT_KEY}:{agent}"),
+                    None => CLOUD_UNIT_KEY.to_string(),
+                });
             }
         }
     }
