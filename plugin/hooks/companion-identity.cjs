@@ -179,7 +179,55 @@ function register(rec, opts) {
   return { record, created: true };
 }
 
-module.exports = { register, resolveUnit, readRecord, appendEvent, recordPath, sessionsDir, eventsPath };
+/**
+ * Route an artifact to its owning session — the ONE stamp every producer uses
+ * (the PostToolUse hook for agent-written artifacts, the observer worker for
+ * generated ones). Forked stamp implementations are how identity drifts; any
+ * new artifact producer must call this, never write the index itself.
+ *
+ * Resolves the unit from the session's frozen registry record when one exists
+ * (authoritative), else falls back to the caller's `unit_key` (captured at
+ * enqueue/glob time — pre-registry sessions only). Stamps the index entry
+ * atomically and appends the `artifact.routed` event the Board tails.
+ *
+ * args: { artifactPath, session_id?, unit_key?, shortid?, source?, indexPath? }
+ * Returns the stamped entry, or null when there is no identity to stamp
+ * (the caller's legacy fallback — e.g. project-slug routing — then covers it).
+ */
+function routeArtifact(args, opts) {
+  if (!args || !args.artifactPath) return null;
+  const key = path.resolve(String(args.artifactPath));
+  const sid = args.session_id ? safeId(args.session_id) : null;
+  const unit_key = (sid && resolveUnit(sid, opts)) || args.unit_key || null;
+  if (!unit_key) return null;
+
+  const entry = {
+    unit_key,
+    shortid: args.shortid || (sid ? sid.slice(0, 8) : null),
+    source: args.source || null,
+    ts: Date.now(),
+    session_id: sid,
+  };
+  const indexPath = args.indexPath || path.join(companionDir(opts), "artifact-index.json");
+  try {
+    let index = {};
+    try {
+      index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {};
+    } catch (_) {}
+    index[key] = entry;
+    // Atomic write (temp + rename) so a concurrent reader never sees a partial file.
+    const tmp = indexPath + "." + process.pid + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(index));
+    fs.renameSync(tmp, indexPath);
+  } catch (_) {
+    return null;
+  }
+  appendEvent({ evt: "artifact.routed", path: key, session_id: sid, unit_key }, opts);
+  trace.emit("registry", "route", { corr: key, session_id: sid || "", unit_key });
+  return entry;
+}
+
+module.exports = { register, resolveUnit, readRecord, appendEvent, routeArtifact, recordPath, sessionsDir, eventsPath };
 
 // CLI form for the sh hooks (companion-session). Mirrors companion-trace.cjs's
 // require.main pattern. Positional args keep the sh call site simple:

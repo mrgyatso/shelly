@@ -31,10 +31,11 @@ try {
   trace = require("./companion-trace.cjs");
 } catch (_) {}
 
-// Identity registry (Phase 3). Used to append the always-on `artifact.routed` event the
-// Board tails, and to resolve the authoritative unit for that event. Best-effort require —
-// a missing lib must never sink the index write.
-let identity = { appendEvent() {}, resolveUnit() {} };
+// Identity registry. routeArtifact is THE shared stamp (index entry + the always-on
+// `artifact.routed` event the Board tails) every producer uses — this hook and the
+// observer worker alike. Best-effort require — a missing lib must never sink routing;
+// the null fallback leaves the artifact un-indexed and the slug-fallback covers it.
+let identity = null;
 try {
   identity = require("./companion-identity.cjs");
 } catch (_) {}
@@ -87,25 +88,13 @@ if (!unitKey) {
   process.exit(0);
 }
 
-let index = {};
-try {
-  index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {};
-} catch (_) {}
-const ts = Date.now();
-index[key] = { unit_key: unitKey, shortid, source, ts, session_id: sessionId };
-
-// Atomic write (temp + rename) so a concurrent reader never sees a partial file.
-try {
-  const tmp = indexPath + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(index));
-  fs.renameSync(tmp, indexPath);
-  trace.emit("index", "stamp", { corr: key, unit_key: unitKey, source: source || "", ts });
-  // PHASE 3 — append the authoritative routing to the source-of-truth event log the Board
-  // tails. Prefer the registry-resolved unit (the frozen record) over the shortid-glob
-  // unitKey; carry session_id so the Board can resolve identity itself with no re-derivation.
-  // Best-effort: appendEvent swallows its own errors and must not affect the index write.
-  const routedUnit = (sessionId && identity.resolveUnit(sessionId)) || unitKey;
-  identity.appendEvent({ evt: "artifact.routed", path: key, session_id: sessionId, unit_key: routedUnit });
-} catch (e) {
-  trace.emit("index", "stamp-failed", { corr: key, err: String((e && e.message) || e) });
+// Stamp through the SHARED producer API: registry record wins (frozen identity),
+// the glob-derived unitKey is the pre-registry fallback; appends `artifact.routed`.
+const entry = identity
+  ? identity.routeArtifact({ artifactPath: key, session_id: sessionId, unit_key: unitKey, shortid, source, indexPath })
+  : null;
+if (entry) {
+  trace.emit("index", "stamp", { corr: key, unit_key: entry.unit_key, source: source || "", ts: entry.ts });
+} else {
+  trace.emit("index", "stamp-failed", { corr: key, err: identity ? "route-null" : "identity-lib-missing" });
 }

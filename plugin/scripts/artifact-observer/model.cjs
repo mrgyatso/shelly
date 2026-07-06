@@ -137,6 +137,10 @@ function cleanClaudeEnv() {
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;
   delete env.COMPANION_SESSION;
+  // Mark the spawned claude as the observer's OWN model call so companion-session
+  // bails: on a machine opted into external-terminals, this session would otherwise
+  // pass the gate and register a spurious session/live stub in the observed unit.
+  env.COMPANION_OBSERVER_SELF = "1";
   return env;
 }
 

@@ -2,6 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 const { atomicJson, atomicWrite, safeId } = require("./lib.cjs");
+const identity = require(path.join(__dirname, "..", "..", "hooks", "companion-identity.cjs"));
 const { callDesigner } = require("./designer.cjs");
 const { artifactFilename, bespokeFilename, mapBriefToState, normalizeState, renderArtifact } = require("./renderer.cjs");
 
@@ -150,9 +151,14 @@ function readBespokeModel() {
 }
 
 function updateIndex(artifactPath, job) {
-  let index = {};
-  try { index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {}; } catch (_) {}
-  index[path.resolve(artifactPath)] = {
+  // Attribute the artifact to the OBSERVED session through the ONE shared identity
+  // API (the same stamp the PostToolUse hook uses): the session's frozen registry
+  // record decides the unit; job.unitKey (captured at enqueue) is only the fallback
+  // for pre-registry sessions. Never re-derive identity here — a forked stamp is
+  // exactly the drift the shared lib exists to kill. Also appends `artifact.routed`.
+  identity.routeArtifact({
+    artifactPath,
+    session_id: job.sessionId,
     unit_key: job.unitKey,
     shortid: job.shortid,
     // The watched session's REAL source stem (<slug>--<shortid>), captured at enqueue
@@ -161,9 +167,8 @@ function updateIndex(artifactPath, job) {
     // a live source, so every observer artifact sat behind a blank hero. Fall back to it
     // only for legacy jobs queued before this field existed.
     source: job.source || `observer--${job.shortid}`,
-    ts: Date.now(),
-  };
-  atomicJson(indexPath, index);
+    indexPath,
+  });
 }
 
 function appendMetric(job, stage, turns, result, extra = {}) {

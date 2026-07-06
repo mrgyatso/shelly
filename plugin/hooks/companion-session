@@ -28,6 +28,11 @@ case "$cwd" in
   */.claude-mem/*|*/.claude-mem) exit 0 ;;
 esac
 
+# Ignore the artifact observer's OWN model calls (worker.cjs spawns `claude -p`
+# with this marker via cleanClaudeEnv). Without it, an opted-in external-terminals
+# machine would register a spurious session + live stub for every observer render.
+[ -n "$COMPANION_OBSERVER_SELF" ] && exit 0
+
 # External-terminal handling (default OFF). A terminal the Board did not spawn
 # carries no COMPANION_SESSION; by default the Companion ignores such external
 # terminals entirely — no roster entry, no sidecars, no artifact observer — so a
