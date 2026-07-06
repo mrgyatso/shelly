@@ -130,6 +130,86 @@ const RACE_ORPHAN: MockArtifact = {
   source: null,
 };
 
+// ---- Agent-hub scenario (connected agents + remote artifacts) ----------------
+// HERMES is a fully-connected agent: registered on the hub, fresh heartbeat, one
+// pulled artifact (a morning brief with review controls whose Submit must round-
+// trip to hub_post_inbox — recorded on window.__inboxPosts, never a local PTY).
+// SCOUT is registered but has produced nothing yet — it must still appear in the
+// Agent Hub room (connecting is enough to exist).
+const HUB_AGENTS = [
+  {
+    id: "hermes",
+    name: "Hermes",
+    emoji: "🪽",
+    tagline: "Morning briefs, task triage, EOD filing",
+    capabilities: ["morning-brief", "todoist", "calendar"],
+    wake: null,
+    registered_ms: now - 14 * 24 * 60 * MIN,
+    updated_ms: now - 3 * MIN,
+    last_seen_ms: now - 3 * MIN,
+    working: "Compiling your morning brief",
+    artifact_count: 1,
+  },
+  {
+    id: "scout",
+    name: "Scout",
+    emoji: "🔭",
+    tagline: "PR triage on new pull requests",
+    capabilities: ["pr-triage"],
+    wake: null,
+    registered_ms: now - 2 * 24 * 60 * MIN,
+    updated_ms: now - 5 * 60 * MIN,
+    last_seen_ms: now - 5 * 60 * MIN,
+    working: null,
+    artifact_count: 0,
+  },
+];
+
+const REMOTE_ARTIFACT: MockArtifact = {
+  path: "/mock/remote/hermes-morning-brief.html",
+  title: "Morning brief — Mon Jul 6",
+  subject: "Morning briefing",
+  summary: "Today's plan: one build move first, two fixed commitments, three must-dos.",
+  modified_ms: now - 12 * MIN,
+  size_bytes: 18_400,
+  project: "hermes",
+  unit_key: "__cloud__:hermes",
+  source: null,
+};
+
+/** The remote morning brief: review controls whose Submit fires the standard
+ *  companion-artifact postMessage — the Board must route it to hub_post_inbox. */
+function morningBriefHtml(): string {
+  return `<!doctype html><html><head><meta charset="utf-8">
+  <style>html{scrollbar-width:none}html::-webkit-scrollbar{display:none}</style></head>
+  <body style="margin:0;background:oklch(0.945 0.014 60);font-family:-apple-system,system-ui,sans-serif;">
+    <div style="max-width:680px;margin:0 auto;padding:30px 34px;">
+      <div style="font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;
+                  text-transform:uppercase;color:#b0552f;">🪽 Hermes — morning brief</div>
+      <div style="font-family:Georgia,serif;font-size:27px;color:#211d1a;margin-top:8px;">
+        One build move first, then the calls.</div>
+      <p style="font-size:13.5px;line-height:1.6;color:#55504a;margin:12px 0 20px;">
+        No calendar commitments before 1pm. Highest-priority Todoist task is a meta-smell;
+        the most believable first move is shipping the agent-hub reply path.</p>
+      <div style="background:oklch(0.988 0.007 60);border:1px solid rgba(40,30,20,.09);
+                  border-radius:12px;padding:14px 18px;font-size:13px;color:#3a352f;">
+        <label style="display:block;padding:6px 0;"><input type="checkbox" checked> Ship agent-hub reply path</label>
+        <label style="display:block;padding:6px 0;"><input type="checkbox"> Clear Todoist meta-smells</label>
+        <label style="display:block;padding:6px 0;"><input type="checkbox"> 4pm — MSP demo call prep</label>
+      </div>
+      <button id="brief-submit" style="margin-top:18px;padding:10px 22px;border-radius:10px;
+              border:1px solid rgba(40,30,20,.15);background:#cc785c;color:#fff;
+              font-size:13px;cursor:pointer;">Submit to Hermes</button>
+    </div>
+    <script>
+      document.getElementById("brief-submit").addEventListener("click", () => {
+        parent.postMessage({ source: "companion-artifact", kind: "submit",
+          text: "\\u2713 do: ship agent-hub reply path\\n\\u2717 skip: meta-smells until EOD\\n\\u270e note: prep the demo call at 3:30" }, "*");
+      });
+    </script>
+  </body></html>`;
+}
+
 const LIVE_SOURCES = [
   {
     source: "claude-code-companion--e6e63a83",
@@ -189,7 +269,7 @@ export function installTauriMock(): void {
   const artifactsNow = (): MockArtifact[] => {
     if (idle) return [];
     const t = Date.now() - now;
-    const out = [...ARTIFACTS];
+    const out = [...ARTIFACTS, REMOTE_ARTIFACT];
     if (t >= 6_000) out.push(LATE_ARTIFACT);
     if (t >= RACE_APPEAR_MS) out.push(t >= RACE_STAMP_MS ? RACE_RESOLVED_STAMPED : RACE_RESOLVED_BARE);
     if (t >= ORPHAN_APPEAR_MS) out.push(RACE_ORPHAN);
@@ -222,14 +302,29 @@ export function installTauriMock(): void {
     },
     read_unit_names: () => ({}),
     resolve_home_dir: () => "/Users/gyatso",
-    resolve_home: () => "/Users/gyatso",
+    // No agent-authored home.html in the harness → the native L0 fallback (clawd +
+    // the two home doors) renders, which is exactly what the door tests need.
+    resolve_home: () => null,
     list_recent_sessions: () => RECENT_SESSIONS,
     read_dials: () => ({ mode: "manual", quality: "pretty" }),
+    // Agent hub: the connected-agents registry + the reply inbox. Posts are
+    // recorded on window.__inboxPosts so scripted verification can assert the
+    // remote submit round-trip (and that it never touched a PTY).
+    hub_agents: () => (idle ? "" : JSON.stringify(HUB_AGENTS)),
+    hub_post_inbox: (args) => {
+      const w = window as unknown as { __inboxPosts?: unknown[] };
+      (w.__inboxPosts ??= []).push(args);
+      return JSON.stringify({
+        envelope: { id: `${Date.now()}-mock`, agent: args.agent, payload: args.payload },
+        delivery: "woken",
+      });
+    },
     set_dial: () => null,
     take_board_nav_target: () => null,
     artifact_in_scope: () => false,
     read_artifact: (args) => {
       const p = String(args.path ?? "");
+      if (p.includes("hermes-morning-brief")) return morningBriefHtml();
       if (p.includes("observer-latency")) {
         return artifactHtml(
           "Observer latency — measured, output-bound",

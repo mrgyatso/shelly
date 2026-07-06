@@ -137,10 +137,72 @@ interface PaneHead {
 
 /** Unit key for artifacts that match no single live source. */
 const UNSOURCED = "__unsourced__";
-/** Unit key for remote/hub-pulled artifacts (no local live source). Stamped by
- *  `history.rs` (CLOUD_UNIT_KEY) so they route to one first-class "Cloud" unit via
- *  the existing `a.unit_key` arm of `unitForArtifact` — never the resolver itself. */
+/** Unit-key family for remote/hub-pulled artifacts (no local live source). Stamped
+ *  by `history.rs` (CLOUD_UNIT_KEY) so they route to first-class units via the
+ *  existing `a.unit_key` arm of `unitForArtifact` — never the resolver itself.
+ *  `__cloud__:<agent>` is one connected agent's own unit; bare `__cloud__` is the
+ *  home for unattributed remote artifacts. */
 const CLOUD = "__cloud__";
+/** Bare Cloud or any per-agent `__cloud__:<agent>` unit. */
+function isCloudUnit(key: string): boolean {
+  return key === CLOUD || key.startsWith(`${CLOUD}:`);
+}
+/** The connected agent id of a per-agent cloud unit, else null. */
+function cloudAgentOf(key: string): string | null {
+  return key.startsWith(`${CLOUD}:`) ? key.slice(CLOUD.length + 1) : null;
+}
+
+/** One connected agent from the hub's registry (`GET /api/agents` via the
+ *  `hub_agents` command): identity card + liveness. */
+interface HubAgent {
+  id: string;
+  name: string;
+  emoji?: string | null;
+  tagline?: string | null;
+  capabilities?: string[];
+  last_seen_ms: number;
+  working?: string | null;
+  artifact_count: number;
+}
+
+/** The hub's connected agents, by id. Refreshed by pollHubAgents(); empty when no
+ *  hub is paired. Registered agents surface on the roster even before their first
+ *  artifact — connecting is enough to exist. */
+let hubAgents = new Map<string, HubAgent>();
+/** Serialized signature of the last agents payload, so a poll only re-renders on change. */
+let hubAgentsSig = "";
+/** Agents refresh cadence — registry churn is slow; artifacts have their own loop. */
+const HUB_AGENTS_POLL_MS = 15_000;
+/** An agent seen within this window renders as active (green band) on the rail. */
+const AGENT_ACTIVE_WINDOW_MS = 15 * 60 * 1000;
+
+/** Pull the connected-agents registry; re-render the rail / home doors on change. */
+async function pollHubAgents(): Promise<void> {
+  let raw = "";
+  try {
+    raw = await invoke<string>("hub_agents");
+  } catch {
+    return; // hub unreachable — keep showing the last known registry
+  }
+  if (raw === hubAgentsSig) return;
+  hubAgentsSig = raw;
+  const next = new Map<string, HubAgent>();
+  if (raw) {
+    try {
+      const list = JSON.parse(raw) as HubAgent[];
+      for (const a of list) if (a && typeof a.id === "string") next.set(a.id, a);
+    } catch {
+      return; // malformed payload — ignore this tick
+    }
+  }
+  hubAgents = next;
+  const v = currentView();
+  if (v.level === "unit") renderUnitRail(lastRailActiveUnit);
+  // At L0, refresh the door counts — but only when the native fallback is what's
+  // showing (never un-hide it over an agent-authored home.html).
+  else if (document.getElementById("hub-fallback")?.hasAttribute("hidden") === false)
+    renderHubFallback();
+}
 /** Sentinel "unit" for the idle home — the rail (live + Recent) with NO project
  *  selected and a clawd splash, shown at startup when nothing substantive is live.
  *  Never a real source/artifact key, so it highlights no tab and owns no terminal. */
@@ -190,6 +252,7 @@ function unitKindWith(
   byUnit: Map<string, LiveSource[]>,
   unitKey: string,
 ): "sessions" | "agenthub" {
+  if (isCloudUnit(unitKey)) return "agenthub"; // hub-pulled: always the agents' room
   const sources = byUnit.get(unitKey) ?? [];
   if (sources.length === 0) return "sessions";
   return sources.some((s) => parseState(s.json).is_repo === true) ? "sessions" : "agenthub";
@@ -548,6 +611,11 @@ export async function initBoard(): Promise<void> {
   // much calmer cadence than the live poll (each refresh scans transcript heads).
   void loadRecent();
   window.setInterval(() => void loadRecent(), POLL_MS * 20);
+
+  // Connected agents (hub registry) — identity cards + liveness for the Agent Hub
+  // room. No-op (empty registry) until a hub is paired.
+  void pollHubAgents();
+  window.setInterval(() => void pollHubAgents(), HUB_AGENTS_POLL_MS);
 
   // On relaunch, skip straight to the most recently active project when no home.html
   // has been authored — the rail shows all projects and is immediately useful without
@@ -1057,7 +1125,7 @@ function sourcesForUnit(unitKey: string): LiveSource[] {
  *  session (resumableSessionFor already withholds a still-running one, so we never
  *  double-spawn a claude onto one transcript). */
 function buildEmptyUnitState(unitKey: string): EmptyUnitState | null {
-  if (unitKey === IDLE || unitKey === CLOUD || unitKey === UNSOURCED) return null;
+  if (unitKey === IDLE || isCloudUnit(unitKey) || unitKey === UNSOURCED) return null;
   const dir = unitDirOf(unitKey);
   const resumeId = resumableSessionFor(unitKey);
   if (!dir && !resumeId) return null;
@@ -1187,7 +1255,11 @@ function activeSessionSource(unitKey: string): string | null {
 /** A display name for a unit — the project name of its freshest source. */
 function unitName(unitKey: string, sources: LiveSource[]): string {
   if (unitKey === UNSOURCED) return "Unsourced";
-  if (unitKey === CLOUD) return "Cloud";
+  if (isCloudUnit(unitKey)) {
+    const agent = cloudAgentOf(unitKey);
+    if (!agent) return "Cloud";
+    return hubAgents.get(agent)?.name || agent;
+  }
   const custom = unitNames.get(unitKey);
   if (custom) return custom; // user-assigned name wins over the folder/slug label
   const fresh = sources[0];
@@ -1347,11 +1419,20 @@ function computeRoster(now: number): Roster {
     live.add(ou);
   }
   // Remote/hub artifacts have no live source, so the loops above never surface their
-  // unit. Add the single "Cloud" unit whenever any cloud artifact exists, so it renders
-  // as a tile (banded idle — no live sessions) and its unread dots stay visible.
-  if (artsByUnit.has(CLOUD)) {
-    if (!byUnit.has(CLOUD)) byUnit.set(CLOUD, []);
-    live.add(CLOUD);
+  // units. Add every cloud unit that has artifacts (per-agent `__cloud__:<agent>` and
+  // the bare "Cloud" home for unattributed remotes), so they render as tiles and their
+  // unread dots stay visible.
+  for (const unit of artsByUnit.keys()) {
+    if (!isCloudUnit(unit)) continue;
+    if (!byUnit.has(unit)) byUnit.set(unit, []);
+    live.add(unit);
+  }
+  // Registered agents surface even BEFORE their first artifact — connecting to the
+  // hub is enough to exist on the Board.
+  for (const id of hubAgents.keys()) {
+    const key = `${CLOUD}:${id}`;
+    if (!byUnit.has(key)) byUnit.set(key, []);
+    live.add(key);
   }
 
   const needs: string[] = [];
@@ -1363,7 +1444,18 @@ function computeRoster(now: number): Roster {
     const sources = byUnit.get(unit) ?? [];
     const liveN = sources.filter((s) => isLiveSource(s, now)).length;
     liveCount += liveN;
-    const band: Band = unitNeedsYou(sources, now) ? "needs" : liveN > 0 ? "run" : "idle";
+    // A connected agent seen recently (heartbeat via the hub registry) reads as
+    // running even though it owns no local live source.
+    const agentActive = (() => {
+      const a = cloudAgentOf(unit);
+      const seen = a ? (hubAgents.get(a)?.last_seen_ms ?? 0) : 0;
+      return seen > 0 && now - seen < AGENT_ACTIVE_WINDOW_MS;
+    })();
+    const band: Band = unitNeedsYou(sources, now)
+      ? "needs"
+      : liveN > 0 || agentActive
+        ? "run"
+        : "idle";
     bandOf.set(unit, band);
     (band === "needs" ? needs : band === "run" ? running : idle).push(unit);
   }
@@ -1377,12 +1469,16 @@ function computeRoster(now: number): Roster {
   const recencyOf = (unit: string): number => {
     const srcs = byUnit.get(unit) ?? [];
     if (srcs.length === 0) {
-      // The source-less Cloud unit orders by its freshest artifact, not `now` — else it
-      // would always pin to the top of the rail. Other source-less units (just-launched
-      // or owned, no live file yet) keep `now` so they still land on top.
-      if (unit === CLOUD) {
+      // Source-less cloud units order by their freshest signal (newest artifact,
+      // or the agent's registry last-seen), not `now` — else they'd always pin to
+      // the top of the rail. Other source-less units (just-launched or owned, no
+      // live file yet) keep `now` so they still land on top.
+      if (isCloudUnit(unit)) {
         const arts = artsByUnit.get(unit) ?? [];
-        return arts.length ? Math.max(...arts.map((a) => a.modified_ms)) : now;
+        const newest = arts.length ? Math.max(...arts.map((a) => a.modified_ms)) : 0;
+        const agent = cloudAgentOf(unit);
+        const seen = agent ? (hubAgents.get(agent)?.last_seen_ms ?? 0) : 0;
+        return Math.max(newest, seen) || now;
       }
       return now;
     }
@@ -1769,16 +1865,29 @@ function buildRailTab(
   const tab = document.createElement("button");
   tab.className = "unit-tab" + (active ? " active" : "");
   tab.dataset.unit = unitKey;
-  const work = sources[0]
-    ? parseState(sources[0].json).working || parseState(sources[0].json).next?.[0]?.title || "Idle"
-    : "Launched from the Board";
+  // Connected-agent units have no local live source; their status comes from the
+  // hub registry (working line, else tagline) and their mark is the agent's emoji.
+  const agentInfo = (() => {
+    const a = cloudAgentOf(unitKey);
+    return a ? hubAgents.get(a) : undefined;
+  })();
+  const work = agentInfo
+    ? agentInfo.working || agentInfo.tagline || "Connected agent"
+    : sources[0]
+      ? parseState(sources[0].json).working ||
+        parseState(sources[0].json).next?.[0]?.title ||
+        "Idle"
+      : isCloudUnit(unitKey)
+        ? "Remote artifacts"
+        : "Launched from the Board";
   tab.title = `${name} — ${work}`;
 
   const dot = document.createElement("span");
   dot.className = `unit-tab-dot ${band}`;
   const mark = document.createElement("span");
-  mark.className = "unit-tab-mark" + (head.isCloud ? " cloud" : "");
-  mark.textContent = head.mark;
+  const isCloudTab = isCloudUnit(unitKey) || head.isCloud;
+  mark.className = "unit-tab-mark" + (isCloudTab ? " cloud" : "");
+  mark.textContent = agentInfo?.emoji || (isCloudUnit(unitKey) ? "✦" : head.mark);
   const nameEl = document.createElement("span");
   nameEl.className = "unit-tab-name";
   nameEl.textContent = name;
@@ -3406,9 +3515,9 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
     // plus warn + trace. Post-cutover the only ways here are grace expiry (identity
     // never arrived) or a legacy pre-boot artifact with unresolvable project meta.
     // A Cloud (remote/hub) artifact legitimately has no local source but IS firmly
-    // routed to its Cloud unit — so it's not "unidentified". Only flag a missing source
-    // for non-Cloud units, plus anything that still lands in UNSOURCED.
-    if (unit === UNSOURCED || (!a.source && unit !== CLOUD)) {
+    // routed to its cloud unit (bare or per-agent) — so it's not "unidentified". Only
+    // flag a missing source for non-cloud units, plus anything landing in UNSOURCED.
+    if (unit === UNSOURCED || (!a.source && !isCloudUnit(unit))) {
       if (unit === UNSOURCED) unroutedPaths.add(a.path);
       console.warn("[companion] artifact routed without a firm identity", {
         path: a.path, unit, source: a.source ?? "", from: reRoutedSet.has(a.path) ? "reroute" : "new", branch,
@@ -3654,17 +3763,30 @@ function wireNavigate(): void {
         const sv = currentView();
         if (sv.level === "unit") awaitingAdvanceSource = activeSessionSource(sv.unitKey);
       }
-      // SECURITY — submit→PTY trust gate (PLANNED; see codebase-audit.html). `d.text`
-      // arrived via an artifact's postMessage, which carries NO proof of a real user
-      // click: a hostile or auto-loaded artifact's JS can fire `kind:"submit"`
-      // unprompted, and the branch below pastes it + presses Enter into the live
-      // `claude` session. Today every rendered artifact is FIRST-PARTY (authored by
-      // the user's own agent), so auto-send reflects the user's intent and the
-      // ESC-strip in submitIntoPty() blocks the breakout. BEFORE we start rendering
-      // artifacts we did NOT author (hub-pulled / shared), GATE this: route a
-      // non-first-party artifact's submit through the clipboard fallback (handleSubmit)
-      // or a Board-side confirm instead of auto-Enter — detect via the artifact's
-      // source/path (hub artifacts land under the `remote/` dir).
+      // REMOTE artifact → the reply belongs to its OWNING AGENT, not a local
+      // terminal: send it back through the hub inbox (delivered/queued VPS-side).
+      // This is also the submit→PTY trust gate the audit called for on hub-pulled
+      // artifacts — a remote artifact's postMessage can never auto-Enter into a
+      // local PTY; it only ever travels to the agent that authored it.
+      {
+        const openPath = focusPath ?? digestPath;
+        const openArt = openPath ? allArtifacts.find((a) => a.path === openPath) : undefined;
+        const agentId = openArt ? cloudAgentOf(unitForArtifact(openArt)) : null;
+        if (openArt && agentId) {
+          void submitToAgent(agentId, d.text, openArt);
+          return;
+        }
+        // Bare-Cloud (unattributed) remote artifacts have no agent to address —
+        // fall through to the clipboard path below (no owned tab exists for them).
+      }
+      // SECURITY — submit→PTY trust gate (local artifacts; see codebase-audit.html).
+      // `d.text` arrived via an artifact's postMessage, which carries NO proof of a
+      // real user click: a hostile or auto-loaded artifact's JS can fire
+      // `kind:"submit"` unprompted, and the branch below pastes it + presses Enter
+      // into the live `claude` session. Today every locally-rendered artifact is
+      // FIRST-PARTY (authored by the user's own agent), so auto-send reflects the
+      // user's intent and the ESC-strip in submitIntoPty() blocks the breakout.
+      // Hub-pulled artifacts are now gated above (inbox, never PTY).
       const v = currentView();
       const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
       const tabId = (focusPath ? ownedTabForArtifact(focusPath) : null) ?? unitTab;
@@ -3685,6 +3807,34 @@ function wireNavigate(): void {
       // the in-page splash via restore-submitted; auto-advance clears it on reload.
     }
   });
+}
+
+/** Send a compiled ✓/✎/✗ reply from a remote artifact back to its owning agent
+ *  through the hub inbox (`hub_post_inbox` → `POST /api/inbox/<agent>`). The
+ *  artifact's own in-page "On it" splash is the confirmation UX; delivery outcome
+ *  (woken / queued / wake_failed) lands in the console. On hub failure the reply
+ *  falls back to the clipboard so it's never lost. */
+async function submitToAgent(agent: string, text: string, art: ArtifactEntry): Promise<void> {
+  const payload = {
+    kind: "artifact-reply",
+    artifact: art.path.split("/").pop() ?? art.path,
+    title: art.title,
+    text,
+    sent_ms: Date.now(),
+  };
+  try {
+    const resp = await invoke<string>("hub_post_inbox", { agent, payload });
+    let delivery = "";
+    try {
+      delivery = (JSON.parse(resp) as { delivery?: string }).delivery ?? "";
+    } catch {
+      /* non-JSON response; outcome unknown but the POST succeeded */
+    }
+    console.info(`[companion] reply → agent '${agent}' (${delivery || "sent"})`);
+  } catch (e) {
+    console.error("hub inbox submit failed; clipboard fallback", e);
+    void handleSubmit(text, art.path);
+  }
 }
 
 /** Remove any "On it" splash the Board installed and its listener. The Board no
