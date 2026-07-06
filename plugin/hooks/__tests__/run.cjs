@@ -9,7 +9,13 @@
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const suites = ["registry-phase1.cjs", "registry-phase2.cjs", "registry-phase3.cjs", "registry-phase5.cjs"];
+const suites = [
+  "registry-phase1.cjs",
+  "registry-phase2.cjs",
+  "registry-phase3.cjs",
+  "registry-phase4.cjs",
+  "registry-phase5.cjs",
+];
 let failed = 0;
 for (const s of suites) {
   console.log(`\n### ${s}`);

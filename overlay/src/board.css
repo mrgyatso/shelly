@@ -663,6 +663,28 @@
 .rail-menu-btn:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
 .board-unit[data-rail="menu"] .rail-menu-btn { background: var(--ink); color: var(--card); border-color: var(--ink); }
 
+/* Fail-loud warning row — artifacts that couldn't be attributed to a session
+   (identity never arrived within the grace window). Pinned above the roster;
+   amber, not clay, so it reads as a fault, not activity. */
+.rail-warn {
+  color: oklch(0.5 0.13 70);
+  background: oklch(0.86 0.08 80 / 0.28);
+  outline: 1px solid oklch(0.7 0.1 75 / 0.45);
+  outline-offset: -1px;
+}
+.rail-warn:hover { background: oklch(0.86 0.08 80 / 0.45); color: oklch(0.42 0.13 65); }
+.rail-warn::before { display: none; }
+.rail-warn-ico { font-size: 12px; line-height: 1; }
+.rail-warn-label { font-weight: 600; font-size: 12px; }
+.rail-warn-count {
+  margin-left: auto;
+  font: 700 10.5px/1 var(--mono);
+  background: oklch(0.62 0.14 65);
+  color: oklch(0.985 0.01 80);
+  border-radius: 8px;
+  padding: 3px 7px;
+}
+
 /* Section divider inside the rail (e.g. "Recent" below live projects). */
 .rail-section-head {
   font: 600 9.5px/1 var(--mono);

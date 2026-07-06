@@ -204,16 +204,14 @@ fn entry_from_path(path: &Path) -> Option<ArtifactEntry> {
     })
 }
 
-/// One routing-index entry, as read off disk. `unit_key` + `source` + `ts` are the
-/// pre-registry derivation (stamped by the hook AFTER the write); `session_id` is the
-/// Phase-2 link into the identity registry (present once the index hook records it).
+/// One routing-index entry, as read off disk. `unit_key` + `source` are the stamped
+/// routing; `session_id` is the link into the identity registry (present on every
+/// entry stamped by routeArtifact; absent only on legacy pre-registry entries).
 struct IndexEntry {
     unit_key: String,
     source: Option<String>,
-    /// Hook stamp time (0 for legacy pre-ts entries) — the staleness guard's input.
-    ts: u64,
     /// Full writing-session id; `Some` ⇒ resolve `unit_key` authoritatively via the
-    /// registry, `None` ⇒ fall back to the stamped `unit_key` + staleness guard.
+    /// registry, `None` ⇒ trust the stamped `unit_key` (legacy entry).
     session_id: Option<String>,
 }
 
@@ -242,7 +240,6 @@ fn load_artifact_index() -> std::collections::HashMap<String, IndexEntry> {
                     .get("source")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                let ts = entry.get("ts").and_then(|v| v.as_u64()).unwrap_or(0);
                 let session_id = entry
                     .get("session_id")
                     .and_then(|v| v.as_str())
@@ -253,7 +250,6 @@ fn load_artifact_index() -> std::collections::HashMap<String, IndexEntry> {
                     IndexEntry {
                         unit_key: unit.to_string(),
                         source,
-                        ts,
                         session_id,
                     },
                 );
@@ -262,12 +258,6 @@ fn load_artifact_index() -> std::collections::HashMap<String, IndexEntry> {
     }
     map
 }
-
-/// Tolerance (ms) for the index-staleness check below. The hook stamps the index
-/// AFTER writing the file, so a trustworthy entry's `ts` is >= the file's mtime; a
-/// few seconds covers filesystem-mtime / wall-clock skew so a legit single write is
-/// never mistaken for stale.
-const STALE_INDEX_TOLERANCE_MS: u64 = 2_000;
 
 /// Read up to `limit` bytes of a file as lossy UTF-8. `None` on read failure.
 fn read_head(path: &Path, limit: usize) -> Option<String> {
@@ -320,34 +310,15 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
                     e.session_id = entry.session_id.clone();
                     continue;
                 }
-                // LEGACY FALLBACK (pre-registry entry, or no record). Staleness guard: the
-                // index is stamped by the Write|Edit hook AFTER the file is written, so a
-                // trustworthy entry's `ts` is >= the file's mtime. If the file is NEWER than
-                // its entry, it was rewritten outside the hook (a Bash write, an external/
-                // observer writer, or a REUSED filename whose stale entry was never refreshed)
-                // — the frozen source/unit_key then belongs to a different, often dead,
-                // session. Distrust it and leave both `None` so the Board falls back to
-                // project-slug routing. `ts == 0` is a legacy (pre-ts) entry we can't
-                // date-check, so we trust it for back-compat. (Removed at Phase 4 cutover.)
-                let stale =
-                    entry.ts > 0 && e.modified_ms > entry.ts.saturating_add(STALE_INDEX_TOLERANCE_MS);
-                if !stale {
-                    e.unit_key = Some(entry.unit_key.clone());
-                    e.source = entry.source.clone();
-                } else {
-                    // The index entry was distrusted (file newer than its stamp) and the
-                    // artifact silently falls back to project-slug routing — a candidate
-                    // cause of "showed up under the wrong unit / not at all". Record it.
-                    crate::trace::emit(
-                        "history",
-                        "index-stale-drop",
-                        &[
-                            ("corr", e.path.as_str()),
-                            ("mtime_ms", &e.modified_ms.to_string()),
-                            ("index_ts", &entry.ts.to_string()),
-                        ],
-                    );
-                }
+                // LEGACY ENTRY (pre-registry: no session_id, or record deleted). Trust the
+                // stamp as-is. The old mtime staleness guard is GONE (Phase 4): ownership
+                // is decided at write time by the hook's stamp, and a later rewrite either
+                // re-stamps (hook path — same or new owner, both correct) or doesn't change
+                // ownership at all (a cp/Bash rewrite of the same doc). Distrusting a
+                // correct entry on mtime alone is exactly what Finding B showed: the guard
+                // itself CAUSED a mis-route, it never prevented one.
+                e.unit_key = Some(entry.unit_key.clone());
+                e.source = entry.source.clone();
             }
         }
     }

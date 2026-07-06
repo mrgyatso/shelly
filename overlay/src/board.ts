@@ -27,7 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
-import { rewritesNeedingReload, retainedIdentity, type Identity } from "./ingest-logic";
+import { rewritesNeedingReload } from "./ingest-logic";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { mountClawd } from "./clawd";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -280,6 +280,24 @@ async function pollEvents(): Promise<boolean> {
  *  (same path, newer mtime) of the artifact on screen and reload it — which the
  *  path-keyed routing roads never do. Seeded at init alongside knownPaths. */
 const lastMtimeByPath = new Map<string, number>();
+
+// ---- Phase 4: strict identity ------------------------------------------------
+/** Paths already on disk when this Board booted. Only these may use the legacy
+ *  project-slug display fallback: pre-registry history must keep rendering under
+ *  a sensible unit, and the model-stamped project is the only signal it carries.
+ *  Every artifact ARRIVING mid-run resolves strictly (event / registry / stamped
+ *  identity) or fails loud — the per-run strict epoch. */
+const legacyPaths = new Set<string>();
+/** Identity grace: a fresh artifact can precede its identity by the hook-stamp
+ *  latency (the watcher wakes the poll ~600ms before the stamp + event land).
+ *  Held unrouted this long; past it, it fails loud as unrouted. */
+const IDENTITY_GRACE_MS = 10_000;
+/** path → first-seen ms for artifacts HELD awaiting identity (kept out of
+ *  knownPaths so the next ingest re-sees them as new). */
+const pendingIdentity = new Map<string, number>();
+/** Artifacts that exhausted the grace window unresolved. Surfaced as the rail's
+ *  warning row + collected under the Unsourced unit — fail-loud, never shelved. */
+const unroutedPaths = new Set<string>();
 /** Units whose L2 history rebuild is deferred because the reader is open. */
 const pendingIngest = new Set<string>();
 
@@ -478,6 +496,7 @@ export async function initBoard(): Promise<void> {
   for (const a of allArtifacts) {
     knownPaths.add(a.path);
     lastMtimeByPath.set(a.path, a.modified_ms);
+    legacyPaths.add(a.path); // pre-boot artifacts keep the legacy display fallback
   }
   lastArtifactSig = artifactSig(allArtifacts);
   window.setInterval(() => void pollLive(), POLL_MS);
@@ -1067,17 +1086,23 @@ function unitForArtifact(a: ArtifactEntry): string {
   // bare slugs (no `--`), so baseProjectOf is a no-op there. Immune to the project-slug
   // ambiguity below and a volatile cwd.
   if (a.unit_key) return baseProjectOf(a.unit_key);
-  // Fallback for un-indexed artifacts (hub/offsite/cron, or pre-hook): match by
-  // the model-stamped project. Display-only metadata, kept only as a fallback.
-  const key = projectSlug(a.project);
-  if (!key) return UNSOURCED;
-  // A repo unit's key === its project slug (the hook sets unit_key = slug). If any
-  // live source maps to that unit, the artifact belongs to it — even with several.
-  if (allSources.some((s) => unitKeyOf(s) === key)) return key;
-  // Otherwise route to the unique source of this project (a bare session → its
-  // own unit); ambiguous with no repo unit ⇒ Unsourced.
-  const matches = allSources.filter((s) => sourceProjectKey(s) === key);
-  return matches.length === 1 ? unitKeyOf(matches[0]) : UNSOURCED;
+  // LEGACY DISPLAY FALLBACK — pre-boot artifacts ONLY. Their history must keep
+  // rendering under a sensible unit, and the model-stamped project is the only
+  // signal they carry. An artifact arriving DURING this run never takes this
+  // road: it resolves strictly above or fails loud (hold → unrouted warning) —
+  // guessing routing from volatile display metadata is the killed bug class.
+  if (legacyPaths.has(a.path)) {
+    const key = projectSlug(a.project);
+    if (!key) return UNSOURCED;
+    // A repo unit's key === its project slug (the hook sets unit_key = slug). If any
+    // live source maps to that unit, the artifact belongs to it — even with several.
+    if (allSources.some((s) => unitKeyOf(s) === key)) return key;
+    // Otherwise route to the unique source of this project (a bare session → its
+    // own unit); ambiguous with no repo unit ⇒ Unsourced.
+    const matches = allSources.filter((s) => sourceProjectKey(s) === key);
+    return matches.length === 1 ? unitKeyOf(matches[0]) : UNSOURCED;
+  }
+  return UNSOURCED;
 }
 
 /** Bucket every artifact by its unit. Newest-first within each unit. */
@@ -1341,6 +1366,28 @@ function computeRoster(now: number): Roster {
  *  per live unit, in priority order. Clicking a tab swaps the pane to that session;
  *  the shell stays put. The frame itself is always present (it also hosts the ☰
  *  menu), so a single live session just shows its one tab. */
+/** The fail-loud warning row: N artifacts that couldn't be attributed to any session. */
+function buildUnroutedRow(count: number, isActive: boolean): HTMLElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "unit-tab rail-warn";
+  if (isActive) b.classList.add("active");
+  b.title =
+    "These artifacts couldn't be attributed to a session (no identity arrived). Collected under Unsourced.";
+  const ico = document.createElement("span");
+  ico.className = "rail-warn-ico";
+  ico.textContent = "⚠";
+  const label = document.createElement("span");
+  label.className = "unit-tab-label rail-warn-label";
+  label.textContent = count === 1 ? "Unrouted artifact" : "Unrouted artifacts";
+  const n = document.createElement("span");
+  n.className = "rail-warn-count";
+  n.textContent = String(count);
+  b.append(ico, label, n);
+  b.addEventListener("click", () => enterUnit(UNSOURCED));
+  return b;
+}
+
 function renderUnitRail(activeUnitKey: string | null): void {
   if (!railSessionsEl) return;
   const now = Date.now();
@@ -1358,6 +1405,13 @@ function renderUnitRail(activeUnitKey: string | null): void {
 
   const nodes: HTMLElement[] = [];
   let newGroup: HTMLElement | null = null;
+
+  // FAIL-LOUD SURFACE. Artifacts that exhausted the identity grace window route to
+  // the Unsourced bucket AND alarm here — a visible warning row pinned above the
+  // roster, never the silent void. Click-through lands on the Unsourced unit.
+  if (unroutedPaths.size) {
+    nodes.push(buildUnroutedRow(unroutedPaths.size, activeUnitKey === UNSOURCED));
+  }
 
   for (const unit of order) {
     const sources = byUnit.get(unit) ?? [];
@@ -3088,7 +3142,12 @@ async function pollLive(): Promise<void> {
   await pollEvents();
   const sig = artifactSig(artifacts);
   const sigChanged = sig !== lastArtifactSig;
-  if (sigChanged) {
+  // A HELD artifact (awaiting identity) whose grace ran out won't move the sig —
+  // nothing about it changed — so force the ingest that fails it loud.
+  const graceExpired = [...pendingIdentity.values()].some(
+    (t) => Date.now() - t >= IDENTITY_GRACE_MS,
+  );
+  if (sigChanged || graceExpired) {
     lastArtifactSig = sig;
     ingestArtifacts(artifacts);
   }
@@ -3163,42 +3222,56 @@ function totalUnread(): number {
  * unless that unit is on screen), prune deleted ones, then refresh the level.
  */
 function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
-  // FIX #2 — rewrite identity-flap. history.rs blanks source/unit_key for the one
-  // poll between an in-place rewrite and the hook's re-stamp (the `index-stale-drop`
-  // trace). Patch a still-live prior identity back BEFORE any routing so the rewrite
-  // doesn't flap through __unsourced__ and flash a phantom cross-unit dot. A reused
-  // filename from a DEAD session is not retained (retainedIdentity), so it still falls
-  // through to the staleness guard + slug routing as intended.
-  const priorIdentity = new Map<string, Identity>(
-    allArtifacts
-      .filter((a) => a.source)
-      .map((a) => [a.path, { source: a.source, unit_key: a.unit_key }]),
-  );
-  const isLiveSource = (source: string): boolean => allSources.some((s) => s.source === source);
-  const artifacts = rawArtifacts.map((a) => {
-    const keep = retainedIdentity(
-      { source: a.source, unit_key: a.unit_key },
-      priorIdentity.get(a.path),
-      isLiveSource,
-    );
-    return keep.source === a.source ? a : { ...a, source: keep.source, unit_key: keep.unit_key };
-  });
+  // (The old FIX #2 rewrite identity-flap patch is gone with its cause: history.rs
+  // no longer blanks a stamped identity on mtime — the staleness guard was removed
+  // at the Phase 4 cutover, so identity can't flap across an in-place rewrite.)
+  const artifacts = rawArtifacts;
+  const unroutedBefore = unroutedPaths.size;
 
   const present = new Set(artifacts.map((a) => a.path));
   // Snapshot the prior routing identity per path BEFORE overwriting allArtifacts.
   const prevRouteKey = new Map(allArtifacts.map((a) => [a.path, artifactRouteKey(a)]));
   const newOnes = artifacts.filter((a) => !knownPaths.has(a.path));
-  // THE SURFACING-LAG FIX. A KNOWN artifact whose routing identity changed since the
-  // last ingest = the hook stamped the index AFTER the Board first routed it (the
-  // race). Its first ingest used an empty/slug-fallback identity and the sig-guard
-  // would otherwise freeze it there forever. Re-route it against the now-correct
-  // identity instead of leaving it stranded where it first (wrongly) landed.
+
+  // HOLD-UNTIL-IDENTITY. A brand-new artifact whose identity hasn't landed yet
+  // (the watcher wakes this poll ~600ms before the hook stamps the index and
+  // appends the event) is HELD — kept out of knownPaths so a later ingest re-sees
+  // it as new — instead of being routed by a guess it would then need re-routing
+  // out of. Identity arriving (event/index) changes the artifact signature and
+  // re-runs ingest, which routes it correctly EXACTLY ONCE; grace expiry (checked
+  // by pollLive) forces the ingest that fails it loud below.
+  const held = new Set<string>();
+  const nowMs = Date.now();
+  for (const a of newOnes) {
+    if (legacyPaths.has(a.path) || unitForArtifact(a) !== UNSOURCED) {
+      pendingIdentity.delete(a.path);
+      continue;
+    }
+    const firstSeen = pendingIdentity.get(a.path) ?? nowMs;
+    pendingIdentity.set(a.path, firstSeen);
+    if (nowMs - firstSeen < IDENTITY_GRACE_MS) {
+      held.add(a.path);
+      trace("ingest.hold", { corr: a.path, waitedMs: nowMs - firstSeen });
+    } else {
+      // Grace exhausted with no identity: route it (to Unsourced) LOUDLY below.
+      pendingIdentity.delete(a.path);
+      unroutedPaths.add(a.path);
+      trace("ingest.grace-expired", { corr: a.path });
+    }
+  }
+  const routableNew = newOnes.filter((a) => !held.has(a.path));
+
+  // OWNERSHIP TRANSFER. A KNOWN artifact whose routing identity changed since the
+  // last ingest = a different session re-stamped it (a rewrite took ownership), or
+  // a late-arriving stamp resolved a previously-unrouted one. Re-file it under the
+  // now-authoritative identity. This is rare by construction post-cutover — the
+  // hold above means normal arrivals are never routed before their identity.
   const reRouted = artifacts.filter(
     (a) => knownPaths.has(a.path) && prevRouteKey.has(a.path) && prevRouteKey.get(a.path) !== artifactRouteKey(a),
   );
   const reRoutedSet = new Set(reRouted.map((a) => a.path));
   allArtifacts = artifacts;
-  for (const a of artifacts) knownPaths.add(a.path);
+  for (const a of artifacts) if (!held.has(a.path)) knownPaths.add(a.path);
 
   // FIX #1 — content refresh. An artifact rewritten IN PLACE while it is the one on
   // the hero (or open in the reader) is invisible to the four routing roads below
@@ -3222,6 +3295,9 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   // Phase 3: drop event-sourced routing for artifacts that no longer exist, so routedByPath
   // can't grow without bound as artifacts are archived/deleted.
   for (const p of [...routedByPath.keys()]) if (!present.has(p)) routedByPath.delete(p);
+  // Deleted artifacts can't stay held or alarmed.
+  for (const p of [...pendingIdentity.keys()]) if (!present.has(p)) pendingIdentity.delete(p);
+  for (const p of [...unroutedPaths]) if (!present.has(p)) unroutedPaths.delete(p);
   for (const [unit, set] of unreadByUnit) {
     for (const p of [...set]) if (!present.has(p)) set.delete(p);
     if (set.size === 0) unreadByUnit.delete(unit);
@@ -3241,13 +3317,20 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
 
   const view = currentView();
   const viewingUnit = view.level === "unit" ? view.unitKey : null;
-  const toRoute = newOnes.concat(reRouted);
-  if (toRoute.length) {
-    trace("ingest.run", { newCount: newOnes.length, reRouted: reRouted.length, viewingUnit: viewingUnit ?? "" });
+  const toRoute = routableNew.concat(reRouted);
+  if (toRoute.length || held.size) {
+    trace("ingest.run", {
+      newCount: routableNew.length,
+      reRouted: reRouted.length,
+      held: held.size,
+      viewingUnit: viewingUnit ?? "",
+    });
   }
   let heroNewCandidate: ArtifactEntry | null = null;
   for (const a of toRoute) {
     const unit = unitForArtifact(a);
+    // A late identity rescuing a previously-unrouted artifact clears its alarm.
+    if (unit !== UNSOURCED) unroutedPaths.delete(a.path);
     // THE KEYSTONE. Two of these four roads silently `addUnread` (a dot on a unit
     // card the user reads as "nothing showed up"). Control flow is UNCHANGED from the
     // original; `branch` just names the road taken. NEW artifacts and RE-ROUTED ones
@@ -3274,13 +3357,14 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
     }
     // FAIL-LOUD GUARD. An artifact that routes with NO source or to UNSOURCED could
     // not be firmly identified — the silent-disappearance path. Don't let it pass
-    // quietly: warn (+ trace) so an unroutable artifact is visible, not shelved. The
-    // re-route above usually rescues this once the index lands; this catches the ones
-    // that never resolve (the concrete sliver of the identity redesign we adopt now).
+    // quietly: an UNSOURCED landing alarms the rail's warning row (unroutedPaths),
+    // plus warn + trace. Post-cutover the only ways here are grace expiry (identity
+    // never arrived) or a legacy pre-boot artifact with unresolvable project meta.
     // A Cloud (remote/hub) artifact legitimately has no local source but IS firmly
     // routed to its Cloud unit — so it's not "unidentified". Only flag a missing source
     // for non-Cloud units, plus anything that still lands in UNSOURCED.
     if (unit === UNSOURCED || (!a.source && unit !== CLOUD)) {
+      if (unit === UNSOURCED) unroutedPaths.add(a.path);
       console.warn("[companion] artifact routed without a firm identity", {
         path: a.path, unit, source: a.source ?? "", from: reRoutedSet.has(a.path) ? "reroute" : "new", branch,
       });
@@ -3290,13 +3374,17 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
       // The inputs that DECIDED the branch — so a silent unread is self-explaining:
       // was the routing identity (unit) wrong, the active session mis-resolved, did
       // the unit come from the index or the slug fallback?
-      const unitFrom = a.session_id
-        ? "registry"
-        : a.source && allSources.some((s) => s.source === a.source)
-          ? "source"
-          : a.unit_key
-            ? "index"
-            : "slug-fallback";
+      const unitFrom = routedByPath.has(a.path)
+        ? "event"
+        : a.session_id
+          ? "registry"
+          : a.source && allSources.some((s) => s.source === a.source)
+            ? "source"
+            : a.unit_key
+              ? "index"
+              : legacyPaths.has(a.path)
+                ? "legacy-slug"
+                : "none";
       trace("ingest.branch", {
         corr: a.path,
         unit,
@@ -3316,6 +3404,9 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   maybeAutoAdvance(toRoute);
 
   if (view.level === "unit") ingestIntoUnit(view.unitKey);
+  // The warning row lives in the rail — repaint it when the alarm set changed
+  // (the rail otherwise only repaints on live-state changes, not artifact ones).
+  if (unroutedPaths.size !== unroutedBefore) renderUnitRail(lastRailActiveUnit);
   updateGlobalUnread();
 }
 

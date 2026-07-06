@@ -12,7 +12,7 @@
  * reload, never a silent no-op. If a future refactor reintroduces the bug (all roads
  * keyed on path-novelty/difference), case 1 fails.
  */
-import { rewritesNeedingReload, retainedIdentity } from "../src/ingest-logic.ts";
+import { rewritesNeedingReload } from "../src/ingest-logic.ts";
 
 let failed = 0;
 function check(name: string, cond: boolean): void {
@@ -79,27 +79,8 @@ check(
   ),
 );
 
-// ---- retainedIdentity — the stale-drop flap --------------------------------
-const live = (s: string): boolean => s === "gyatso--e7d76892";
-const firm = { source: "gyatso--e7d76892", unit_key: "gyatso" };
-
-check(
-  "6. blanked identity is retained while its session is live",
-  eq(retainedIdentity({ source: null, unit_key: null }, firm, live), firm),
-);
-
-check(
-  "7. blanked identity from a DEAD session is not retained (guard stands)",
-  eq(
-    retainedIdentity({ source: null, unit_key: null }, { source: "dead--0000", unit_key: "x" }, live),
-    { source: null, unit_key: null },
-  ),
-);
-
-check(
-  "8. a present identity is never overridden",
-  eq(retainedIdentity(firm, { source: "other--1111", unit_key: "y" }, live), firm),
-);
+// (retainedIdentity checks removed with the function at the Phase 4 cutover — the
+// staleness guard that caused the identity flap is gone from history.rs.)
 
 console.log(failed === 0 ? "\nPASS — ingest gate holds" : `\n${failed} check(s) FAILED`);
 process.exit(failed === 0 ? 0 : 1);

@@ -76,6 +76,43 @@ cargo test, tsc, sandboxed hook tests). Do the single live "watch it surface" pa
 including the full §8 matrix + the master before/after baseline — TOGETHER in the main
 checkout after merging, when the user is present. One app, one place.
 
+## D7 — Late registration, by the ONE derivation (Phase 4)
+
+A session with no registry record (started before the registry shipped, or its
+SessionStart failed) is registered at first sight by `companion-index.cjs`, which
+invokes the SAME derivation SessionStart uses (`companion-livepath.sh` — which itself
+reuses a frozen live-file identity when one exists). This is NOT a second derivation
+scheme: it is the one derivation function, invoked wherever the session is first seen,
+recorded once, frozen thereafter. It makes the registry self-healing across plugin
+deploys (running sessions keep routing without a restart) and kills the deploy-day
+"error-tile storm" a strict no-record-no-stamp rule would have caused.
+
+## D8 — Sidecars stay (for now): they are projections, not derivations
+
+The plan's Phase 4 listed removing the 4 sidecars (owned-sessions, session-dirs,
+session-ids, dismissed). DEFERRED. Post-registry they are no longer competing
+DERIVATIONS of identity — they are projections of the one registration, written at
+the same site from the same values. The bug class (two derivations disagreeing) does
+not pass through them anymore. Removing them touches spawn/resume/rehydrate flows
+(owned terminals, "+ session here", `claude --resume`) that can only be verified
+live; blast radius >> benefit for this cutover. Fold their removal into the
+terminal-rehydrate redesign (memory: `terminal-rehydrate-on-restart`), verified with
+the user present.
+
+## D9 — Hold-until-identity replaces fallback-then-reroute (Phase 4)
+
+The interim `9a37849` machinery routed a fresh artifact by slug-guess, then re-routed
+it when the index landed. Cutover inverts this: a mid-run artifact with no identity is
+HELD (kept out of knownPaths; typically <2s — the hook-stamp latency) and routed
+exactly once when its `artifact.routed` event / index stamp arrives. If identity never
+arrives within IDENTITY_GRACE_MS (10s), it routes to Unsourced LOUDLY — a warning row
+pinned atop the rail (fail-loud, §3.4). The identity-change re-file loop is kept but
+degenerates to the rare ownership-transfer case (a different session re-stamps a
+path); it no longer fires for normal arrivals. The legacy project-slug fallback
+survives ONLY for artifacts already on disk at Board boot (`legacyPaths`) so
+pre-registry history keeps rendering under sensible units; every mid-run arrival
+resolves strictly or alarms.
+
 ## STATUS LEDGER (for the merge-and-test-together session)
 
 Branch `feat/identity-registry`. Built + STATICALLY verified, NOT yet run in a live overlay:
@@ -106,7 +143,11 @@ Branch `feat/identity-registry`. Built + STATICALLY verified, NOT yet run in a l
   (`9a37849`) firing; the watcher still wakes the poll before the stamp+event land, so a
   first ingest can still fall back + reroute. Making the EVENT the trigger (and deleting the
   watcher-first-ingest / the `9a37849` reroute) is the Phase 4 cutover. Verify no-reroute then.
-- **Phase 4** — cutover (delete slug-fallback, staleness guard, 4 sidecars, shortid glob,
-  the `9a37849` reroute) + fail-loud error tile.
-- **Phase 5** — observer: point its plugin at the shared lib (D1), attribute artifacts to
-  the OBSERVED session_id.
+- **Phase 4 (done, 2026-07-06)** — cutover: shortid glob deleted (record + late-register,
+  D7); staleness guard deleted (history.rs trusts stamps; Finding B class gone);
+  slug-fallback gated to pre-boot legacy artifacts; `9a37849` fallback-then-reroute
+  replaced by hold-until-identity (D9); fail-loud rail warning row. Sidecars deferred
+  (D8). Verified: hook suites 5/5 (80 checks), cargo 24/24, tsc, check-ingest-rewrite.
+- **Phase 5 (done, 2026-07-06)** — observer (now in-tree on master) attributes artifacts
+  to the OBSERVED session_id via the shared `routeArtifact` (D1); its own `claude -p`
+  model calls carry COMPANION_OBSERVER_SELF and never self-register. Observer suite 28/28.
