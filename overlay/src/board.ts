@@ -260,6 +260,14 @@ let expandedRecentProject: string | null = null;
  *  project tab toggles this and shows its session chooser INSTEAD of navigating; you
  *  pick a session from the dropdown, and only then does the Board move into it. */
 let expandedActiveProject: string | null = null;
+/** The unit whose session dropdown is expanded to show ALL sessions (past the
+ *  collapsed cap). null → the open drawer shows only the most-recent few with a
+ *  "Show N more" expander. Cleared whenever a drawer is (re)opened, so entering a
+ *  project always starts collapsed. */
+let sessionsAllShownFor: string | null = null;
+/** How many session rows a project's dropdown shows before "Show N more" reveals
+ *  the rest — mirrors HISTORY_COLLAPSED_ROWS for the artifact list. */
+const SESSION_DRAWER_COLLAPSED_ROWS = 7;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
@@ -803,7 +811,7 @@ async function goHub(): Promise<void> {
   leaveUnit();
   viewStack = [{ level: "hub" }];
   showLevel("hub");
-  renderGreeting(freshCount(), allSources.length);
+  renderGreeting(freshCount(), allSources.filter((s) => isLiveSource(s, Date.now())).length);
   await renderHub();
   updateGlobalUnread();
 }
@@ -1317,8 +1325,43 @@ function renderUnitRail(activeUnitKey: string | null): void {
       group.className = "unit-subtab-group";
       const inner = document.createElement("div");
       inner.className = "unit-subtab-group-inner";
-      for (const s of railSessionOrder(sources)) inner.appendChild(buildRailSessionRow(unit, s, shownTab));
-      for (const rs of siblings) inner.appendChild(buildRecentSessionRow(rs));
+      // A project's sessions: its live ones (most-recent first) then resumable
+      // siblings. Cap to the most-recent few with a "Show N more" expander so a
+      // long-lived project doesn't unspool dozens of rows; never hide the session
+      // you're currently viewing — pin it into the last slot if it sorts out.
+      type SessionEntry = { kind: "live"; s: LiveSource } | { kind: "sibling"; rs: RecentSession };
+      const entries: SessionEntry[] = [
+        ...railSessionOrder(sources).map((s): SessionEntry => ({ kind: "live", s })),
+        ...siblings.map((rs): SessionEntry => ({ kind: "sibling", rs })),
+      ];
+      const showAll = sessionsAllShownFor === unit;
+      let visible = entries;
+      let hidden = 0;
+      if (!showAll && entries.length > SESSION_DRAWER_COLLAPSED_ROWS) {
+        visible = entries.slice(0, SESSION_DRAWER_COLLAPSED_ROWS);
+        hidden = entries.length - visible.length;
+        const shownIdx = shownTab === null ? -1 : entries.findIndex(
+          (e) => e.kind === "live" && (parseState(e.s.json).companion_session ?? null) === shownTab,
+        );
+        if (shownIdx >= SESSION_DRAWER_COLLAPSED_ROWS) visible = [...visible.slice(0, -1), entries[shownIdx]];
+      }
+      for (const e of visible) {
+        inner.appendChild(
+          e.kind === "live" ? buildRailSessionRow(unit, e.s, shownTab) : buildRecentSessionRow(e.rs),
+        );
+      }
+      if (hidden > 0) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "unit-subtab-more";
+        more.textContent = `Show ${hidden} more`;
+        more.addEventListener("click", (e) => {
+          e.stopPropagation();
+          sessionsAllShownFor = unit;
+          renderUnitRail(currentUnitKey);
+        });
+        inner.appendChild(more);
+      }
       group.appendChild(inner);
       nodes.push(group);
       newGroup = group;
@@ -1644,6 +1687,7 @@ function buildRailTab(
     chevron.addEventListener("click", (e) => {
       e.stopPropagation();
       expandedActiveProject = expanded ? null : unitKey;
+      sessionsAllShownFor = null; // a fresh open starts collapsed to the cap
       renderUnitRail(currentUnitKey);
     });
     tab.append(chevron);
@@ -1654,6 +1698,7 @@ function buildRailTab(
   if (active && hasDrawer) {
     tab.addEventListener("click", () => {
       expandedActiveProject = expanded ? null : unitKey;
+      sessionsAllShownFor = null; // a fresh open starts collapsed to the cap
       renderUnitRail(currentUnitKey);
     });
   } else if (!active) {
