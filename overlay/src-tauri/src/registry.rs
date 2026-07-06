@@ -65,7 +65,11 @@ pub fn resolve_unit(session_id: &str) -> Option<String> {
         .map(|s| s.to_string());
     crate::trace::emit(
         "registry",
-        if unit.is_some() { "resolve" } else { "resolve-miss" },
+        if unit.is_some() {
+            "resolve"
+        } else {
+            "resolve-miss"
+        },
         &[
             ("session_id", &safe_id(session_id)),
             ("unit_key", unit.as_deref().unwrap_or("")),
@@ -125,7 +129,10 @@ mod tests {
 
     #[test]
     fn safe_id_leaves_uuid_untouched_and_sanitizes_traversal() {
-        assert_eq!(safe_id("abcd1234-5678-90ab-cdef-000011112222"), "abcd1234-5678-90ab-cdef-000011112222");
+        assert_eq!(
+            safe_id("abcd1234-5678-90ab-cdef-000011112222"),
+            "abcd1234-5678-90ab-cdef-000011112222"
+        );
         // The safety property that matters: no path separator survives, so a malformed id
         // can only ever be a single filename component (no `..`-into-parent traversal). `.`
         // is allowed, so the slashes — not the dots — are what get neutralised.

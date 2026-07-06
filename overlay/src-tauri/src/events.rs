@@ -18,8 +18,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 fn events_path() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .map(|home| PathBuf::from(home).join(".claude/companion/events.ndjson"))
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude/companion/events.ndjson"))
 }
 
 /// A batch of newly-appended events plus the offset to resume from next time.
@@ -136,7 +135,10 @@ mod tests {
     fn cold_start_reads_all_then_only_new() {
         let home = setup();
         append(&home, r#"{"evt":"session.registered","unit_key":"a"}"#);
-        append(&home, r#"{"evt":"artifact.routed","unit_key":"a","path":"/x.html"}"#);
+        append(
+            &home,
+            r#"{"evt":"artifact.routed","unit_key":"a","path":"/x.html"}"#,
+        );
         let b1 = with_home(&home, || poll_events(0));
         assert_eq!(b1.events.len(), 2, "cold start reads all events");
         assert_eq!(b1.events[1]["evt"], "artifact.routed");
@@ -145,7 +147,10 @@ mod tests {
         assert_eq!(b2.events.len(), 0);
         assert_eq!(b2.next, b1.next);
         // One more append → only the new one comes back.
-        append(&home, r#"{"evt":"artifact.routed","unit_key":"b","path":"/y.html"}"#);
+        append(
+            &home,
+            r#"{"evt":"artifact.routed","unit_key":"b","path":"/y.html"}"#,
+        );
         let b3 = with_home(&home, || poll_events(b2.next));
         assert_eq!(b3.events.len(), 1);
         assert_eq!(b3.events[0]["unit_key"], "b");

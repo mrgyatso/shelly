@@ -312,7 +312,9 @@ pub fn read_all_live() -> Vec<LiveSource> {
         // full session_id is known (owned sessions record it in session-ids.json). Uses the
         // RAW sidecar id — resolution needs no transcript, unlike the resume `session_id`
         // above. `None` (no record yet) leaves the live file's own unit_key in place.
-        let unit_override = sids.get(&source).and_then(|id| crate::registry::resolve_unit(id));
+        let unit_override = sids
+            .get(&source)
+            .and_then(|id| crate::registry::resolve_unit(id));
         out.push(LiveSource {
             json: inject_fields(
                 &raw,
@@ -470,7 +472,15 @@ mod tests {
 
     #[test]
     fn malformed_passes_through_verbatim() {
-        let out = inject_fields("not json", 1, Some("board-1"), None, true, Some("x"), Some("u"));
+        let out = inject_fields(
+            "not json",
+            1,
+            Some("board-1"),
+            None,
+            true,
+            Some("x"),
+            Some("u"),
+        );
         assert_eq!(out, "not json");
     }
 
