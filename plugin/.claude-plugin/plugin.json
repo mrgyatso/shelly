@@ -1,7 +1,7 @@
 {
   "name": "companion",
   "description": "Render Claude's work as HTML artifacts in the Companion overlay. The working agent authors artifact content into its live-state and picks a tier; a deterministic renderer builds routine artifacts with no model call, and intense turns escalate to an isolated Sonnet/Opus designer. The primary session never writes HTML. Manual /companion:html remains available.",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "author": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso/claude-code-companion"
