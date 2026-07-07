@@ -135,13 +135,19 @@ fn is_active(cfg: &HubConfig) -> bool {
 /// or the fetch failed. The live pane shows whichever of this and the local
 /// `read_live()` is fresher.
 #[tauri::command]
-pub fn read_live_from_hub() -> String {
-    match load_config() {
+pub async fn read_live_from_hub() -> String {
+    // Blocking HTTP (reqwest::blocking, up to HTTP_TIMEOUT_SECS against a dead
+    // hub) must never run inline on a sync command — Tauri runs those on the main
+    // thread, so a slow/unreachable hub freezes the whole UI (beach ball) on every
+    // poll. Hand it to a blocking worker so the main thread stays responsive.
+    tauri::async_runtime::spawn_blocking(|| match load_config() {
         Some(cfg) if is_active(&cfg) => {
             http_get(&format!("{}/api/live", base(&cfg.url)), &cfg.token).unwrap_or_default()
         }
         _ => String::new(),
-    }
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -162,48 +168,61 @@ pub fn hub_config_set(url: String, token: String) -> Result<(), String> {
 /// Probe a hub: reachability (`/api/health`, unauth) then token validity
 /// (`/api/live`). Returns `Ok` only if both pass.
 #[tauri::command]
-pub fn hub_test_connection(url: String, token: String) -> Result<String, String> {
-    let b = base(&url);
-    http_get(&format!("{b}/api/health"), &token).map_err(|e| format!("unreachable: {e}"))?;
-    http_get(&format!("{b}/api/live"), &token).map_err(|e| format!("token rejected: {e}"))?;
-    Ok("connected".to_string())
+pub async fn hub_test_connection(url: String, token: String) -> Result<String, String> {
+    // Blocking HTTP off the main thread — see read_live_from_hub.
+    tauri::async_runtime::spawn_blocking(move || {
+        let b = base(&url);
+        http_get(&format!("{b}/api/health"), &token).map_err(|e| format!("unreachable: {e}"))?;
+        http_get(&format!("{b}/api/live"), &token).map_err(|e| format!("token rejected: {e}"))?;
+        Ok("connected".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// The hub's connected-agents manifest (`GET /api/agents` — registration cards
 /// merged with liveness), as raw JSON. `""` when no hub is configured or the
 /// fetch failed — the Board treats both as "no connected agents".
 #[tauri::command]
-pub fn hub_agents() -> String {
-    match load_config() {
+pub async fn hub_agents() -> String {
+    // Blocking HTTP off the main thread — see read_live_from_hub.
+    tauri::async_runtime::spawn_blocking(|| match load_config() {
         Some(cfg) if is_active(&cfg) => {
             http_get(&format!("{}/api/agents", base(&cfg.url)), &cfg.token).unwrap_or_default()
         }
         _ => String::new(),
-    }
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Send a reply envelope to a connected agent's hub inbox
 /// (`POST /api/inbox/<agent>`). Returns the hub's response — the stored
 /// envelope plus delivery outcome (`woken` | `queued` | `wake_failed`).
 #[tauri::command]
-pub fn hub_post_inbox(agent: String, payload: serde_json::Value) -> Result<String, String> {
-    let cfg = load_config().ok_or("no hub configured")?;
-    if !is_active(&cfg) {
-        return Err("hub disabled".into());
-    }
-    let slug_ok = !agent.is_empty()
-        && agent.len() <= 200
-        && agent
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
-    if !slug_ok {
-        return Err("invalid agent id".into());
-    }
-    http_post_json(
-        &format!("{}/api/inbox/{agent}", base(&cfg.url)),
-        &cfg.token,
-        &payload,
-    )
+pub async fn hub_post_inbox(agent: String, payload: serde_json::Value) -> Result<String, String> {
+    // Blocking HTTP off the main thread — see read_live_from_hub.
+    tauri::async_runtime::spawn_blocking(move || {
+        let cfg = load_config().ok_or("no hub configured")?;
+        if !is_active(&cfg) {
+            return Err("hub disabled".into());
+        }
+        let slug_ok = !agent.is_empty()
+            && agent.len() <= 200
+            && agent
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+        if !slug_ok {
+            return Err("invalid agent id".into());
+        }
+        http_post_json(
+            &format!("{}/api/inbox/{agent}", base(&cfg.url)),
+            &cfg.token,
+            &payload,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ----- background pull loop ---------------------------------------------------
