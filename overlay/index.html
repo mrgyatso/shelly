@@ -111,10 +111,21 @@
           <div id="hub-fallback" class="hub-fallback" hidden>
             <div id="hub-clawd" class="hub-clawd" aria-hidden="true"></div>
             <div class="hub-hello" id="hub-hello"></div>
-            <div class="hub-hint">
-              Compose your dashboard with <kbd>/companion:dashboard</kbd>
+            <!-- Two-door home: Sessions (coding) | Agent Hub (connected agents). -->
+            <div class="hub-doors">
+              <button id="hub-door-sessions" class="hub-door sessions" type="button">
+                <span class="door-ico" aria-hidden="true">⌨</span>
+                <span class="door-title">Sessions</span>
+                <span class="door-sub">Your coding projects — live and recent.</span>
+                <span class="door-count" id="hub-door-sessions-count"></span>
+              </button>
+              <button id="hub-door-agenthub" class="hub-door agenthub" type="button">
+                <span class="door-ico" aria-hidden="true">✦</span>
+                <span class="door-title">Agent Hub</span>
+                <span class="door-sub">Connected agents surface their own artifacts here.</span>
+                <span class="door-count" id="hub-door-agenthub-count"></span>
+              </button>
             </div>
-            <button id="hub-sessions-btn" class="hub-cta"></button>
           </div>
         </div>
 
@@ -138,6 +149,7 @@
             <div id="unit-rail-sessions" class="rail-sessions"></div>
             <!-- Menu face: navigate the main pane between Sessions / History / Settings. -->
             <div class="rail-menu" role="menu" aria-label="Navigate">
+              <button class="rail-nav" role="menuitem" data-dest="hub"><span class="rail-nav-ico">⌂</span><span>Home</span></button>
               <button class="rail-nav" role="menuitem" data-dest="sessions"><span class="rail-nav-ico">▤</span><span>Sessions</span></button>
               <button class="rail-nav" role="menuitem" data-dest="history"><span class="rail-nav-ico">◷</span><span>History</span></button>
               <button class="rail-nav" role="menuitem" data-dest="settings"><span class="rail-nav-ico">⚙</span><span>Settings</span></button>

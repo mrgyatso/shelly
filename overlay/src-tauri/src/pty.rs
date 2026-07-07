@@ -169,7 +169,12 @@ fn claude_then_shell_script(claude: &str, shell: &str, resume: Option<&str>) -> 
     // (octal ESC) keeps this portable across any POSIX `printf`.
     let tty_reset =
         "printf '\\033[?1000l\\033[?1002l\\033[?1003l\\033[?1006l\\033[?1015l\\033[?1049l\\033[?2004l\\033[?25h\\033[0m'";
-    format!("{}; {}; exec {} -i -l", launch, tty_reset, shell_quote(shell))
+    format!(
+        "{}; {}; exec {} -i -l",
+        launch,
+        tty_reset,
+        shell_quote(shell)
+    )
 }
 
 /// Spawn a `claude` PTY for `tab_id`. The PTY runs an interactive login shell

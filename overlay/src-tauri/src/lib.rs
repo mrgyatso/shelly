@@ -2,12 +2,14 @@ mod artifact;
 mod artifact_watch;
 mod code_peek;
 mod dials;
+mod events;
 mod history;
 mod hub;
 mod layout;
 mod live;
 mod macos_panel;
 mod pty;
+mod registry;
 mod sessions;
 mod trace;
 mod tray;
@@ -140,6 +142,7 @@ pub fn run() {
             history::resolve_home,
             trace::trace_event,
             trace::trace_enabled,
+            events::poll_events,
             live::read_live,
             live::read_all_live,
             live::dismiss_session,
@@ -157,6 +160,8 @@ pub fn run() {
             hub::hub_config_get,
             hub::hub_config_set,
             hub::hub_test_connection,
+            hub::hub_agents,
+            hub::hub_post_inbox,
             code_peek::list_changed_files,
             code_peek::read_source_file
         ])

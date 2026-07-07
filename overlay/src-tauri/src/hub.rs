@@ -104,6 +104,27 @@ fn http_get(url: &str, token: &str) -> Result<String, String> {
     resp.text().map_err(|e| e.to_string())
 }
 
+/// Blocking POST of a JSON body with a bearer token. Non-2xx is an error.
+fn http_post_json(url: &str, token: &str, body: &serde_json::Value) -> Result<String, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| e.to_string())?;
+    // reqwest is built without its `json` feature here; set the body by hand.
+    let resp = client
+        .post(url)
+        .bearer_auth(token)
+        .header("content-type", "application/json")
+        .body(serde_json::to_string(body).map_err(|e| e.to_string())?)
+        .send()
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("HTTP {}", status.as_u16()));
+    }
+    resp.text().map_err(|e| e.to_string())
+}
+
 fn is_active(cfg: &HubConfig) -> bool {
     cfg.enabled && !cfg.url.is_empty() && !cfg.token.is_empty()
 }
@@ -146,6 +167,43 @@ pub fn hub_test_connection(url: String, token: String) -> Result<String, String>
     http_get(&format!("{b}/api/health"), &token).map_err(|e| format!("unreachable: {e}"))?;
     http_get(&format!("{b}/api/live"), &token).map_err(|e| format!("token rejected: {e}"))?;
     Ok("connected".to_string())
+}
+
+/// The hub's connected-agents manifest (`GET /api/agents` — registration cards
+/// merged with liveness), as raw JSON. `""` when no hub is configured or the
+/// fetch failed — the Board treats both as "no connected agents".
+#[tauri::command]
+pub fn hub_agents() -> String {
+    match load_config() {
+        Some(cfg) if is_active(&cfg) => {
+            http_get(&format!("{}/api/agents", base(&cfg.url)), &cfg.token).unwrap_or_default()
+        }
+        _ => String::new(),
+    }
+}
+
+/// Send a reply envelope to a connected agent's hub inbox
+/// (`POST /api/inbox/<agent>`). Returns the hub's response — the stored
+/// envelope plus delivery outcome (`woken` | `queued` | `wake_failed`).
+#[tauri::command]
+pub fn hub_post_inbox(agent: String, payload: serde_json::Value) -> Result<String, String> {
+    let cfg = load_config().ok_or("no hub configured")?;
+    if !is_active(&cfg) {
+        return Err("hub disabled".into());
+    }
+    let slug_ok = !agent.is_empty()
+        && agent.len() <= 200
+        && agent
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
+    if !slug_ok {
+        return Err("invalid agent id".into());
+    }
+    http_post_json(
+        &format!("{}/api/inbox/{agent}", base(&cfg.url)),
+        &cfg.token,
+        &payload,
+    )
 }
 
 // ----- background pull loop ---------------------------------------------------
