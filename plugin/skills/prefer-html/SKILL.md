@@ -826,7 +826,10 @@ A ~360px self-sizing "what changed" card. Swap the accent color by intent
 <html lang="en">
 <head><meta charset="UTF-8" /><title>changed</title>
 <style>
-  :root { --accent:#2e7d52; --ink:#1a1714; --muted:#6e655b; --surface:#fff; --paper:#f4f1ec; }
+  :root { --accent:#2e7d52; --ink:#1a1714; --muted:#6e655b; --surface:#fff;
+    /* board shade — matches the overlay shell so the artifact has no card seam.
+       Opaque-origin iframe can't read parent vars, so hardcode the literal. */
+    --paper:oklch(0.945 0.014 60); }
   * { box-sizing: border-box; }
   html { scrollbar-width: none; } html::-webkit-scrollbar { display:none; }
   html, body { margin:0; background:var(--paper);
@@ -975,7 +978,7 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
 <head><meta charset="UTF-8" /><title>multi-page</title>
 <style>
   :root { --accent:#2e7d52; --ink:#1a1714; --muted:#6e655b; --surface:#fff;
-    --paper:#f4f1ec; --line:rgba(26,23,20,0.12); }
+    --paper:oklch(0.945 0.014 60); --line:rgba(26,23,20,0.12); }
   * { box-sizing:border-box; }
   html { scrollbar-width:none; } html::-webkit-scrollbar { display:none; }
   html, body { margin:0; background:var(--paper); color:var(--ink);

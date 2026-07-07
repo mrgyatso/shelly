@@ -8,7 +8,7 @@
 //! dependency — easy to drop on a VPS.
 
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Cap how much of each artifact we read to find its `<title>` / metadata — both
 /// live in the `<head>`, so a few KB is plenty and a multi-MB artifact can't
@@ -40,9 +40,40 @@ struct CompanionMeta {
     created: Option<String>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct RoutineState {
+    pub id: String,
+    pub completed: bool,
+    pub updated_ms: u64,
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub bucket: Option<String>,
+    pub completed_at: Option<String>,
+    pub due_at: Option<String>,
+    pub meta: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct RoutineUpsert {
+    #[serde(default)]
+    pub completed: bool,
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub bucket: Option<String>,
+    pub completed_at: Option<String>,
+    pub due_at: Option<String>,
+    pub meta: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum WriteRoutineError {
+    InvalidId,
+    Io(String),
+}
+
 /// A filesystem-safe slug: a bare filename stem, no path separators or `..`, so
 /// it can never escape its directory. Returns the borrowed slug if valid.
-fn safe_slug(slug: &str) -> Option<&str> {
+pub fn safe_slug(slug: &str) -> Option<&str> {
     if slug.is_empty() || slug.len() > 200 {
         return None;
     }
@@ -57,10 +88,17 @@ fn safe_slug(slug: &str) -> Option<&str> {
 }
 
 /// Epoch-millis mtime of a path, or `0` if unavailable.
-fn modified_ms(meta: &std::fs::Metadata) -> u64 {
+pub(crate) fn modified_ms(meta: &std::fs::Metadata) -> u64 {
     meta.modified()
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+pub(crate) fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }
@@ -113,6 +151,59 @@ pub fn read_live(live_dir: &Path, project: Option<&str>) -> serde_json::Value {
         obj.insert("updated_ms".into(), serde_json::json!(updated_ms));
     }
     value
+}
+
+// ----- routines ---------------------------------------------------------------
+
+fn routine_path(routines_dir: &Path, id: &str) -> Option<PathBuf> {
+    Some(routines_dir.join(format!("{}.json", safe_slug(id)?)))
+}
+
+pub fn read_routine(routines_dir: &Path, id: &str) -> Option<RoutineState> {
+    let path = routine_path(routines_dir, id)?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+pub fn list_routines(routines_dir: &Path) -> Vec<RoutineState> {
+    let mut entries: Vec<RoutineState> = std::fs::read_dir(routines_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("json"))
+        .filter_map(|path| std::fs::read_to_string(path).ok())
+        .filter_map(|raw| serde_json::from_str::<RoutineState>(&raw).ok())
+        .collect();
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.updated_ms));
+    entries
+}
+
+pub fn write_routine(
+    routines_dir: &Path,
+    id: &str,
+    input: RoutineUpsert,
+) -> Result<RoutineState, WriteRoutineError> {
+    let id = safe_slug(id).ok_or(WriteRoutineError::InvalidId)?;
+    let path = routine_path(routines_dir, id).ok_or(WriteRoutineError::InvalidId)?;
+    std::fs::create_dir_all(routines_dir)
+        .map_err(|e| WriteRoutineError::Io(format!("create routines dir: {e}")))?;
+    let routine = RoutineState {
+        id: id.to_string(),
+        completed: input.completed,
+        updated_ms: now_ms(),
+        title: input.title,
+        notes: input.notes,
+        bucket: input.bucket,
+        completed_at: input.completed_at,
+        due_at: input.due_at,
+        meta: input.meta,
+    };
+    let json = serde_json::to_string_pretty(&routine)
+        .map_err(|e| WriteRoutineError::Io(format!("serialize routine: {e}")))?;
+    std::fs::write(&path, json)
+        .map_err(|e| WriteRoutineError::Io(format!("write routine file: {e}")))?;
+    Ok(routine)
 }
 
 // ----- artifacts --------------------------------------------------------------
@@ -229,6 +320,17 @@ pub fn read_artifact(artifacts_dir: &Path, slug: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn temp_path(name: &str) -> PathBuf {
+        let unique = format!(
+            "companion-hub-test-{}-{}-{}",
+            name,
+            std::process::id(),
+            now_ms()
+        );
+        std::env::temp_dir().join(unique)
+    }
 
     #[test]
     fn rejects_traversal_slugs() {
@@ -237,6 +339,99 @@ mod tests {
         assert!(safe_slug("a/b").is_none());
         assert!(safe_slug("").is_none());
         assert_eq!(safe_slug("good-slug_1.2"), Some("good-slug_1.2"));
+    }
+
+    #[test]
+    fn writes_and_reads_routine_state() {
+        let dir = temp_path("routine-read-write");
+        let mut meta = serde_json::Map::new();
+        meta.insert("source".into(), serde_json::json!("telegram"));
+        let created = write_routine(
+            &dir,
+            "morning-briefing",
+            RoutineUpsert {
+                completed: false,
+                title: Some("Morning briefing".into()),
+                notes: Some("Missed before commute".into()),
+                bucket: Some("daily-rhythm".into()),
+                completed_at: None,
+                due_at: Some("2026-06-17".into()),
+                meta: Some(meta.clone()),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(created.id, "morning-briefing");
+        assert!(!created.completed);
+        assert!(created.updated_ms > 0);
+        assert_eq!(created.meta, Some(meta));
+
+        let loaded = read_routine(&dir, "morning-briefing").unwrap();
+        assert_eq!(loaded, created);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn lists_routines_newest_first() {
+        let dir = temp_path("routine-list");
+        let first = write_routine(
+            &dir,
+            "morning-briefing",
+            RoutineUpsert {
+                completed: true,
+                title: None,
+                notes: None,
+                bucket: None,
+                completed_at: Some("2026-06-17T08:40:00-04:00".into()),
+                due_at: None,
+                meta: None,
+            },
+        )
+        .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let second = write_routine(
+            &dir,
+            "eod-work",
+            RoutineUpsert {
+                completed: false,
+                title: None,
+                notes: None,
+                bucket: Some("shutdown".into()),
+                completed_at: None,
+                due_at: Some("2026-06-17".into()),
+                meta: None,
+            },
+        )
+        .unwrap();
+
+        let routines = list_routines(&dir);
+        assert_eq!(routines.len(), 2);
+        assert_eq!(routines[0].id, second.id);
+        assert_eq!(routines[1].id, first.id);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rejects_invalid_routine_ids() {
+        let dir = temp_path("routine-invalid");
+        let err = write_routine(
+            &dir,
+            "../../bad",
+            RoutineUpsert {
+                completed: false,
+                title: None,
+                notes: None,
+                bucket: None,
+                completed_at: None,
+                due_at: None,
+                meta: None,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, WriteRoutineError::InvalidId);
+        assert!(read_routine(&dir, "../../bad").is_none());
     }
 
     #[test]

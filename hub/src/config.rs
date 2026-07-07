@@ -12,6 +12,12 @@ pub struct Config {
     pub artifacts_dir: PathBuf,
     /// Directory holding per-project `*.json` live-state files.
     pub live_dir: PathBuf,
+    /// Directory holding routine-state `*.json` files.
+    pub routines_dir: PathBuf,
+    /// Directory holding agent registration cards (`agents/<id>.json`).
+    pub agents_dir: PathBuf,
+    /// Directory holding per-agent reply queues (`inbox/<agent>/*.json`).
+    pub inbox_dir: PathBuf,
     /// Shared bearer token required on every `/api/*` request (except health).
     pub token: String,
     /// Address to bind. Default `0.0.0.0` (all interfaces). Set
@@ -53,6 +59,9 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|| data_dir.join("artifacts"));
         let live_dir = data_dir.join("live");
+        let routines_dir = data_dir.join("routines");
+        let agents_dir = data_dir.join("agents");
+        let inbox_dir = data_dir.join("inbox");
 
         let port = std::env::var("COMPANION_HUB_PORT")
             .ok()
@@ -74,6 +83,9 @@ impl Config {
         Ok(Self {
             artifacts_dir,
             live_dir,
+            routines_dir,
+            agents_dir,
+            inbox_dir,
             token,
             bind,
             port,

@@ -429,6 +429,57 @@
 }
 .hub-cta:hover { transform: translateY(-1px); background: var(--clay-deep); box-shadow: var(--sh-card); }
 
+/* Two-door home — Sessions (coding) | Agent Hub (connected agents). Large tactile
+   panels on the board's paper; no white-card seam. */
+.hub-doors {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  width: min(700px, 88%);
+  margin-top: 4px;
+}
+.hub-door {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  text-align: left;
+  padding: 24px 22px 22px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--pane);
+  cursor: pointer;
+  font-family: var(--ui-font);
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease),
+    border-color 0.2s var(--ease), background 0.2s var(--ease);
+}
+.hub-door:hover {
+  transform: translateY(-3px);
+  background: var(--card);
+  border-color: var(--accent);
+  box-shadow: 0 26px 56px -34px oklch(0.3 0.04 55 / 0.55);
+}
+.hub-door:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.hub-door .door-ico { font-size: 24px; line-height: 1; margin-bottom: 2px; }
+.hub-door .door-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.hub-door .door-sub { font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
+.hub-door .door-count {
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.hub-door.agenthub:hover { border-color: #3f6fb0; }
+.hub-door.agenthub .door-count { color: #3f6fb0; }
+
 /* Right-click context menu on a session card (Open / Close out). Mounted in
    .stage so it inherits the warm tokens; position:fixed at the cursor. */
 .ctx-menu {
@@ -663,6 +714,28 @@
 .rail-menu-btn:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
 .board-unit[data-rail="menu"] .rail-menu-btn { background: var(--ink); color: var(--card); border-color: var(--ink); }
 
+/* Fail-loud warning row — artifacts that couldn't be attributed to a session
+   (identity never arrived within the grace window). Pinned above the roster;
+   amber, not clay, so it reads as a fault, not activity. */
+.rail-warn {
+  color: oklch(0.5 0.13 70);
+  background: oklch(0.86 0.08 80 / 0.28);
+  outline: 1px solid oklch(0.7 0.1 75 / 0.45);
+  outline-offset: -1px;
+}
+.rail-warn:hover { background: oklch(0.86 0.08 80 / 0.45); color: oklch(0.42 0.13 65); }
+.rail-warn::before { display: none; }
+.rail-warn-ico { font-size: 12px; line-height: 1; }
+.rail-warn-label { font-weight: 600; font-size: 12px; }
+.rail-warn-count {
+  margin-left: auto;
+  font: 700 10.5px/1 var(--mono);
+  background: oklch(0.62 0.14 65);
+  color: oklch(0.985 0.01 80);
+  border-radius: 8px;
+  padding: 3px 7px;
+}
+
 /* Section divider inside the rail (e.g. "Recent" below live projects). */
 .rail-section-head {
   font: 600 9.5px/1 var(--mono);
@@ -849,6 +922,21 @@
   gap: 2px;
   padding-bottom: 2px;
 }
+/* "Show N more" expander at the foot of a project's session dropdown — indented to
+   line up with the rows above it, quiet like .history-more so the sessions lead. */
+.unit-subtab-more {
+  margin-left: 14px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px 8px 6px 12px;
+  font: 500 10.5px/1 var(--mono);
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition: color 0.12s var(--ease);
+}
+.unit-subtab-more:hover { color: var(--accent); }
 .unit-subtab-group.opening { animation: rail-drop-in 220ms var(--ease, ease); }
 .unit-subtab-group.closing { animation: rail-drop-out 200ms var(--ease, ease) both; }
 @keyframes rail-drop-in { from { grid-template-rows: 0fr; } to { grid-template-rows: 1fr; } }
@@ -1000,11 +1088,10 @@
   width: 100%;
   height: clamp(140px, 32vh, 380px);
   border: 0;
-  border-radius: var(--radius-card);
-  box-shadow: var(--sh-art);
-  outline: 1px solid var(--line-2);
-  outline-offset: -1px;
-  background: var(--card);
+  /* Seamless: the digest paints the board shade with NO rim (outline/shadow/radius
+     removed) so an agent-authored artifact bleeds into the surface — "you can't tell
+     where it begins and ends." The artifact self-reports board-matching bg too. */
+  background: var(--board);
   /* Promote to its own GPU compositing layer so the mix-blend-mode paper
      texture doesn't force this iframe into the main-thread blend cycle —
      the same starvation that hits terminal input, fixed there by WebGL. */
@@ -1068,6 +1155,17 @@
 .board-unit.is-idle.blank-hero .unit-blank { height: 100%; flex: 1 1 auto; }
 .board-unit.is-idle #unit-terminals,
 .board-unit.is-idle #unit-terminal-pill { display: none; }
+
+/* Connected-agent (cloud/hub) units can never own a terminal — there's no PTY to
+   attach to. The artifact fills the whole pane (no half-height hero waiting on a
+   terminal that won't come), and the terminal slot, its restore pill, and the split
+   controls all drop. A quiet agent with no artifact yet grows its blank splash to
+   fill the pane the same way the idle home does. */
+.board-unit.no-terminal #unit-digest { flex: 1 1 auto; height: auto; min-height: 0; }
+.board-unit.no-terminal.blank-hero .unit-blank { height: 100%; flex: 1 1 auto; }
+.board-unit.no-terminal #unit-terminals,
+.board-unit.no-terminal #unit-terminal-pill,
+.board-unit.no-terminal .surface-controls { display: none; }
 /* The focus strip sizes the two surfaces. Focus terminal → the artifact tucks to
    its pill; focus artifact → the artifact grows to fill (terminal tucks to its bar). */
 .board-unit[data-focus="terminal"] #unit-digest { display: none; }
@@ -1486,7 +1584,7 @@
   position: absolute;
   inset: 0;
   z-index: 41;
-  background: var(--card);
+  background: var(--board);
   overflow: hidden;
   opacity: 0;
   transform: scale(0.985);
@@ -1506,7 +1604,7 @@
   height: 46px;
   z-index: 2;
 }
-.reader-frame { width: 100%; height: 100%; border: 0; display: block; background: var(--card); will-change: transform; isolation: isolate; }
+.reader-frame { width: 100%; height: 100%; border: 0; display: block; background: var(--board); will-change: transform; isolation: isolate; }
 .reader-close {
   position: absolute;
   top: 12px;

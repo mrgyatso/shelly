@@ -27,7 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
-import { rewritesNeedingReload, retainedIdentity, type Identity } from "./ingest-logic";
+import { rewritesNeedingReload } from "./ingest-logic";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { mountClawd } from "./clawd";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -65,6 +65,11 @@ interface ArtifactEntry {
   /** The writing session's source slug — lets a ✓/✎/✗ answer go to the EXACT
    *  owned session that produced this artifact. */
   source?: string | null;
+  /** The writing session's FULL session_id — present ONLY when `unit_key` was resolved
+   *  authoritatively from the identity registry (`sessions/<id>.json`). Its presence is
+   *  the Phase-2 "routed by the registry" marker: such an artifact routes by its
+   *  `unit_key` directly, ahead of the live-source re-derivation. */
+  session_id?: string | null;
 }
 
 interface LiveSource {
@@ -132,10 +137,72 @@ interface PaneHead {
 
 /** Unit key for artifacts that match no single live source. */
 const UNSOURCED = "__unsourced__";
-/** Unit key for remote/hub-pulled artifacts (no local live source). Stamped by
- *  `history.rs` (CLOUD_UNIT_KEY) so they route to one first-class "Cloud" unit via
- *  the existing `a.unit_key` arm of `unitForArtifact` — never the resolver itself. */
+/** Unit-key family for remote/hub-pulled artifacts (no local live source). Stamped
+ *  by `history.rs` (CLOUD_UNIT_KEY) so they route to first-class units via the
+ *  existing `a.unit_key` arm of `unitForArtifact` — never the resolver itself.
+ *  `__cloud__:<agent>` is one connected agent's own unit; bare `__cloud__` is the
+ *  home for unattributed remote artifacts. */
 const CLOUD = "__cloud__";
+/** Bare Cloud or any per-agent `__cloud__:<agent>` unit. */
+function isCloudUnit(key: string): boolean {
+  return key === CLOUD || key.startsWith(`${CLOUD}:`);
+}
+/** The connected agent id of a per-agent cloud unit, else null. */
+function cloudAgentOf(key: string): string | null {
+  return key.startsWith(`${CLOUD}:`) ? key.slice(CLOUD.length + 1) : null;
+}
+
+/** One connected agent from the hub's registry (`GET /api/agents` via the
+ *  `hub_agents` command): identity card + liveness. */
+interface HubAgent {
+  id: string;
+  name: string;
+  emoji?: string | null;
+  tagline?: string | null;
+  capabilities?: string[];
+  last_seen_ms: number;
+  working?: string | null;
+  artifact_count: number;
+}
+
+/** The hub's connected agents, by id. Refreshed by pollHubAgents(); empty when no
+ *  hub is paired. Registered agents surface on the roster even before their first
+ *  artifact — connecting is enough to exist. */
+let hubAgents = new Map<string, HubAgent>();
+/** Serialized signature of the last agents payload, so a poll only re-renders on change. */
+let hubAgentsSig = "";
+/** Agents refresh cadence — registry churn is slow; artifacts have their own loop. */
+const HUB_AGENTS_POLL_MS = 15_000;
+/** An agent seen within this window renders as active (green band) on the rail. */
+const AGENT_ACTIVE_WINDOW_MS = 15 * 60 * 1000;
+
+/** Pull the connected-agents registry; re-render the rail / home doors on change. */
+async function pollHubAgents(): Promise<void> {
+  let raw = "";
+  try {
+    raw = await invoke<string>("hub_agents");
+  } catch {
+    return; // hub unreachable — keep showing the last known registry
+  }
+  if (raw === hubAgentsSig) return;
+  hubAgentsSig = raw;
+  const next = new Map<string, HubAgent>();
+  if (raw) {
+    try {
+      const list = JSON.parse(raw) as HubAgent[];
+      for (const a of list) if (a && typeof a.id === "string") next.set(a.id, a);
+    } catch {
+      return; // malformed payload — ignore this tick
+    }
+  }
+  hubAgents = next;
+  const v = currentView();
+  if (v.level === "unit") renderUnitRail(lastRailActiveUnit);
+  // At L0, refresh the door counts — but only when the native fallback is what's
+  // showing (never un-hide it over an agent-authored home.html).
+  else if (document.getElementById("hub-fallback")?.hasAttribute("hidden") === false)
+    renderHubFallback();
+}
 /** Sentinel "unit" for the idle home — the rail (live + Recent) with NO project
  *  selected and a clawd splash, shown at startup when nothing substantive is live.
  *  Never a real source/artifact key, so it highlights no tab and owns no terminal. */
@@ -170,6 +237,25 @@ type BoardView =
 let viewStack: BoardView[] = [{ level: "hub" }];
 function currentView(): BoardView {
   return viewStack[viewStack.length - 1];
+}
+
+/** When you enter through a home "door", navigation scopes to one ROOM: "sessions"
+ *  = repo/coding units, "agenthub" = connected-agent (non-repo) units. null at the
+ *  L0 home / idle (no filter — the rail shows every unit). Cleared by goHub/goIdle. */
+let roomFilter: "sessions" | "agenthub" | null = null;
+
+/** Which room a unit belongs to, given an already-computed source grouping. Repo-backed
+ *  units are coding Sessions; everything else (non-repo / cloud / connected agents) is
+ *  the Agent Hub. A unit with no live source yet (a just-launched coding tab) defaults
+ *  to "sessions". */
+function unitKindWith(
+  byUnit: Map<string, LiveSource[]>,
+  unitKey: string,
+): "sessions" | "agenthub" {
+  if (isCloudUnit(unitKey)) return "agenthub"; // hub-pulled: always the agents' room
+  const sources = byUnit.get(unitKey) ?? [];
+  if (sources.length === 0) return "sessions";
+  return sources.some((s) => parseState(s.json).is_repo === true) ? "sessions" : "agenthub";
 }
 
 /** Last-rendered live JSON per source, so a poll only re-renders what changed. */
@@ -226,10 +312,73 @@ const knownPaths = new Set<string>();
 const unreadByUnit = new Map<string, Set<string>>();
 /** Signature of the last-seen artifact set (path:mtime) — a cheap poll no-op guard. */
 let lastArtifactSig = "";
+
+// ---- Phase 3: event-log tail ------------------------------------------------
+// The Board tails ~/.claude/companion/events.ndjson incrementally (poll_events, by byte
+// offset) so it learns an artifact's authoritative routing from the `artifact.routed`
+// event — ideally before list_artifacts reflects the index stamp, which is what removes
+// the fallback-then-reroute. ADDITIVE: when no event has arrived for a path, routing falls
+// straight through to the Phase 2 logic, so this can't regress Phase 2.
+// [UNVERIFIED HEADLESS] the "surfaces with NO reroute" payoff is a live-timing property —
+// it proves out only at the live merge-and-test session, not in static checks.
+/** Byte offset into events.ndjson already consumed; advanced each poll by poll_events. */
+let eventOffset = 0;
+/** path → authoritative routing learned from an `artifact.routed` event (event-sourced
+ *  identity, immune to the watcher-vs-stamp race). Consulted FIRST by unitForArtifact. */
+const routedByPath = new Map<string, { session_id: string; unit_key: string }>();
+interface EventBatch {
+  events: Array<Record<string, unknown>>;
+  next: number;
+}
+/** Pull newly-appended events and fold `artifact.routed` into `routedByPath`. Returns true
+ *  if any routing was added/changed (so the caller knows to re-fingerprint + re-ingest). */
+async function pollEvents(): Promise<boolean> {
+  let batch: EventBatch;
+  try {
+    batch = await invoke<EventBatch>("poll_events", { from: eventOffset });
+  } catch (e) {
+    console.error("poll_events failed", e);
+    return false;
+  }
+  eventOffset = batch.next;
+  let changed = false;
+  for (const ev of batch.events) {
+    if (ev.evt !== "artifact.routed") continue;
+    const path = typeof ev.path === "string" ? ev.path : "";
+    const unit_key = typeof ev.unit_key === "string" ? ev.unit_key : "";
+    const session_id = typeof ev.session_id === "string" ? ev.session_id : "";
+    if (!path || !unit_key) continue;
+    const prev = routedByPath.get(path);
+    if (!prev || prev.unit_key !== unit_key || prev.session_id !== session_id) {
+      routedByPath.set(path, { session_id, unit_key });
+      changed = true;
+    }
+  }
+  if (changed) trace("events.applied", { routed: routedByPath.size });
+  return changed;
+}
 /** Last-seen modified_ms per artifact path. Lets ingest detect an in-place rewrite
  *  (same path, newer mtime) of the artifact on screen and reload it — which the
  *  path-keyed routing roads never do. Seeded at init alongside knownPaths. */
 const lastMtimeByPath = new Map<string, number>();
+
+// ---- Phase 4: strict identity ------------------------------------------------
+/** Paths already on disk when this Board booted. Only these may use the legacy
+ *  project-slug display fallback: pre-registry history must keep rendering under
+ *  a sensible unit, and the model-stamped project is the only signal it carries.
+ *  Every artifact ARRIVING mid-run resolves strictly (event / registry / stamped
+ *  identity) or fails loud — the per-run strict epoch. */
+const legacyPaths = new Set<string>();
+/** Identity grace: a fresh artifact can precede its identity by the hook-stamp
+ *  latency (the watcher wakes the poll ~600ms before the stamp + event land).
+ *  Held unrouted this long; past it, it fails loud as unrouted. */
+const IDENTITY_GRACE_MS = 10_000;
+/** path → first-seen ms for artifacts HELD awaiting identity (kept out of
+ *  knownPaths so the next ingest re-sees them as new). */
+const pendingIdentity = new Map<string, number>();
+/** Artifacts that exhausted the grace window unresolved. Surfaced as the rail's
+ *  warning row + collected under the Unsourced unit — fail-loud, never shelved. */
+const unroutedPaths = new Set<string>();
 /** Units whose L2 history rebuild is deferred because the reader is open. */
 const pendingIngest = new Set<string>();
 
@@ -260,6 +409,14 @@ let expandedRecentProject: string | null = null;
  *  project tab toggles this and shows its session chooser INSTEAD of navigating; you
  *  pick a session from the dropdown, and only then does the Board move into it. */
 let expandedActiveProject: string | null = null;
+/** The unit whose session dropdown is expanded to show ALL sessions (past the
+ *  collapsed cap). null → the open drawer shows only the most-recent few with a
+ *  "Show N more" expander. Cleared whenever a drawer is (re)opened, so entering a
+ *  project always starts collapsed. */
+let sessionsAllShownFor: string | null = null;
+/** How many session rows a project's dropdown shows before "Show N more" reveals
+ *  the rest — mirrors HISTORY_COLLAPSED_ROWS for the artifact list. */
+const SESSION_DRAWER_COLLAPSED_ROWS = 7;
 /** User-assigned unit display names (unit_key → name), from unit-names.json. */
 const unitNames = new Map<string, string>();
 
@@ -428,6 +585,7 @@ export async function initBoard(): Promise<void> {
   for (const a of allArtifacts) {
     knownPaths.add(a.path);
     lastMtimeByPath.set(a.path, a.modified_ms);
+    legacyPaths.add(a.path); // pre-boot artifacts keep the legacy display fallback
   }
   lastArtifactSig = artifactSig(allArtifacts);
   window.setInterval(() => void pollLive(), POLL_MS);
@@ -461,6 +619,11 @@ export async function initBoard(): Promise<void> {
   // much calmer cadence than the live poll (each refresh scans transcript heads).
   void loadRecent();
   window.setInterval(() => void loadRecent(), POLL_MS * 20);
+
+  // Connected agents (hub registry) — identity cards + liveness for the Agent Hub
+  // room. No-op (empty registry) until a hub is paired.
+  void pollHubAgents();
+  window.setInterval(() => void pollHubAgents(), HUB_AGENTS_POLL_MS);
 
   // On relaunch, skip straight to the most recently active project when no home.html
   // has been authored — the rail shows all projects and is immediately useful without
@@ -765,6 +928,7 @@ function startupNavigate(): void {
  *  rail's right-click "New session" / resume affordances work straight from launch,
  *  but selects nothing — a stale stub can no longer claim the launch screen. */
 function goIdle(): void {
+  roomFilter = null;
   leaveUnit();
   viewStack = [{ level: "unit", unitKey: IDLE }];
   showLevel("unit");
@@ -800,10 +964,11 @@ function findMostRecentActiveUnit(): string | null {
 
 /** Enter L0. Resolves home.html (Rust) → full-bleed iframe, else native fallback. */
 async function goHub(): Promise<void> {
+  roomFilter = null;
   leaveUnit();
   viewStack = [{ level: "hub" }];
   showLevel("hub");
-  renderGreeting(freshCount(), allSources.length);
+  renderGreeting(freshCount(), allSources.filter((s) => isLiveSource(s, Date.now())).length);
   await renderHub();
   updateGlobalUnread();
 }
@@ -813,10 +978,25 @@ async function goHub(): Promise<void> {
  *  Falls back to findMostRecentActiveUnit() so the button works even when the poll
  *  hasn't yet propagated freshness (e.g. immediately after Board launch). */
 function goSessions(): void {
-  const order = computeRoster(Date.now()).order;
-  if (order.length > 0) { goUnit(order[0]); return; }
+  roomFilter = "sessions";
+  const { order, byUnit } = computeRoster(Date.now());
+  const first = order.find((u) => unitKindWith(byUnit, u) === "sessions");
+  if (first) { goUnit(first); return; }
   const u = findMostRecentActiveUnit();
-  if (u) goUnit(u);
+  if (u) { goUnit(u); return; }
+  void newHomeSession();
+}
+
+/** Enter the Agent Hub room: scope navigation to connected-agent (non-repo) units and
+ *  land on the freshest. With none yet, stay on the (beautiful) home — the door count
+ *  reads "none yet" and connected agents populate it as they surface artifacts. */
+function goAgentHub(): void {
+  roomFilter = "agenthub";
+  const { order, byUnit } = computeRoster(Date.now());
+  const first = order.find((u) => unitKindWith(byUnit, u) === "agenthub");
+  if (first) { goUnit(first); return; }
+  roomFilter = null;
+  renderHubFallback();
 }
 
 /** Enter L2 — one unit's home. Replace rather than stack if already at a unit.
@@ -870,14 +1050,18 @@ async function renderHub(): Promise<void> {
 function renderHubFallback(): void {
   const fallback = document.getElementById("hub-fallback");
   const hello = document.getElementById("hub-hello");
-  const cta = document.getElementById("hub-sessions-btn");
   const clawd = document.getElementById("hub-clawd");
   if (clawd) mountClawd(clawd); // a fresh pixel-art clawd pose greets each idle landing
   if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
-  if (cta) {
-    const hasWork = allSources.length > 0 || recentToShow().length > 0;
-    cta.textContent = hasWork ? "Open recent sessions →" : "Start a session →";
-  }
+  // Live counts behind each door, split by room kind.
+  const { order, byUnit } = computeRoster(Date.now());
+  let sessions = 0;
+  let agents = 0;
+  for (const u of order) unitKindWith(byUnit, u) === "agenthub" ? agents++ : sessions++;
+  const sc = document.getElementById("hub-door-sessions-count");
+  const ac = document.getElementById("hub-door-agenthub-count");
+  if (sc) sc.textContent = sessions > 0 ? `${sessions} live` : "none live";
+  if (ac) ac.textContent = agents > 0 ? `${agents} active` : "none yet";
   fallback?.removeAttribute("hidden");
 }
 
@@ -949,7 +1133,7 @@ function sourcesForUnit(unitKey: string): LiveSource[] {
  *  session (resumableSessionFor already withholds a still-running one, so we never
  *  double-spawn a claude onto one transcript). */
 function buildEmptyUnitState(unitKey: string): EmptyUnitState | null {
-  if (unitKey === IDLE || unitKey === CLOUD || unitKey === UNSOURCED) return null;
+  if (unitKey === IDLE || isCloudUnit(unitKey) || unitKey === UNSOURCED) return null;
   const dir = unitDirOf(unitKey);
   const resumeId = resumableSessionFor(unitKey);
   if (!dir && !resumeId) return null;
@@ -990,6 +1174,18 @@ function groupSourcesByUnit(): Map<string, LiveSource[]> {
  * Falls back to the unique non-repo instance's unit, else UNSOURCED.
  */
 function unitForArtifact(a: ArtifactEntry): string {
+  // PHASE 3 — event-sourced identity wins. If the Board has tailed an `artifact.routed`
+  // event for this path, that routing is authoritative and may have arrived BEFORE
+  // list_artifacts reflects the index stamp — so honoring it here is what lets the first
+  // ingest land on the right unit (no fallback-then-reroute). [UNVERIFIED HEADLESS.]
+  const routed = routedByPath.get(a.path);
+  if (routed && routed.unit_key) return baseProjectOf(routed.unit_key);
+  // PHASE 2 — registry first. A registry-resolved artifact carries a `session_id` and an
+  // authoritative `unit_key` (read from its frozen session record, immune to cwd/mtime
+  // races). The record decided this, so it WINS over the live-source re-derivation below —
+  // which is exactly what removes the surfacing-lag / drift class once every session
+  // registers. Falls through when there's no record yet (pre-registry artifacts).
+  if (a.session_id && a.unit_key) return baseProjectOf(a.unit_key);
   // Prefer the live SOURCE that wrote it: unitKeyOf derives the project unit, so an
   // artifact follows its session's unit even when the stored unit_key is stale
   // (plugin-cache drift split one repo across two keys). Falls through to the stored
@@ -1005,17 +1201,23 @@ function unitForArtifact(a: ArtifactEntry): string {
   // bare slugs (no `--`), so baseProjectOf is a no-op there. Immune to the project-slug
   // ambiguity below and a volatile cwd.
   if (a.unit_key) return baseProjectOf(a.unit_key);
-  // Fallback for un-indexed artifacts (hub/offsite/cron, or pre-hook): match by
-  // the model-stamped project. Display-only metadata, kept only as a fallback.
-  const key = projectSlug(a.project);
-  if (!key) return UNSOURCED;
-  // A repo unit's key === its project slug (the hook sets unit_key = slug). If any
-  // live source maps to that unit, the artifact belongs to it — even with several.
-  if (allSources.some((s) => unitKeyOf(s) === key)) return key;
-  // Otherwise route to the unique source of this project (a bare session → its
-  // own unit); ambiguous with no repo unit ⇒ Unsourced.
-  const matches = allSources.filter((s) => sourceProjectKey(s) === key);
-  return matches.length === 1 ? unitKeyOf(matches[0]) : UNSOURCED;
+  // LEGACY DISPLAY FALLBACK — pre-boot artifacts ONLY. Their history must keep
+  // rendering under a sensible unit, and the model-stamped project is the only
+  // signal they carry. An artifact arriving DURING this run never takes this
+  // road: it resolves strictly above or fails loud (hold → unrouted warning) —
+  // guessing routing from volatile display metadata is the killed bug class.
+  if (legacyPaths.has(a.path)) {
+    const key = projectSlug(a.project);
+    if (!key) return UNSOURCED;
+    // A repo unit's key === its project slug (the hook sets unit_key = slug). If any
+    // live source maps to that unit, the artifact belongs to it — even with several.
+    if (allSources.some((s) => unitKeyOf(s) === key)) return key;
+    // Otherwise route to the unique source of this project (a bare session → its
+    // own unit); ambiguous with no repo unit ⇒ Unsourced.
+    const matches = allSources.filter((s) => sourceProjectKey(s) === key);
+    return matches.length === 1 ? unitKeyOf(matches[0]) : UNSOURCED;
+  }
+  return UNSOURCED;
 }
 
 /** Bucket every artifact by its unit. Newest-first within each unit. */
@@ -1061,7 +1263,11 @@ function activeSessionSource(unitKey: string): string | null {
 /** A display name for a unit — the project name of its freshest source. */
 function unitName(unitKey: string, sources: LiveSource[]): string {
   if (unitKey === UNSOURCED) return "Unsourced";
-  if (unitKey === CLOUD) return "Cloud";
+  if (isCloudUnit(unitKey)) {
+    const agent = cloudAgentOf(unitKey);
+    if (!agent) return "Cloud";
+    return hubAgents.get(agent)?.name || agent;
+  }
   const custom = unitNames.get(unitKey);
   if (custom) return custom; // user-assigned name wins over the folder/slug label
   const fresh = sources[0];
@@ -1221,11 +1427,20 @@ function computeRoster(now: number): Roster {
     live.add(ou);
   }
   // Remote/hub artifacts have no live source, so the loops above never surface their
-  // unit. Add the single "Cloud" unit whenever any cloud artifact exists, so it renders
-  // as a tile (banded idle — no live sessions) and its unread dots stay visible.
-  if (artsByUnit.has(CLOUD)) {
-    if (!byUnit.has(CLOUD)) byUnit.set(CLOUD, []);
-    live.add(CLOUD);
+  // units. Add every cloud unit that has artifacts (per-agent `__cloud__:<agent>` and
+  // the bare "Cloud" home for unattributed remotes), so they render as tiles and their
+  // unread dots stay visible.
+  for (const unit of artsByUnit.keys()) {
+    if (!isCloudUnit(unit)) continue;
+    if (!byUnit.has(unit)) byUnit.set(unit, []);
+    live.add(unit);
+  }
+  // Registered agents surface even BEFORE their first artifact — connecting to the
+  // hub is enough to exist on the Board.
+  for (const id of hubAgents.keys()) {
+    const key = `${CLOUD}:${id}`;
+    if (!byUnit.has(key)) byUnit.set(key, []);
+    live.add(key);
   }
 
   const needs: string[] = [];
@@ -1237,7 +1452,18 @@ function computeRoster(now: number): Roster {
     const sources = byUnit.get(unit) ?? [];
     const liveN = sources.filter((s) => isLiveSource(s, now)).length;
     liveCount += liveN;
-    const band: Band = unitNeedsYou(sources, now) ? "needs" : liveN > 0 ? "run" : "idle";
+    // A connected agent seen recently (heartbeat via the hub registry) reads as
+    // running even though it owns no local live source.
+    const agentActive = (() => {
+      const a = cloudAgentOf(unit);
+      const seen = a ? (hubAgents.get(a)?.last_seen_ms ?? 0) : 0;
+      return seen > 0 && now - seen < AGENT_ACTIVE_WINDOW_MS;
+    })();
+    const band: Band = unitNeedsYou(sources, now)
+      ? "needs"
+      : liveN > 0 || agentActive
+        ? "run"
+        : "idle";
     bandOf.set(unit, band);
     (band === "needs" ? needs : band === "run" ? running : idle).push(unit);
   }
@@ -1251,12 +1477,16 @@ function computeRoster(now: number): Roster {
   const recencyOf = (unit: string): number => {
     const srcs = byUnit.get(unit) ?? [];
     if (srcs.length === 0) {
-      // The source-less Cloud unit orders by its freshest artifact, not `now` — else it
-      // would always pin to the top of the rail. Other source-less units (just-launched
-      // or owned, no live file yet) keep `now` so they still land on top.
-      if (unit === CLOUD) {
+      // Source-less cloud units order by their freshest signal (newest artifact,
+      // or the agent's registry last-seen), not `now` — else they'd always pin to
+      // the top of the rail. Other source-less units (just-launched or owned, no
+      // live file yet) keep `now` so they still land on top.
+      if (isCloudUnit(unit)) {
         const arts = artsByUnit.get(unit) ?? [];
-        return arts.length ? Math.max(...arts.map((a) => a.modified_ms)) : now;
+        const newest = arts.length ? Math.max(...arts.map((a) => a.modified_ms)) : 0;
+        const agent = cloudAgentOf(unit);
+        const seen = agent ? (hubAgents.get(agent)?.last_seen_ms ?? 0) : 0;
+        return Math.max(newest, seen) || now;
       }
       return now;
     }
@@ -1279,10 +1509,37 @@ function computeRoster(now: number): Roster {
  *  per live unit, in priority order. Clicking a tab swaps the pane to that session;
  *  the shell stays put. The frame itself is always present (it also hosts the ☰
  *  menu), so a single live session just shows its one tab. */
+/** The fail-loud warning row: N artifacts that couldn't be attributed to any session. */
+function buildUnroutedRow(count: number, isActive: boolean): HTMLElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "unit-tab rail-warn";
+  if (isActive) b.classList.add("active");
+  b.title =
+    "These artifacts couldn't be attributed to a session (no identity arrived). Collected under Unsourced.";
+  const ico = document.createElement("span");
+  ico.className = "rail-warn-ico";
+  ico.textContent = "⚠";
+  const label = document.createElement("span");
+  label.className = "unit-tab-label rail-warn-label";
+  label.textContent = count === 1 ? "Unrouted artifact" : "Unrouted artifacts";
+  const n = document.createElement("span");
+  n.className = "rail-warn-count";
+  n.textContent = String(count);
+  b.append(ico, label, n);
+  b.addEventListener("click", () => enterUnit(UNSOURCED));
+  return b;
+}
+
 function renderUnitRail(activeUnitKey: string | null): void {
   if (!railSessionsEl) return;
   const now = Date.now();
-  const { order, byUnit, bandOf } = computeRoster(now);
+  const { order: allOrder, byUnit, bandOf } = computeRoster(now);
+  // Scope the rail to the active ROOM when entered via a home door; the L0 home / idle
+  // (roomFilter null) shows every unit, exactly as before.
+  const order = roomFilter
+    ? allOrder.filter((u) => unitKindWith(byUnit, u) === roomFilter)
+    : allOrder;
   const prevActiveUnit = lastRailActiveUnit;
   const unitChanged = activeUnitKey !== prevActiveUnit;
   lastRailActiveUnit = activeUnitKey;
@@ -1296,6 +1553,13 @@ function renderUnitRail(activeUnitKey: string | null): void {
 
   const nodes: HTMLElement[] = [];
   let newGroup: HTMLElement | null = null;
+
+  // FAIL-LOUD SURFACE. Artifacts that exhausted the identity grace window route to
+  // the Unsourced bucket AND alarm here — a visible warning row pinned above the
+  // roster, never the silent void. Click-through lands on the Unsourced unit.
+  if (unroutedPaths.size) {
+    nodes.push(buildUnroutedRow(unroutedPaths.size, activeUnitKey === UNSOURCED));
+  }
 
   for (const unit of order) {
     const sources = byUnit.get(unit) ?? [];
@@ -1317,8 +1581,43 @@ function renderUnitRail(activeUnitKey: string | null): void {
       group.className = "unit-subtab-group";
       const inner = document.createElement("div");
       inner.className = "unit-subtab-group-inner";
-      for (const s of railSessionOrder(sources)) inner.appendChild(buildRailSessionRow(unit, s, shownTab));
-      for (const rs of siblings) inner.appendChild(buildRecentSessionRow(rs));
+      // A project's sessions: its live ones (most-recent first) then resumable
+      // siblings. Cap to the most-recent few with a "Show N more" expander so a
+      // long-lived project doesn't unspool dozens of rows; never hide the session
+      // you're currently viewing — pin it into the last slot if it sorts out.
+      type SessionEntry = { kind: "live"; s: LiveSource } | { kind: "sibling"; rs: RecentSession };
+      const entries: SessionEntry[] = [
+        ...railSessionOrder(sources).map((s): SessionEntry => ({ kind: "live", s })),
+        ...siblings.map((rs): SessionEntry => ({ kind: "sibling", rs })),
+      ];
+      const showAll = sessionsAllShownFor === unit;
+      let visible = entries;
+      let hidden = 0;
+      if (!showAll && entries.length > SESSION_DRAWER_COLLAPSED_ROWS) {
+        visible = entries.slice(0, SESSION_DRAWER_COLLAPSED_ROWS);
+        hidden = entries.length - visible.length;
+        const shownIdx = shownTab === null ? -1 : entries.findIndex(
+          (e) => e.kind === "live" && (parseState(e.s.json).companion_session ?? null) === shownTab,
+        );
+        if (shownIdx >= SESSION_DRAWER_COLLAPSED_ROWS) visible = [...visible.slice(0, -1), entries[shownIdx]];
+      }
+      for (const e of visible) {
+        inner.appendChild(
+          e.kind === "live" ? buildRailSessionRow(unit, e.s, shownTab) : buildRecentSessionRow(e.rs),
+        );
+      }
+      if (hidden > 0) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "unit-subtab-more";
+        more.textContent = `Show ${hidden} more`;
+        more.addEventListener("click", (e) => {
+          e.stopPropagation();
+          sessionsAllShownFor = unit;
+          renderUnitRail(currentUnitKey);
+        });
+        inner.appendChild(more);
+      }
       group.appendChild(inner);
       nodes.push(group);
       newGroup = group;
@@ -1330,7 +1629,9 @@ function renderUnitRail(activeUnitKey: string | null): void {
   // drop out of Recent immediately (not 5s later when correlation re-homes it), and
   // its siblings now live in the active unit's switcher above.
   const recentGroups = groupRecentByProject(new Set(order.map((u) => projectGroupKeyOf(u, byUnit.get(u)))));
-  if (recentGroups.size > 0) {
+  // Recent = closed LOCAL Claude Code sessions (coding transcripts). Those are never
+  // connected agents, so the Agent Hub room must not show them — it lists agents only.
+  if (roomFilter !== "agenthub" && recentGroups.size > 0) {
     const divider = document.createElement("div");
     divider.className = "rail-section-head";
     divider.textContent = "Recent";
@@ -1609,16 +1910,29 @@ function buildRailTab(
   const tab = document.createElement("button");
   tab.className = "unit-tab" + (active ? " active" : "");
   tab.dataset.unit = unitKey;
-  const work = sources[0]
-    ? parseState(sources[0].json).working || parseState(sources[0].json).next?.[0]?.title || "Idle"
-    : "Launched from the Board";
+  // Connected-agent units have no local live source; their status comes from the
+  // hub registry (working line, else tagline) and their mark is the agent's emoji.
+  const agentInfo = (() => {
+    const a = cloudAgentOf(unitKey);
+    return a ? hubAgents.get(a) : undefined;
+  })();
+  const work = agentInfo
+    ? agentInfo.working || agentInfo.tagline || "Connected agent"
+    : sources[0]
+      ? parseState(sources[0].json).working ||
+        parseState(sources[0].json).next?.[0]?.title ||
+        "Idle"
+      : isCloudUnit(unitKey)
+        ? "Remote artifacts"
+        : "Launched from the Board";
   tab.title = `${name} — ${work}`;
 
   const dot = document.createElement("span");
   dot.className = `unit-tab-dot ${band}`;
   const mark = document.createElement("span");
-  mark.className = "unit-tab-mark" + (head.isCloud ? " cloud" : "");
-  mark.textContent = head.mark;
+  const isCloudTab = isCloudUnit(unitKey) || head.isCloud;
+  mark.className = "unit-tab-mark" + (isCloudTab ? " cloud" : "");
+  mark.textContent = agentInfo?.emoji || (isCloudUnit(unitKey) ? "✦" : head.mark);
   const nameEl = document.createElement("span");
   nameEl.className = "unit-tab-name";
   nameEl.textContent = name;
@@ -1644,6 +1958,7 @@ function buildRailTab(
     chevron.addEventListener("click", (e) => {
       e.stopPropagation();
       expandedActiveProject = expanded ? null : unitKey;
+      sessionsAllShownFor = null; // a fresh open starts collapsed to the cap
       renderUnitRail(currentUnitKey);
     });
     tab.append(chevron);
@@ -1654,6 +1969,7 @@ function buildRailTab(
   if (active && hasDrawer) {
     tab.addEventListener("click", () => {
       expandedActiveProject = expanded ? null : unitKey;
+      sessionsAllShownFor = null; // a fresh open starts collapsed to the cap
       renderUnitRail(currentUnitKey);
     });
   } else if (!active) {
@@ -1876,6 +2192,10 @@ function enterUnit(unitKey: string): void {
   unitEl.dataset.rail = "sessions";
   unitEl.dataset.view = "session";
   unitEl.dataset.focus = "split";
+  // A connected (cloud/hub) agent can never own a Board terminal — there's no PTY to
+  // attach to. Give its artifact the whole pane and drop the split controls + terminal
+  // slot, so it never reads as a half-height view waiting on a terminal that won't come.
+  unitEl.classList.toggle("no-terminal", isCloudUnit(unitKey));
   renderUnitRail(unitKey);
   renderUnitTitle(unitKey);
   void renderHero(unitKey);
@@ -1955,6 +2275,7 @@ function leaveUnit(): void {
     unitEl.dataset.view = "session";
     unitEl.dataset.focus = "split";
     unitEl.classList.remove("no-hero");
+    unitEl.classList.remove("no-terminal");
     unitEl.classList.remove("blank-hero");
     unitEl.classList.remove("is-idle");
     unitEl.classList.remove("has-sessions");
@@ -2005,9 +2326,19 @@ async function renderHero(unitKey: string): Promise<void> {
   // own → blank hero, never a sibling session's last artifact (the reported bug).
   applyBar(null);
   const src = activeSessionSource(unitKey);
+  const unitArts = groupArtifactsByUnit().get(unitKey) ?? [];
+  // Source-bound units scope the hero to the ACTIVE session's own artifacts (a fresh
+  // session that owns none → blank, never a sibling's — the original per-session rule).
+  // But a unit with NO owned terminal AND no active source — the Cloud unit (remote/hub
+  // artifacts have no `source`), or a closed external session — has no session to scope
+  // to, so lead with its freshest artifact instead of blanking (else entering it looks
+  // empty). The `!ownedTabForUnit` guard keeps fresh-LAUNCHED units (which DO have an
+  // owned tab, just no live file yet) blank, so the sibling-artifact bug stays fixed.
   const arts = src
-    ? (groupArtifactsByUnit().get(unitKey) ?? []).filter((a) => a.source === src)
-    : [];
+    ? unitArts.filter((a) => a.source === src)
+    : ownedTabForUnit(unitKey)
+      ? []
+      : unitArts;
   const latest = arts.reduce<ArtifactEntry | null>(
     (best, a) => (best === null || a.modified_ms > best.modified_ms ? a : best),
     null,
@@ -2027,7 +2358,8 @@ async function renderHero(unitKey: string): Promise<void> {
     // leaves digestPath pointing at the prior session's artifact, so the new session's
     // first artifact would mis-route to the "new artifact" pill instead of auto-lighting,
     // and maybeLightBlankHero (which guards on digestPath === null) would never fire.
-    showBlankHero(BLANK_FIRST, blankWorkingLine(src));
+    // A connected agent has no terminal below, so its blank copy can't promise one.
+    showBlankHero(isCloudUnit(unitKey) ? BLANK_AGENT : BLANK_FIRST, blankWorkingLine(src));
   }
 }
 
@@ -2237,7 +2569,8 @@ function wireUnitChrome(): void {
   railEl?.addEventListener("click", (e) => {
     const nav = (e.target as HTMLElement).closest<HTMLElement>(".rail-nav");
     const dest = nav?.dataset.dest;
-    if (dest === "sessions") setRailMode("sessions");
+    if (dest === "hub") void goHub();
+    else if (dest === "sessions") setRailMode("sessions");
     else if (dest === "history") setUnitView("history");
     else if (dest === "settings") setUnitView("settings");
   });
@@ -2360,6 +2693,12 @@ const BLANK_FIRST = {
 const BLANK_IDLE = {
   title: "Nothing running right now.",
   sub: "Pick a project from the rail, or start a new session to begin.",
+};
+/** A connected agent that's registered but hasn't published an artifact yet — no
+ *  terminal below to promise, so the copy just says it's connected and waiting. */
+const BLANK_AGENT = {
+  title: "Connected — nothing to show yet.",
+  sub: "This agent's first artifact will land right here.",
 };
 
 /** A session with no artifact yet: seat a fresh pixel-art clawd in the hero slot (the
@@ -3009,9 +3348,19 @@ async function pollLive(): Promise<void> {
     console.error("list_artifacts failed", e);
     return;
   }
+  // PHASE 3: tail the event log BEFORE fingerprinting, so a freshly-appended
+  // `artifact.routed` is folded into routedByPath and the sig below already reflects it —
+  // the arriving event then re-triggers ingest and routes the artifact by event identity.
+  // Additive: with no new events this is a cheap no-op and the sig is the Phase 2 sig.
+  await pollEvents();
   const sig = artifactSig(artifacts);
   const sigChanged = sig !== lastArtifactSig;
-  if (sigChanged) {
+  // A HELD artifact (awaiting identity) whose grace ran out won't move the sig —
+  // nothing about it changed — so force the ingest that fails it loud.
+  const graceExpired = [...pendingIdentity.values()].some(
+    (t) => Date.now() - t >= IDENTITY_GRACE_MS,
+  );
+  if (sigChanged || graceExpired) {
     lastArtifactSig = sig;
     ingestArtifacts(artifacts);
   }
@@ -3042,7 +3391,16 @@ function artifactSig(arts: ArtifactEntry[]): string {
   // never moves once the index arrives, and the index-less first routing is frozen
   // forever (the surfacing lag). Folding identity in means the late stamp changes
   // the signature and re-triggers ingestArtifacts, which then re-routes the artifact.
-  return arts.map((a) => `${a.path}:${a.modified_ms}:${a.source ?? ""}:${a.unit_key ?? ""}`).join("|");
+  // PHASE 3: also fold in the event-sourced unit (routedByPath), so an arriving
+  // `artifact.routed` event moves the signature and re-triggers ingest even when
+  // list_artifacts hasn't yet reflected the index stamp — the path by which event identity
+  // reaches routing. Empty for any path without an event, so Phase 2 sigs are unchanged.
+  return arts
+    .map((a) => {
+      const r = routedByPath.get(a.path);
+      return `${a.path}:${a.modified_ms}:${a.source ?? ""}:${a.unit_key ?? ""}:${r?.unit_key ?? ""}`;
+    })
+    .join("|");
 }
 
 /** The routing identity of an artifact (source + unit_key) — what decides its unit.
@@ -3077,42 +3435,56 @@ function totalUnread(): number {
  * unless that unit is on screen), prune deleted ones, then refresh the level.
  */
 function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
-  // FIX #2 — rewrite identity-flap. history.rs blanks source/unit_key for the one
-  // poll between an in-place rewrite and the hook's re-stamp (the `index-stale-drop`
-  // trace). Patch a still-live prior identity back BEFORE any routing so the rewrite
-  // doesn't flap through __unsourced__ and flash a phantom cross-unit dot. A reused
-  // filename from a DEAD session is not retained (retainedIdentity), so it still falls
-  // through to the staleness guard + slug routing as intended.
-  const priorIdentity = new Map<string, Identity>(
-    allArtifacts
-      .filter((a) => a.source)
-      .map((a) => [a.path, { source: a.source, unit_key: a.unit_key }]),
-  );
-  const isLiveSource = (source: string): boolean => allSources.some((s) => s.source === source);
-  const artifacts = rawArtifacts.map((a) => {
-    const keep = retainedIdentity(
-      { source: a.source, unit_key: a.unit_key },
-      priorIdentity.get(a.path),
-      isLiveSource,
-    );
-    return keep.source === a.source ? a : { ...a, source: keep.source, unit_key: keep.unit_key };
-  });
+  // (The old FIX #2 rewrite identity-flap patch is gone with its cause: history.rs
+  // no longer blanks a stamped identity on mtime — the staleness guard was removed
+  // at the Phase 4 cutover, so identity can't flap across an in-place rewrite.)
+  const artifacts = rawArtifacts;
+  const unroutedBefore = unroutedPaths.size;
 
   const present = new Set(artifacts.map((a) => a.path));
   // Snapshot the prior routing identity per path BEFORE overwriting allArtifacts.
   const prevRouteKey = new Map(allArtifacts.map((a) => [a.path, artifactRouteKey(a)]));
   const newOnes = artifacts.filter((a) => !knownPaths.has(a.path));
-  // THE SURFACING-LAG FIX. A KNOWN artifact whose routing identity changed since the
-  // last ingest = the hook stamped the index AFTER the Board first routed it (the
-  // race). Its first ingest used an empty/slug-fallback identity and the sig-guard
-  // would otherwise freeze it there forever. Re-route it against the now-correct
-  // identity instead of leaving it stranded where it first (wrongly) landed.
+
+  // HOLD-UNTIL-IDENTITY. A brand-new artifact whose identity hasn't landed yet
+  // (the watcher wakes this poll ~600ms before the hook stamps the index and
+  // appends the event) is HELD — kept out of knownPaths so a later ingest re-sees
+  // it as new — instead of being routed by a guess it would then need re-routing
+  // out of. Identity arriving (event/index) changes the artifact signature and
+  // re-runs ingest, which routes it correctly EXACTLY ONCE; grace expiry (checked
+  // by pollLive) forces the ingest that fails it loud below.
+  const held = new Set<string>();
+  const nowMs = Date.now();
+  for (const a of newOnes) {
+    if (legacyPaths.has(a.path) || unitForArtifact(a) !== UNSOURCED) {
+      pendingIdentity.delete(a.path);
+      continue;
+    }
+    const firstSeen = pendingIdentity.get(a.path) ?? nowMs;
+    pendingIdentity.set(a.path, firstSeen);
+    if (nowMs - firstSeen < IDENTITY_GRACE_MS) {
+      held.add(a.path);
+      trace("ingest.hold", { corr: a.path, waitedMs: nowMs - firstSeen });
+    } else {
+      // Grace exhausted with no identity: route it (to Unsourced) LOUDLY below.
+      pendingIdentity.delete(a.path);
+      unroutedPaths.add(a.path);
+      trace("ingest.grace-expired", { corr: a.path });
+    }
+  }
+  const routableNew = newOnes.filter((a) => !held.has(a.path));
+
+  // OWNERSHIP TRANSFER. A KNOWN artifact whose routing identity changed since the
+  // last ingest = a different session re-stamped it (a rewrite took ownership), or
+  // a late-arriving stamp resolved a previously-unrouted one. Re-file it under the
+  // now-authoritative identity. This is rare by construction post-cutover — the
+  // hold above means normal arrivals are never routed before their identity.
   const reRouted = artifacts.filter(
     (a) => knownPaths.has(a.path) && prevRouteKey.has(a.path) && prevRouteKey.get(a.path) !== artifactRouteKey(a),
   );
   const reRoutedSet = new Set(reRouted.map((a) => a.path));
   allArtifacts = artifacts;
-  for (const a of artifacts) knownPaths.add(a.path);
+  for (const a of artifacts) if (!held.has(a.path)) knownPaths.add(a.path);
 
   // FIX #1 — content refresh. An artifact rewritten IN PLACE while it is the one on
   // the hero (or open in the reader) is invisible to the four routing roads below
@@ -3133,6 +3505,12 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   }
 
   for (const p of [...knownPaths]) if (!present.has(p)) knownPaths.delete(p);
+  // Phase 3: drop event-sourced routing for artifacts that no longer exist, so routedByPath
+  // can't grow without bound as artifacts are archived/deleted.
+  for (const p of [...routedByPath.keys()]) if (!present.has(p)) routedByPath.delete(p);
+  // Deleted artifacts can't stay held or alarmed.
+  for (const p of [...pendingIdentity.keys()]) if (!present.has(p)) pendingIdentity.delete(p);
+  for (const p of [...unroutedPaths]) if (!present.has(p)) unroutedPaths.delete(p);
   for (const [unit, set] of unreadByUnit) {
     for (const p of [...set]) if (!present.has(p)) set.delete(p);
     if (set.size === 0) unreadByUnit.delete(unit);
@@ -3152,13 +3530,20 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
 
   const view = currentView();
   const viewingUnit = view.level === "unit" ? view.unitKey : null;
-  const toRoute = newOnes.concat(reRouted);
-  if (toRoute.length) {
-    trace("ingest.run", { newCount: newOnes.length, reRouted: reRouted.length, viewingUnit: viewingUnit ?? "" });
+  const toRoute = routableNew.concat(reRouted);
+  if (toRoute.length || held.size) {
+    trace("ingest.run", {
+      newCount: routableNew.length,
+      reRouted: reRouted.length,
+      held: held.size,
+      viewingUnit: viewingUnit ?? "",
+    });
   }
   let heroNewCandidate: ArtifactEntry | null = null;
   for (const a of toRoute) {
     const unit = unitForArtifact(a);
+    // A late identity rescuing a previously-unrouted artifact clears its alarm.
+    if (unit !== UNSOURCED) unroutedPaths.delete(a.path);
     // THE KEYSTONE. Two of these four roads silently `addUnread` (a dot on a unit
     // card the user reads as "nothing showed up"). Control flow is UNCHANGED from the
     // original; `branch` just names the road taken. NEW artifacts and RE-ROUTED ones
@@ -3185,13 +3570,14 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
     }
     // FAIL-LOUD GUARD. An artifact that routes with NO source or to UNSOURCED could
     // not be firmly identified — the silent-disappearance path. Don't let it pass
-    // quietly: warn (+ trace) so an unroutable artifact is visible, not shelved. The
-    // re-route above usually rescues this once the index lands; this catches the ones
-    // that never resolve (the concrete sliver of the identity redesign we adopt now).
+    // quietly: an UNSOURCED landing alarms the rail's warning row (unroutedPaths),
+    // plus warn + trace. Post-cutover the only ways here are grace expiry (identity
+    // never arrived) or a legacy pre-boot artifact with unresolvable project meta.
     // A Cloud (remote/hub) artifact legitimately has no local source but IS firmly
-    // routed to its Cloud unit — so it's not "unidentified". Only flag a missing source
-    // for non-Cloud units, plus anything that still lands in UNSOURCED.
-    if (unit === UNSOURCED || (!a.source && unit !== CLOUD)) {
+    // routed to its cloud unit (bare or per-agent) — so it's not "unidentified". Only
+    // flag a missing source for non-cloud units, plus anything landing in UNSOURCED.
+    if (unit === UNSOURCED || (!a.source && !isCloudUnit(unit))) {
+      if (unit === UNSOURCED) unroutedPaths.add(a.path);
       console.warn("[companion] artifact routed without a firm identity", {
         path: a.path, unit, source: a.source ?? "", from: reRoutedSet.has(a.path) ? "reroute" : "new", branch,
       });
@@ -3201,12 +3587,17 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
       // The inputs that DECIDED the branch — so a silent unread is self-explaining:
       // was the routing identity (unit) wrong, the active session mis-resolved, did
       // the unit come from the index or the slug fallback?
-      const unitFrom =
-        a.source && allSources.some((s) => s.source === a.source)
-          ? "source"
-          : a.unit_key
-            ? "index"
-            : "slug-fallback";
+      const unitFrom = routedByPath.has(a.path)
+        ? "event"
+        : a.session_id
+          ? "registry"
+          : a.source && allSources.some((s) => s.source === a.source)
+            ? "source"
+            : a.unit_key
+              ? "index"
+              : legacyPaths.has(a.path)
+                ? "legacy-slug"
+                : "none";
       trace("ingest.branch", {
         corr: a.path,
         unit,
@@ -3226,6 +3617,9 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   maybeAutoAdvance(toRoute);
 
   if (view.level === "unit") ingestIntoUnit(view.unitKey);
+  // The warning row lives in the rail — repaint it when the alarm set changed
+  // (the rail otherwise only repaints on live-state changes, not artifact ones).
+  if (unroutedPaths.size !== unroutedBefore) renderUnitRail(lastRailActiveUnit);
   updateGlobalUnread();
 }
 
@@ -3357,10 +3751,8 @@ function wireControls(): void {
     e.stopPropagation();
     toggleNotifMenu(e.currentTarget as HTMLElement);
   });
-  document.getElementById("hub-sessions-btn")?.addEventListener("click", () => {
-    const u = findMostRecentActiveUnit();
-    if (u) goUnit(u); else void newHomeSession();
-  });
+  document.getElementById("hub-door-sessions")?.addEventListener("click", () => goSessions());
+  document.getElementById("hub-door-agenthub")?.addEventListener("click", () => goAgentHub());
   scrimEl?.addEventListener("click", closeFocus);
 }
 
@@ -3430,17 +3822,30 @@ function wireNavigate(): void {
         const sv = currentView();
         if (sv.level === "unit") awaitingAdvanceSource = activeSessionSource(sv.unitKey);
       }
-      // SECURITY — submit→PTY trust gate (PLANNED; see codebase-audit.html). `d.text`
-      // arrived via an artifact's postMessage, which carries NO proof of a real user
-      // click: a hostile or auto-loaded artifact's JS can fire `kind:"submit"`
-      // unprompted, and the branch below pastes it + presses Enter into the live
-      // `claude` session. Today every rendered artifact is FIRST-PARTY (authored by
-      // the user's own agent), so auto-send reflects the user's intent and the
-      // ESC-strip in submitIntoPty() blocks the breakout. BEFORE we start rendering
-      // artifacts we did NOT author (hub-pulled / shared), GATE this: route a
-      // non-first-party artifact's submit through the clipboard fallback (handleSubmit)
-      // or a Board-side confirm instead of auto-Enter — detect via the artifact's
-      // source/path (hub artifacts land under the `remote/` dir).
+      // REMOTE artifact → the reply belongs to its OWNING AGENT, not a local
+      // terminal: send it back through the hub inbox (delivered/queued VPS-side).
+      // This is also the submit→PTY trust gate the audit called for on hub-pulled
+      // artifacts — a remote artifact's postMessage can never auto-Enter into a
+      // local PTY; it only ever travels to the agent that authored it.
+      {
+        const openPath = focusPath ?? digestPath;
+        const openArt = openPath ? allArtifacts.find((a) => a.path === openPath) : undefined;
+        const agentId = openArt ? cloudAgentOf(unitForArtifact(openArt)) : null;
+        if (openArt && agentId) {
+          void submitToAgent(agentId, d.text, openArt);
+          return;
+        }
+        // Bare-Cloud (unattributed) remote artifacts have no agent to address —
+        // fall through to the clipboard path below (no owned tab exists for them).
+      }
+      // SECURITY — submit→PTY trust gate (local artifacts; see codebase-audit.html).
+      // `d.text` arrived via an artifact's postMessage, which carries NO proof of a
+      // real user click: a hostile or auto-loaded artifact's JS can fire
+      // `kind:"submit"` unprompted, and the branch below pastes it + presses Enter
+      // into the live `claude` session. Today every locally-rendered artifact is
+      // FIRST-PARTY (authored by the user's own agent), so auto-send reflects the
+      // user's intent and the ESC-strip in submitIntoPty() blocks the breakout.
+      // Hub-pulled artifacts are now gated above (inbox, never PTY).
       const v = currentView();
       const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
       const tabId = (focusPath ? ownedTabForArtifact(focusPath) : null) ?? unitTab;
@@ -3461,6 +3866,34 @@ function wireNavigate(): void {
       // the in-page splash via restore-submitted; auto-advance clears it on reload.
     }
   });
+}
+
+/** Send a compiled ✓/✎/✗ reply from a remote artifact back to its owning agent
+ *  through the hub inbox (`hub_post_inbox` → `POST /api/inbox/<agent>`). The
+ *  artifact's own in-page "On it" splash is the confirmation UX; delivery outcome
+ *  (woken / queued / wake_failed) lands in the console. On hub failure the reply
+ *  falls back to the clipboard so it's never lost. */
+async function submitToAgent(agent: string, text: string, art: ArtifactEntry): Promise<void> {
+  const payload = {
+    kind: "artifact-reply",
+    artifact: art.path.split("/").pop() ?? art.path,
+    title: art.title,
+    text,
+    sent_ms: Date.now(),
+  };
+  try {
+    const resp = await invoke<string>("hub_post_inbox", { agent, payload });
+    let delivery = "";
+    try {
+      delivery = (JSON.parse(resp) as { delivery?: string }).delivery ?? "";
+    } catch {
+      /* non-JSON response; outcome unknown but the POST succeeded */
+    }
+    console.info(`[companion] reply → agent '${agent}' (${delivery || "sent"})`);
+  } catch (e) {
+    console.error("hub inbox submit failed; clipboard fallback", e);
+    void handleSubmit(text, art.path);
+  }
 }
 
 /** Remove any "On it" splash the Board installed and its listener. The Board no

@@ -1,12 +1,14 @@
 mod artifact;
 mod artifact_watch;
 mod dials;
+mod events;
 mod history;
 mod hub;
 mod layout;
 mod live;
 mod macos_panel;
 mod pty;
+mod registry;
 mod sessions;
 mod trace;
 mod tray;
@@ -139,6 +141,7 @@ pub fn run() {
             history::resolve_home,
             trace::trace_event,
             trace::trace_enabled,
+            events::poll_events,
             live::read_live,
             live::read_all_live,
             live::dismiss_session,
@@ -155,7 +158,9 @@ pub fn run() {
             hub::read_live_from_hub,
             hub::hub_config_get,
             hub::hub_config_set,
-            hub::hub_test_connection
+            hub::hub_test_connection,
+            hub::hub_agents,
+            hub::hub_post_inbox
         ])
         .setup(|app| {
             // Regular activation policy: the Board is a normal app now — it gets a

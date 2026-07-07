@@ -3,7 +3,7 @@
 #
 # Usage:  companion-livepath.sh <cwd> <session_id>
 # Output: one TAB-separated line:
-#   <live_path>\t<project>\t<shortid>\t<is_repo>\t<unit_key>
+#   <live_path>\t<project>\t<shortid>\t<is_repo>\t<unit_key>\t<root>
 #
 # Instance identity: the live file is keyed by <slug>--<shortid>, where
 #   slug    = the git-root (or cwd) basename, sanitized to a filename-safe token
@@ -65,6 +65,7 @@ if [ -n "$existing" ]; then
   [ -n "$project" ] || project="$slug"
   [ -n "$is_repo" ] || is_repo=0
   [ -n "$unit_key" ] || unit_key="$slug"
+  root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); [ -n "$root" ] || root="$cwd"
   trace livepath reuse "shortid=$shortid" "cwd=$cwd" "existing=$existing" "slug=$slug" "is_repo=$is_repo" "unit_key=$unit_key"
 else
   gitroot=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
@@ -81,4 +82,4 @@ else
   trace livepath fresh "shortid=$shortid" "cwd=$cwd" "gitroot=$gitroot" "root=$root" "slug=$slug" "is_repo=$is_repo" "unit_key=$unit_key"
 fi
 
-printf '%s\t%s\t%s\t%s\t%s\n' "$live_path" "$project" "$shortid" "$is_repo" "$unit_key"
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$live_path" "$project" "$shortid" "$is_repo" "$unit_key" "$root"

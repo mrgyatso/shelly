@@ -47,9 +47,12 @@ fi
 # Seam to the app: if the overlay CLI isn't installed, do nothing.
 command -v companion >/dev/null 2>&1 || { trace hook no-companion-cli "corr=${_t_fp:-}"; exit 0; }
 
-# Pull tool_input.file_path + session_id out of the payload (Write/Edit both carry them).
+# Pull tool_input.file_path + session_id + cwd out of the payload (Write/Edit carry them).
+# cwd feeds companion-index's LATE REGISTRATION only (a session with no registry record);
+# a registered session's identity comes from its frozen record, never from cwd.
 fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log((JSON.parse(d).tool_input||{}).file_path||"")}catch(e){}})' 2>/dev/null)
 SID=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})' 2>/dev/null)
+CWD=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||"")}catch(e){}})' 2>/dev/null)
 
 # Push-pop disabled: artifacts no longer spawn their own OS window. The Board is
 # the single surface — it ingests artifacts as tiles inside their session via the
@@ -67,7 +70,7 @@ case "$fp" in
     ;;
   "$ARTIFACTS_DIR"/*.html)
     trace hook index-spawn "corr=$fp"
-    SID="$SID" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
+    SID="$SID" CWD="$CWD" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
     trace hook index-done "corr=$fp"
     ;;
 esac
