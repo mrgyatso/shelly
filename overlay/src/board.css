@@ -922,6 +922,21 @@
   gap: 2px;
   padding-bottom: 2px;
 }
+/* "Show N more" expander at the foot of a project's session dropdown — indented to
+   line up with the rows above it, quiet like .history-more so the sessions lead. */
+.unit-subtab-more {
+  margin-left: 14px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px 8px 6px 12px;
+  font: 500 10.5px/1 var(--mono);
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition: color 0.12s var(--ease);
+}
+.unit-subtab-more:hover { color: var(--accent); }
 .unit-subtab-group.opening { animation: rail-drop-in 220ms var(--ease, ease); }
 .unit-subtab-group.closing { animation: rail-drop-out 200ms var(--ease, ease) both; }
 @keyframes rail-drop-in { from { grid-template-rows: 0fr; } to { grid-template-rows: 1fr; } }
