@@ -30,6 +30,7 @@ import { loadArtifactInto } from "./artifact-view";
 import { rewritesNeedingReload } from "./ingest-logic";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { mountClawd } from "./clawd";
+import { initCodePeek, closeCodePeek } from "./code-peek";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   initOwnedTerminals,
@@ -537,6 +538,11 @@ export async function initBoard(): Promise<void> {
   // driven headlessly). Harmless in production; remove before the public release.
   (window as unknown as { __spawnOwned?: (cwd: string) => Promise<string> }).__spawnOwned =
     spawnOwnedSession;
+
+  // Code-peek side panel: view this session's changed files in Monaco. All its
+  // logic lives in code-peek.ts; here we just hand it a way to resolve the current
+  // unit's working dir. Monaco itself is lazy-loaded on first open.
+  initCodePeek(() => (currentUnitKey ? unitDirOf(currentUnitKey) : null));
 
   wireControls();
   wireKeyboard();
@@ -2192,6 +2198,7 @@ function enterUnit(unitKey: string): void {
   unitEl.dataset.rail = "sessions";
   unitEl.dataset.view = "session";
   unitEl.dataset.focus = "split";
+  closeCodePeek(); // never carry the code viewer across a unit switch
   // A connected (cloud/hub) agent can never own a Board terminal — there's no PTY to
   // attach to. Give its artifact the whole pane and drop the split controls + terminal
   // slot, so it never reads as a half-height view waiting on a terminal that won't come.

@@ -257,6 +257,35 @@ const RECENT_SESSIONS = [
   { session_id: "r5", cwd: "/Users/gyatso", project: "/Users/gyatso", last_active_ms: now - 6 * 24 * 60 * MIN, size_bytes: 28_000, title: "Sort downloads folder" },
 ];
 
+/* --- code-peek fixtures -------------------------------------------------- */
+
+/** The "files in play" the code panel lists (list_changed_files). */
+const CHANGED_FILES = [
+  { path: "overlay/src/board.ts", status: "M" },
+  { path: "overlay/src/code-peek.ts", status: "??" },
+  { path: "overlay/src-tauri/src/code_peek.rs", status: "A" },
+  { path: "overlay/src/board.css", status: "M" },
+  { path: "overlay/index.html", status: "M" },
+  { path: "README.md", status: "M" },
+];
+
+/** Believable source text for whatever file the panel opens (read_source_file). */
+function sourceFor(relPath: string): string {
+  if (relPath.endsWith(".rs")) {
+    return `// ${relPath}\nuse std::path::Path;\n\n/// Mocked source for the harness.\npub fn demo(root: &Path) -> bool {\n    root.exists()\n}\n`;
+  }
+  if (relPath.endsWith(".ts")) {
+    return `// ${relPath}\nexport function demo(name: string): void {\n  // Mocked source for the harness.\n  console.log(\`hello, \${name}\`);\n}\n`;
+  }
+  if (relPath.endsWith(".css")) {
+    return `/* ${relPath} */\n.demo {\n  color: var(--accent);\n  padding: 12px;\n}\n`;
+  }
+  if (relPath.endsWith(".html")) {
+    return `<!-- ${relPath} -->\n<div class="demo">\n  <h1>Mocked source for the harness</h1>\n</div>\n`;
+  }
+  return `# ${relPath}\n\nMocked source content for the harness.\n\n- one\n- two\n`;
+}
+
 export function installTauriMock(): void {
   const listeners = new Map<number, (msg: unknown) => void>();
   let cbId = 1;
@@ -359,6 +388,9 @@ export function installTauriMock(): void {
         [["Top bar", "restructure"], ["Rail", "rows + bottom anchor"], ["States", "focus/active pass"], ["Frame", "hairline, not 2px black"]],
       );
     },
+    // Code-peek fixtures — the changed-file list + read-back for the panel.
+    list_changed_files: () => CHANGED_FILES,
+    read_source_file: (args) => sourceFor(String(args.relPath ?? "")),
     // PTY + session plumbing — accept and do nothing (the harness terminal stays dark).
     spawn_pty: () => null,
     write_pty: () => null,
