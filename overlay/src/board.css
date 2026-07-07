@@ -1140,6 +1140,17 @@
 .board-unit.is-idle.blank-hero .unit-blank { height: 100%; flex: 1 1 auto; }
 .board-unit.is-idle #unit-terminals,
 .board-unit.is-idle #unit-terminal-pill { display: none; }
+
+/* Connected-agent (cloud/hub) units can never own a terminal — there's no PTY to
+   attach to. The artifact fills the whole pane (no half-height hero waiting on a
+   terminal that won't come), and the terminal slot, its restore pill, and the split
+   controls all drop. A quiet agent with no artifact yet grows its blank splash to
+   fill the pane the same way the idle home does. */
+.board-unit.no-terminal #unit-digest { flex: 1 1 auto; height: auto; min-height: 0; }
+.board-unit.no-terminal.blank-hero .unit-blank { height: 100%; flex: 1 1 auto; }
+.board-unit.no-terminal #unit-terminals,
+.board-unit.no-terminal #unit-terminal-pill,
+.board-unit.no-terminal .surface-controls { display: none; }
 /* The focus strip sizes the two surfaces. Focus terminal → the artifact tucks to
    its pill; focus artifact → the artifact grows to fill (terminal tucks to its bar). */
 .board-unit[data-focus="terminal"] #unit-digest { display: none; }

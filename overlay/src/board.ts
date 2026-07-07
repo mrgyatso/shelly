@@ -1586,7 +1586,9 @@ function renderUnitRail(activeUnitKey: string | null): void {
   // drop out of Recent immediately (not 5s later when correlation re-homes it), and
   // its siblings now live in the active unit's switcher above.
   const recentGroups = groupRecentByProject(new Set(order.map((u) => projectGroupKeyOf(u, byUnit.get(u)))));
-  if (recentGroups.size > 0) {
+  // Recent = closed LOCAL Claude Code sessions (coding transcripts). Those are never
+  // connected agents, so the Agent Hub room must not show them — it lists agents only.
+  if (roomFilter !== "agenthub" && recentGroups.size > 0) {
     const divider = document.createElement("div");
     divider.className = "rail-section-head";
     divider.textContent = "Recent";
@@ -2145,6 +2147,10 @@ function enterUnit(unitKey: string): void {
   unitEl.dataset.rail = "sessions";
   unitEl.dataset.view = "session";
   unitEl.dataset.focus = "split";
+  // A connected (cloud/hub) agent can never own a Board terminal — there's no PTY to
+  // attach to. Give its artifact the whole pane and drop the split controls + terminal
+  // slot, so it never reads as a half-height view waiting on a terminal that won't come.
+  unitEl.classList.toggle("no-terminal", isCloudUnit(unitKey));
   renderUnitRail(unitKey);
   renderUnitTitle(unitKey);
   void renderHero(unitKey);
@@ -2224,6 +2230,7 @@ function leaveUnit(): void {
     unitEl.dataset.view = "session";
     unitEl.dataset.focus = "split";
     unitEl.classList.remove("no-hero");
+    unitEl.classList.remove("no-terminal");
     unitEl.classList.remove("blank-hero");
     unitEl.classList.remove("is-idle");
     unitEl.classList.remove("has-sessions");
@@ -2306,7 +2313,8 @@ async function renderHero(unitKey: string): Promise<void> {
     // leaves digestPath pointing at the prior session's artifact, so the new session's
     // first artifact would mis-route to the "new artifact" pill instead of auto-lighting,
     // and maybeLightBlankHero (which guards on digestPath === null) would never fire.
-    showBlankHero(BLANK_FIRST, blankWorkingLine(src));
+    // A connected agent has no terminal below, so its blank copy can't promise one.
+    showBlankHero(isCloudUnit(unitKey) ? BLANK_AGENT : BLANK_FIRST, blankWorkingLine(src));
   }
 }
 
@@ -2640,6 +2648,12 @@ const BLANK_FIRST = {
 const BLANK_IDLE = {
   title: "Nothing running right now.",
   sub: "Pick a project from the rail, or start a new session to begin.",
+};
+/** A connected agent that's registered but hasn't published an artifact yet — no
+ *  terminal below to promise, so the copy just says it's connected and waiting. */
+const BLANK_AGENT = {
+  title: "Connected — nothing to show yet.",
+  sub: "This agent's first artifact will land right here.",
 };
 
 /** A session with no artifact yet: seat a fresh pixel-art clawd in the hero slot (the
