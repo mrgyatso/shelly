@@ -144,15 +144,22 @@
                History/Settings takes over the main pane. board.ts fills
                #unit-rail-sessions and drives data-rail / data-view. -->
           <nav id="unit-rail" class="unit-rail" aria-label="Sessions and menu">
-            <button id="unit-menu-toggle" class="rail-menu-btn" title="Menu" aria-label="Menu">☰</button>
+            <button id="unit-menu-toggle" class="rail-menu-btn" title="Menu" aria-label="Menu">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+            </button>
             <!-- Sessions face: one tab per live session (browser style). -->
             <div id="unit-rail-sessions" class="rail-sessions"></div>
             <!-- Menu face: navigate the main pane between Sessions / History / Settings. -->
             <div class="rail-menu" role="menu" aria-label="Navigate">
-              <button class="rail-nav" role="menuitem" data-dest="hub"><span class="rail-nav-ico">⌂</span><span>Home</span></button>
-              <button class="rail-nav" role="menuitem" data-dest="sessions"><span class="rail-nav-ico">▤</span><span>Sessions</span></button>
-              <button class="rail-nav" role="menuitem" data-dest="history"><span class="rail-nav-ico">◷</span><span>History</span></button>
-              <button class="rail-nav" role="menuitem" data-dest="settings"><span class="rail-nav-ico">⚙</span><span>Settings</span></button>
+              <button class="rail-nav" role="menuitem" data-dest="hub"><span class="rail-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6 8 6"/><path d="M6 10v9h12v-9"/></svg></span><span>Home</span></button>
+              <button class="rail-nav" role="menuitem" data-dest="sessions"><span class="rail-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M7 10l2.5 2.5L7 15M12.5 15H17"/></svg></span><span>Sessions</span></button>
+              <button class="rail-nav" role="menuitem" data-dest="history"><span class="rail-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span><span>History</span></button>
+              <button class="rail-nav" role="menuitem" data-dest="settings"><span class="rail-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h9M17.5 8H20M4 16h2.5M11 16h9"/><circle cx="15" cy="8" r="2.2"/><circle cx="8.5" cy="16" r="2.2"/></svg></span><span>Settings</span></button>
+            </div>
+            <!-- Bottom-anchored foot: Settings always one click away (same
+                 delegated .rail-nav wiring as the menu face). -->
+            <div class="rail-foot">
+              <button class="rail-nav" data-dest="settings"><span class="rail-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h9M17.5 8H20M4 16h2.5M11 16h9"/><circle cx="15" cy="8" r="2.2"/><circle cx="8.5" cy="16" r="2.2"/></svg></span><span>Settings</span></button>
             </div>
           </nav>
           <!-- The pane that swaps per session AND per nav destination. -->
@@ -161,15 +168,18 @@
             <div class="unit-toolbar">
               <!-- Single sidebar toggle: « hides the rail, » brings it back. Lives in the
                    toolbar so it stays put in both states (the rail itself folds away). -->
-              <button id="unit-rail-toggle" class="rail-toggle-btn" title="Hide sidebar" aria-label="Hide sidebar">«</button>
+              <button id="unit-rail-toggle" class="rail-toggle-btn" title="Hide sidebar" aria-label="Hide sidebar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg>
+              </button>
               <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
               <!-- Surface controls: resize only (⬒/⊟/⬓). Lives in the toolbar so it
                    never overlaps the artifact/terminal pills below. -->
               <div id="unit-surface-controls" class="surface-controls">
+                <!-- One icon system: the divider's height says which pane leads. -->
                 <div class="sc-resize" role="group" aria-label="Resize surfaces">
-                  <button class="surface-focus" type="button" data-focus="artifact" title="Focus the artifact" aria-label="Focus the artifact">⬒</button>
-                  <button class="surface-focus" type="button" data-focus="split" title="Split evenly" aria-label="Split evenly">⊟</button>
-                  <button class="surface-focus" type="button" data-focus="terminal" title="Focus the terminal" aria-label="Focus the terminal">⬓</button>
+                  <button class="surface-focus" type="button" data-focus="artifact" title="Focus the artifact" aria-label="Focus the artifact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2.5"/><path d="M4 15h16"/></svg></button>
+                  <button class="surface-focus" type="button" data-focus="split" title="Split evenly" aria-label="Split evenly"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2.5"/><path d="M4 12h16"/></svg></button>
+                  <button class="surface-focus" type="button" data-focus="terminal" title="Focus the terminal" aria-label="Focus the terminal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2.5"/><path d="M4 9h16"/></svg></button>
                 </div>
                 <!-- Code peek: slide out the read-only file viewer for this session. -->
                 <button id="unit-code-toggle" class="surface-code-btn" type="button" title="Peek at the code" aria-label="Peek at the code">&lt;/&gt;</button>

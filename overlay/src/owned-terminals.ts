@@ -47,6 +47,9 @@ export interface EmptyUnitState {
   onStart: (() => void) | null;
   /** Resume the unit's most recent (safely idle) session; null ⇒ omit the button. */
   onResume: (() => void) | null;
+  /** True when the unit has a LIVE session the Board doesn't own (an external
+   *  terminal) — the heading then says so instead of the false "No active session". */
+  externalLive?: boolean;
 }
 
 export interface OwnedTerminalsOpts {
@@ -183,6 +186,12 @@ export function showOwnedTerminals(unitKey: string): void {
     const empty = emptyStateFor ? emptyStateFor(unitKey) : null;
     if (empty) {
       renderEmptyState(empty);
+      // The CTA lives inside .term-body — un-hide it explicitly. applyCollapsed
+      // hides the body whenever no terminal is shown (hideBody = collapsed ||
+      // !shown), which is precisely the empty-state case, so without this the
+      // CTA rendered into a display:none body: a bare black slab.
+      if (bodyEl) bodyEl.hidden = false;
+      panelEl.classList.remove("collapsed");
       panelEl.hidden = false;
     } else {
       hideEmptyState();
@@ -224,10 +233,12 @@ function renderEmptyState(state: EmptyUnitState): void {
 
   const title = document.createElement("div");
   title.className = "term-empty-title";
-  title.textContent = "No active session";
+  title.textContent = state.externalLive ? "Running in another terminal" : "No active session";
   const sub = document.createElement("div");
   sub.className = "term-empty-sub";
-  sub.textContent = state.name;
+  sub.textContent = state.externalLive
+    ? `${state.name} — this session lives outside the Board`
+    : state.name;
   card.append(title, sub);
 
   const actions = document.createElement("div");
