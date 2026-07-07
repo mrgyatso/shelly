@@ -28,6 +28,11 @@ case "$cwd" in
   */.claude-mem/*|*/.claude-mem) exit 0 ;;
 esac
 
+# Ignore the artifact observer's OWN model calls (worker.cjs spawns `claude -p`
+# with this marker via cleanClaudeEnv). Without it, an opted-in external-terminals
+# machine would register a spurious session + live stub for every observer render.
+[ -n "$COMPANION_OBSERVER_SELF" ] && exit 0
+
 # External-terminal handling (default OFF). A terminal the Board did not spawn
 # carries no COMPANION_SESSION; by default the Companion ignores such external
 # terminals entirely — no roster entry, no sidecars, no artifact observer — so a
@@ -49,6 +54,22 @@ project=$(printf '%s' "$line" | cut -f2)
 shortid=$(printf '%s' "$line" | cut -f3)
 is_repo=$(printf '%s' "$line" | cut -f4)
 unit_key=$(printf '%s' "$line" | cut -f5)
+root=$(printf '%s' "$line" | cut -f6)
+digest_path="${HOME}/.claude/companion/artifacts/home.${unit_key}.html"
+
+# 1a. REGISTER FIRST — write the authoritative identity record BEFORE the
+#     best-effort sidecars below. register() is the source of truth of the
+#     identity redesign, so it must be the most-protected step, not the last.
+#     The record is keyed by the FULL session_id and IMMUTABLE (resume/compact
+#     find it and leave it untouched), so one early write per session is enough.
+#     Running it ahead of the sidecar node-spawns means a short-lived session
+#     (which can be torn down mid-hook) still gets registered. Sits below the
+#     .claude-mem bail so the observer's own worker never self-registers.
+if [ -n "$session_id" ]; then
+  node "$CMP_HOOK_DIR/companion-identity.cjs" register \
+    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${COMPANION_SESSION:-}" 2>/dev/null
+  trace session register "sid=$shortid" "unit_key=$unit_key" "root=$root"
+fi
 trace session start "sid=$shortid" "cwd=$cwd" "live=$live_path" "project=$project" "is_repo=$is_repo" "unit_key=$unit_key" "owned=${COMPANION_SESSION:-}"
 
 live_dir=$(dirname "$live_path")
@@ -97,8 +118,7 @@ fi
 #     stem in session-dirs.json — a Board-owned, agent-proof sidecar the Board reads
 #     (via live.rs) to resolve a unit's absolute directory, so "+ session in this
 #     project" knows where to spawn. Written for EVERY session (external too).
-root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
-[ -n "$root" ] || root="$cwd"
+#     (root is derived once in companion-livepath.sh and parsed above — no second git call.)
 STEM="$stem" ROOT="$root" DIRS="${HOME}/.claude/companion/session-dirs.json" node -e '
   const fs=require("fs");
   const p=process.env.DIRS;
@@ -127,6 +147,9 @@ if [ -n "$COMPANION_SESSION" ] && [ -n "$session_id" ]; then
   ' 2>/dev/null
   trace session record-id "stem=$stem"
 fi
+
+# (REGISTER now runs FIRST — see section 1a above. It was moved out of this
+#  last-step slot so a short-lived session can't be torn down before it registers.)
 
 # Recover observer jobs left behind by a crash. This is only a local queue check;
 # no process starts when the queue is empty and no model ever runs inline.

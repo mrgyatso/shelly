@@ -1,0 +1,23 @@
+# Identity-registry hook tests
+
+Integration tests for the register-once identity machinery (`companion-session`,
+`companion-index.cjs`, `companion-identity.cjs`). They run the **real shell + node hook
+path** under a sandboxed throwaway `HOME`, so they touch no live `~/.claude/companion`
+state. This is the deterministic slice of the §8 regression matrix the live
+merge-and-test session leans on (see `DECISIONS-identity-registry.md`).
+
+Run all:
+
+```sh
+node plugin/hooks/__tests__/run.cjs
+```
+
+- `registry-phase1.cjs` — dual-write registry: record written once, idempotent on resume,
+  two-in-one-repo no fork, owned_tab, empty-id skip, parity with the old sidecars (30 checks).
+- `registry-phase2.cjs` — index entry carries `session_id`; artifact → session_id → record →
+  unit_key round-trips with parity; no-SID write stays un-indexed (8 checks).
+- `registry-phase3.cjs` — a successful index stamp appends an `artifact.routed` event with
+  path + session_id + the registry unit; no-SID write appends none (6 checks).
+
+The Rust side (`registry.rs`, `events.rs`, `live.rs`) has its own committed
+`#[cfg(test)]` units — run with `cd overlay/src-tauri && cargo test --lib`.

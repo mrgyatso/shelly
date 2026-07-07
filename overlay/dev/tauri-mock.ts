@@ -88,6 +88,128 @@ const LATE_ARTIFACT: MockArtifact = {
   source: "claude-code-companion--e6e63a83",
 };
 
+// ---- Identity-race scenarios (Phase 4 verification) --------------------------
+// RACE_RESOLVED replays THE surfacing-lag race deterministically: the artifact
+// file appears (watcher wake) ~3s in with NO identity — the hook hasn't stamped
+// yet. The Board must HOLD it (never route by its project slug). ~6s in, the
+// stamp + artifact.routed event land; the Board must route it to unit 1 exactly
+// once. RACE_ORPHAN never gets identity: after the 10s grace it must alarm the
+// rail's warning row and land under Unsourced — loudly, not silently.
+const RACE_APPEAR_MS = 3_000;
+const RACE_STAMP_MS = 6_000;
+const ORPHAN_APPEAR_MS = 4_000;
+const RACE_SID = "e6e63a83-f93c-4af9-8016-9145042f958c";
+const RACE_RESOLVED_BARE: MockArtifact = {
+  path: "/mock/artifacts/race-resolved.html",
+  title: "Race — identity arrives late",
+  subject: "identity",
+  summary: "Appeared before its index stamp; must be held, then routed once.",
+  modified_ms: now + RACE_APPEAR_MS,
+  size_bytes: 7_000,
+  // project deliberately set: the OLD slug-fallback would have routed this
+  // immediately (and the race made that a coin flip). Strict routing must ignore it.
+  project: "~/claude-code-companion",
+  unit_key: null,
+  source: null,
+};
+const RACE_RESOLVED_STAMPED: MockArtifact = {
+  ...RACE_RESOLVED_BARE,
+  unit_key: "claude-code-companion",
+  source: "claude-code-companion--e6e63a83",
+  ...({ session_id: RACE_SID } as object),
+};
+const RACE_ORPHAN: MockArtifact = {
+  path: "/mock/artifacts/race-orphan.html",
+  title: "Race — identity never arrives",
+  subject: "identity",
+  summary: "No stamp ever lands; must alarm the warning row, never route silently.",
+  modified_ms: now + ORPHAN_APPEAR_MS,
+  size_bytes: 7_000,
+  project: "~/job-applier-bot",
+  unit_key: null,
+  source: null,
+};
+
+// ---- Agent-hub scenario (connected agents + remote artifacts) ----------------
+// HERMES is a fully-connected agent: registered on the hub, fresh heartbeat, one
+// pulled artifact (a morning brief with review controls whose Submit must round-
+// trip to hub_post_inbox — recorded on window.__inboxPosts, never a local PTY).
+// SCOUT is registered but has produced nothing yet — it must still appear in the
+// Agent Hub room (connecting is enough to exist).
+const HUB_AGENTS = [
+  {
+    id: "hermes",
+    name: "Hermes",
+    emoji: "🪽",
+    tagline: "Morning briefs, task triage, EOD filing",
+    capabilities: ["morning-brief", "todoist", "calendar"],
+    wake: null,
+    registered_ms: now - 14 * 24 * 60 * MIN,
+    updated_ms: now - 3 * MIN,
+    last_seen_ms: now - 3 * MIN,
+    working: "Compiling your morning brief",
+    artifact_count: 1,
+  },
+  {
+    id: "scout",
+    name: "Scout",
+    emoji: "🔭",
+    tagline: "PR triage on new pull requests",
+    capabilities: ["pr-triage"],
+    wake: null,
+    registered_ms: now - 2 * 24 * 60 * MIN,
+    updated_ms: now - 5 * 60 * MIN,
+    last_seen_ms: now - 5 * 60 * MIN,
+    working: null,
+    artifact_count: 0,
+  },
+];
+
+const REMOTE_ARTIFACT: MockArtifact = {
+  path: "/mock/remote/hermes-morning-brief.html",
+  title: "Morning brief — Mon Jul 6",
+  subject: "Morning briefing",
+  summary: "Today's plan: one build move first, two fixed commitments, three must-dos.",
+  modified_ms: now - 12 * MIN,
+  size_bytes: 18_400,
+  project: "hermes",
+  unit_key: "__cloud__:hermes",
+  source: null,
+};
+
+/** The remote morning brief: review controls whose Submit fires the standard
+ *  companion-artifact postMessage — the Board must route it to hub_post_inbox. */
+function morningBriefHtml(): string {
+  return `<!doctype html><html><head><meta charset="utf-8">
+  <style>html{scrollbar-width:none}html::-webkit-scrollbar{display:none}</style></head>
+  <body style="margin:0;background:oklch(0.945 0.014 60);font-family:-apple-system,system-ui,sans-serif;">
+    <div style="max-width:680px;margin:0 auto;padding:30px 34px;">
+      <div style="font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;
+                  text-transform:uppercase;color:#b0552f;">🪽 Hermes — morning brief</div>
+      <div style="font-family:Georgia,serif;font-size:27px;color:#211d1a;margin-top:8px;">
+        One build move first, then the calls.</div>
+      <p style="font-size:13.5px;line-height:1.6;color:#55504a;margin:12px 0 20px;">
+        No calendar commitments before 1pm. Highest-priority Todoist task is a meta-smell;
+        the most believable first move is shipping the agent-hub reply path.</p>
+      <div style="background:oklch(0.988 0.007 60);border:1px solid rgba(40,30,20,.09);
+                  border-radius:12px;padding:14px 18px;font-size:13px;color:#3a352f;">
+        <label style="display:block;padding:6px 0;"><input type="checkbox" checked> Ship agent-hub reply path</label>
+        <label style="display:block;padding:6px 0;"><input type="checkbox"> Clear Todoist meta-smells</label>
+        <label style="display:block;padding:6px 0;"><input type="checkbox"> 4pm — MSP demo call prep</label>
+      </div>
+      <button id="brief-submit" style="margin-top:18px;padding:10px 22px;border-radius:10px;
+              border:1px solid rgba(40,30,20,.15);background:#cc785c;color:#fff;
+              font-size:13px;cursor:pointer;">Submit to Hermes</button>
+    </div>
+    <script>
+      document.getElementById("brief-submit").addEventListener("click", () => {
+        parent.postMessage({ source: "companion-artifact", kind: "submit",
+          text: "\\u2713 do: ship agent-hub reply path\\n\\u2717 skip: meta-smells until EOD\\n\\u270e note: prep the demo call at 3:30" }, "*");
+      });
+    </script>
+  </body></html>`;
+}
+
 const LIVE_SOURCES = [
   {
     source: "claude-code-companion--e6e63a83",
@@ -135,35 +257,103 @@ const RECENT_SESSIONS = [
   { session_id: "r5", cwd: "/Users/gyatso", project: "/Users/gyatso", last_active_ms: now - 6 * 24 * 60 * MIN, size_bytes: 28_000, title: "Sort downloads folder" },
 ];
 
+/* --- code-peek fixtures -------------------------------------------------- */
+
+/** The "files in play" the code panel lists (list_changed_files). */
+const CHANGED_FILES = [
+  { path: "overlay/src/board.ts", status: "M" },
+  { path: "overlay/src/code-peek.ts", status: "??" },
+  { path: "overlay/src-tauri/src/code_peek.rs", status: "A" },
+  { path: "overlay/src/board.css", status: "M" },
+  { path: "overlay/index.html", status: "M" },
+  { path: "README.md", status: "M" },
+];
+
+/** Believable source text for whatever file the panel opens (read_source_file). */
+function sourceFor(relPath: string): string {
+  if (relPath.endsWith(".rs")) {
+    return `// ${relPath}\nuse std::path::Path;\n\n/// Mocked source for the harness.\npub fn demo(root: &Path) -> bool {\n    root.exists()\n}\n`;
+  }
+  if (relPath.endsWith(".ts")) {
+    return `// ${relPath}\nexport function demo(name: string): void {\n  // Mocked source for the harness.\n  console.log(\`hello, \${name}\`);\n}\n`;
+  }
+  if (relPath.endsWith(".css")) {
+    return `/* ${relPath} */\n.demo {\n  color: var(--accent);\n  padding: 12px;\n}\n`;
+  }
+  if (relPath.endsWith(".html")) {
+    return `<!-- ${relPath} -->\n<div class="demo">\n  <h1>Mocked source for the harness</h1>\n</div>\n`;
+  }
+  return `# ${relPath}\n\nMocked source content for the harness.\n\n- one\n- two\n`;
+}
+
 export function installTauriMock(): void {
   const listeners = new Map<number, (msg: unknown) => void>();
   let cbId = 1;
   // ?idle=1 boots the Board with nothing live and nothing recent-fresh — the
   // idle-home hero (clawd splash, no project selected) for screenshots.
   const idle = new URLSearchParams(location.search).has("idle");
-  let artifacts = idle ? [] : [...ARTIFACTS];
-  if (!idle) {
-    setTimeout(() => {
-      artifacts = [...artifacts, LATE_ARTIFACT];
-    }, 6_000);
-  }
   const liveSources = idle ? [] : LIVE_SOURCES;
+  // The artifact set is a pure function of elapsed time, so a reload replays the
+  // whole scenario and the timeline is deterministic for scripted verification.
+  const artifactsNow = (): MockArtifact[] => {
+    if (idle) return [];
+    const t = Date.now() - now;
+    const out = [...ARTIFACTS, REMOTE_ARTIFACT];
+    if (t >= 6_000) out.push(LATE_ARTIFACT);
+    if (t >= RACE_APPEAR_MS) out.push(t >= RACE_STAMP_MS ? RACE_RESOLVED_STAMPED : RACE_RESOLVED_BARE);
+    if (t >= ORPHAN_APPEAR_MS) out.push(RACE_ORPHAN);
+    return out;
+  };
 
   const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     trace_enabled: () => false,
     sweep_artifacts: () => 0,
     read_all_live: () => liveSources,
-    list_artifacts: () => artifacts,
+    list_artifacts: () => artifactsNow(),
+    // Event tail (Phase 3/4): the artifact.routed event for RACE_RESOLVED becomes
+    // readable at the stamp time — the identity the Board must wait for. `from` is
+    // treated as an index (the real command uses byte offsets; same contract shape).
+    poll_events: (args) => {
+      const from = Number((args as { from?: number }).from ?? 0);
+      const ready =
+        idle || Date.now() - now < RACE_STAMP_MS
+          ? []
+          : [
+              {
+                evt: "artifact.routed",
+                path: RACE_RESOLVED_BARE.path,
+                session_id: RACE_SID,
+                unit_key: "claude-code-companion",
+                ts_ms: now + RACE_STAMP_MS,
+              },
+            ];
+      return { events: ready.slice(from), next: Math.max(from, ready.length) };
+    },
     read_unit_names: () => ({}),
     resolve_home_dir: () => "/Users/gyatso",
-    resolve_home: () => "/Users/gyatso",
+    // No agent-authored home.html in the harness → the native L0 fallback (clawd +
+    // the two home doors) renders, which is exactly what the door tests need.
+    resolve_home: () => null,
     list_recent_sessions: () => RECENT_SESSIONS,
     read_dials: () => ({ mode: "manual", quality: "pretty" }),
+    // Agent hub: the connected-agents registry + the reply inbox. Posts are
+    // recorded on window.__inboxPosts so scripted verification can assert the
+    // remote submit round-trip (and that it never touched a PTY).
+    hub_agents: () => (idle ? "" : JSON.stringify(HUB_AGENTS)),
+    hub_post_inbox: (args) => {
+      const w = window as unknown as { __inboxPosts?: unknown[] };
+      (w.__inboxPosts ??= []).push(args);
+      return JSON.stringify({
+        envelope: { id: `${Date.now()}-mock`, agent: args.agent, payload: args.payload },
+        delivery: "woken",
+      });
+    },
     set_dial: () => null,
     take_board_nav_target: () => null,
     artifact_in_scope: () => false,
     read_artifact: (args) => {
       const p = String(args.path ?? "");
+      if (p.includes("hermes-morning-brief")) return morningBriefHtml();
       if (p.includes("observer-latency")) {
         return artifactHtml(
           "Observer latency — measured, output-bound",
@@ -178,12 +368,29 @@ export function installTauriMock(): void {
           [["Arrived", "just now"], ["Route", "helpdesk-companion"]],
         );
       }
+      if (p.includes("race-resolved")) {
+        return artifactHtml(
+          "Race — identity arrives late",
+          "This artifact appeared before its index stamp. The Board held it, then routed it exactly once when the artifact.routed event landed.",
+          [["Held", "~3s"], ["Routed by", "event"], ["Reroutes", "0"]],
+        );
+      }
+      if (p.includes("race-orphan")) {
+        return artifactHtml(
+          "Race — identity never arrives",
+          "No stamp ever landed for this artifact. It alarmed the rail's warning row and was collected under Unsourced.",
+          [["Grace", "10s"], ["Outcome", "fail-loud"], ["Bucket", "Unsourced"]],
+        );
+      }
       return artifactHtml(
         "Board UI audit — gaps vs the desktop bar",
         "Top bar unbalanced, rail lacks structure, focus states missing. Polish pass proposed on feat/board-ui-polish.",
         [["Top bar", "restructure"], ["Rail", "rows + bottom anchor"], ["States", "focus/active pass"], ["Frame", "hairline, not 2px black"]],
       );
     },
+    // Code-peek fixtures — the changed-file list + read-back for the panel.
+    list_changed_files: () => CHANGED_FILES,
+    read_source_file: (args) => sourceFor(String(args.relPath ?? "")),
     // PTY + session plumbing — accept and do nothing (the harness terminal stays dark).
     spawn_pty: () => null,
     write_pty: () => null,

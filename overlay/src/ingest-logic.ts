@@ -52,32 +52,6 @@ export function rewritesNeedingReload(
   return out;
 }
 
-/** Routing identity of an artifact — which session/unit owns it. */
-export interface Identity {
-  source: string | null | undefined;
-  unit_key: string | null | undefined;
-}
-
-/**
- * THE REWRITE IDENTITY-FLAP FIX. history.rs distrusts the index for the one poll
- * between an in-place rewrite and the hook's re-stamp (the `index-stale-drop`
- * trace), blanking `source`/`unit_key` to None. If the Board trusts that empty
- * identity it re-files the artifact under `__unsourced__` and flashes a phantom
- * cross-unit unread dot, then re-routes it back a poll later — churn the user sees.
- *
- * Retain the last firm identity the Board held for this path — but ONLY when it
- * names a still-live session. A genuinely reused filename inherited from a DEAD
- * session is exactly what the staleness guard exists to catch, so for that case
- * we let the drop stand (return the current, blank identity) and fall through to
- * slug routing as before.
- */
-export function retainedIdentity(
-  current: Identity,
-  prior: Identity | undefined,
-  isLiveSource: (source: string) => boolean,
-): Identity {
-  if (current.source) return current; // identity present this poll → nothing to retain
-  if (!prior || !prior.source) return current; // no firm prior → can't retain
-  if (!isLiveSource(prior.source)) return current; // dead session → let the guard stand
-  return { source: prior.source, unit_key: prior.unit_key };
-}
+// (retainedIdentity — the rewrite identity-flap patch — was removed at the Phase 4
+// cutover along with its cause: history.rs no longer distrusts a stamped identity
+// on mtime, so a stamped source/unit_key can't flap to None across a rewrite.)

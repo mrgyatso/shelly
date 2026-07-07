@@ -44,6 +44,25 @@
       reviveOnSwap(document.getElementById("unit-digest"));
       reviveOnSwap(document.getElementById("hub-frame"));
 
+      // 3b. ?probe=1 — arm a 1Hz DOM sampler BEFORE the bundle boots, so scripted
+      //     verification (the identity-race timeline) captures the earliest polls.
+      //     Read the timeline from window.__samples.
+      if (new URLSearchParams(location.search).has("probe")) {
+        window.__samples = [];
+        const probe = () => ({
+          t: Math.round(performance.now() / 100) / 10,
+          warn: document.querySelector(".rail-warn-count")?.textContent ?? null,
+          tabs: [...document.querySelectorAll(".unit-tab:not(.rail-warn)")].map((el) => {
+            const name =
+              el.querySelector(".unit-tab-label,.unit-tab-name")?.textContent?.slice(0, 22) ??
+              el.textContent.slice(0, 22);
+            const unread = el.querySelector(".unit-tab-unread")?.textContent ?? "";
+            return name + (unread ? `[${unread}]` : "");
+          }),
+        });
+        setInterval(() => window.__samples.push(probe()), 1000);
+      }
+
       // 4. Boot the real bundle.
       await import("/src/main.ts");
     </script>
