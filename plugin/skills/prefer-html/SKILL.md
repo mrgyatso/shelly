@@ -271,6 +271,26 @@ file is what pops the overlay — no other action needed.
 > from the unit's history). If you must template/substitute, build the final HTML string,
 > then emit it through the `Write` tool.
 
+### Required: a full-document head with `<meta charset>`
+
+Every artifact is a **complete HTML document** — open it with a real head, not straight into
+`<div>` or `<script>`:
+
+```html
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>…</title></head>
+<body>
+  … artifact …
+</body>
+</html>
+```
+
+`<meta charset="utf-8">` is **not optional**. Tiles load over the `asset://` protocol, whose
+response carries no `charset`, so with no meta the WebView falls back to Windows-1252 and every
+`—`, `'`, `"` renders as mojibake (`â€"`, `â€™`). The pill / two-zone templates below already
+open with it — if you hand-assemble an artifact, don't drop it.
+
 ### Required in every artifact (so the overlay sizes it)
 
 The overlay loads artifacts in a sandboxed, opaque-origin iframe and **cannot measure
