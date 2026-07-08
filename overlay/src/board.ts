@@ -974,7 +974,7 @@ async function goHub(): Promise<void> {
   leaveUnit();
   viewStack = [{ level: "hub" }];
   showLevel("hub");
-  renderGreeting(freshCount(), allSources.filter((s) => isLiveSource(s, Date.now())).length);
+  renderGreeting(freshCount(), liveSourceCount());
   await renderHub();
   updateGlobalUnread();
 }
@@ -2773,6 +2773,14 @@ function freshCount(): number {
   return allArtifacts.filter((a) => now - a.modified_ms < FRESH_WINDOW_MS).length;
 }
 
+/** Genuinely-live sources right now — the greeting's "N agents active" figure.
+ *  Both greeting call sites go through this so they can't drift: the poll site
+ *  once passed raw `allSources.length` and counted a week of stale files. */
+function liveSourceCount(): number {
+  const now = Date.now();
+  return allSources.filter((s) => isLiveSource(s, now)).length;
+}
+
 /** Head for a Board-owned unit whose agent live file is gone (the session ended
  *  but its terminal is still here). Reads as a terminal, not an orphan. */
 function ownedHead(): PaneHead {
@@ -3297,8 +3305,11 @@ async function pollLive(): Promise<void> {
   allSources = sources;
 
   // The greeting's status line is live in EVERY view (it previously refreshed
-  // only on L0 entry, so the unit view showed the stale boot default).
-  renderGreeting(freshCount(), allSources.length);
+  // only on L0 entry, so the unit view showed the stale boot default). Count
+  // only genuinely-live sources — raw allSources.length here counted a week of
+  // stale live-JSON files ("48 agents active"); goHub already filtered, so this
+  // poll site overwrote its correct value ~every second.
+  renderGreeting(freshCount(), liveSourceCount());
 
   // Correlate Board-owned terminals to the live sources their spawned claude
   // produced: companion_session (a tabId, injected by read_all_live) → unit_key.
