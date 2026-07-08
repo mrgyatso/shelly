@@ -1893,7 +1893,10 @@
 /* Toolbar </> toggle — sits beside the resize group, same machined language. */
 .surface-code-btn {
   height: 22px;
-  padding: 0 8px;
+  /* Hug the glyph (was 0 8px — too roomy next to the 28px focus buttons). 2px
+     less on the left optically centers the </>, whose ink leans right in the
+     mono face, so symmetric padding read as extra room on the left. */
+  padding: 0 6px 0 4px;
   margin-left: 6px;
   display: grid;
   place-items: center;
