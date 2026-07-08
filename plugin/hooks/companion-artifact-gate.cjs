@@ -104,10 +104,9 @@ function buildReason(artifactsDir) {
     "If it was substantive — a decision, comparison, plan, analysis, or a status the user will " +
     "want to see and react to — AUTHOR ONE NOW: write a self-contained .html into " +
     artifactsDir +
-    " (use the prefer-html skill for the full interactive shape; the html-output rule carries the " +
-    "required size snippet, board-shade background, and companion-meta block). " +
-    "If you already wrote an artifact this turn, or the turn was trivial (a quick answer, a lookup, " +
-    "a conversational reply), just STOP — write nothing and do not restate your answer."
+    " (load the prefer-html skill for the how). Lead with the decision, cut the recap, end on the " +
+    "next move. If you already wrote an artifact this turn, or the turn was trivial (a quick answer, " +
+    "a lookup, a conversational reply), just STOP — write nothing and do not restate your answer."
   );
 }
 

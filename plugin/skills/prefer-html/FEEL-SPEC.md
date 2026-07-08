@@ -1,8 +1,10 @@
 # Companion artifact FEEL — the gold standard ("Broadsheet")
 
-This is the design point-of-view every agent-authored Companion artifact follows, across all
-three authoring paths. It is the spec the prompts and the renderer encode. Established in the
-2026-06-29/30 feel session (3 directions explored and rendered; the user picked Broadsheet).
+The design point-of-view every Companion artifact follows. Since 0.4.5 there is **one authoring
+path**: the working agent writes the HTML inline, in full context (no background observer, no
+deterministic renderer). This spec is the **floor** that keeps every artifact reading as one
+product — it is *not* a template the agent fills in. Established in the 2026-06-29/30 feel session
+(3 directions explored and rendered; the user picked Broadsheet).
 
 ## The one rule
 
@@ -11,40 +13,49 @@ coding agent and its job is to *move the work forward without the user touching 
 the single most confident, most-designed element is always the **next move**. Inform, then propel —
 never recap and stop.
 
-The old renderer failed this three ways, and the gold standard fixes each:
+Three failure modes it avoids:
 
-| Old (failure) | Broadsheet (gold) |
+| Failure | Broadsheet |
 |---|---|
-| Floated as a hard card with a drop shadow | **Dissolves into the board canvas** — edge to edge, no chrome |
-| Hierarchy flattened after the headline | **Scale contrast** — one dominant headline, everything steps down |
+| Floats as a hard card with a drop shadow | **Dissolves into the board canvas** — edge to edge, no chrome |
+| Hierarchy flattens after the headline | **Scale contrast** — one dominant headline, everything steps down |
 | Decision buried in a pale footer of tiny buttons | **The "Decide" ballot** — elevated, the boldest interaction |
 
-## House style — "Broadsheet"
+## Strong floor, open ceiling
 
-An editorial page, not a UI card.
+The agent authors freeform HTML — there is no template engine stamping a fixed layout. The feel is
+held by a **small set of invariants**, not by a mold. Hold these; invent everything else.
 
-- **Dissolve into the board.** `html`/`body` background = the exact board shade `oklch(0.945 0.014 60)`
-  (the opaque-origin iframe can't read parent vars, so hardcode it). No outer border/shadow; the
-  board resizes its window to the artifact's reported size, so the artifact *is* the surface.
-- **Hierarchy through scale.** One Newsreader headline (clamp ~34–60px, letter-spacing ~-.03em)
-  earns its size; standfirst, body, labels step down hard.
-- **Palette.** board `oklch(0.945 0.014 60)`, paper `#FBFAF6`, ink `#171A1F`, soft `#39404A`,
-  muted `#646C76`, hairline `#CDC8BC`. One semantic accent per artifact — blue `#3D7EFF`,
-  amber `#F2B84B`, clay `#D98158`, mint `#4DAA7D` — each with a darker ink variant for text.
-- **Type.** Newsreader = display/headlines; Inter = reading; JetBrains Mono = kickers, labels,
-  edition lines, file chips. Small-caps mono kickers + hairline rules carry the editorial texture.
-- **Clawd is the emblem.** The pixel-art clay character lives in the **masthead** (not a parked
-  rail mascot), posing to the work. Signature, not wallpaper. Transform/opacity animation only.
+**The invariants — what makes a bespoke page still read as *Companion*:**
 
-### The skeleton (degrades cleanly to a fixed template)
+1. **Dissolve into the board** — `html`/`body` background = the exact board shade `oklch(0.945 0.014 60)`
+   (the opaque-origin iframe can't read parent vars — hardcode it). No outer border/shadow; the
+   board resizes its window to the artifact's reported size, so the artifact *is* the surface.
+2. **One palette, one semantic accent** — board `oklch(0.945 0.014 60)`, paper `#FBFAF6`, ink
+   `#171A1F`, soft `#39404A`, muted `#646C76`, hairline `#CDC8BC`; accent ∈ blue `#3D7EFF`, amber
+   `#F2B84B`, clay `#D98158`, mint `#4DAA7D` (each with a darker ink variant for text).
+3. **The type pairing** — Newsreader = display/headlines; Inter = reading; JetBrains Mono = kickers,
+   labels, edition lines, file chips.
+4. **Decision-loudest hierarchy** — the next move is the most-designed thing on the page; everything
+   else steps down hard.
+5. **The interaction plumbing** — commentable blocks + the Decide ballot + the size/meta snippets
+   (the unified helper; see `SKILL.md` and `references/interaction-helper.md`).
+
+**Everything else is yours to invent** — layout, composition, how to show *this* data. When the
+content invites a better form, break format; that is the whole point of authoring inline. A block
+that merely fills the skeleton is worse than a bespoke one that earns its place. Clawd is the
+emblem: the pixel-art clay character lives in the **masthead**, posing to the work — signature, not
+wallpaper; transform/opacity animation only.
+
+## A suggested skeleton (a starting point, not a mold)
 
 `masthead (Clawd emblem + project + edition) → kicker → dominant headline → standfirst → working
 chip → touches (files) → visuals → evidence (collapsible) → **Decide ballot**`
 
-This skeleton is the contract that lets the deterministic local renderer hit the same feel as the
-free-form Sonnet designer — the key constraint behind "one product, three paths."
+Follow it when nothing better suggests itself; depart from it when the content wants a different
+shape. The invariants above are the contract — the skeleton is only a convenience.
 
-### The Decide ballot (load-bearing)
+## The Decide ballot (load-bearing)
 
 An elevated panel set off with an accent top-rule and a real "Decide" header. Each move = kind
 label + title + one-line detail + generous ~42px tap targets **✓ do / ✎ note / ✗ skip**, plus a
@@ -52,55 +63,18 @@ label + title + one-line detail + generous ~42px tap targets **✓ do / ✎ note
 which posts `{source:'companion-artifact',kind:'submit',text}` with clear `✓ Do it / ✎ Note /
 ✗ Skip` lines. "Spend boldness on one memorable interaction" — this is it.
 
-### Two modes of the same style
+## Two modes of the same style
 
 - **Steer** (decision-dominant): the recommendation itself becomes the headline with one confident
   primary action; context collapses below. For "just tell me the next move" / lazy-vibecode days.
 - **Canvas** (always-on): a persistent steer rail keeps the moves in reach while the user reads —
   the wheel never leaves the screen. For when the user truly lives in the board.
 
-## The three authoring paths (must feel like one product)
+## Declined for now — the block kit
 
-| Path | Where | Model | Embodiment |
-|---|---|---|---|
-| Observer local renderer | `renderer.cjs` (`rendererCss`/`renderArtifact`/`nextSteps`) | none (deterministic) | The Broadsheet skeleton as a fixed template. |
-| Observer bespoke designer | `designer.cjs` (`DESIGN_SYSTEM`) | Sonnet | Free-form HTML in the same house style; Steer/Canvas modes. |
-| Inline working agent | `prefer-html/SKILL.md` | the live session | Same house style + the unified interaction helper. |
-
-The Haiku **director** (`model.cjs` `SYSTEM_PROMPT`) chooses presentation tier + schema and writes
-propulsive `next_steps`; it briefs the designer with the mode (`steer`/`canvas`) when escalating.
-
-## The quality dial
-
-`~/.claude/companion/quality` (sibling of `mode`): `fast` (default) | `pretty`. Read per-job in
-`worker.cjs:processGroup`, so flipping it needs no restart. `/companion:quality` flips it.
-
-- **fast** — Haiku director + the local Broadsheet renderer; Sonnet only for true visual escalations.
-- **pretty** — raise the **director to Sonnet** (sharper judgment/copy) while still rendering through
-  the local template (scope "director"). `COMPANION_QUALITY_SCOPE=all` instead routes *every*
-  should_write turn through the Sonnet **designer** as bespoke HTML (higher ceiling, slower, a full
-  HTML generation per turn).
-
-Because the fixed template is now genuinely beautiful, **scope "director" is the cheap sweet spot**:
-better content rendered through a great template at schema-call cost. See `bench/` for the
-Haiku-vs-Sonnet numbers behind the default.
-
-**Default (confirmed by the user, 2026-06-30): `fast`.** The bench reversed the handoff's
-pretty-first lean — Haiku on this template is good, ~2–3× cheaper, latency a wash — so `fast` ships
-as the default and `pretty` is the one-flag upgrade. The Sonnet **designer** runs at `--effort low`
-(medium ran away past the timeout; low is equally on-brand and completes in ~2 min).
-
-## Future directions (user direction, 2026-06-30 — not built this session)
-
-1. **Building blocks, not just templates.** Broadsheet is *one configuration* of a block kit —
-   masthead (Clawd emblem), kicker, headline, byline/touches, the registered visuals
-   (`components.cjs`), the evidence log, and the **Decide ballot**. The next step is to treat these
-   as a first-class **block library** and give the model *both* the full templates *and* the raw
-   blocks, letting it decide per-artifact: drop into a full template, or compose a custom
-   arrangement from blocks. The free-form designer path is already the "custom" end and the local
-   renderer is the "full template" end — formalize a shared block kit so all three paths assemble
-   from the same pieces, and the choice of "template vs custom" becomes the model's to make.
-2. **Quality / model dial in app settings.** Today the dial is the `~/.claude/companion/quality`
-   file + `/companion:quality`. Surface it (and model selection — Haiku/Sonnet/etc.) as a real
-   **toggle in the app's settings UI**, alongside the mode dial. This is overlay/app work, separate
-   from this plugin session.
+A prior direction floated turning Broadsheet into *one configuration of a block library* the model
+composes from. **Declined (2026-07-08):** now that every artifact is authored inline, the agent
+already composes freeform — a formal block kit would add scaffolding that narrows the range and
+risks the "wow" of an agent inventing the right presentation for the moment. The invariants above
+are the guardrail; the ceiling stays open. Revisit only if inline output proves *too* inconsistent
+to read as one product — which the invariants exist to prevent.

@@ -194,12 +194,15 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `Artifacts: when a turn is substantive enough to earn a visual — a decision, comparison, plan, `+
     `analysis, or a status the user will want to see and react to — AUTHOR THE HTML YOURSELF: write `+
     `a self-contained .html into ${a}. There is no renderer and no background observer; you write `+
-    `the file, in full context, the first time (this is the highest-quality path and, on a warm `+
-    `cache, the cheapest). Use the prefer-html skill for the full interactive shape (commentable `+
-    `pages + a Next-steps review form); the html-output rule carries the required size snippet, `+
-    `board-shade background, and companion-meta block. Skip trivial turns (quick answers, lookups, `+
-    `conversational replies) — no artifact. A Stop-hook backstop reminds you once if a substantive `+
-    `turn ends with nothing written, but prefer to author it inline rather than lean on the reminder.`+wt;
+    `the file, in full context, the first time (highest-quality, and cheapest on a warm cache). An `+
+    `artifact is a STEERING surface, not a transcript: lead with the pending decision or blocker and `+
+    `make it the loudest thing; show only what is needed to act on it; push evidence down and keep it `+
+    `collapsible; CUT the recap of what already happened; end by proposing the next move. Skip trivial `+
+    `turns (quick answers, lookups, conversational replies) — no artifact. EVERY artifact must include `+
+    `the size-reporter script and the companion-meta block (code in the skill) or it renders at the `+
+    `wrong size. Load the prefer-html skill for the how — the interaction helper (commentable blocks + `+
+    `the Decide review form), those required snippets, and the Broadsheet house style. A Stop-hook `+
+    `backstop reminds you once if a substantive turn ends with nothing written, but author it inline.`+wt;
   process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:ctx}}));
 '
 exit 0
