@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+// companion-skill-log — PROBE hook: observe when a skill is loaded in a session.
+//
+// The Skill-tool hook contract is UNDOCUMENTED (confirmed via the Claude Code docs,
+// 2026-07-08): it is not documented whether Pre/PostToolUse fires for the Skill tool, nor
+// the exact tool_name / tool_input shape. This hook is a best-effort probe wired on BOTH
+// Pre- and PostToolUse (matcher "Skill"): it appends one JSON line per event to
+//   ~/.claude/companion/skill-loads.log
+// so the FIRST live skill invocation reveals BOTH whether the hook fires and the payload
+// shape (event, tool_name, tool_input). If the log stays empty after skills are used, then
+// "Skill" is not the matched tool_name (or the tool is not hookable) — switch the matcher to
+// "" (all tools) to discover the real name, then narrow it back.
+//
+// Purpose: settle empirically whether the agent loads the prefer-html skill before authoring
+// an artifact — cross-reference ts + session_id here against artifact-index.json.
+//
+// Never blocks; swallows every error. A probe must not wedge a session or slow a tool call.
+//
+// TEMPORARY — this spawns a node process on every Skill call. Once the skip question is
+// answered (does the agent load prefer-html before authoring?), REMOVE this hook and its two
+// matchers in hooks.json (PreToolUse + PostToolUse "Skill"), or gate it behind a flag file.
+// It is a measurement instrument, not permanent plumbing.
+
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+let raw = "";
+process.stdin.on("data", (c) => (raw += c));
+process.stdin.on("end", () => {
+  try {
+    const o = JSON.parse(raw) || {};
+    const line =
+      JSON.stringify({
+        ts: Date.now(),
+        event: o.hook_event_name || null,
+        tool: o.tool_name || null,
+        session_id: o.session_id || null,
+        tool_input: o.tool_input || null,
+      }) + "\n";
+    const p = path.join(os.homedir(), ".claude", "companion", "skill-loads.log");
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.appendFileSync(p, line);
+  } catch (_) {
+    // never block, never error
+  }
+  process.exit(0);
+});

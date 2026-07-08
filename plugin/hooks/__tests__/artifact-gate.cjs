@@ -110,16 +110,88 @@ const blockRes = gate.decide(
 ok(blockRes.block === true, "no artifact this turn → block");
 ok(typeof blockRes.reason === "string" && blockRes.reason.includes("/tmp/arts"), "block reason names the artifacts dir");
 
-// Artifact already landed this turn → pass.
+// Artifact landed this turn but its file is unreadable (index points at /a/x.html which
+// doesn't exist) → content-lint can't verify → fail open (no block).
 ok(
   gate.decide({ transcript_path: transcript, session_id: SID }, { indexPath: freshMatch }).block === false,
-  "artifact written this turn → pass",
+  "artifact written but file unreadable → content-lint fails open (no block)",
 );
 
 // Unreadable transcript → no turn boundary → fail open (no block).
 ok(
   gate.decide({ transcript_path: path.join(sandbox, "nope.jsonl"), session_id: SID }, { indexPath: freshMatch }).block === false,
   "unreadable transcript → fail open (no block)",
+);
+
+// ---- hasAnswerableSurface -------------------------------------------------
+console.log("### hasAnswerableSurface");
+const artWithBallot = writeFile("art-ballot.html", '<div data-companion-item data-item-label="x"></div>');
+const artWithSubmit = writeFile("art-submit.html", '<button data-companion-submit="Do">Submit</button>');
+const artWithComment = writeFile("art-comment.html", '<section data-companion-commentable><p>hi</p></section>');
+const artBare = writeFile("art-bare.html", "<h1>We shipped it 🎉</h1><p>All done.</p>");
+ok(gate.hasAnswerableSurface([artWithBallot]).any === true, "ballot item counts as an answerable surface");
+ok(gate.hasAnswerableSurface([artWithSubmit]).any === true, "submit button counts as an answerable surface");
+ok(gate.hasAnswerableSurface([artWithComment]).any === true, "commentable blocks count as an answerable surface");
+ok(gate.hasAnswerableSurface([artBare]).any === false, "bare recap has no answerable surface");
+const bareSurf = gate.hasAnswerableSurface([artBare]);
+ok(bareSurf.known === true && bareSurf.any === false, "all-readable + no responder → known, none");
+const partial = gate.hasAnswerableSurface([artBare, path.join(sandbox, "gone.html")]);
+ok(partial.known === false, "an unreadable path → not known (caller fails open)");
+const mixed = gate.hasAnswerableSurface([artBare, artWithBallot]);
+ok(mixed.any === true, "any one artifact with a responder → any=true");
+
+// The helper's OWN source names every marker; a pure recap that embeds it just for the
+// fallback chat bar must NOT count as a responder (markup-only match, script/style stripped).
+const artHelperOnly = writeFile(
+  "art-helper-only.html",
+  "<h1>Done</h1><p>Shipped it.</p>" +
+    "<style>[data-companion-commentable] .companion-commentable{position:relative}</style>" +
+    '<script>var s=document.querySelector("[data-companion-submit]");' +
+    'document.querySelectorAll("[data-companion-item]");' +
+    'document.querySelectorAll("[data-companion-commentable]");</script>',
+);
+ok(
+  gate.hasAnswerableSurface([artHelperOnly]).any === false,
+  "helper/CSS source that only NAMES the markers (no real markup) → not a responder",
+);
+// Real commentable markup alongside the helper script still counts.
+const artRealPlusHelper = writeFile(
+  "art-real-helper.html",
+  '<section data-companion-commentable><p>hi</p></section>' +
+    '<script>document.querySelector("[data-companion-submit]");</script>',
+);
+ok(
+  gate.hasAnswerableSurface([artRealPlusHelper]).any === true,
+  "real commentable markup alongside the helper script → responder",
+);
+
+// ---- decide: content-lint -------------------------------------------------
+console.log("### decide (content-lint)");
+function idxAt(name, htmlPath) {
+  return idx(name, { [htmlPath]: { session_id: SID, shortid: SHORT, ts: TURN + 500 } });
+}
+// Artifact with a responder → pass.
+ok(
+  gate.decide({ transcript_path: transcript, session_id: SID }, { indexPath: idxAt("idx-ok.json", artWithBallot) }).block === false,
+  "artifact with an answerable surface → pass",
+);
+// Artifact with NO responder (bare recap) → block, with the responder reason.
+const bareRes = gate.decide({ transcript_path: transcript, session_id: SID }, { indexPath: idxAt("idx-bare.json", artBare) });
+ok(bareRes.block === true, "bare recap artifact (no responder) → block");
+ok(typeof bareRes.reason === "string" && /respond in place/i.test(bareRes.reason), "block reason flags the missing responder");
+// Two artifacts, one has a responder → pass (don't nag when a responder exists somewhere).
+const idxTwo = idx("idx-two.json", {
+  [artBare]: { session_id: SID, shortid: SHORT, ts: TURN + 400 },
+  [artWithSubmit]: { session_id: SID, shortid: SHORT, ts: TURN + 600 },
+});
+ok(
+  gate.decide({ transcript_path: transcript, session_id: SID }, { indexPath: idxTwo }).block === false,
+  "one of two artifacts has a responder → pass",
+);
+// stop_hook_active still short-circuits the content-lint (fires at most once per chain).
+ok(
+  gate.decide({ stop_hook_active: true, transcript_path: transcript, session_id: SID }, { indexPath: idxAt("idx-bare2.json", artBare) }).block === false,
+  "stop_hook_active → content-lint also never blocks (loop guard)",
 );
 
 function missingPath() {
