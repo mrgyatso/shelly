@@ -722,12 +722,12 @@ A full document is correct when there's real substance. Density decides — and 
 substance is several *independent* things, the right shape is multi-page, not a longer
 scroll.
 
-## House style — "Broadsheet" (match the other two authoring paths)
+## House style — "Broadsheet"
 
-Companion artifacts are authored by three paths — this inline one, the observer's local
-renderer, and the Sonnet designer — and they must feel like **one product**. The shared style is
-**Broadsheet**: an editorial page, not a floating UI card. The one rule: **make the decision the
-loudest thing on the page.** (Full spec: `plugin/scripts/artifact-observer/FEEL-SPEC.md`.)
+Companion artifacts are authored inline by the working agent, and every one must feel like **one
+product**. The house style is **Broadsheet**: an editorial page, not a floating UI card. The one
+rule: **make the decision the loudest thing on the page.** (Full spec: `FEEL-SPEC.md`, alongside
+this skill.)
 
 - **Dissolve into the board.** Set `html, body` background to the exact board shade
   `oklch(0.945 0.014 60)` (the opaque-origin iframe can't read the parent's vars — hardcode it).

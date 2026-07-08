@@ -28,11 +28,6 @@ case "$cwd" in
   */.claude-mem/*|*/.claude-mem) exit 0 ;;
 esac
 
-# Ignore the artifact observer's OWN model calls (worker.cjs spawns `claude -p`
-# with this marker via cleanClaudeEnv). Without it, an opted-in external-terminals
-# machine would register a spurious session + live stub for every observer render.
-[ -n "$COMPANION_OBSERVER_SELF" ] && exit 0
-
 # External-terminal handling (default OFF). A terminal the Board did not spawn
 # carries no COMPANION_SESSION; by default the Companion ignores such external
 # terminals entirely — no roster entry, no sidecars, no artifact observer — so a
@@ -151,10 +146,6 @@ fi
 # (REGISTER now runs FIRST — see section 1a above. It was moved out of this
 #  last-step slot so a short-lived session can't be torn down before it registers.)
 
-# Recover observer jobs left behind by a crash. This is only a local queue check;
-# no process starts when the queue is empty and no model ever runs inline.
-node "$(dirname "$0")/../scripts/artifact-observer/start.cjs" >/dev/null 2>&1
-
 # 2. Prune dead live files (mtime older than PRUNE_DAYS) so the roster's archive
 #    list doesn't grow unbounded across crashed/abandoned sessions.
 find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exec rm -f {} + 2>/dev/null
@@ -181,35 +172,34 @@ if [ "$is_repo" = "1" ]; then
   fi
 fi
 
-# 3. Tell the agent its live path AND that it now authors the artifact CONTENT (not HTML).
-#    The live-state is both the Board roster and the source a deterministic renderer turns
-#    into this turn's artifact; the agent picks the fidelity via an optional "artifact" object.
-LIVE_PATH="$live_path" WT_NOTE="$wt_note" node -e '
+# 3. Tell the agent its live path (a status/roster heartbeat) AND that it now authors
+#    artifact HTML itself, inline, when a turn earns one. The live file is no longer
+#    rendered into a card; a Stop-hook backstop (companion-artifact-gate) reminds the agent
+#    once if a substantive turn ends with nothing written.
+artifacts_dir="${COMPANION_ARTIFACTS_DIR:-$HOME/.claude/companion/artifacts}"
+LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e '
   const p=process.env.LIVE_PATH;
+  const a=process.env.ARTIFACTS_DIR;
   const wt=process.env.WT_NOTE ? "\n"+process.env.WT_NOTE : "";
-  const ctx=`Companion live surface: rewrite your live state to ${p} on each work turn — it is `+
-    `BOTH the Board roster AND the content this turn artifact is rendered from (a deterministic `+
-    `renderer turns it into a page; you never write HTML). Shape: {"working":"…","where":["…"],`+
-    `"next":[{"title":"…","sub":"…","kind":"decision|todo|blocked"}],"project":"…","is_repo":<bool>,`+
-    `"unit_key":"…"}. Use exactly this path — keyed to this session instance — and PRESERVE `+
-    `is_repo + unit_key verbatim (the Board groups sessions into a per-unit home by them). `+
-    `working = what you are doing now; where[] = cumulative state THIS SESSION (not only this turn); `+
-    `next[] = the propulsive next moves. Every work turn, drive toward shipping: end on the next `+
-    `move — recommend the strongest option and why, ask sharp questions the user can decide in one `+
-    `read, and make next[] concrete actions and real decisions (not a recap). State decisions, `+
-    `status, and blockers plainly. `+
-    `Pick the artifact fidelity with an optional "artifact" object {"tier":"cheap|mid|high|skip", …}: `+
-    `cheap (default, or omit) — routine turn, the mapped brief renders a clean card, ~free and instant. `+
-    `mid — real decisions or substance: also author "title","summary","decisions":["…"] and `+
-    `"visuals":[{"type":"metric_strip|comparison|checklist|timeline|bar_chart|before_after","title":"…",`+
-    `"note":"…","items":[{"label":"…","value":"…","detail":"…","status":"good|warn|bad|neutral"}]}], `+
-    `optionally "accent":"blue|amber|clay|mint|violet" and "layout":"steer". `+
-    `high — an intense turn that earns a unique bespoke surface: set "tier":"high" and write `+
-    `"bespoke_brief", a self-contained prose brief giving a fresh-context designer everything it needs `+
-    `(this spends a model call, so reserve it for turns that truly earn it). `+
-    `skip — nothing worth surfacing this turn. `+
-    `Re-decide the tier fresh EVERY turn and default to cheap — never carry a previous turn high or `+
-    `mid forward, or every routine turn wastes a bespoke render. Author the CONTENT, never the HTML.`+wt;
+  const ctx=`Companion live surface: rewrite your live state to ${p} on each work turn. This is a `+
+    `STATUS heartbeat only — it drives the Board roster AND the always-on status strip; it is NOT `+
+    `rendered into an artifact. Shape: {"working":"…","where":["…"],"next":[{"title":"…","sub":"…",`+
+    `"kind":"decision|todo|blocked"}],"project":"…","is_repo":<bool>,"unit_key":"…"}. Use exactly `+
+    `this path — keyed to this session instance — and PRESERVE is_repo + unit_key verbatim (the `+
+    `Board groups sessions into a per-unit home by them). working = what you are doing now; `+
+    `where[] = cumulative state THIS SESSION (not only this turn); next[] = the propulsive next `+
+    `moves. Every work turn, drive toward shipping: end on the next move — recommend the strongest `+
+    `option and why, ask sharp questions the user can decide in one read, and make next[] concrete `+
+    `actions and real decisions (not a recap). State decisions, status, and blockers plainly.\n\n`+
+    `Artifacts: when a turn is substantive enough to earn a visual — a decision, comparison, plan, `+
+    `analysis, or a status the user will want to see and react to — AUTHOR THE HTML YOURSELF: write `+
+    `a self-contained .html into ${a}. There is no renderer and no background observer; you write `+
+    `the file, in full context, the first time (this is the highest-quality path and, on a warm `+
+    `cache, the cheapest). Use the prefer-html skill for the full interactive shape (commentable `+
+    `pages + a Next-steps review form); the html-output rule carries the required size snippet, `+
+    `board-shade background, and companion-meta block. Skip trivial turns (quick answers, lookups, `+
+    `conversational replies) — no artifact. A Stop-hook backstop reminds you once if a substantive `+
+    `turn ends with nothing written, but prefer to author it inline rather than lean on the reminder.`+wt;
   process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:ctx}}));
 '
 exit 0
