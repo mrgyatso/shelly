@@ -28,11 +28,6 @@ case "$cwd" in
   */.claude-mem/*|*/.claude-mem) exit 0 ;;
 esac
 
-# Ignore the artifact observer's OWN model calls (worker.cjs spawns `claude -p`
-# with this marker via cleanClaudeEnv). Without it, an opted-in external-terminals
-# machine would register a spurious session + live stub for every observer render.
-[ -n "$COMPANION_OBSERVER_SELF" ] && exit 0
-
 # External-terminal handling (default OFF). A terminal the Board did not spawn
 # carries no COMPANION_SESSION; by default the Companion ignores such external
 # terminals entirely — no roster entry, no sidecars, no artifact observer — so a
@@ -150,10 +145,6 @@ fi
 
 # (REGISTER now runs FIRST — see section 1a above. It was moved out of this
 #  last-step slot so a short-lived session can't be torn down before it registers.)
-
-# Recover observer jobs left behind by a crash. This is only a local queue check;
-# no process starts when the queue is empty and no model ever runs inline.
-node "$(dirname "$0")/../scripts/artifact-observer/start.cjs" >/dev/null 2>&1
 
 # 2. Prune dead live files (mtime older than PRUNE_DAYS) so the roster's archive
 #    list doesn't grow unbounded across crashed/abandoned sessions.
