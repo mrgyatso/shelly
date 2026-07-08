@@ -631,10 +631,10 @@ export async function initBoard(): Promise<void> {
   void pollHubAgents();
   window.setInterval(() => void pollHubAgents(), HUB_AGENTS_POLL_MS);
 
-  // On relaunch, skip straight to the most recently active project when no home.html
-  // has been authored — the rail shows all projects and is immediately useful without
-  // an extra click through the old sessions roster.
-  startupNavigate();
+  // On relaunch, land on L0 (the two-door home) rather than dropping into a unit — so
+  // the launch view is neutral and never shows a mixed sessions + agent-hub rail. goHub
+  // resolves an authored home.html, else the native hub.
+  void goHub();
 
   // A popover row click stores a deep-link target; drain it (fresh window). An
   // already-open Board catches the same target via the `board:navigate` event.
@@ -900,57 +900,8 @@ function showLevel(level: BoardView["level"]): void {
   unitEl.toggleAttribute("hidden", level !== "unit");
 }
 
-/** A live source that's just the SessionStart stub — the "Session started" working
- *  line, no where/next, and no artifacts of its own. It's "live" by file mtime for
- *  the full 2h LIVENESS_MS window, but there's nothing to show: such a source must
- *  NOT hijack the launch screen (the reported "parked on a stale clipping" bug). */
-function isStubSource(s: LiveSource): boolean {
-  const st = parseState(s.json);
-  const working = (st.working || "").trim();
-  if (working !== "" && working !== SESSION_STARTED_STUB) return false;
-  if ((st.where?.length ?? 0) > 0 || (st.next?.length ?? 0) > 0) return false;
-  return !allArtifacts.some((a) => a.source === s.source);
-}
-
-/** Startup routing: drop straight into the most-recent SUBSTANTIVE live session
- *  (real work, not a bare stub). With none, land on the idle home (rail + clawd
- *  splash) rather than parking on a stale "Session started" stub for the full 2h
- *  liveness window. The L0 home.html dashboard stays reachable via explicit Home. */
-function startupNavigate(): void {
-  const now = Date.now();
-  const substantive = allSources
-    .filter((s) => !isDismissed(s) && isLiveSource(s, now) && !isStubSource(s))
-    .sort(
-      (a, b) =>
-        Math.max(sourceUpdatedMs(b), sourceHeartbeatMs(b)) -
-        Math.max(sourceUpdatedMs(a), sourceHeartbeatMs(a)),
-    );
-  if (substantive.length) { goUnit(unitKeyOf(substantive[0])); return; }
-  goIdle();
-}
-
-/** Enter the idle home: the rail (live units + Recent projects) with NO project
- *  selected, a clawd splash in the hero, and no terminal. Mirrors L2's shell so the
- *  rail's right-click "New session" / resume affordances work straight from launch,
- *  but selects nothing — a stale stub can no longer claim the launch screen. */
-function goIdle(): void {
-  roomFilter = null;
-  leaveUnit();
-  viewStack = [{ level: "unit", unitKey: IDLE }];
-  showLevel("unit");
-  currentUnitKey = IDLE;
-  unitEl.dataset.rail = "sessions";
-  unitEl.dataset.view = "session";
-  unitEl.classList.add("is-idle");
-  renderUnitRail(IDLE);
-  renderUnitTitle(IDLE);
-  hideOwnedTerminals();
-  showBlankHero(BLANK_IDLE);
-  updateGlobalUnread();
-}
-
 /** The unit key of the most recently active project (live first, then closed).
- *  Used by startupNavigate and the hub fallback CTA. */
+ *  Used by goSessions and the hub fallback CTA. */
 function findMostRecentActiveUnit(): string | null {
   const now = Date.now();
   const liveSorted = allSources
@@ -2697,15 +2648,11 @@ function syncSurfaceStrip(hasHero: boolean): void {
   setFocus(hasHero ? "split" : "terminal");
 }
 
-/** Copy for the waiting-clawd band. Default = a session waiting for its FIRST
- *  artifact (terminal below). BLANK_IDLE = the idle home, where nothing's running. */
+/** Copy for the waiting-clawd band — a session waiting for its FIRST artifact
+ *  (terminal below). */
 const BLANK_FIRST = {
   title: "Clawd's on it.",
   sub: "Your first artifact will land right here — the terminal's below while it works.",
-};
-const BLANK_IDLE = {
-  title: "Nothing running right now.",
-  sub: "Pick a project from the rail, or start a new session to begin.",
 };
 /** A connected agent that's registered but hasn't published an artifact yet — no
  *  terminal below to promise, so the copy just says it's connected and waiting. */
