@@ -66,18 +66,29 @@ always handing the user a clear next thing to act on. It governs **shape, not fr
 **When to author** (above) decides whether an artifact is warranted — but once it is, substantive
 work earns this forward-driving surface, **not a thin info block**.
 
-**The combined shape is a DEFAULT, not a cage — choose it by intent.** Reach for it when the
-user needs to **react / decide / steer**: status, plans, reviews, comparisons, options,
-strategy, multi-agent steering. But when the content is **presentation-first** — a morning
-debrief, a dashboard, a data visualization, a recap or explainer the user just wants to *see
-beautifully*, a celebration, a one-off custom interface — **design a fully bespoke UI
-instead.** Do NOT force `data-companion-commentable` blocks or a Next-steps "questions" page
-onto content that isn't asking to be steered; a rigid template on a debrief is worse than a
-custom one. You may still drop in interactive bits à la carte (a Copy button, a few ✓/✎/✗
-where something is genuinely actionable), but the layout, structure, and feel are yours to
-craft. **Ask: does the user need to *act on* this, or *look at* it?** Act on → combined
-shape. Look at → bespoke. (Still keep the required `data-fit-root` + size-reporter snippet so
-it sizes in the overlay, and the `companion-meta` block; those are about plumbing, not shape.)
+**The combined shape is a DEFAULT, not a cage — but the exception is about VISUAL DESIGN,
+NOT about whether the user can respond.** Reach for the standard combined layout when the user
+needs to **react / decide / steer**: status, plans, reviews, comparisons, options, strategy,
+multi-agent steering. When the content is **presentation-first** — a morning debrief, a
+dashboard, a data visualization, a recap or explainer the user wants to *see beautifully*, a
+celebration, a one-off custom interface — **design a fully bespoke UI**: the layout, structure,
+and feel are yours to craft, and a rigid template on a debrief is worse than a custom one.
+**What "bespoke" does NOT license is shipping an artifact with no way to respond.** Almost
+every artifact — bespoke ones included — still ends with an **answerable surface**: at minimum
+a "what's next →" the user can click, and usually a short Next-steps ballot of ✓/✎/✗ moves. The
+design is yours; the responder does not disappear. **Ask: does the user need to *act on* this,
+or *look at* it?** Act on → the full combined shape. Look at → bespoke design, but STILL carry
+a forward-driving responder where the next moves live. The only artifacts that legitimately
+carry none are genuine one-liners — a status pill with nothing to decide. (Always keep the
+required `data-fit-root` + size-reporter snippet and the `companion-meta` block; those are
+plumbing, not shape.)
+
+**A question posed only as prose is a bug.** If the artifact raises a question — "should we
+X?", "which of A or B?", "is Y actually the goal?" — wire it as its **own** `data-companion-item`
+(✓/✎/✗) or an ambient 💬 target, so the user answers it *in place* with one click. Never leave
+questions as a bulleted list the user can only act on by opening the terminal and retyping. The
+lone "Message the terminal" chat bar is a freeform fallback — never the way to answer a question
+the artifact itself raised.
 
 > **Heads-up for agents pushing to the hub (e.g. a morning-briefing cron):** the always-on
 > **live pane** is a *fixed* glanceable format (`working` / `where` / `next`) rendered from
@@ -704,11 +715,14 @@ Avoid the template-y look. Action buttons should:
 The whole artifact should still pass the [design-quality](../../../README.md) bar —
 this is not a stock todo widget.
 
-### Default to the review form for multi-item artifacts
+### Default to the review form — almost always, not just for long lists
 
-When emitting an artifact that's effectively a list of 3+ decisions, **default to
-the interactive review form**. The user shouldn't have to ask for it — that's the
-whole point. Single round trip beats ten retyped responses.
+When an artifact is effectively a list of 3+ decisions, **default to the interactive review
+form** — the user shouldn't have to ask for it. But the bar is lower than "3+": **almost every
+substantive artifact ends with at least one answerable next-move item**, even a single "ship
+it?" or a "done — what's next →" on a recap. Single round trip beats ten retyped responses; a
+responder-less artifact forces the user back into the terminal, which is exactly what the Board
+exists to avoid.
 
 ## Ambient inline comments (let the user ask about any block)
 
@@ -973,7 +987,11 @@ informational artifact from a one-way wall into a thing the user can ask back
 about without leaving the overlay.
 
 Default OFF for: pills, single-card status flips, decision artifacts (use the
-review form instead), anything where the user isn't reading prose.
+review form instead), anything where the user isn't reading prose. But "OFF for ambient
+comments" never means "no responder at all" — a decision artifact still ships the review
+form, and even a pure recap still ends with an answerable next-move (a "what's next →").
+The ambient-comment 💬 and the Next-steps ballot are two ways to give the user a voice; at
+least one of them belongs on almost every artifact.
 
 ## Copyable handoff blocks (paste-this-elsewhere content)
 
