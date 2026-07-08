@@ -26,7 +26,16 @@
 // the Board surfaces it as unrouted (fail-loud), never silently mis-filed.
 
 const path = require("path");
+const fs = require("fs");
 const { execFileSync } = require("child_process");
+
+// Charset safety net (load-bearing but fail-safe): guarantee the artifact carries a
+// `<meta charset="utf-8">` label so the asset:// WebView can't mojibake it. Co-located;
+// fall back to identity if it can't load so a require hiccup never sinks the write.
+let charset = { ensureArtifactCharset: (h) => h };
+try {
+  charset = require("./companion-charset.cjs");
+} catch (_) {}
 
 // Trace harness (no-op unless enabled). Co-located; require must never sink the
 // index write, so fall back to a noop if it can't be loaded.
@@ -45,6 +54,21 @@ try {
 } catch (_) {}
 
 const [artifactPath, , indexPath] = process.argv.slice(2);
+
+// Fix the charset label FIRST — independent of routing, so a charset-less artifact is
+// repaired even when identity resolution below bails. Idempotent + fail-safe: on any error
+// (unreadable/mid-write) we leave the file untouched and carry on to indexing.
+if (artifactPath) {
+  try {
+    const html = fs.readFileSync(artifactPath, "utf8");
+    const fixed = charset.ensureArtifactCharset(html);
+    if (fixed !== html) {
+      fs.writeFileSync(artifactPath, fixed);
+      trace.emit("index", "charset-fixed", { corr: path.resolve(artifactPath) });
+    }
+  } catch (_) {}
+}
+
 if (!artifactPath || !indexPath || !identity) process.exit(0);
 
 const key = path.resolve(artifactPath);
