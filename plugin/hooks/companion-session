@@ -245,8 +245,13 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `the file, in full context, the first time (highest-quality, and cheapest on a warm cache). An `+
     `artifact is a STEERING surface, not a transcript: lead with the pending decision or blocker and `+
     `make it the loudest thing; show only what is needed to act on it; push evidence down and keep it `+
-    `collapsible; CUT the recap of what already happened; end by proposing the next move. Skip trivial `+
-    `turns (quick answers, lookups, conversational replies) — no artifact. EVERY artifact must include `+
+    `collapsible; CUT the recap of what already happened. ALMOST EVERY artifact must END WITH AN `+
+    `ANSWERABLE SURFACE — a short "Next steps" ballot of concrete moves the user acts on from the Board `+
+    `(✓ do it / ✎ note / ✗ skip), plus every question you raise wired as its OWN clickable item. A `+
+    `question left as prose the user cannot click is a bug; the lone chat bar is a fallback, not the `+
+    `answer. This holds even for a "done"/recap or a bespoke look-at design — the visual is yours to `+
+    `craft, but the user must still be able to respond in place (at least a "what next →"). Skip only `+
+    `genuine one-liners (a status pill, nothing to decide). EVERY artifact must include `+
     `the size-reporter script and the companion-meta block (code in the skill) or it renders at the `+
     `wrong size. Load the prefer-html skill for the how — the interaction helper (commentable blocks + `+
     `the Decide review form), those required snippets, and the Broadsheet house style. A Stop-hook `+
