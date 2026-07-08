@@ -245,18 +245,14 @@ function currentView(): BoardView {
  *  L0 home / idle (no filter — the rail shows every unit). Cleared by goHub/goIdle. */
 let roomFilter: "sessions" | "agenthub" | null = null;
 
-/** Which room a unit belongs to, given an already-computed source grouping. Repo-backed
- *  units are coding Sessions; everything else (non-repo / cloud / connected agents) is
- *  the Agent Hub. A unit with no live source yet (a just-launched coding tab) defaults
- *  to "sessions". */
-function unitKindWith(
-  byUnit: Map<string, LiveSource[]>,
-  unitKey: string,
-): "sessions" | "agenthub" {
-  if (isCloudUnit(unitKey)) return "agenthub"; // hub-pulled: always the agents' room
-  const sources = byUnit.get(unitKey) ?? [];
-  if (sources.length === 0) return "sessions";
-  return sources.some((s) => parseState(s.json).is_repo === true) ? "sessions" : "agenthub";
+/** Which room a unit belongs to. The Agent Hub is for CONNECTED CLOUD agents only
+ *  (hub-pulled `__cloud__` units); every LOCAL session is a coding Session — whether
+ *  or not its folder is a git repo. Using `is_repo` as the discriminator here was the
+ *  bug that filed a `+ Start from Folder` session opened in a plain (non-git) folder
+ *  under the Agent Hub, so it vanished from the Sessions view (repo sessions were fine).
+ *  If you open a session in a folder, it's a Session. */
+function unitKindWith(unitKey: string): "sessions" | "agenthub" {
+  return isCloudUnit(unitKey) ? "agenthub" : "sessions";
 }
 
 /** Last-rendered live JSON per source, so a poll only re-renders what changed. */
@@ -985,8 +981,8 @@ async function goHub(): Promise<void> {
  *  hasn't yet propagated freshness (e.g. immediately after Board launch). */
 function goSessions(): void {
   roomFilter = "sessions";
-  const { order, byUnit } = computeRoster(Date.now());
-  const first = order.find((u) => unitKindWith(byUnit, u) === "sessions");
+  const { order } = computeRoster(Date.now());
+  const first = order.find((u) => unitKindWith(u) === "sessions");
   if (first) { goUnit(first); return; }
   const u = findMostRecentActiveUnit();
   if (u) { goUnit(u); return; }
@@ -998,8 +994,8 @@ function goSessions(): void {
  *  reads "none yet" and connected agents populate it as they surface artifacts. */
 function goAgentHub(): void {
   roomFilter = "agenthub";
-  const { order, byUnit } = computeRoster(Date.now());
-  const first = order.find((u) => unitKindWith(byUnit, u) === "agenthub");
+  const { order } = computeRoster(Date.now());
+  const first = order.find((u) => unitKindWith(u) === "agenthub");
   if (first) { goUnit(first); return; }
   roomFilter = null;
   renderHubFallback();
@@ -1060,10 +1056,10 @@ function renderHubFallback(): void {
   if (clawd) mountClawd(clawd); // a fresh pixel-art clawd pose greets each idle landing
   if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
   // Live counts behind each door, split by room kind.
-  const { order, byUnit } = computeRoster(Date.now());
+  const { order } = computeRoster(Date.now());
   let sessions = 0;
   let agents = 0;
-  for (const u of order) unitKindWith(byUnit, u) === "agenthub" ? agents++ : sessions++;
+  for (const u of order) unitKindWith(u) === "agenthub" ? agents++ : sessions++;
   const sc = document.getElementById("hub-door-sessions-count");
   const ac = document.getElementById("hub-door-agenthub-count");
   if (sc) sc.textContent = sessions > 0 ? `${sessions} live` : "none live";
@@ -1113,6 +1109,28 @@ function isHomeRooted(s: LiveSource): boolean {
   if (!homeDir) return false;
   const dir = normalizeDir(parseState(s.json).unit_dir);
   return dir !== null && dir === homeDir;
+}
+
+/** A throwaway/scratch directory: the system temp roots, or a folder literally named
+ *  `tmp`/`temp`. Sessions rooted here are incidental, not projects. */
+function isScratchDir(dir: string): boolean {
+  const base = dir.split("/").filter(Boolean).pop()?.toLowerCase() ?? "";
+  if (base === "tmp" || base === "temp") return true;
+  return /^\/(private\/)?tmp(\/|$)|^\/var\/folders\//.test(dir);
+}
+
+/** An INCIDENTAL unit the roster should ignore entirely: a bare session launched in
+ *  $HOME (an ad-hoc "+ New session", not a project the user opened deliberately) or one
+ *  rooted in a scratch/temp dir. Kept off the roster per user preference — "if I wanted
+ *  it in here I would have run it in here." Deliberate `Start from Folder` sessions in a
+ *  real project dir (repo or not) are NOT ephemeral and stay. Cloud units never are. */
+function isEphemeralUnit(unitKey: string, sources: LiveSource[]): boolean {
+  if (isCloudUnit(unitKey)) return false;
+  if (sources.some(isHomeRooted)) return true;
+  return sources.some((s) => {
+    const dir = normalizeDir(parseState(s.json).unit_dir);
+    return dir !== null && isScratchDir(dir);
+  });
 }
 
 /** The absolute project dir for a unit — the `unit_dir` of any live source that
@@ -1347,11 +1365,20 @@ function liveSessionIds(): Set<string> {
 const RECENT_MIN_BYTES = 1500;
 const RECENT_MAX_ROWS = 8;
 
-/** The resumable, non-live sessions to surface (newest-first from Rust, deduped + capped). */
+/** The resumable, non-live sessions to surface (newest-first from Rust, deduped + capped).
+ *  Incidental sessions rooted in $HOME or a scratch/temp dir are excluded too, matching the
+ *  roster's ephemeral filter — they're never retained as "resumable". */
 function recentToShow(): RecentSession[] {
   const live = liveSessionIds();
   return allRecent
-    .filter((r) => r.cwd && r.size_bytes >= RECENT_MIN_BYTES && !live.has(r.session_id))
+    .filter(
+      (r) =>
+        r.cwd &&
+        r.size_bytes >= RECENT_MIN_BYTES &&
+        !live.has(r.session_id) &&
+        !(homeDir !== null && normalizeDir(r.cwd) === homeDir) &&
+        !isScratchDir(r.cwd),
+    )
     .slice(0, RECENT_MAX_ROWS);
 }
 
@@ -1453,6 +1480,12 @@ function computeRoster(now: number): Roster {
     if (!byUnit.has(key)) byUnit.set(key, []);
     live.add(key);
   }
+  // Drop INCIDENTAL units — sessions launched in $HOME or a scratch/temp dir — so they
+  // never clutter the roster (user preference). A deliberate `Start from Folder` session
+  // in a real project dir is kept; cloud units are never ephemeral.
+  for (const unit of [...live]) {
+    if (isEphemeralUnit(unit, byUnit.get(unit) ?? [])) live.delete(unit);
+  }
 
   const needs: string[] = [];
   const running: string[] = [];
@@ -1549,7 +1582,7 @@ function renderUnitRail(activeUnitKey: string | null): void {
   // Scope the rail to the active ROOM when entered via a home door; the L0 home / idle
   // (roomFilter null) shows every unit, exactly as before.
   const order = roomFilter
-    ? allOrder.filter((u) => unitKindWith(byUnit, u) === roomFilter)
+    ? allOrder.filter((u) => unitKindWith(u) === roomFilter)
     : allOrder;
   const prevActiveUnit = lastRailActiveUnit;
   const unitChanged = activeUnitKey !== prevActiveUnit;

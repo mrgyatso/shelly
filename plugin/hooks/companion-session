@@ -150,6 +150,54 @@ fi
 #    list doesn't grow unbounded across crashed/abandoned sessions.
 find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exec rm -f {} + 2>/dev/null
 
+# 2 (cont). GC orphaned bookkeeping. The prune above removes dead live FILES, but the
+#     per-session sidecars (owned-sessions / session-dirs / session-ids / dismissed) and
+#     the immutable identity records under sessions/ were only trimmed on a GRACEFUL
+#     SessionEnd — a crash / kill / overlay-restart-SIGHUP (reason "other") leaves them, so
+#     they grew unbounded. Drop any sidecar entry whose live file is gone, and any sessions/
+#     record that is BOTH old (>REGISTRY_PRUNE_DAYS) and unreferenced by a surviving live
+#     file. Best-effort; the current session's live file + sidecars were written above, so
+#     it is never self-evicted. Atomic tmp+rename writes; never blocks the hook.
+REGISTRY_PRUNE_DAYS=30 LIVE_DIR="$live_dir" CMP_DIR="${HOME}/.claude/companion" node -e '
+  const fs=require("fs"), path=require("path");
+  const cmp=process.env.CMP_DIR, liveDir=process.env.LIVE_DIR;
+  const regDays=parseInt(process.env.REGISTRY_PRUNE_DAYS,10)||30;
+  let liveStems=[];
+  try { liveStems=fs.readdirSync(liveDir).filter(f=>f.endsWith(".json")).map(f=>f.slice(0,-5)); } catch(e){}
+  const stemSet=new Set(liveStems);
+  // shortid suffix (after the last "--") of each surviving live stem
+  const liveShort=new Set(liveStems.map(s=>{const i=s.lastIndexOf("--");return i>=0?s.slice(i+2):"";}).filter(Boolean));
+  // object sidecars keyed by stem: drop entries with no surviving live file
+  for (const f of ["owned-sessions.json","session-dirs.json","session-ids.json"]) {
+    const p=path.join(cmp,f);
+    try {
+      const m=JSON.parse(fs.readFileSync(p,"utf8")); let changed=false;
+      for (const k of Object.keys(m)) if (!stemSet.has(k)) { delete m[k]; changed=true; }
+      if (changed) { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t,p); }
+    } catch(e){}
+  }
+  // dismissed.json is an ARRAY of stems
+  try {
+    const p=path.join(cmp,"dismissed.json");
+    const a=JSON.parse(fs.readFileSync(p,"utf8"));
+    if (Array.isArray(a)) { const b=a.filter(x=>stemSet.has(x));
+      if (b.length!==a.length) { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(b)); fs.renameSync(t,p); } }
+  } catch(e){}
+  // sessions/<id>.json identity records: prune only when old AND unreferenced by a live file
+  try {
+    const sd=path.join(cmp,"sessions"), now=Date.now();
+    for (const f of fs.readdirSync(sd)) {
+      if (!f.endsWith(".json")) continue;
+      const fp=path.join(sd,f);
+      let sid=""; try { sid=(JSON.parse(fs.readFileSync(fp,"utf8"))||{}).session_id||""; } catch(e){}
+      const short=sid.slice(0,8).replace(/[^A-Za-z0-9]/g,"-");
+      if (short && liveShort.has(short)) continue;          // a live session owns it → keep
+      let ageDays=Infinity; try { ageDays=(now-fs.statSync(fp).mtimeMs)/86400000; } catch(e){}
+      if (ageDays>regDays) { try { fs.rmSync(fp); } catch(e){} }
+    }
+  } catch(e){}
+' 2>/dev/null
+
 # 2b. Worktree-awareness. If ANOTHER session is already active in this same repo
 #     root (its live file was touched within ~30 min), hint this agent to isolate
 #     its edits in a git worktree so two agents in one repo don't clobber each
