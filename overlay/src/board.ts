@@ -1111,6 +1111,28 @@ function isHomeRooted(s: LiveSource): boolean {
   return dir !== null && dir === homeDir;
 }
 
+/** A throwaway/scratch directory: the system temp roots, or a folder literally named
+ *  `tmp`/`temp`. Sessions rooted here are incidental, not projects. */
+function isScratchDir(dir: string): boolean {
+  const base = dir.split("/").filter(Boolean).pop()?.toLowerCase() ?? "";
+  if (base === "tmp" || base === "temp") return true;
+  return /^\/(private\/)?tmp(\/|$)|^\/var\/folders\//.test(dir);
+}
+
+/** An INCIDENTAL unit the roster should ignore entirely: a bare session launched in
+ *  $HOME (an ad-hoc "+ New session", not a project the user opened deliberately) or one
+ *  rooted in a scratch/temp dir. Kept off the roster per user preference — "if I wanted
+ *  it in here I would have run it in here." Deliberate `Start from Folder` sessions in a
+ *  real project dir (repo or not) are NOT ephemeral and stay. Cloud units never are. */
+function isEphemeralUnit(unitKey: string, sources: LiveSource[]): boolean {
+  if (isCloudUnit(unitKey)) return false;
+  if (sources.some(isHomeRooted)) return true;
+  return sources.some((s) => {
+    const dir = normalizeDir(parseState(s.json).unit_dir);
+    return dir !== null && isScratchDir(dir);
+  });
+}
+
 /** The absolute project dir for a unit — the `unit_dir` of any live source that
  *  belongs to it (all sessions in a repo unit share the same root). null when no
  *  source carries it (e.g. a pre-hook session), which disables "+ session". */
@@ -1343,11 +1365,20 @@ function liveSessionIds(): Set<string> {
 const RECENT_MIN_BYTES = 1500;
 const RECENT_MAX_ROWS = 8;
 
-/** The resumable, non-live sessions to surface (newest-first from Rust, deduped + capped). */
+/** The resumable, non-live sessions to surface (newest-first from Rust, deduped + capped).
+ *  Incidental sessions rooted in $HOME or a scratch/temp dir are excluded too, matching the
+ *  roster's ephemeral filter — they're never retained as "resumable". */
 function recentToShow(): RecentSession[] {
   const live = liveSessionIds();
   return allRecent
-    .filter((r) => r.cwd && r.size_bytes >= RECENT_MIN_BYTES && !live.has(r.session_id))
+    .filter(
+      (r) =>
+        r.cwd &&
+        r.size_bytes >= RECENT_MIN_BYTES &&
+        !live.has(r.session_id) &&
+        !(homeDir !== null && normalizeDir(r.cwd) === homeDir) &&
+        !isScratchDir(r.cwd),
+    )
     .slice(0, RECENT_MAX_ROWS);
 }
 
@@ -1448,6 +1479,12 @@ function computeRoster(now: number): Roster {
     const key = `${CLOUD}:${id}`;
     if (!byUnit.has(key)) byUnit.set(key, []);
     live.add(key);
+  }
+  // Drop INCIDENTAL units — sessions launched in $HOME or a scratch/temp dir — so they
+  // never clutter the roster (user preference). A deliberate `Start from Folder` session
+  // in a real project dir is kept; cloud units are never ephemeral.
+  for (const unit of [...live]) {
+    if (isEphemeralUnit(unit, byUnit.get(unit) ?? [])) live.delete(unit);
   }
 
   const needs: string[] = [];
