@@ -210,6 +210,14 @@ async function pollHubAgents(): Promise<void> {
 const IDLE = "__idle__";
 /** Poll cadence for live-state — matches live.ts's calm cadence. */
 const POLL_MS = 1200;
+/** Poll cadence for the usage meter. Deliberately slower than POLL_MS: context only
+ *  moves when an assistant turn lands, so a tighter loop would re-read the transcript
+ *  to learn nothing. */
+const METER_POLL_MS = 4000;
+/** Context fill at which the meter stops being ambient. `warn` = start thinking about
+ *  compacting; `high` = the next long tool result may not fit. */
+const METER_WARN_PCT = 70;
+const METER_HIGH_PCT = 85;
 /** An instance whose live file hasn't been touched within this window is "stale"
  *  — it drops off the live roster into the reversible Archived toggle. */
 const LIVENESS_MS = 2 * 60 * 60 * 1000;
@@ -396,6 +404,11 @@ let railSessionsEl: HTMLElement | null = null;
 let menuToggleEl: HTMLElement | null = null;
 let controlsEl: HTMLElement | null = null;
 let unitTitleEl: HTMLElement | null = null;
+let meterEl: HTMLElement | null = null;
+let meterBarEl: HTMLElement | null = null;
+let meterFillEl: HTMLElement | null = null;
+let meterTextEl: HTMLElement | null = null;
+let compactBtnEl: HTMLButtonElement | null = null;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
 let currentUnitKey: string | null = null;
 let lastRailActiveUnit: string | null = null; // tracks which unit the rail was last rendered for
@@ -2194,6 +2207,7 @@ function enterUnit(unitKey: string): void {
   unitEl.classList.toggle("no-terminal", isCloudUnit(unitKey));
   renderUnitRail(unitKey);
   renderUnitTitle(unitKey);
+  void renderUnitMeter(unitKey);
   void renderHero(unitKey);
   renderHistory(unitKey);
   // Reveal this unit's Board-owned terminal. A unit is one specific session, so
@@ -2593,6 +2607,16 @@ function wireUnitChrome(): void {
     if (nameEl) startRename(currentUnitKey, nameEl, () => renderUnitTitle(currentUnitKey!));
   });
 
+  // Usage meter: paints on unit entry, then keeps itself current on its own slow
+  // cadence (a turn can land at any time, with nothing else to re-render).
+  meterEl = document.getElementById("unit-meter");
+  meterBarEl = document.getElementById("unit-meter-bar");
+  meterFillEl = document.getElementById("unit-meter-fill");
+  meterTextEl = document.getElementById("unit-meter-text");
+  compactBtnEl = document.getElementById("unit-compact") as HTMLButtonElement | null;
+  compactBtnEl?.addEventListener("click", () => void runCompact());
+  window.setInterval(() => void renderUnitMeter(currentUnitKey), METER_POLL_MS);
+
   // Collapse / expand the left rail to reclaim space, via a SINGLE toolbar toggle: the
   // rail folds away when collapsed, so the control must live outside it (« hides, »
   // shows — same spot in both states). Persisted so it survives reloads.
@@ -2642,6 +2666,102 @@ function renderUnitTitle(unitKey: string): void {
   const nameEl = unitTitleEl.querySelector(".unit-title-name") as HTMLElement | null;
   if (nameEl) nameEl.textContent = unitName(unitKey, sources);
   unitTitleEl.hidden = false;
+}
+
+/** What `session_usage` returns — see usage.rs for how each number is derived. */
+interface SessionUsage {
+  contextTokens: number;
+  outputTokens: number;
+  model: string;
+  limit: number;
+}
+
+/** Token counts read at a glance: `114k`, `1M`. Precision past three significant
+ *  figures is noise on a meter that moves in thousands. */
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (n >= 1_000) return `${Math.round(n / 1000)}k`;
+  return String(n);
+}
+
+/** Repaint the meter for `unitKey`'s ACTIVE session. Hidden whenever there is no
+ *  session to measure: the roster buckets, a cloud agent (no transcript), a tab too
+ *  young to have taken a turn.
+ *
+ *  The meter follows the session, but Compact needs a Board-owned PTY to type into —
+ *  so an external session (or one whose terminal died) still shows its numbers with
+ *  the button disabled, rather than hiding a meter that is perfectly readable. */
+async function renderUnitMeter(unitKey: string | null): Promise<void> {
+  if (!meterEl || !meterFillEl || !meterTextEl || !compactBtnEl || !meterBarEl) return;
+  const hide = (): void => {
+    meterEl!.hidden = true;
+  };
+  if (!unitKey || unitKey === UNSOURCED || unitKey === IDLE || isCloudUnit(unitKey)) return hide();
+  // Entering a new unit: blank the meter rather than leave the previous session's
+  // numbers standing under the new name for the length of the read.
+  if (meterEl.dataset.unit !== unitKey) {
+    meterEl.hidden = true;
+    meterEl.dataset.unit = unitKey;
+  }
+
+  const src = activeSessionSource(unitKey);
+  const sessionId = src
+    ? parseState(allSources.find((s) => s.source === src)?.json ?? "").session_id
+    : null;
+  if (!sessionId) return hide();
+
+  const usage = await invoke<SessionUsage | null>("session_usage", { sessionId });
+  // The await let the user switch units (or sessions) out from under us. Painting now
+  // would show one session's numbers under another's name.
+  if (currentUnitKey !== unitKey || sessionId !== lastMeterSessionId(unitKey)) return;
+  if (!usage) return hide();
+
+  const pct = Math.min(100, (usage.contextTokens / usage.limit) * 100);
+  meterEl.hidden = false;
+  meterEl.dataset.level = pct >= METER_HIGH_PCT ? "high" : pct >= METER_WARN_PCT ? "warn" : "ok";
+  meterFillEl.style.width = `${pct.toFixed(1)}%`;
+  meterBarEl.setAttribute("aria-valuenow", String(Math.round(pct)));
+  meterTextEl.textContent = `${fmtTokens(usage.contextTokens)}/${fmtTokens(usage.limit)} · ${fmtTokens(usage.outputTokens)} out`;
+  meterTextEl.title =
+    `${usage.contextTokens.toLocaleString()} of ${usage.limit.toLocaleString()} context tokens ` +
+    `(${pct.toFixed(0)}%) on ${usage.model}\n` +
+    `${usage.outputTokens.toLocaleString()} tokens generated this session`;
+
+  const tabId = ownedTabForUnit(unitKey);
+  compactBtnEl.disabled = !tabId;
+  compactBtnEl.title = tabId
+    ? "Run /compact in this session — summarises the conversation and frees context"
+    : "The Board doesn't own this session's terminal, so it can't run /compact here";
+}
+
+/** The session the meter is currently measuring for `unitKey`, re-resolved after an
+ *  await so a mid-flight session switch can be detected. */
+function lastMeterSessionId(unitKey: string): string | null {
+  const src = activeSessionSource(unitKey);
+  return src
+    ? parseState(allSources.find((s) => s.source === src)?.json ?? "").session_id ?? null
+    : null;
+}
+
+/** Send `/compact` into the active session and let it run. The user chose one-click
+ *  over a prefill: the button IS the confirmation. Verified by test that a bracketed
+ *  paste of a slash command executes it rather than submitting it as a prompt. */
+async function runCompact(): Promise<void> {
+  if (!currentUnitKey || !compactBtnEl) return;
+  const tabId = ownedTabForUnit(currentUnitKey);
+  if (!tabId) return;
+  const unitKey = currentUnitKey;
+  compactBtnEl.disabled = true;
+  compactBtnEl.textContent = "Compacting…";
+  try {
+    await submitIntoPty(tabId, "/compact");
+    // Compaction takes a while and only shows up once Claude writes its next turn.
+    // Re-read then, so the bar visibly drops instead of waiting out the poll.
+    window.setTimeout(() => void renderUnitMeter(unitKey), 6000);
+  } finally {
+    compactBtnEl.textContent = "Compact";
+    void renderUnitMeter(currentUnitKey);
+  }
 }
 
 /** Size the two stacked surfaces. "split" shares the pane; "artifact" grows the
