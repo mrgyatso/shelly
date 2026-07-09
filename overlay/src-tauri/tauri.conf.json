@@ -34,7 +34,11 @@
     "resources": {
       "../scripts/companion": "scripts/companion",
       "../scripts/companion-hook": "scripts/companion-hook",
-      "../scripts/companion-doctor": "scripts/companion-doctor"
+      "../scripts/companion-doctor": "scripts/companion-doctor",
+      "../scripts/companion-setup": "scripts/companion-setup",
+      "../scripts/companion-index.cjs": "scripts/companion-index.cjs",
+      "../scripts/companion-trace.sh": "scripts/companion-trace.sh",
+      "../scripts/companion-trace.cjs": "scripts/companion-trace.cjs"
     },
     "icon": [
       "icons/32x32.png",

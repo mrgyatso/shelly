@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # companion-doctor — health check for the Companion overlay setup.
 #
-# Runs six checks, prints a plaintext summary to stdout, then renders the same
+# Runs eight checks, prints a plaintext summary to stdout, then renders the same
 # report as an HTML panel inside the overlay. Seeing the panel is itself the
 # proof that the render path works; the plaintext is the fallback for when the
 # overlay is the thing that's broken.
@@ -60,6 +60,15 @@ else
   add warn "cli on PATH" "not linked — ln -s '$SCRIPT_DIR/companion' /usr/local/bin/companion"
 fi
 
+# 2b. node ----------------------------------------------------------------
+# Every plugin hook shells out to node. Claude Code ships as a native binary,
+# so node is not implied by having `claude` installed.
+if command -v node >/dev/null 2>&1; then
+  add ok "node" "$(node -v)"
+else
+  add bad "node" "absent — the plugin's hooks are Node scripts (brew install node)"
+fi
+
 # 3. overlay daemon -------------------------------------------------------
 pids=$(pgrep -x companion-overlay 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
 if [ -n "$pids" ]; then
@@ -68,18 +77,35 @@ else
   add warn "overlay daemon" "idle — starts on the first 'companion open'"
 fi
 
-# 4. PostToolUse hook -----------------------------------------------------
-hook_found=""
-for s in "$HOME/.claude/settings.json" "$HOME/.claude/settings.local.json"; do
-  if [ -f "$s" ] && grep -q "companion-hook" "$s" 2>/dev/null; then
-    hook_found="${s#"$HOME"/}"
-    break
-  fi
-done
-if [ -n "$hook_found" ]; then
-  add ok "PostToolUse hook" "wired in $hook_found"
+# 4. hooks wired ----------------------------------------------------------
+# Two supported paths: the plugin (which carries its own hooks.json — nothing
+# lands in settings.json), or a hand-added hook in settings.json. Check the
+# plugin FIRST; grepping settings.json alone reports a false failure on the
+# recommended install.
+if claude plugin list 2>/dev/null | grep -q "companion@claude-code-companion"; then
+  add ok "hooks wired" "via the companion plugin"
 else
-  add bad "PostToolUse hook" "absent — install the plugin, or add companion-hook to settings.json"
+  hook_found=""
+  for s in "$HOME/.claude/settings.json" "$HOME/.claude/settings.local.json"; do
+    if [ -f "$s" ] && grep -q "companion-hook" "$s" 2>/dev/null; then
+      hook_found="${s#"$HOME"/}"
+      break
+    fi
+  done
+  if [ -n "$hook_found" ]; then
+    add ok "hooks wired" "by hand, in $hook_found"
+  else
+    add bad "hooks wired" "absent — run 'companion setup'"
+  fi
+fi
+
+# 4b. session handling ----------------------------------------------------
+# The plugin ignores terminals the app did not spawn unless opted in. Without
+# this row, "installed everything, my terminal does nothing" has no diagnosis.
+if [ "$(cat "$HOME/.claude/companion/external-terminals" 2>/dev/null)" = on ]; then
+  add ok "session handling" "all terminals, including ones started outside the app"
+else
+  add warn "session handling" "app-spawned sessions only — 'companion setup --external-terminals' for the rest"
 fi
 
 # 5. artifacts dir --------------------------------------------------------
