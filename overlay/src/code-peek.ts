@@ -178,6 +178,7 @@ export function closeCodePeek(): void {
     timer = null;
   }
   // The next unit's files have nothing to do with this one's.
+  currentSessionId = null;
   activePath = null;
   lastListSig = "";
 }
@@ -190,15 +191,10 @@ async function open(): Promise<void> {
   if (!unitEl) return;
   unitEl.dataset.code = "open";
   toggleBtn?.classList.add("on");
-  currentSessionId = resolveSessionId();
-  if (!currentSessionId) {
-    renderFiles([]);
-    showStatus("No session here yet.");
-    return;
-  }
   await refreshFiles();
   // Keep the panel honest while it's open — watching the agent work is the point.
-  // Cleared by closeCodePeek().
+  // Started unconditionally: a unit whose session isn't live YET must not be stuck
+  // on the empty state forever. Cleared by closeCodePeek().
   if (timer === null) timer = window.setInterval(() => void refreshFiles(), REFRESH_MS);
 }
 
@@ -206,8 +202,21 @@ async function open(): Promise<void> {
  *  the poll path stays quiet once something is on screen: a transient error must not
  *  stomp the file the user is reading. */
 async function refreshFiles(): Promise<void> {
-  if (!currentSessionId) return;
-  const sessionId = currentSessionId;
+  // Re-resolve every tick rather than latching on open. The unit's active session can
+  // change under an open panel — the rail's session switcher doesn't re-enter the unit
+  // — and a just-spawned session has no id at all until its live file appears. Latching
+  // would leave the drawer showing a sibling session's files, or a permanent empty state.
+  const sessionId = resolveSessionId();
+  if (sessionId !== currentSessionId) {
+    currentSessionId = sessionId;
+    activePath = null;
+    lastListSig = "";
+    renderFiles([]);
+  }
+  if (!sessionId) {
+    showStatus("No session here yet.");
+    return;
+  }
   let files: TouchedFile[];
   try {
     files = await invoke<TouchedFile[]>("session_files", { sessionId });
