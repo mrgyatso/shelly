@@ -12,7 +12,7 @@
  * reload, never a silent no-op. If a future refactor reintroduces the bug (all roads
  * keyed on path-novelty/difference), case 1 fails.
  */
-import { rewritesNeedingReload } from "../src/ingest-logic.ts";
+import { rewritesNeedingReload, effectsForRewrites } from "../src/ingest-logic.ts";
 
 let failed = 0;
 function check(name: string, cond: boolean): void {
@@ -25,7 +25,7 @@ const eq = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.strin
 const P = "/art/ac-condensate-pump-shopping-list.html";
 
 check(
-  "1. rewrite of the on-screen hero reloads it (the reported bug)",
+  "1. rewrite of the on-screen hero is detected (the reported bug)",
   eq(
     rewritesNeedingReload(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
       digestPath: P,
@@ -36,7 +36,7 @@ check(
 );
 
 check(
-  "2. rewrite of the artifact open in the reader reloads the reader (reader wins)",
+  "2. rewrite of the artifact open in the reader targets the reader (reader wins)",
   eq(
     rewritesNeedingReload(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
       digestPath: P,
@@ -76,6 +76,55 @@ check(
       focusPath: null,
     }),
     [],
+  ),
+);
+
+// ---- effectsForRewrites — NO REWRITE MAY EVER RELOAD A DISPLAYED FRAME ------
+// The comment-loss bug (2026-07-09): an agent re-authored one artifact 10× in 7
+// minutes; every rewrite reloaded the frame showing it and destroyed the comments
+// the user had typed into it. These pin the reaction, not the detection.
+
+check(
+  "6. a rewritten hero is offered as a pill, never reloaded",
+  eq(
+    effectsForRewrites(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
+      digestPath: P,
+      focusPath: null,
+    }),
+    [{ path: P, target: "hero", action: "pill" }],
+  ),
+);
+
+check(
+  "7. a rewrite under the OPEN READER is deferred — the focused frame is never touched",
+  eq(
+    effectsForRewrites(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
+      digestPath: P,
+      focusPath: P,
+    }),
+    [{ path: P, target: "reader", action: "defer" }],
+  ),
+);
+
+check(
+  "8. hero rewritten while the reader shows a DIFFERENT artifact → pill on the hero",
+  eq(
+    effectsForRewrites(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
+      digestPath: P,
+      focusPath: "/art/other.html",
+    }),
+    [{ path: P, target: "hero", action: "pill" }],
+  ),
+);
+
+check(
+  "9. no rewrite anywhere produces a reload action",
+  eq(
+    effectsForRewrites(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
+      digestPath: P,
+      focusPath: null,
+    }).some((e) => (e.action as string) === "reload"),
+    false,
   ),
 );
 

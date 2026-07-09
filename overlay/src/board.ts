@@ -27,7 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
-import { heroArtifactFor, rewritesNeedingReload } from "./ingest-logic";
+import { heroArtifactFor, effectsForRewrites } from "./ingest-logic";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { mountClawd } from "./clawd";
 import { initCodePeek, closeCodePeek } from "./code-peek";
@@ -2395,13 +2395,16 @@ function maybeLightBlankHero(unitKey: string): void {
   }
 }
 
-/** Reveal the "new artifact → view" pill over the sticky hero. `path` is the
- *  newest unseen artifact for the on-screen unit; clicking advances the hero to it.
- *  Passive by design — the poll never reloads the hero itself (see ingestIntoUnit),
- *  so a newer artifact for the unit you're already in can't silently vanish into
- *  history. */
-function showHeroNewPill(path: string): void {
+/** Reveal the "→ view" pill over the sticky hero. `path` is the artifact the pill
+ *  advances to on click: a newer unseen one for the on-screen unit ("New artifact"),
+ *  or the hero's own path rewritten in place ("Updated"). Passive by design — the
+ *  poll never reloads the hero itself (see ingestIntoUnit and effectsForRewrites),
+ *  so neither a newer artifact nor fresh content can silently vanish into history or
+ *  destroy a comment the user is mid-typing. */
+function showHeroNewPill(path: string, label = "New artifact"): void {
   heroPendingPath = path;
+  const labelEl = heroNewEl?.querySelector(".hero-new-label");
+  if (labelEl) labelEl.textContent = label;
   heroNewEl?.removeAttribute("hidden");
 }
 
@@ -3639,22 +3642,26 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   allArtifacts = artifacts;
   for (const a of artifacts) if (!held.has(a.path)) knownPaths.add(a.path);
 
-  // FIX #1 — content refresh. An artifact rewritten IN PLACE while it is the one on
-  // the hero (or open in the reader) is invisible to the four routing roads below
-  // (they key on path-novelty/difference). Detect it by mtime and reload that frame
-  // in place — silently, since it's the same doc with fresh content; the reported bug
-  // was the stale first render sticking. Capture display state BEFORE updating mtimes.
-  const reloads = rewritesNeedingReload(lastMtimeByPath, artifacts, { digestPath, focusPath });
+  // Content refresh. An artifact rewritten IN PLACE while it is the one on the hero
+  // (or open in the reader) is invisible to the four routing roads below (they key on
+  // path-novelty/difference). Detect it by mtime — but surface it PASSIVELY, never by
+  // reloading the frame: a reload tears the document down and wipes whatever the user
+  // was typing into it (the 2026-07-09 comment-loss bug, where an agent re-authored one
+  // path 10× in 7 minutes). `effectsForRewrites` owns that rule. Display state is read
+  // BEFORE mtimes are updated.
+  const rewrites = effectsForRewrites(lastMtimeByPath, artifacts, { digestPath, focusPath });
   for (const a of artifacts) lastMtimeByPath.set(a.path, a.modified_ms);
   for (const p of [...lastMtimeByPath.keys()]) if (!present.has(p)) lastMtimeByPath.delete(p);
-  for (const r of reloads) {
-    const frame = r.target === "reader" ? focusFrame : digestEl;
-    if (!frame) continue;
-    if (r.target === "hero" && currentView().level !== "unit") continue;
-    trace("ingest.content-refresh", { corr: r.path, target: r.target });
-    void loadArtifactInto(r.path, frame).catch((e) =>
-      console.error("content-refresh reload failed", r.path, e),
-    );
+  for (const r of rewrites) {
+    trace("ingest.content-refresh", { corr: r.path, target: r.target, action: r.action });
+    // "defer" (the reader): the focused surface is never disturbed. It re-reads fresh
+    // on the next nav/back/re-open, exactly as ingestIntoUnit defers its unit rebuild.
+    if (r.action !== "pill") continue;
+    if (currentView().level !== "unit") continue;
+    // Don't clobber a pill already offering a DIFFERENT, newer artifact — that one is
+    // the more useful advance. Same path (or none pending) ⇒ ours to show.
+    if (heroPendingPath !== null && heroPendingPath !== r.path) continue;
+    showHeroNewPill(r.path, "Updated");
   }
 
   for (const p of [...knownPaths]) if (!present.has(p)) knownPaths.delete(p);
