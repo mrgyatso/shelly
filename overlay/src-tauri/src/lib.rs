@@ -13,6 +13,7 @@ mod registry;
 mod sessions;
 mod trace;
 mod tray;
+mod usage;
 mod windows;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -156,6 +157,7 @@ pub fn run() {
             pty::resize_pty,
             pty::close_pty,
             sessions::list_recent_sessions,
+            usage::session_usage,
             hub::read_live_from_hub,
             hub::hub_config_get,
             hub::hub_config_set,

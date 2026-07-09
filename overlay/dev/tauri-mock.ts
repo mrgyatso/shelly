@@ -363,6 +363,13 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
     // the two home doors) renders, which is exactly what the door tests need.
     resolve_home: () => null,
     list_recent_sessions: () => RECENT_SESSIONS,
+    // Usage meter. The real command reads Claude Code's transcript, which the harness
+    // has none of — so serve a fixed reading, pitched into the `warn` band so the
+    // meter's non-ambient treatment is visible on sight rather than only under load.
+    session_usage: (args) =>
+      String(args.sessionId ?? "")
+        ? { contextTokens: 742_000, outputTokens: 96_400, model: "claude-opus-4-8", limit: 1_000_000 }
+        : null,
     read_dials: () => ({ mode: "manual", quality: "pretty" }),
     // Agent hub: the connected-agents registry + the reply inbox. Posts are
     // recorded on window.__inboxPosts so scripted verification can assert the
@@ -460,6 +467,10 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
     // A visitor will type into the terminal. Echo it so the box feels alive, and
     // on Enter say plainly why nothing happens — this demo has no model behind it.
     write_pty: (args) => {
+      // Record every write so scripted checks can assert what the Board typed into a
+      // session (the Compact button's `/compact` submit, above all).
+      const w = window as unknown as { __ptyWrites?: unknown[] };
+      (w.__ptyWrites ??= []).push(args);
       if (!demo) return null;
       const tabId = String(args.tabId ?? "");
       const data = String(args.data ?? "");
