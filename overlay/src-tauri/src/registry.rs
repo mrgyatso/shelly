@@ -81,13 +81,11 @@ pub fn resolve_unit(session_id: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
-    // $HOME is process-global; serialize the tests that mutate it.
-    static HOME_LOCK: Mutex<()> = Mutex::new(());
-
+    // $HOME is process-global; serialize against every other test that reads or
+    // writes the environment — including ones that only spawn a process.
     fn with_home<T>(home: &std::path::Path, f: impl FnOnce() -> T) -> T {
-        let _g = HOME_LOCK.lock().unwrap();
+        let _g = crate::test_env::env_lock();
         let prev = std::env::var_os("HOME");
         std::env::set_var("HOME", home);
         let out = f();

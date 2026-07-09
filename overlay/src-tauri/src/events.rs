@@ -89,12 +89,10 @@ pub fn poll_events(from: u64) -> EventBatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static HOME_LOCK: Mutex<()> = Mutex::new(());
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn with_home<T>(home: &std::path::Path, f: impl FnOnce() -> T) -> T {
-        let _g = HOME_LOCK.lock().unwrap();
+        let _g = crate::test_env::env_lock();
         let prev = std::env::var_os("HOME");
         std::env::set_var("HOME", home);
         let out = f();
@@ -106,13 +104,15 @@ mod tests {
     }
 
     fn setup() -> PathBuf {
+        // A counter, not a timestamp: `SystemTime::now()` is only microsecond-
+        // resolved on macOS, so two tests starting in the same microsecond used
+        // to get the SAME directory — appending to each other's log, and then
+        // deleting it out from under each other on the way out.
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
         let tmp = std::env::temp_dir().join(format!(
-            "cmp-evt-{}-{:?}",
+            "cmp-evt-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir_all(tmp.join(".claude/companion")).unwrap();
         tmp

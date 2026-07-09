@@ -11,6 +11,8 @@ mod macos_panel;
 mod pty;
 mod registry;
 mod sessions;
+#[cfg(test)]
+mod test_env;
 mod trace;
 mod tray;
 mod usage;
