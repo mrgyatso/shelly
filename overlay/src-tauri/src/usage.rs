@@ -13,19 +13,27 @@
 //!     turn, and it drops sharply after a `/compact`.
 //!   * OUTPUT — tokens this session has generated. Cumulative: summed over turns.
 //!
-//! The context formula is verified against ground truth, not inferred. When a
-//! session compacts, Claude Code writes a `compactMetadata` record carrying
-//! `preTokens` — its own measure of the context at that boundary. On session
-//! ef654874 the last assistant turn before the boundary read
-//! `input=2, cache_read=191_472, cache_creation=886, output=233` — summing to
-//! 192_593, exactly the `preTokens` it recorded. Hence:
+//! The context formula is verified against the number the user actually sees, not
+//! inferred:
 //!
 //! ```text
 //! context = input_tokens
 //!         + cache_read_input_tokens
 //!         + cache_creation_input_tokens
-//!         + output_tokens
+//!         + output_tokens      (of the LAST real assistant turn)
 //! ```
+//!
+//! On session ef654874, `/context` printed `953.6k/1M` moments before a compaction.
+//! The last assistant turn before that boundary read
+//! `input=4, cache_read=948_299, cache_creation=5_346, output=204` — summing to
+//! 953_853, a 0.03% match. The meter therefore agrees with `/context`, which is the
+//! readout a user will compare it against.
+//!
+//! `compactMetadata.preTokens` looks like a tempting oracle and is NOT one. It agreed
+//! at this session's first boundary (192_593) and disagreed at its second, reading
+//! 1_154_905 — which exceeds the model's entire 1M window, so it cannot be "context
+//! at the boundary". It tracks a different quantity (note
+//! `cumulativeDroppedTokens == Σ(preTokens - postTokens)`). Don't calibrate against it.
 //!
 //! Read the TOP-LEVEL `message.usage` only. That object also nests an `iterations`
 //! array and a `server_tool_use` block which restate the same counts — summing
@@ -256,13 +264,14 @@ mod tests {
         .to_string()
     }
 
-    /// Ground truth: session ef654874's last turn before its compact boundary, whose
-    /// `compactMetadata.preTokens` recorded 192_593.
+    /// Ground truth: the real turn `/context` measured on session ef654874, where it
+    /// printed `953.6k/1M`. The meter must agree with that readout — it is what sits
+    /// next to it on screen.
     #[test]
-    fn context_matches_claude_codes_own_pretokens() {
+    fn context_matches_what_the_context_command_reports() {
         let mut s = scan();
-        fold_line(&assistant(2, 191_472, 886, 233), &mut s);
-        assert_eq!(s.context_tokens, 192_593);
+        fold_line(&assistant(4, 948_299, 5_346, 204), &mut s);
+        assert_eq!(s.context_tokens, 953_853); // `/context` said 953.6k — 0.03% off
     }
 
     #[test]
