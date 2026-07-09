@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "demo": "node scripts/gen-demo-html.mjs && vite --config vite.demo.config.ts",
+    "build:demo": "node scripts/gen-demo-html.mjs && vite build --config vite.demo.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "node --experimental-strip-types scripts/check-ingest-rewrite.ts"

@@ -7,6 +7,15 @@ build/
 .vite/
 ui-dist/
 target/
+dist-demo/
+# generated from index.html by scripts/gen-demo-html.mjs
+overlay/demo.html
+
+# Local replay kit — real artifacts from real sessions. This repo is PUBLIC and the
+# demo is published; only the invented demo-*.html artifacts may be committed.
+demo/replay-prompts.md
+demo/artifacts/*
+!demo/artifacts/demo-*.html
 
 # runtime state (persisted checkbox state)
 state.json
