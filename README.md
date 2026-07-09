@@ -44,43 +44,40 @@ Your agent writes each turn as one of those HTML pages. Companion watches for it
 
 ## Requirements
 
-macOS 11 or later. The release is a universal build that runs natively on both Apple Silicon and Intel. Building from source needs Rust and Node 18+.
+- **macOS 11 or later.** The release is a universal build that runs natively on both Apple Silicon and Intel.
+- **[Claude Code](https://claude.com/claude-code).**
+- **Node 18 or later** (`brew install node`). The plugin's hooks are Node scripts. Claude Code now ships as a native binary, so having `claude` does **not** mean you have Node — check with `node -v`.
+
+Building from source additionally needs Rust.
 
 ## Install
 
-### Homebrew (recommended)
+Two commands.
 
 ```bash
 brew install --cask mrgyatso/tap/claude-code-companion
+companion setup
 ```
 
-This installs the app to `/Applications`, symlinks the `companion` CLI onto your PATH, and clears the macOS quarantine flag for you. Then confirm everything is wired:
+The first installs the app to `/Applications`, puts the `companion` CLI on your PATH, and clears the macOS quarantine flag. The second wires the app to Claude Code — it adds the plugin marketplace, installs the `companion` plugin, creates the watched folder, and finishes by running `companion doctor` so you can see it worked.
 
-```bash
-companion doctor
-```
+`companion setup` is safe to re-run; every step it has already done is skipped. Restart any `claude` session you had open so it picks up the plugin.
 
-### Manual
+<details>
+<summary>Installing without Homebrew</summary>
 
-1. Download the latest `.dmg` from the [Releases page](https://github.com/mrgyatso/claude-code-companion/releases).
-2. Open it and drag Companion Overlay into Applications.
-3. Approve it on first launch (see below).
-4. Link the `companion` CLI (shipped inside the app):
+1. Download the latest `.dmg` from the [Releases page](https://github.com/mrgyatso/claude-code-companion/releases) and drag Companion Overlay into Applications.
+2. The build isn't signed yet, so macOS blocks it the first time ("Companion Overlay can't be opened because Apple cannot check it for malicious software"). Clear the quarantine flag:
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/Companion Overlay.app"
+   ```
+3. Link the `companion` CLI (it ships inside the app):
    ```bash
    ln -sf "/Applications/Companion Overlay.app/Contents/Resources/scripts/companion" /usr/local/bin/companion
    ```
+4. Run `companion setup`.
 
-## First launch
-
-> Homebrew users can skip this — the cask clears the quarantine flag on install.
-
-The build isn't signed yet, so macOS will block a manual install the first time ("Companion Overlay can't be opened because Apple cannot check it for malicious software"). Right-click the app in Applications, choose Open, then Open again. If that doesn't work, clear the quarantine flag:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/Companion Overlay.app"
-```
-
-You only do this once. A signed build will follow.
+</details>
 
 ## Using it
 
@@ -99,46 +96,37 @@ Shortcuts:
 - `⌘0` — show or hide the app
 - `⌘8` — the history of past pages
 
-## Making it automatic (the plugin)
+## Where your sessions have to run
 
-The point is that you don't render anything by hand — the agent does, as it works. Install the Claude Code plugin and that wiring lands automatically. In Claude Code:
+By default the plugin only acts in terminals **the app itself spawns**. Start a session from the home and everything works. Run `claude` in your own Terminal or iTerm and Companion stays silent by design — that session never joins the home and its pages are never rendered. This keeps agents that aren't using the app from cluttering it.
 
+If you'd rather have *every* session picked up, wherever you start it:
+
+```bash
+companion setup --external-terminals
 ```
-> /plugin marketplace add mrgyatso/claude-code-companion
-> /plugin install companion@claude-code-companion
-```
 
-That gives you:
+To go back to app-spawned sessions only, `rm ~/.claude/companion/external-terminals`. Either way, `companion doctor` tells you which mode you're in. (Remote agents pushing pages through the hub are a separate path and aren't affected by this setting.)
+
+## What the plugin adds
+
+`companion setup` installs it for you. It gives you:
 
 - lifecycle hooks that turn the working agent into the author of these pages — every substantive turn can surface one, with its state and open questions,
 - a `prefer-html` skill that shapes those pages (and ends each one in a decision surface you can answer),
 - slash commands:
   - `/companion:html` — render a page for the current turn on demand.
   - `/companion:mode selective|always|manual` — how eagerly pages are generated. **selective** (default) renders when a turn is worth it; **always** renders on every substantive turn; **manual** renders nothing until you ask with `/companion:html`.
-  - `/companion:quality fast|pretty` — **fast** (default) builds pages locally with no model call and no cost; **pretty** brings in a model for sharper design on genuinely visual turns.
   - `/companion:doctor` — a health panel, rendered through the same path it verifies.
   - `/companion:example` — an onboarding page that explains the app.
 
-`/companion:render` is the deprecated alias of `/companion:html` and works for one release.
+`/companion:render` is the deprecated alias of `/companion:html`, and `/companion:quality` is a legacy no-op kept as app state — since 0.4.5 the working agent authors every page in full context, so there is no renderer left to tune.
 
 The watched folder defaults to `~/.claude/companion/artifacts` (override with `COMPANION_ARTIFACTS_DIR`).
 
-### External terminals (off by default)
-
-The plugin only acts in terminals the **app itself spawns** (they carry a `COMPANION_SESSION` marker). A plain terminal that merely has the plugin installed — an "external" terminal — is **ignored by default**: it never joins the home, never has its pages indexed, and never spins up the background generator. This keeps sessions that aren't using the app from cluttering it.
-
-To opt a machine into external-terminal handling, write `on` to the flag file:
-
-```bash
-echo on > ~/.claude/companion/external-terminals   # re-enable
-rm ~/.claude/companion/external-terminals           # back to off (default)
-```
-
-(Remote agents that push pages through the hub are a separate path and are unaffected by this setting.)
-
 ### Wiring it by hand
 
-If you'd rather not use the plugin, add a `PostToolUse` hook in `~/.claude/settings.json`:
+If you'd rather not use the plugin, add a `PostToolUse` hook in `~/.claude/settings.json`. This renders pages the agent writes, but you don't get the skill, the slash commands, or the session roster — the agent won't know to author pages unless you ask it to.
 
 ```json
 {
