@@ -90,9 +90,11 @@ const DEMO_HEAD = `
       @media (max-width: 900px) { #demo-badge { display: none; } }
 
       /* The two places a visitor should be able to go next: the source, and the
-         person who built it. Mirrors the demo pill, opposite corner. */
+         person who built it. Pinned to the top centre — the empty span of the
+         board's top bar, between the greeting (left) and the window controls
+         (right), so it reads as chrome rather than a floating afterthought. */
       #demo-links {
-        position: fixed; right: 16px; bottom: 14px; z-index: 9999;
+        position: fixed; top: 13px; left: 50%; transform: translateX(-50%); z-index: 9999;
         display: flex; align-items: center; gap: 4px;
         padding: 5px; border-radius: 999px;
         background: rgba(20, 17, 14, 0.72); border: 1px solid rgba(255, 255, 255, 0.1);
