@@ -1,0 +1,88 @@
+#!/usr/bin/env sh
+# companion-setup — wire the Claude Code plugin to this app, then verify.
+#
+# The second (and last) command of a fresh install:
+#
+#   brew install --cask mrgyatso/tap/claude-code-companion
+#   companion setup
+#
+# Adds the marketplace, installs the plugin, creates the watched dirs, and hands
+# off to `companion doctor`. Safe to re-run: every step is skipped if already done.
+#
+# Invoked as `companion setup` (the wrapper execs here).
+#
+# Flags:
+#   --external-terminals   also handle `claude` sessions started outside the app
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+STATE_DIR="$HOME/.claude/companion"
+ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$STATE_DIR/artifacts}"
+MARKETPLACE=claude-code-companion
+PLUGIN=companion@claude-code-companion
+
+WANT_EXTERNAL=""
+for arg in "$@"; do
+  case "$arg" in
+    --external-terminals) WANT_EXTERNAL=1 ;;
+    *) echo "companion setup: unknown flag '$arg'" >&2; exit 2 ;;
+  esac
+done
+
+say()  { printf '  %s\n' "$1"; }
+fail() { printf '\ncompanion setup: %s\n' "$1" >&2; shift; for l in "$@"; do printf '  %s\n' "$l" >&2; done; exit 1; }
+
+printf '\ncompanion setup\n\n'
+
+# 1. Node — every plugin hook shells out to it. Claude Code ships as a native
+#    binary now, so node is NOT implied by having `claude` on PATH.
+command -v node >/dev/null 2>&1 || fail "node not found on PATH." \
+  "The plugin's hooks are Node scripts. Install Node 18 or later:" \
+  "  brew install node"
+say "node        $(node -v)"
+
+# 2. Claude Code — the plugin lives inside it.
+command -v claude >/dev/null 2>&1 || fail "claude not found on PATH." \
+  "Install Claude Code first: https://claude.com/claude-code"
+say "claude      $(command -v claude)"
+
+# 3. Marketplace. Only add when absent: a re-add overwrites the source, which
+#    would silently repoint a contributor's local checkout at GitHub.
+if claude plugin marketplace list 2>/dev/null | grep -q "❯ ${MARKETPLACE}\$"; then
+  say "marketplace ${MARKETPLACE} (already configured)"
+else
+  claude plugin marketplace add mrgyatso/claude-code-companion >/dev/null 2>&1 \
+    || fail "could not add the marketplace." "Run it by hand to see why:" \
+            "  claude plugin marketplace add mrgyatso/claude-code-companion"
+  say "marketplace ${MARKETPLACE} (added)"
+fi
+
+# 4. Plugin.
+if claude plugin list 2>/dev/null | grep -q "${PLUGIN}"; then
+  say "plugin      ${PLUGIN} (already installed)"
+else
+  claude plugin install "${PLUGIN}" >/dev/null 2>&1 \
+    || fail "could not install the plugin." "Run it by hand to see why:" \
+            "  claude plugin install ${PLUGIN}"
+  say "plugin      ${PLUGIN} (installed)"
+fi
+
+# 5. Watched dirs — the overlay polls these; create them so the first artifact
+#    write doesn't race a missing directory.
+mkdir -p "$ARTIFACTS_DIR" "$STATE_DIR/live"
+say "artifacts   $ARTIFACTS_DIR"
+
+# 6. External terminals. Off by default: the plugin only acts in terminals the
+#    app itself spawned. Opt in here, or later by writing the flag file.
+if [ -n "$WANT_EXTERNAL" ]; then
+  echo on > "$STATE_DIR/external-terminals"
+  say "external    on — sessions started outside the app are handled too"
+elif [ "$(cat "$STATE_DIR/external-terminals" 2>/dev/null)" = on ]; then
+  say "external    on"
+else
+  say "external    off — start sessions from inside the app (or re-run with --external-terminals)"
+fi
+
+printf '\nRestart any running `claude` session so it picks up the plugin, then:\n'
+printf '\n  companion board\n\n'
+
+exec "$SCRIPT_DIR/companion-doctor"
