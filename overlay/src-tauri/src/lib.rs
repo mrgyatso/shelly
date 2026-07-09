@@ -169,8 +169,8 @@ pub fn run() {
             hub::hub_test_connection,
             hub::hub_agents,
             hub::hub_post_inbox,
-            code_peek::list_changed_files,
-            code_peek::read_source_file
+            code_peek::session_files,
+            code_peek::read_touched_file
         ])
         .setup(|app| {
             // Regular activation policy: the Board is a normal app now — it gets a

@@ -1,46 +1,195 @@
-//! Code-peek: list the files in play for a session and read them for the
-//! read-only Monaco side panel.
+//! Code-peek: list the files a session has written, and read them (with their
+//! pre-change text) for the read-only Monaco diff panel.
 //!
-//! "Peek and nudge," not an IDE. The "files in play" are the changed files in the
-//! unit's working tree (`git status`) — the code the agent is touching right now,
-//! not a project browser. Reads are scope-guarded to the repository so the panel
-//! can never become an arbitrary file-read oracle. No writes here yet; edit + save
-//! (with an mtime conflict guard) are a deliberate fast-follow.
+//! "Peek and nudge," not an IDE. The "files in play" are the files THIS SESSION
+//! has actually written — every `file_path` the agent passed to Write/Edit, read
+//! straight out of Claude Code's own transcript, most-recent first. That is the
+//! only source that answers the question the panel is really asking ("what is the
+//! agent touching right now"):
+//!
+//!   * `git status` on the session's directory does not. A session's `unit_dir` is
+//!     frozen at SessionStart, so an agent working in a git worktree, or writing
+//!     anywhere outside its launch root, shows nothing. And a long-dirty file the
+//!     agent never opened outranks the file it just created.
+//!   * The transcript is append-only and already parsed for the usage meter, so a
+//!     session's writes cost one incremental scan — no hook, no watcher, no index.
+//!
+//! Reads are scope-guarded to that touched set: `read_touched_file` re-derives the
+//! set from the transcript and demands an exact match, so the panel can never
+//! become an arbitrary file-read oracle. There is no path join to traverse out of.
+//! No writes here yet; edit + save (with an mtime conflict guard) are a deliberate
+//! fast-follow.
 
+use std::collections::{HashMap, HashSet};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
-/// A changed file in a unit's working tree, as reported by `git status`.
-#[derive(serde::Serialize)]
-pub struct ChangedFile {
-    /// Path relative to the repository root — stable regardless of cwd, and what
-    /// the panel both displays and passes back to [`read_source_file`].
+use crate::usage::transcript_path;
+
+/// The tools whose `file_path` means "the agent wrote here". Read is deliberately
+/// absent: the panel shows work done, not files glanced at.
+const WRITE_TOOLS: [&str; 4] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
+
+/// A file the session has written.
+#[derive(serde::Serialize, Clone, PartialEq, Debug)]
+pub struct TouchedFile {
+    /// Absolute path — what the panel passes back to [`read_touched_file`], and
+    /// what the scope guard matches on.
     pub path: String,
-    /// The porcelain status code, trimmed (e.g. "M", "??", "A", "R", "D"). Left
-    /// otherwise raw for the frontend to map to a badge.
+    /// Repo-root-relative when the file sits in a git repo, else the bare path.
+    /// Display only.
+    pub rel: String,
+    /// Porcelain status for the badge: `M`, `A`, `D`, `??`, or `""` when the file
+    /// is inside no repo (or the write left it identical to HEAD).
     pub status: String,
 }
 
-/// The repository top-level for `dir`, or `None` if `dir` isn't inside a git repo.
-fn repo_toplevel(dir: &str) -> Option<PathBuf> {
+/// One session's accumulated transcript scan. Transcripts are append-only and
+/// reach several MB, so each poll reads only the bytes appended since the last.
+struct Scan {
+    /// Bytes consumed. Always lands on a line boundary — never mid-write.
+    offset: u64,
+    /// Touched absolute paths, oldest first. A re-touch moves a path to the end,
+    /// so the tail is the most recent work; the command reverses it for display.
+    paths: Vec<String>,
+}
+
+fn cache() -> &'static Mutex<HashMap<String, Scan>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Scan>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Companion's own bookkeeping, which the agent rewrites every single turn: the
+/// live status JSON, the artifacts it renders into the Board, and its per-project
+/// memory. All are surfaced elsewhere in the UI; listing them here would bury the
+/// two or three source files the user actually wants to see.
+fn is_companion_bookkeeping(path: &str) -> bool {
+    let home = match std::env::var("HOME") {
+        Ok(h) => h,
+        Err(_) => return false,
+    };
+    path.starts_with(&format!("{home}/.claude/companion/"))
+        || path.starts_with(&format!("{home}/.claude/projects/"))
+}
+
+/// Fold one transcript line into a running scan, recording every path the assistant
+/// wrote to. Subagent turns (`isSidechain`) are deliberately KEPT — a file an agent
+/// delegated to a subagent is still a file in play. (This is the opposite of the
+/// usage meter, whose tokens belong to the subagent's own context, not this one's.)
+fn fold_line(line: &str, scan: &mut Scan) {
+    if !line.contains("\"tool_use\"") {
+        return; // cheap reject: most lines carry no tool call at all
+    }
+    let v: serde_json::Value = match serde_json::from_str(line) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if v.get("type").and_then(|x| x.as_str()) != Some("assistant") {
+        return;
+    }
+    let blocks = match v.pointer("/message/content").and_then(|c| c.as_array()) {
+        Some(b) => b,
+        None => return,
+    };
+    for b in blocks {
+        if b.get("type").and_then(|x| x.as_str()) != Some("tool_use") {
+            continue;
+        }
+        let name = b.get("name").and_then(|x| x.as_str()).unwrap_or("");
+        if !WRITE_TOOLS.contains(&name) {
+            continue;
+        }
+        let fp = match b.pointer("/input/file_path").and_then(|x| x.as_str()) {
+            Some(p) if p.starts_with('/') => p,
+            _ => continue, // a relative path can't be resolved after the fact
+        };
+        if is_companion_bookkeeping(fp) {
+            continue;
+        }
+        // Re-touch = most recent. Drop the older mention so `paths` stays a set
+        // ordered by recency rather than by first sighting.
+        scan.paths.retain(|p| p != fp);
+        scan.paths.push(fp.to_string());
+    }
+}
+
+/// Read whatever has been appended since the last call and fold it in.
+fn rescan(path: &Path, scan: &mut Scan) {
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let len = match file.metadata() {
+        Ok(m) => m.len(),
+        Err(_) => return,
+    };
+    if len < scan.offset {
+        // The transcript was truncated or replaced under us — start over rather
+        // than seek past its end and read nothing, forever.
+        scan.offset = 0;
+        scan.paths.clear();
+    }
+    if len == scan.offset {
+        return; // nothing new
+    }
+    if file.seek(SeekFrom::Start(scan.offset)).is_err() {
+        return;
+    }
+    let mut buf = Vec::with_capacity((len - scan.offset) as usize);
+    if file.read_to_end(&mut buf).is_err() {
+        return;
+    }
+    // Claude appends while we read, so the tail may be half a line. Stop at the
+    // last newline and leave the remainder for next time — otherwise the offset
+    // steps past a line we never parsed and its writes vanish for good.
+    let end = match buf.iter().rposition(|&b| b == b'\n') {
+        Some(i) => i + 1,
+        None => return,
+    };
+    let text = String::from_utf8_lossy(&buf[..end]);
+    for line in text.lines() {
+        fold_line(line, scan);
+    }
+    scan.offset += end as u64;
+}
+
+/// Every absolute path `session_id` has written, most recent first.
+fn touched_paths(session_id: &str) -> Vec<String> {
+    let path = match transcript_path(session_id) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    let mut cache = match cache().lock() {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let scan = cache.entry(session_id.to_string()).or_insert_with(|| Scan {
+        offset: 0,
+        paths: Vec::new(),
+    });
+    rescan(&path, scan);
+    scan.paths.iter().rev().cloned().collect()
+}
+
+/// The repository top-level containing `dir`, or `None` when it isn't in a repo.
+fn repo_toplevel(dir: &Path) -> Option<PathBuf> {
     let out = Command::new("git")
-        .args(["-C", dir, "rev-parse", "--show-toplevel"])
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--show-toplevel"])
         .output()
         .ok()?;
     if !out.status.success() {
         return None;
     }
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(s))
-    }
+    (!s.is_empty()).then(|| PathBuf::from(s))
 }
 
-/// Parse one `git status --porcelain` line into (status, repo-relative path).
-/// Handles the rename form `R  old -> new` (takes `new`). Returns `None` for a
-/// line too short to carry a path.
+/// Parse one `git status --porcelain` line into (repo-relative path, status).
+/// Handles the rename form `R  old -> new` (takes `new`).
 fn parse_porcelain_line(line: &str) -> Option<(String, String)> {
     // Porcelain v1: two status chars, a space, then the path (`XY <path>`).
     if line.len() < 4 {
@@ -53,132 +202,358 @@ fn parse_porcelain_line(line: &str) -> Option<(String, String)> {
         Some((_, new)) => new,
         None => rest,
     };
-    // Skip directory entries (a trailing `/` — e.g. a collapsed untracked dir):
-    // they aren't readable files. `--untracked-files=all` normally expands these,
-    // but guard here too (submodules, edge cases).
     if path.is_empty() || path.ends_with('/') {
         None
     } else {
-        Some((status, path.to_string()))
+        Some((path.to_string(), status))
     }
 }
 
-/// The changed files in `unit_dir`'s working tree (staged, unstaged, untracked),
-/// each relative to the repo root. Empty when `unit_dir` isn't a git repo — the
-/// panel then shows its empty state rather than erroring. `core.quotePath=false`
-/// keeps non-ASCII paths literal (no C-style `\NNN` escaping to unquote).
-#[tauri::command]
-pub fn list_changed_files(unit_dir: String) -> Vec<ChangedFile> {
-    if repo_toplevel(&unit_dir).is_none() {
-        return Vec::new();
-    }
-    let out = match Command::new("git")
-        .args([
-            "-c",
-            "core.quotePath=false",
-            "-C",
-            &unit_dir,
-            "status",
-            "--porcelain",
-            "--untracked-files=all",
-        ])
-        .output()
-    {
+/// `git status` for one repo, as repo-relative path → status. One process per repo,
+/// not per file. `core.quotePath=false` keeps non-ASCII paths literal (no C-style
+/// `\NNN` escaping to unquote).
+fn statuses_for(root: &Path) -> HashMap<String, String> {
+    let out = Command::new("git")
+        .args(["-c", "core.quotePath=false", "-C"])
+        .arg(root)
+        .args(["status", "--porcelain", "--untracked-files=all"])
+        .output();
+    let out = match out {
         Ok(o) if o.status.success() => o,
-        _ => return Vec::new(),
+        _ => return HashMap::new(),
     };
     String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter_map(parse_porcelain_line)
-        .map(|(status, path)| ChangedFile { path, status })
         .collect()
 }
 
-/// Join `rel_path` onto `root` and read it, refusing anything that escapes `root`.
-/// Canonicalizing BOTH sides before the prefix check is what defeats `../` and
-/// symlink escape — a raw string prefix check would not. Split out from the
-/// command so the scope guard is unit-testable without git.
-fn read_in_scope(root: &Path, rel_path: &str) -> Result<String, String> {
-    let root = root.canonicalize().map_err(|e| e.to_string())?;
-    let target = root
-        .join(rel_path)
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
-    if !target.starts_with(&root) {
-        return Err("path is outside the repository".into());
-    }
-    std::fs::read_to_string(&target).map_err(|e| e.to_string())
+/// Resolve `path` to its real location when it exists. A deleted file can't be
+/// canonicalized, so it keeps the path the transcript recorded.
+fn real_path(path: &str) -> PathBuf {
+    let p = PathBuf::from(path);
+    p.canonicalize().unwrap_or(p)
 }
 
-/// Read a source file in play for the panel. `rel_path` is repo-root-relative (as
-/// returned by [`list_changed_files`]); it's resolved against the unit's repo root
-/// and scope-guarded to that root.
+/// The repo root for `path`'s directory, memoized per directory so a run of files in
+/// one project costs a single `git rev-parse`.
+fn root_for(path: &Path, roots: &mut HashMap<PathBuf, Option<PathBuf>>) -> Option<PathBuf> {
+    let dir = path.parent().unwrap_or(path).to_path_buf();
+    roots
+        .entry(dir.clone())
+        .or_insert_with(|| repo_toplevel(&dir))
+        .clone()
+}
+
+/// A path the session wrote that is now gone AND that git never tracked: a scratch
+/// file the agent created and cleaned up after itself. There is nothing to show for
+/// it — no contents, no HEAD blob to diff — so it must not become a dead chip that
+/// errors when clicked. A file git DID track reports status `D` and stays, as a
+/// deletion the user should see.
+fn vanished_without_trace(real: &Path, status: &str) -> bool {
+    !status.starts_with('D') && !real.exists()
+}
+
+/// The files `session_id` has written, most recent first, each tagged with the
+/// working-tree status git reports for it. Empty before the session's first write
+/// (or when it has no transcript yet) — the panel then shows its empty state.
 #[tauri::command]
-pub fn read_source_file(unit_dir: String, rel_path: String) -> Result<String, String> {
-    let root = repo_toplevel(&unit_dir).ok_or("not a git repository")?;
-    read_in_scope(&root, &rel_path)
+pub async fn session_files(session_id: String) -> Vec<TouchedFile> {
+    // Blocking file I/O and git subprocesses: keep both off the main thread. A sync
+    // command here would stall every Board interaction behind a multi-MB first read.
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut roots: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
+        let mut statuses: HashMap<PathBuf, HashMap<String, String>> = HashMap::new();
+        touched_paths(&session_id)
+            .into_iter()
+            .filter_map(|abs| {
+                let real = real_path(&abs);
+                let (rel, status) = match root_for(&real, &mut roots) {
+                    Some(root) => {
+                        let rel = real
+                            .strip_prefix(&root)
+                            .map(|r| r.to_string_lossy().into_owned())
+                            .unwrap_or_else(|_| abs.clone());
+                        let status = statuses
+                            .entry(root.clone())
+                            .or_insert_with(|| statuses_for(&root))
+                            .get(&rel)
+                            .cloned()
+                            .unwrap_or_default();
+                        (rel, status)
+                    }
+                    // Outside any repo (a scratch dir, say): no rel, no status.
+                    None => (abs.clone(), String::new()),
+                };
+                if vanished_without_trace(&real, &status) {
+                    return None;
+                }
+                Some(TouchedFile {
+                    path: abs,
+                    rel,
+                    status,
+                })
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// A file in play, as the diff panel renders it: the text on disk now, plus the text
+/// at HEAD so Monaco can show what the session changed.
+#[derive(serde::Serialize)]
+pub struct FileView {
+    /// The file's current contents. Empty when the session deleted it.
+    pub content: String,
+    /// The file's contents at git HEAD, or `None` when it is new (or untracked, or
+    /// outside a repo) — Monaco then renders the whole file as an addition.
+    pub original: Option<String>,
+    /// The session wrote this file and it is no longer on disk.
+    pub deleted: bool,
+}
+
+/// The file's text at HEAD, or `None` when git has no such blob (a new file).
+fn head_blob(root: &Path, rel: &str) -> Option<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["show", &format!("HEAD:{rel}")])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Read a file the session wrote, with its HEAD text for the diff.
+///
+/// `path` is the absolute path [`session_files`] returned. The guard is exact
+/// membership in the freshly-derived touched set — NOT a prefix check against some
+/// root — so there is no path to traverse out of and no repo to escape. A path the
+/// session never wrote is simply not readable through this command.
+#[tauri::command]
+pub async fn read_touched_file(session_id: String, path: String) -> Result<FileView, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let touched: HashSet<String> = touched_paths(&session_id).into_iter().collect();
+        if !touched.contains(&path) {
+            return Err("this session has not written that file".into());
+        }
+        let real = real_path(&path);
+        let content = std::fs::read_to_string(&real);
+        let original = repo_toplevel(real.parent().unwrap_or(&real)).and_then(|root| {
+            let rel = real.strip_prefix(&root).ok()?;
+            head_blob(&root, &rel.to_string_lossy())
+        });
+        match content {
+            Ok(content) => Ok(FileView {
+                content,
+                original,
+                deleted: false,
+            }),
+            // Gone from disk but present at HEAD ⇒ the session deleted it; show the
+            // deletion as a diff rather than an error.
+            Err(_) if original.is_some() => Ok(FileView {
+                content: String::new(),
+                original,
+                deleted: true,
+            }),
+            Err(e) => Err(e.to_string()),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// One transcript line carrying a single write to `file_path`.
+    fn write_line(tool: &str, file_path: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","message":{{"content":[{{"type":"tool_use","name":"{tool}","input":{{"file_path":"{file_path}"}}}}]}}}}"#
+        )
+    }
+
+    fn scan_of(lines: &[String]) -> Scan {
+        let mut scan = Scan {
+            offset: 0,
+            paths: Vec::new(),
+        };
+        for l in lines {
+            fold_line(l, &mut scan);
+        }
+        scan
+    }
+
     #[test]
-    fn parses_modified_and_untracked() {
+    fn records_every_write_tool() {
+        let lines: Vec<String> = WRITE_TOOLS
+            .iter()
+            .enumerate()
+            .map(|(i, t)| write_line(t, &format!("/repo/f{i}.rs")))
+            .collect();
+        assert_eq!(scan_of(&lines).paths.len(), WRITE_TOOLS.len());
+    }
+
+    #[test]
+    fn ignores_reads_and_other_tools() {
+        let scan = scan_of(&[
+            write_line("Read", "/repo/a.rs"),
+            write_line("Bash", "/repo/b.rs"),
+        ]);
+        assert!(scan.paths.is_empty());
+    }
+
+    #[test]
+    fn a_retouch_moves_the_file_to_the_most_recent_end() {
+        let scan = scan_of(&[
+            write_line("Write", "/repo/a.rs"),
+            write_line("Write", "/repo/b.rs"),
+            write_line("Edit", "/repo/a.rs"),
+        ]);
+        // Oldest first internally; `session_files` reverses it for display.
+        assert_eq!(scan.paths, vec!["/repo/b.rs", "/repo/a.rs"]);
+    }
+
+    #[test]
+    fn skips_relative_paths() {
+        assert!(scan_of(&[write_line("Write", "relative/f.rs")])
+            .paths
+            .is_empty());
+    }
+
+    #[test]
+    fn skips_companion_bookkeeping() {
+        let home = std::env::var("HOME").unwrap();
+        let scan = scan_of(&[
+            write_line("Write", &format!("{home}/.claude/companion/live/x--1.json")),
+            write_line("Write", &format!("{home}/.claude/projects/-p/memory/m.md")),
+            write_line("Write", "/repo/real.rs"),
+        ]);
+        assert_eq!(scan.paths, vec!["/repo/real.rs"]);
+    }
+
+    #[test]
+    fn a_user_turn_echoing_a_tool_use_block_is_not_a_write() {
+        let line = r#"{"type":"user","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"/repo/x.rs"}}]}}"#;
+        assert!(scan_of(&[line.to_string()]).paths.is_empty());
+    }
+
+    /// The guard is membership, not a prefix check: a path the session never wrote is
+    /// unreadable even when it sits inside the very repo the session works in.
+    #[test]
+    fn the_touched_set_excludes_a_sibling_file_in_the_same_repo() {
+        let scan = scan_of(&[write_line("Write", "/repo/written.rs")]);
+        let touched: HashSet<&String> = scan.paths.iter().collect();
+        assert!(touched.contains(&"/repo/written.rs".to_string()));
+        assert!(!touched.contains(&"/repo/secret.rs".to_string()));
+    }
+
+    #[test]
+    fn parses_modified_untracked_and_renamed_status_lines() {
         assert_eq!(
             parse_porcelain_line(" M overlay/src/board.ts"),
-            Some(("M".into(), "overlay/src/board.ts".into()))
+            Some(("overlay/src/board.ts".into(), "M".into()))
         );
         assert_eq!(
-            parse_porcelain_line("?? new_file.rs"),
-            Some(("??".into(), "new_file.rs".into()))
+            parse_porcelain_line("?? new.rs"),
+            Some(("new.rs".into(), "??".into()))
         );
         assert_eq!(
-            parse_porcelain_line("A  staged.rs"),
-            Some(("A".into(), "staged.rs".into()))
+            parse_porcelain_line("R  old.rs -> new.rs"),
+            Some(("new.rs".into(), "R".into()))
         );
     }
 
     #[test]
-    fn rename_takes_the_new_path() {
-        assert_eq!(
-            parse_porcelain_line("R  old/name.rs -> new/name.rs"),
-            Some(("R".into(), "new/name.rs".into()))
-        );
-    }
-
-    #[test]
-    fn ignores_lines_without_a_path() {
+    fn ignores_status_lines_without_a_readable_path() {
         assert_eq!(parse_porcelain_line(""), None);
         assert_eq!(parse_porcelain_line("M"), None);
+        assert_eq!(parse_porcelain_line("?? .claude/"), None); // collapsed dir
+    }
+
+    /// A fresh temp dir per test — `SystemTime` is only µs-resolved on macOS, so two
+    /// tests naming their dir by timestamp collide under `cargo test`'s thread pool.
+    fn temp_dir(tag: &str) -> PathBuf {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("code_peek_{tag}_{}_{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// A transcript that SHRINKS was replaced under us. Detection is by length alone,
+    /// so a same-length rewrite is invisible — as it is to the usage meter, and as it
+    /// is in practice: Claude Code only ever appends, and starts a new file on resume.
+    #[test]
+    fn a_truncated_transcript_resets_the_scan_instead_of_stalling() {
+        let dir = temp_dir("rescan");
+        let path = dir.join("t.jsonl");
+
+        let a = write_line("Write", "/repo/a.rs");
+        std::fs::write(&path, format!("{a}\n{a}\n")).unwrap();
+        let mut scan = Scan {
+            offset: 0,
+            paths: Vec::new(),
+        };
+        rescan(&path, &mut scan);
+        assert_eq!(scan.paths, vec!["/repo/a.rs"]);
+
+        // Replaced by a shorter transcript: the old offset now sits past its end.
+        std::fs::write(&path, format!("{}\n", write_line("Write", "/repo/b.rs"))).unwrap();
+        rescan(&path, &mut scan);
+        assert_eq!(scan.paths, vec!["/repo/b.rs"]);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn skips_directory_entries() {
-        // A collapsed untracked directory is not a readable file.
-        assert_eq!(parse_porcelain_line("?? .claude/"), None);
+    fn a_partial_trailing_line_is_left_for_the_next_scan() {
+        let dir = temp_dir("partial");
+        let path = dir.join("t.jsonl");
+
+        let full = write_line("Write", "/repo/a.rs");
+        let b = write_line("Write", "/repo/b.rs");
+        std::fs::write(&path, format!("{full}\n{}", &b[..20])).unwrap();
+        let mut scan = Scan {
+            offset: 0,
+            paths: Vec::new(),
+        };
+        rescan(&path, &mut scan);
+        assert_eq!(scan.paths, vec!["/repo/a.rs"]);
+
+        // Claude finishes the line; the next scan picks it up whole, exactly once.
+        std::fs::write(&path, format!("{full}\n{b}\n")).unwrap();
+        rescan(&path, &mut scan);
+        assert_eq!(scan.paths, vec!["/repo/a.rs", "/repo/b.rs"]);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn reads_a_file_inside_the_root() {
-        let root = std::env::temp_dir().join("code_peek_scope_ok");
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("sub")).unwrap();
-        std::fs::write(root.join("sub/file.txt"), "hello").unwrap();
-        assert_eq!(read_in_scope(&root, "sub/file.txt").unwrap(), "hello");
-        let _ = std::fs::remove_dir_all(&root);
+    fn head_blob_is_none_for_a_file_git_has_never_seen() {
+        let dir = temp_dir("headblob");
+        assert_eq!(head_blob(&dir, "nope.rs"), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A scratch file the agent created and cleaned up leaves no chip; a file it
+    /// deleted out of the repo stays, so the user can see the deletion.
     #[test]
-    fn rejects_traversal_outside_the_root() {
-        let base = std::env::temp_dir().join("code_peek_scope_escape");
-        let root = base.join("root");
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&root).unwrap();
-        // A secret sibling of root — reachable only via `../`.
-        std::fs::write(base.join("secret.txt"), "top secret").unwrap();
-        let err = read_in_scope(&root, "../secret.txt").unwrap_err();
-        assert_eq!(err, "path is outside the repository");
-        let _ = std::fs::remove_dir_all(&base);
+    fn a_vanished_untracked_file_is_dropped_but_a_deletion_is_kept() {
+        let dir = temp_dir("vanished");
+        let gone = dir.join("scratch.tmp");
+        let present = dir.join("real.rs");
+        std::fs::write(&present, "fn main() {}").unwrap();
+
+        assert!(vanished_without_trace(&gone, "")); // created then removed
+        assert!(!vanished_without_trace(&gone, "D")); // git knows it — show the deletion
+        assert!(!vanished_without_trace(&present, "??")); // new, still on disk
+        assert!(!vanished_without_trace(&present, "M"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

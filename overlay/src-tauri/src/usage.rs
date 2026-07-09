@@ -104,7 +104,10 @@ fn window_for(model: &str) -> u64 {
 /// The id comes from a file the hooks write, so it is treated as untrusted input:
 /// anything but the UUID alphabet is rejected before it can reach a path join and
 /// escape `~/.claude/projects` via `../`.
-fn transcript_path(session_id: &str) -> Option<PathBuf> {
+///
+/// Shared with `code_peek`, which scans the same transcript for the files the
+/// session has written.
+pub(crate) fn transcript_path(session_id: &str) -> Option<PathBuf> {
     if session_id.is_empty()
         || !session_id
             .chars()
