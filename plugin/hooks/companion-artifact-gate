@@ -16,5 +16,9 @@ if [ -z "$COMPANION_SESSION" ] && [ "$(cat "${HOME}/.claude/companion/external-t
   exit 0
 fi
 
+# No node, no seatbelt. companion-session already said so once, at SessionStart —
+# staying quiet here keeps the message from repeating on every Stop.
+command -v node >/dev/null 2>&1 || exit 0
+
 node "$(dirname "$0")/companion-artifact-gate.cjs"
 exit 0

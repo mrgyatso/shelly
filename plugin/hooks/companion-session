@@ -16,6 +16,15 @@ PRUNE_DAYS=7
 
 payload=$(cat)
 
+# Node is a hard requirement — the hooks below are Node programs. Claude Code ships
+# as a native binary, so `claude` on PATH does not imply node. Say so once, here at
+# SessionStart, and let the per-tool hooks no-op quietly rather than printing
+# "node: command not found" on every Write.
+if ! command -v node >/dev/null 2>&1; then
+  echo "Companion is inactive: node is not on PATH. Its hooks need Node 18+ — install it (brew install node), then run 'companion setup'." >&2
+  exit 0
+fi
+
 cwd=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||process.cwd())}catch(e){console.log(process.cwd())}})')
 session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})')
 
@@ -35,7 +44,18 @@ esac
 # no artifacts generated for sessions not using the app). Opt back in per-machine
 # by writing "on" to ~/.claude/companion/external-terminals. This gates only
 # hook-driven terminals; external *agents* (the remote/ push path) are unaffected.
+#
+# Being ignored is fine; being ignored *silently* is not — a user who installed both
+# pieces and typed `claude` in their own terminal has no way to tell the difference
+# between "off by design" and "broken". Say it once per machine (SessionStart stdout
+# is injected as agent context) so the agent can point them at the app, then stay quiet.
 if [ -z "$COMPANION_SESSION" ] && [ "$(cat "${HOME}/.claude/companion/external-terminals" 2>/dev/null)" != "on" ]; then
+  hint="${HOME}/.claude/companion/.external-hint-shown"
+  if [ ! -f "$hint" ]; then
+    mkdir -p "${HOME}/.claude/companion" 2>/dev/null
+    : > "$hint" 2>/dev/null
+    echo "Companion is installed but inactive in this terminal — it only tracks sessions the app itself starts. If the user expects Companion here, tell them to run 'companion board' and start the session from the app, or 'companion setup --external-terminals' to track every terminal."
+  fi
   exit 0
 fi
 

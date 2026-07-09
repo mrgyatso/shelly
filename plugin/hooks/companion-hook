@@ -34,6 +34,10 @@ case "$payload" in
   *) exit 0 ;;
 esac
 
+# Every parse below is a node spawn. companion-session already reported a missing node
+# once, at SessionStart; bail quietly rather than printing "command not found" per write.
+command -v node >/dev/null 2>&1 || exit 0
+
 # Record the hook firing the moment a write touches the artifacts dir — BEFORE the
 # CLI-presence guard, so an artifact write is logged even on a plugin-only machine
 # with no overlay installed. Parse fp/sid here only when tracing is on (a node spawn
