@@ -5,6 +5,7 @@ mod dials;
 mod events;
 mod history;
 mod hub;
+mod launch;
 mod layout;
 mod live;
 mod macos_panel;
@@ -87,7 +88,7 @@ pub fn run() {
     {
         builder = builder
             // single-instance first so a forwarded `companion open …` exits fast.
-            .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
                 // This callback fires on the plugin's socket-listener thread, but
                 // creating a window (WebviewWindowBuilder::build / NSPanel reclass)
                 // MUST happen on the main thread or AppKit aborts and kills the
@@ -95,26 +96,15 @@ pub fn run() {
                 let handle = app.clone();
                 let _ = app.run_on_main_thread(move || {
                     guard(|| {
-                        // `companion history` toggles the HUD (a keybind-free trigger,
-                        // useful when ⌘8 is swallowed e.g. over remote desktop).
-                        if args.iter().any(|a| a == "history") {
-                            windows::open_history_window(&handle);
-                        } else if args.iter().any(|a| a == "live") {
-                            windows::open_live_window(&handle);
-                        } else if args.iter().any(|a| a == "board") {
-                            windows::open_board_window(&handle);
-                        } else if artifact::parse_open_args(&args, Some(&cwd)).is_some() {
-                            // `companion open <artifact>` no longer spawns a standalone
-                            // window — the Board is the single surface and ingests the
-                            // artifact; just bring the shell forward.
-                            windows::open_board_window(&handle);
-                        } else {
-                            // A bare re-launch (double-click, `open -a`, or a newly
-                            // installed bundle at a different path). The Board is the
-                            // only surface, so surface it — same as `Reopen`. Raising
-                            // just the artifact panels used to be the answer; they no
-                            // longer exist, so that branch surfaced nothing at all.
-                            windows::open_board_window(&handle);
+                        // The decision lives in `launch` so it survives this
+                        // `cfg(not(debug_assertions))` gate and can be unit-tested;
+                        // keep this a one-site match. (`companion history` toggles the
+                        // HUD — a keybind-free trigger, useful when ⌘8 is swallowed
+                        // e.g. over remote desktop.)
+                        match launch::surface_for_args(&args) {
+                            launch::Surface::History => windows::open_history_window(&handle),
+                            launch::Surface::Live => windows::open_live_window(&handle),
+                            launch::Surface::Board => windows::open_board_window(&handle),
                         }
                     });
                 });
