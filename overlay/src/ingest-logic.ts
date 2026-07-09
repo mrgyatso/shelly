@@ -55,3 +55,41 @@ export function rewritesNeedingReload(
 // (retainedIdentity — the rewrite identity-flap patch — was removed at the Phase 4
 // cutover along with its cause: history.rs no longer distrusts a stamped identity
 // on mtime, so a stamped source/unit_key can't flap to None across a rewrite.)
+
+/** An artifact as the hero selector sees it: when it landed, and whose session wrote it. */
+export interface HeroCandidate {
+  path: string;
+  modified_ms: number;
+  source?: string | null;
+}
+
+/**
+ * THE SIBLING-SESSION FIX. Choose the ONE artifact a unit's hero paints.
+ *
+ * A unit holds every session's artifacts, but the hero belongs to a single session.
+ * Scope to the active session's own artifacts and take its freshest — so a sibling's
+ * artifact is NEVER selected, however new it is. `renderHero` marks exactly what it
+ * paints as read, which is why entering a unit can no longer mark a sibling's work
+ * read behind the user's back (the disappearance bug, 2026-07-09).
+ *
+ * `activeSource === null` means no session owns this unit's hero: a unit with an owned
+ * terminal but no live file yet is a FRESH session ⇒ blank (never a sibling's last
+ * artifact), while a unit with neither — a cloud unit, or a closed external session —
+ * has no session to scope to, so it leads with its freshest artifact rather than
+ * looking empty.
+ */
+export function heroArtifactFor<T extends HeroCandidate>(
+  unitArts: readonly T[],
+  activeSource: string | null,
+  hasOwnedTab: boolean,
+): T | null {
+  const scoped = activeSource
+    ? unitArts.filter((a) => a.source === activeSource)
+    : hasOwnedTab
+      ? []
+      : unitArts;
+  return scoped.reduce<T | null>(
+    (best, a) => (best === null || a.modified_ms > best.modified_ms ? a : best),
+    null,
+  );
+}
