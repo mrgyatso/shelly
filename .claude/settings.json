@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "companion@claude-code-companion": true
+  }
+}

@@ -72,14 +72,17 @@ less install.sh && bash install.sh
 <details>
 <summary>Already have Homebrew, Node and Claude Code?</summary>
 
-Then it is two commands, and the installer above is doing exactly this for you:
+Then it is three commands, and the installer above is doing exactly this for you:
 
 ```bash
+brew trust mrgyatso/tap          # Homebrew 6+ only; older versions have no `trust`
 brew install --cask mrgyatso/tap/claude-code-companion
 companion setup
 ```
 
-The first installs the app to `/Applications`, puts the `companion` CLI on your PATH, and clears the macOS quarantine flag. The second wires the app to Claude Code — it adds the plugin marketplace, installs the `companion` plugin, creates the watched folder, and finishes by running `companion doctor` so you can see it worked.
+Homebrew 6 refuses to load a cask from any non-official tap until you trust it once — the cask runs code at install time (it clears the quarantine flag), and Homebrew now wants you to say so out loud. Skip the first command on Homebrew 6 and the second fails with *"Refusing to load cask … from untrusted tap."*
+
+The second installs the app to `/Applications`, puts the `companion` CLI on your PATH, and clears the macOS quarantine flag. The third wires the app to Claude Code — it adds the plugin marketplace, installs the `companion` plugin, creates the watched folder, and finishes by running `companion doctor` so you can see it worked.
 
 `companion setup` is safe to re-run; every step it has already done is skipped. Restart any `claude` session you had open so it picks up the plugin.
 

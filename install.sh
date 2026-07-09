@@ -120,6 +120,11 @@ else
   info "The Companion app is missing"
   $CHECK_ONLY || ask "Install it via Homebrew?" || die "The app is required."
   if ! $CHECK_ONLY; then
+    # Homebrew 6 refuses to load a cask from a non-official tap until it is
+    # trusted once. Older Homebrew has no `trust` subcommand and needs none.
+    if brew trust --help >/dev/null 2>&1; then
+      brew trust mrgyatso/tap
+    fi
     brew install --cask mrgyatso/tap/claude-code-companion
     command -v companion >/dev/null 2>&1 || die "Cask installed but 'companion' is not on PATH."
     ok "Companion app installed"

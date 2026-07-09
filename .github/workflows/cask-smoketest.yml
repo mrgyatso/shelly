@@ -35,6 +35,10 @@ jobs:
 
       - name: Install the cask
         run: |
+          # Homebrew 6 refuses a non-official tap's cask until it is trusted once.
+          if brew trust --help >/dev/null 2>&1; then
+            brew trust mrgyatso/tap
+          fi
           brew install --cask mrgyatso/tap/claude-code-companion
 
       - name: Confirm app placed
