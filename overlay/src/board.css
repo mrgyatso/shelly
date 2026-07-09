@@ -1114,6 +1114,10 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  /* Takes the toolbar's slack, so the meter + surface controls settle together on
+     the right. The meter is an instrument, not a subtitle — it belongs with the
+     other controls, not orphaned mid-bar next to the name. */
+  margin-right: auto;
   max-width: 320px;
   padding: 7px 10px;
   background: transparent;
@@ -1143,10 +1147,25 @@
 }
 .unit-title:hover .unit-title-edit { opacity: 1; }
 /* Session usage meter — how full this session's context is. Reads as instrument,
-   not alarm: it sits quiet at low fill and only earns colour as it approaches the
-   window. `Compact` stays faint until the meter is worth acting on, then it comes
-   forward, so the control appears exactly when the number starts to mean something. */
+   not alarm: colour is spent on *position*, not on the mere fact of a reading. The
+   bar is a row of ticks lit along a green→amber→clay ramp, so a third full is calm
+   green and a nearly-full window has already reddened on its own. `Compact` carries
+   the accent at all times (it is the one action here), and fills solid once the
+   meter is worth acting on. */
 .unit-meter {
+  /* The ramp is anchored to the bar's full width, never to the fill's — so a tick's
+     colour depends on where it sits in the window, not on how full the bar is. */
+  --meter-w: 78px;
+  --meter-ramp: linear-gradient(
+    90deg,
+    var(--ok) 0%,
+    var(--ok) 42%,
+    var(--busy) 70%,
+    var(--clay) 88%,
+    var(--clay-deep) 100%
+  );
+  /* Ten 6px ticks on an 8px pitch — the last one lands exactly on --meter-w. */
+  --meter-ticks: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 8px);
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1157,21 +1176,26 @@
 .unit-meter[hidden] { display: none; }
 .meter-bar {
   position: relative;
-  width: 58px;
-  height: 5px;
-  border-radius: 3px;
+  width: var(--meter-w);
+  height: 6px;
   background: var(--sunk);
+  /* Masking the bar cuts fill + track into ticks in one pass. */
+  -webkit-mask-image: var(--meter-ticks);
+  mask-image: var(--meter-ticks);
   overflow: hidden;
 }
 .meter-fill {
   position: absolute;
   inset: 0 auto 0 0;
   width: 0;
-  border-radius: inherit;
-  background: var(--ink-4);
+  background: var(--meter-ramp);
+  /* Pin the ramp to the bar, not the fill: as the fill grows it *reveals* the ramp
+     rather than stretching it, so each tick keeps its own colour. */
+  background-size: var(--meter-w) 100%;
+  background-repeat: no-repeat;
   /* Width is the only honest way to draw a bar this thin — a transform scale
-     would smear the 3px cap. It animates once every few seconds, not per frame. */
-  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1), background 0.5s;
+     would smear the ticks. It animates once every few seconds, not per frame. */
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .meter-text {
   color: var(--ink-3);
@@ -1179,35 +1203,47 @@
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
+/* The one action in this cluster, so it always wears the accent — a tinted clay
+   outline at rest, deepening as the meter climbs. */
 .meter-compact {
   padding: 3px 8px;
-  background: transparent;
-  border: 1px solid var(--line-2);
+  background: color-mix(in oklab, var(--clay) 9%, transparent);
+  border: 1px solid color-mix(in oklab, var(--clay) 28%, transparent);
   border-radius: 6px;
-  color: var(--ink-3);
+  color: var(--clay-deep);
   font: 550 11px/1.35 var(--ui-font);
   cursor: pointer;
-  opacity: 0.62;
-  transition: opacity 0.16s, background 0.16s, border-color 0.16s, color 0.16s;
+  transition: background 0.16s, border-color 0.16s, color 0.16s, filter 0.16s;
 }
 .meter-compact:hover:not(:disabled) {
-  opacity: 1;
-  background: var(--card);
-  border-color: var(--line-strong);
-  color: var(--ink);
+  background: color-mix(in oklab, var(--clay) 18%, transparent);
+  border-color: color-mix(in oklab, var(--clay) 50%, transparent);
 }
-.meter-compact:focus-visible { opacity: 1; outline: 2px solid var(--clay); outline-offset: 1px; }
-.meter-compact:disabled { opacity: 0.3; cursor: default; }
+.meter-compact:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
+/* No PTY to type into — drain the accent rather than dim it, so "unavailable"
+   never reads as "merely quiet". */
+.meter-compact:disabled {
+  filter: grayscale(1);
+  opacity: 0.45;
+  cursor: default;
+}
 
 /* Two thresholds, both set in board.ts. `warn` is "start thinking about it";
-   `high` is "the next long tool result may not fit". */
-.unit-meter[data-level="warn"] .meter-fill { background: var(--busy); }
+   `high` is "the next long tool result may not fit". The fill needs no override —
+   by the time it reaches these marks the ramp has already coloured itself. */
 .unit-meter[data-level="warn"] .meter-text { color: var(--ink-2); }
 .unit-meter[data-level="high"] { border-color: color-mix(in oklab, var(--clay) 40%, transparent); }
-.unit-meter[data-level="high"] .meter-fill { background: var(--clay); }
 .unit-meter[data-level="high"] .meter-text { color: var(--clay-deep); }
-.unit-meter[data-level="high"] .meter-compact { opacity: 1; border-color: color-mix(in oklab, var(--clay) 45%, transparent); color: var(--clay-deep); }
-.unit-meter[data-level="high"] .meter-compact:hover:not(:disabled) { background: color-mix(in oklab, var(--clay) 10%, transparent); }
+/* At `high` the button stops asking and starts telling: solid clay, paper text. */
+.unit-meter[data-level="high"] .meter-compact {
+  background: var(--clay);
+  border-color: var(--clay);
+  color: var(--card);
+}
+.unit-meter[data-level="high"] .meter-compact:hover:not(:disabled) {
+  background: var(--clay-deep);
+  border-color: var(--clay-deep);
+}
 /* Stacked surfaces: compact hero over the primary terminal. Fills the unit; the
    terminal flexes to take whatever the hero leaves. */
 /* Content row: the active view + the code-peek viewer share the width side by
@@ -1342,7 +1378,8 @@
 /* One quiet segmented control (sunk track, ink-filled active) — matches the
    Settings dials, so the chrome reads as one system. */
 .surface-controls {
-  margin-left: auto;
+  /* The title's `margin-right: auto` takes the slack — a second auto margin here
+     would split it and strand the meter mid-toolbar. */
   display: flex;
   align-items: center;
   gap: 4px;
