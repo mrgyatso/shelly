@@ -368,21 +368,6 @@ fn position_popover(win: &WebviewWindow, anchor: Option<(f64, f64)>) {
     let _ = win.set_position(PhysicalPosition::new(x, y));
 }
 
-/// Raise every panel without activating (the no-arg `companion` invocation).
-/// The HUD and live surface are excluded — each is driven by its own trigger,
-/// never swept up with the artifact panels.
-// Only called from the release-only single-instance forward handler, so it reads
-// as dead code in debug builds (where single-instance is skipped for dev coexistence).
-#[cfg_attr(debug_assertions, allow(dead_code))]
-pub fn raise_all(app: &AppHandle) {
-    for win in app.webview_windows().values() {
-        if win.label() == HISTORY_LABEL || win.label() == LIVE_LABEL || win.label() == BOARD_LABEL {
-            continue;
-        }
-        crate::macos_panel::order_front_without_activating(win);
-    }
-}
-
 /// Global ⌘0 toggle: if any panel is visible, hide them all; otherwise show all.
 /// The HUD is excluded so ⌘0 never hides/shows it alongside the artifact panels.
 pub fn toggle_all(app: &AppHandle) {

@@ -107,7 +107,12 @@ pub fn run() {
                             // artifact; just bring the shell forward.
                             windows::open_board_window(&handle);
                         } else {
-                            windows::raise_all(&handle);
+                            // A bare re-launch (double-click, `open -a`, or a newly
+                            // installed bundle at a different path). The Board is the
+                            // only surface, so surface it — same as `Reopen`. Raising
+                            // just the artifact panels used to be the answer; they no
+                            // longer exist, so that branch surfaced nothing at all.
+                            windows::open_board_window(&handle);
                         }
                     });
                 });
