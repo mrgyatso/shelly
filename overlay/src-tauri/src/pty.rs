@@ -386,6 +386,11 @@ mod tests {
     /// trivial command, read its output to EOF, confirm the child exits.
     #[test]
     fn spawns_reads_and_cleans_a_pty() {
+        // Spawning reads `environ` to build the child's `envp`. Hold the env lock
+        // so no concurrent `set_var` can tear it — otherwise the spawn below fails
+        // with a baffling ENOENT for a `/bin/sh` that plainly exists.
+        let _g = crate::test_env::env_lock();
+
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
