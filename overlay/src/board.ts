@@ -1005,7 +1005,7 @@ function renderHubFallback(): void {
   const hello = document.getElementById("hub-hello");
   const clawd = document.getElementById("hub-clawd");
   if (clawd) mountClawd(clawd); // a fresh pixel-art clawd pose greets each idle landing
-  if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
+  if (hello) hello.innerHTML = greetingHtml();
   // Live counts behind each door, split by room kind.
   const { order } = computeRoster(Date.now());
   let sessions = 0;
@@ -2927,7 +2927,7 @@ function renderGreeting(fresh: number, agents: number): void {
   lastGreetingKey = key;
   const hello = document.getElementById("board-hello");
   const sub = document.getElementById("board-sub");
-  if (hello) hello.innerHTML = `${timeGreeting()}, <em>Zach.</em>`;
+  if (hello) hello.innerHTML = greetingHtml();
   if (sub) {
     sub.innerHTML = agents === 0
       ? "No agents running"
@@ -2942,6 +2942,13 @@ function timeGreeting(): string {
   if (h < 12) return "Good morning";
   if (h < 18) return "Good afternoon";
   return "Good evening";
+}
+
+/** The greeting line. This used to interpolate one developer's first name, which
+ *  meant every install greeted its user by the wrong name. Greet without one until
+ *  Settings owns a display name. */
+function greetingHtml(): string {
+  return `${timeGreeting()}.`;
 }
 
 // ---- agent-composed bar (L0 hub + L2 digest) --------------------------------

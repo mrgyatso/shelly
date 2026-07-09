@@ -48,11 +48,31 @@ Your agent writes each turn as one of those HTML pages. Companion watches for it
 - **[Claude Code](https://claude.com/claude-code).**
 - **Node 18 or later** (`brew install node`). The plugin's hooks are Node scripts. Claude Code now ships as a native binary, so having `claude` does **not** mean you have Node — check with `node -v`.
 
-Building from source additionally needs Rust.
+Starting from a machine with none of that? The installer below sets it all up. Building from source additionally needs Rust.
 
 ## Install
 
-Two commands.
+One command, from a factory-fresh Mac.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash
+```
+
+It checks for Homebrew, Node 18+, Claude Code and the app, offers to install whatever is missing, and then wires the plugin. Everything it does is skipped on a re-run, so it is safe to run twice. Two flags are worth knowing: `--check` reports what is missing and changes nothing, and `--yes` accepts every install without asking (needed when there is no terminal to prompt on).
+
+The one thing it cannot do for you is sign you in — that is a browser login. If Claude Code has never been authenticated, the installer stops, tells you to run `claude` and finish the login, and asks you to run it again. The second run picks up where it left off.
+
+Prefer to read a script before piping it to a shell? [Read it here](install.sh), or download it, then run it:
+
+```bash
+curl -fsSL -O https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh
+less install.sh && bash install.sh
+```
+
+<details>
+<summary>Already have Homebrew, Node and Claude Code?</summary>
+
+Then it is two commands, and the installer above is doing exactly this for you:
 
 ```bash
 brew install --cask mrgyatso/tap/claude-code-companion
@@ -62,6 +82,10 @@ companion setup
 The first installs the app to `/Applications`, puts the `companion` CLI on your PATH, and clears the macOS quarantine flag. The second wires the app to Claude Code — it adds the plugin marketplace, installs the `companion` plugin, creates the watched folder, and finishes by running `companion doctor` so you can see it worked.
 
 `companion setup` is safe to re-run; every step it has already done is skipped. Restart any `claude` session you had open so it picks up the plugin.
+
+</details>
+
+Two things surprise people on a genuinely clean Mac, and the installer handles both. Homebrew installs to `/opt/homebrew` on Apple Silicon, which is not on `PATH` until you add it. And Claude Code installs to `~/.local/bin`, appending to your shell profile — which does not affect the shell you are already standing in. Install by hand and the next command will not find what you just installed.
 
 <details>
 <summary>Installing without Homebrew</summary>

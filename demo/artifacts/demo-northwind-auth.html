@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>northwind-sync — the multi-tenant auth fork</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap">
+<script type="application/json" id="companion-meta">
+{
+  "subject": "northwind-sync — one decision gates the whole build",
+  "summary": "Read the northwind-sync handoff (no code yet) and isolated the single decision that blocks every line that follows: the multi-tenant auth model. Compared a single delegated-admin consent grant (A), per-tenant app registration with certificate credentials (B), and deferring against a mock tenant (C). Recommends B — least-privilege, per-tenant revocation, and the only shape that survives a security review.",
+  "files": [
+    "~/northwind-sync/HANDOFF.md",
+    "~/northwind-sync/docs/auth-model.md",
+    "~/northwind-sync/README.md"
+  ],
+  "project": "~/northwind-sync",
+  "branch": "design/auth-model",
+  "created": "2026-07-08"
+}
+</script>
+<style>
+  :root{
+    --board: oklch(0.945 0.014 60);
+    --paper:#FBFAF6; --ink:#171A1F; --soft:#39404A; --muted:#646C76;
+    --line:#CDC8BC; --accent:#3D7EFF; --accent-soft:rgba(61,126,255,.09);
+    --good:#2E9C6A; --stop:#B5443C;
+  }
+  *{box-sizing:border-box;}
+  html{scrollbar-width:none;} html::-webkit-scrollbar{width:0;height:0;display:none;}
+  html,body{margin:0;background:oklch(0.945 0.014 60);color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;}
+
+  [data-fit-root]{width:880px;margin:0 auto;padding:34px 40px 40px 56px;}
+
+  .kicker{font:600 10.5px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--accent);}
+  h1{font-family:'Newsreader',ui-serif,Georgia,serif;font-weight:600;
+    font-size:clamp(34px,4.3vw,52px);line-height:1.03;letter-spacing:-.03em;
+    margin:13px 0 0;max-width:16ch;}
+  .standfirst{margin:15px 0 0;max-width:62ch;font-size:15.5px;line-height:1.62;color:var(--soft);}
+  .standfirst strong{color:var(--ink);font-weight:600;}
+  .rule{height:1px;background:var(--line);margin:26px 0 24px;}
+
+  .zone{display:grid;grid-template-columns:1fr 340px;gap:32px;align-items:start;}
+  .col-main{min-width:0;}
+  .col-main h2{font-family:'Newsreader',ui-serif,Georgia,serif;font-weight:600;font-size:22px;
+    letter-spacing:-.015em;margin:26px 0 8px;}
+  .col-main h2:first-child{margin-top:0;}
+  .col-main p{font-size:14.5px;line-height:1.68;color:var(--soft);margin:0 0 12px;}
+  .col-main strong{color:var(--ink);font-weight:600;}
+  .col-main em{font-style:italic;color:var(--soft);}
+  code{font:12.5px/1 'JetBrains Mono',ui-monospace,Menlo,monospace;
+    background:rgba(23,26,31,.055);padding:2px 5px;border-radius:4px;color:var(--ink);}
+
+  /* comparison table */
+  .cmp{width:100%;border-collapse:collapse;margin:8px 0 6px;
+    font-size:12.8px;line-height:1.45;}
+  .cmp caption{caption-side:top;text-align:left;font:600 10.5px/1 'JetBrains Mono',monospace;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:0 0 10px;}
+  .cmp th,.cmp td{text-align:left;vertical-align:top;padding:10px 10px;border-top:1px solid var(--line);}
+  .cmp thead th{border-top:0;padding-bottom:8px;}
+  .cmp thead .opt{font-family:'Newsreader',ui-serif,Georgia,serif;font-weight:600;font-size:14.5px;color:var(--ink);}
+  .cmp thead .opt small{display:block;font:600 9px/1.3 'JetBrains Mono',monospace;
+    letter-spacing:.05em;color:var(--muted);text-transform:uppercase;margin-top:3px;font-weight:600;}
+  .cmp tbody th{font-weight:600;color:var(--ink);width:120px;font-size:12.5px;}
+  .cmp td{color:var(--soft);}
+  .cmp col.pick, .cmp .pick{background:var(--accent-soft);}
+  .cmp thead th.pick .opt{color:var(--accent);}
+  .cmp .tag-good{color:var(--good);font-weight:600;}
+  .cmp .tag-bad{color:var(--stop);font-weight:600;}
+  .cmp tbody tr:last-child th,.cmp tbody tr:last-child td{border-bottom:1px solid var(--line);}
+
+  .visual{position:sticky;top:14px;}
+  .figure{background:var(--paper);border:1px solid var(--line);border-radius:11px;
+    padding:16px 16px 12px;box-shadow:0 18px 40px -32px rgba(23,26,31,.55);}
+  .figure svg{display:block;width:100%;height:auto;}
+  .cap{margin-top:11px;padding-top:10px;border-top:1px solid var(--line);
+    font:11px/1.55 'JetBrains Mono',ui-monospace,Menlo,monospace;color:var(--muted);}
+  .cap b{color:var(--soft);font-weight:600;}
+
+  /* ---- Decide ballot ---- */
+  .decide{margin-top:36px;background:var(--paper);border:1px solid var(--line);
+    border-top:3px solid var(--accent);border-radius:12px;padding:22px 24px 20px;
+    box-shadow:0 22px 50px -34px rgba(23,26,31,.6);}
+  .decide-h{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;}
+  .decide-h h2{font-family:'Newsreader',ui-serif,Georgia,serif;font-weight:600;font-size:26px;
+    letter-spacing:-.02em;margin:0;}
+  .decide-h .sub{font-size:13px;color:var(--muted);}
+  .decide > .lede{font-size:13.5px;line-height:1.6;color:var(--soft);margin:6px 0 16px;max-width:70ch;}
+
+  .item{border-top:1px solid var(--line);padding:13px 0;}
+  .item-row{display:flex;gap:16px;align-items:flex-start;}
+  .item-main{flex:1;min-width:0;}
+  .item-title{font-size:14.5px;font-weight:600;line-height:1.45;color:var(--ink);}
+  .item-sub{margin-top:3px;font-size:12.8px;line-height:1.55;color:var(--muted);}
+  .item-sub code{font-size:11.5px;}
+  .rec{display:inline-block;margin-left:7px;padding:1px 6px;border-radius:4px;
+    background:var(--accent-soft);color:var(--accent);
+    font:600 9.5px/1.6 'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;vertical-align:1px;}
+  .item-actions{display:flex;gap:6px;flex:0 0 auto;}
+  .act{width:42px;height:42px;border-radius:9px;border:1px solid var(--line);
+    background:#fff;color:var(--muted);font-size:15px;cursor:pointer;line-height:1;
+    transition:transform 90ms ease,border-color 120ms,color 120ms,background 120ms;}
+  .act:hover{transform:translateY(-1px);color:var(--ink);border-color:var(--soft);}
+  .item[data-state="approve"]{box-shadow:inset 3px 0 0 var(--good);}
+  .item[data-state="approve"] .act.do{background:var(--good);border-color:var(--good);color:#fff;}
+  .item[data-state="comment"]{box-shadow:inset 3px 0 0 var(--accent);}
+  .item[data-state="comment"] .act.info{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .item[data-state="reject"]{box-shadow:inset 3px 0 0 var(--stop);}
+  .item[data-state="reject"] .act.skip{background:var(--stop);border-color:var(--stop);color:#fff;}
+  .item textarea{width:100%;margin-top:10px;min-height:58px;resize:vertical;padding:9px 11px;
+    border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);
+    font:13px/1.55 'Inter',system-ui,sans-serif;outline:none;}
+  .item textarea:focus{border-color:var(--accent);}
+
+  .bar{display:flex;align-items:center;gap:10px;margin-top:18px;padding-top:16px;
+    border-top:1px solid var(--line);}
+  .count{flex:1;font:11.5px/1 'JetBrains Mono',monospace;color:var(--muted);letter-spacing:.04em;}
+  .doall{padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:#fff;
+    color:var(--ink);font:600 12px/1 'Inter',sans-serif;cursor:pointer;}
+  .doall:hover{border-color:var(--soft);}
+  .submit{padding:11px 18px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);
+    color:var(--paper);font:600 12.5px/1 'Inter',sans-serif;cursor:pointer;opacity:.55;
+    transition:opacity 140ms;}
+  .submit.ready{opacity:1;}
+
+  @media (max-width:760px){ .zone{grid-template-columns:1fr;} }
+
+  /* ambient comments */
+  [data-companion-commentable] .companion-commentable {
+    position: relative; border-radius: 5px; cursor: text;
+    transition: background 140ms ease, box-shadow 140ms ease;
+  }
+  .companion-commentable::before {
+    content: ""; position: absolute;
+    top: 0; left: -36px; width: 36px; height: 100%;
+  }
+  .companion-commentable:hover {
+    background: rgba(182,120,29,0.07); box-shadow: inset 2px 0 0 #b6781d;
+  }
+  .companion-commentable.has-comment {
+    background: rgba(46,125,82,0.05); box-shadow: inset 2px 0 0 #2e7d52;
+  }
+  .companion-ask-btn {
+    position: absolute; left: -36px; top: 50%; transform: translateY(-50%);
+    width: 26px; height: 26px; padding: 0;
+    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #6e655b;
+    border-radius: 6px; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    font-size: 12px; box-shadow: 0 4px 10px -6px rgba(26,23,20,0.4);
+  }
+  .companion-commentable:hover > .companion-ask-btn,
+  .companion-commentable.has-comment > .companion-ask-btn { display: inline-flex; }
+  .companion-commentable.has-comment > .companion-ask-btn {
+    color: #2e7d52; border-color: #2e7d52;
+  }
+  .companion-composer {
+    margin: 6px 0 10px; padding: 10px 11px;
+    background: #fff; border: 1px solid #b6781d; border-radius: 8px;
+    box-shadow: 0 10px 24px -16px rgba(26,23,20,0.5);
+  }
+  .companion-composer .ref {
+    font: 600 11px/1.4 ui-monospace, Menlo, monospace; color: #6e655b;
+    border-left: 2px solid #b6781d; padding: 4px 8px; margin-bottom: 6px;
+    background: rgba(182,120,29,0.07); border-radius: 0 4px 4px 0;
+  }
+  .companion-composer textarea {
+    display: block; width: 100%; min-height: 64px; padding: 8px 10px;
+    font: 13px/1.5 -apple-system, system-ui, sans-serif;
+    background: #f4f1ec; color: #1a1714;
+    border: 1px solid rgba(26,23,20,0.2); border-radius: 6px;
+    outline: none; resize: vertical; box-sizing: border-box;
+  }
+  .companion-composer textarea:focus { border-color: #b6781d; }
+  .companion-composer .row {
+    display: flex; justify-content: space-between; gap: 8px; margin-top: 8px;
+  }
+  .companion-composer button {
+    font: 600 11.5px/1 -apple-system, system-ui, sans-serif;
+    padding: 7px 11px; border-radius: 6px; cursor: pointer;
+    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #1a1714;
+  }
+  .companion-composer button.save {
+    background: #1a1714; color: #f4f1ec; border-color: #1a1714;
+  }
+  .companion-composer button.delete {
+    color: #6e655b; border-color: transparent; background: transparent;
+  }
+  .companion-annotation {
+    margin: 4px 0 10px; padding: 7px 10px;
+    background: rgba(46,125,82,0.08); border-left: 2px solid #2e7d52;
+    border-radius: 0 6px 6px 0; color: #1a1714;
+    font-size: 12.5px; line-height: 1.5; cursor: pointer;
+  }
+  .companion-annotation::before { content: "💬 "; }
+</style>
+</head>
+<body>
+<main data-fit-root>
+
+  <header>
+    <div class="kicker">northwind-sync · design only, no code</div>
+    <h1>One decision gates every line of code.</h1>
+    <p class="standfirst">
+      <strong>How does northwind-sync hold credentials for each customer tenant?</strong> The handoff
+      is 340 lines and there is no code yet — because nothing can be written until this is answered.
+      The credential shape threads through provisioning, the credential store, token exchange, the
+      executor, and revocation. Pick the shape and the modules fall out; guess it and you rewrite them.
+    </p>
+  </header>
+
+  <div class="rule"></div>
+
+  <div class="zone">
+    <div class="col-main" data-companion-commentable>
+
+      <h2>Why this one blocks the rest</h2>
+      <p>
+        northwind-sync is a multi-tenant integration service: one deployment acts on behalf of many
+        customers' tenants, <strong>unattended</strong>. Unattended is precisely what an interactive
+        sign-in cannot do — so the service holds a machine credential per tenant, and the
+        <em>type</em> of that credential is not a detail. It decides the columns in the credential
+        table, whether there is a provisioning flow at all, how a token is minted, and what
+        "revoke customer X" even means. Every module downstream inherits its shape.
+      </p>
+      <p>
+        There are exactly three doors. Two of them build something real now; the third builds against
+        a mock and pays later. The trap is that the third <em>feels</em> like the cheap one.
+      </p>
+
+      <h2>The three doors</h2>
+      <p>
+        <strong>A — a single delegated-admin consent grant.</strong> One app registration, one code
+        path. Each customer's admin grants it broad, org-wide consent and you are live this week.
+        The cost is baked into that sentence: consent is <em>org-wide</em>, and revocation is
+        <strong>all-or-nothing</strong> — a customer offboards by yanking the whole grant, and you
+        cannot scope what the service can reach inside their tenant.
+      </p>
+      <p>
+        <strong>B — a per-tenant app registration with certificate credentials.</strong> Each tenant
+        gets its own registration and its own cert; the service authenticates as that tenant only.
+        It needs a real <strong>provisioning flow</strong> and <strong>certificate rotation</strong>,
+        so it is the slow door. In exchange it is least-privilege by construction, revocation is
+        <strong>per-tenant</strong>, and it is the shape an enterprise security review will actually
+        pass.
+      </p>
+      <p>
+        <strong>C — defer, and build against a mock tenant.</strong> Momentum stays high because you
+        write features instead of plumbing. But an undecided credential shape does not stay contained
+        — it <strong>leaks into every module</strong> as a placeholder that each new file has to guess
+        around. Deferral is not free; its cost compounds with every module you add before deciding.
+      </p>
+
+      <table class="cmp">
+        <caption>A / B / C across the four axes that matter</caption>
+        <colgroup><col><col><col class="pick"><col></colgroup>
+        <thead>
+          <tr>
+            <th></th>
+            <th><span class="opt">A<small>single consent</small></span></th>
+            <th class="pick"><span class="opt">B<small>per-tenant cert</small></span></th>
+            <th><span class="opt">C<small>defer / mock</small></span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>Build time</th>
+            <td>days — one app reg</td>
+            <td class="pick">~2 weeks — provisioning + rotation</td>
+            <td>hours now, <span class="tag-bad">compounds</span></td>
+          </tr>
+          <tr>
+            <th>Blast radius</th>
+            <td>org-wide consent, per customer</td>
+            <td class="pick"><span class="tag-good">per tenant, contained</span></td>
+            <td>leaks into every module</td>
+          </tr>
+          <tr>
+            <th>Revocation</th>
+            <td><span class="tag-bad">all-or-nothing</span></td>
+            <td class="pick"><span class="tag-good">per tenant</span></td>
+            <td>undefined</td>
+          </tr>
+          <tr>
+            <th>Security review</th>
+            <td>conditional / likely fails</td>
+            <td class="pick"><span class="tag-good">passes</span></td>
+            <td>nothing to review yet</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>The recommendation: B</h2>
+      <p>
+        Build B. Least-privilege and per-tenant revocation are not polish — they are the two things a
+        customer's security team checks first, and A cannot offer either. The honest comparison is not
+        "fast A versus slow B"; it is <strong>slow-now versus slow-later-plus-a-rewrite</strong>.
+        Retrofitting B onto A or C means reopening the credential store and every module that ever
+        touched a credential — which is the exact cost C claims to defer, moved to a worse week.
+      </p>
+      <p>
+        There is one move that is right under <em>all three</em> doors, and it makes a wrong call
+        cheap: put the credential store behind an interface now, so modules depend on the abstraction
+        rather than the auth shape. Do that first and even choosing A or C buys you an escape hatch
+        instead of a rewrite.
+      </p>
+
+    </div>
+
+    <aside class="visual">
+      <div class="figure">
+        <svg viewBox="0 0 320 508" role="img" aria-label="Blast-radius diagram: the auth-model decision forks into options A, B, and C, each committing a different set of modules">
+          <defs>
+            <marker id="ah" markerWidth="7" markerHeight="7" refX="5.4" refY="2.6" orient="auto">
+              <path d="M0,0 L5.6,2.6 L0,5.2 z" fill="#646C76"/>
+            </marker>
+            <pattern id="hatch" width="5" height="5" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+              <rect width="5" height="5" fill="rgba(181,68,60,.08)"/>
+              <line x1="0" y1="0" x2="0" y2="5" stroke="#B5443C" stroke-width="1" opacity=".5"/>
+            </pattern>
+          </defs>
+
+          <!-- decision node -->
+          <rect x="18" y="6" width="284" height="46" rx="9" fill="#fff" stroke="#171A1F" stroke-width="1.4"/>
+          <text x="160" y="26" text-anchor="middle" font-family="Newsreader, serif" font-size="14.5" font-weight="600" fill="#171A1F">The auth model — the</text>
+          <text x="160" y="43" text-anchor="middle" font-family="Newsreader, serif" font-size="14.5" font-weight="600" fill="#171A1F">credential shape per tenant</text>
+
+          <!-- trunk + branch stubs -->
+          <path d="M40,52 L40,387" fill="none" stroke="#CDC8BC" stroke-width="1.4"/>
+          <path d="M40,131 L60,131" fill="none" stroke="#646C76" stroke-width="1.3" marker-end="url(#ah)"/>
+          <path d="M40,259 L60,259" fill="none" stroke="#646C76" stroke-width="1.3" marker-end="url(#ah)"/>
+          <path d="M40,387 L60,387" fill="none" stroke="#646C76" stroke-width="1.3" marker-end="url(#ah)"/>
+
+          <!-- ============ Card A ============ -->
+          <rect x="62" y="72" width="240" height="118" rx="8" fill="#fff" stroke="#CDC8BC" stroke-width="1.4"/>
+          <circle cx="84" cy="98" r="12" fill="#fff" stroke="#171A1F" stroke-width="1.4"/>
+          <text x="84" y="102.5" text-anchor="middle" font-family="Newsreader, serif" font-size="13" font-weight="600" fill="#171A1F">A</text>
+          <text x="104" y="94" font-family="Newsreader, serif" font-size="14" font-weight="600" fill="#171A1F">Single consent grant</text>
+          <text x="104" y="110" font-family="Inter, sans-serif" font-size="9" fill="#646C76">one app reg · org-wide consent</text>
+          <!-- module strip: fill TOK, EXE, REV -->
+          <g font-family="JetBrains Mono, monospace" font-size="6.4" font-weight="700" text-anchor="middle">
+            <rect x="104" y="122" width="18" height="18" rx="3" fill="#fff" stroke="#CDC8BC" stroke-width="1.2"/><text x="113" y="152" fill="#9a948a">PRV</text>
+            <rect x="129" y="122" width="18" height="18" rx="3" fill="#fff" stroke="#CDC8BC" stroke-width="1.2"/><text x="138" y="152" fill="#9a948a">CRD</text>
+            <rect x="154" y="122" width="18" height="18" rx="3" fill="#646C76" stroke="#646C76" stroke-width="1.2"/><text x="163" y="152" fill="#39404A">TOK</text>
+            <rect x="179" y="122" width="18" height="18" rx="3" fill="#646C76" stroke="#646C76" stroke-width="1.2"/><text x="188" y="152" fill="#39404A">EXE</text>
+            <rect x="204" y="122" width="18" height="18" rx="3" fill="#646C76" stroke="#646C76" stroke-width="1.2"/><text x="213" y="152" fill="#39404A">REV</text>
+          </g>
+          <text x="104" y="177" font-family="JetBrains Mono, monospace" font-size="8.4" font-weight="600" fill="#B5443C">org-wide consent · all-or-nothing revoke</text>
+
+          <!-- ============ Card B (recommended) ============ -->
+          <rect x="62" y="200" width="240" height="118" rx="8" fill="#fff" stroke="#3D7EFF" stroke-width="1.8"/>
+          <rect x="222" y="192" width="80" height="17" rx="8.5" fill="#3D7EFF"/>
+          <text x="262" y="204" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="8" font-weight="700" fill="#fff" letter-spacing="1">RECOMMENDED</text>
+          <circle cx="84" cy="226" r="12" fill="#3D7EFF" stroke="#3D7EFF" stroke-width="1.4"/>
+          <text x="84" y="230.5" text-anchor="middle" font-family="Newsreader, serif" font-size="13" font-weight="600" fill="#fff">B</text>
+          <text x="104" y="222" font-family="Newsreader, serif" font-size="14" font-weight="600" fill="#171A1F">Per-tenant cert</text>
+          <text x="104" y="238" font-family="Inter, sans-serif" font-size="9" fill="#646C76">app reg + certificate, per tenant</text>
+          <!-- module strip: fill all 5 in accent -->
+          <g font-family="JetBrains Mono, monospace" font-size="6.4" font-weight="700" text-anchor="middle">
+            <rect x="104" y="250" width="18" height="18" rx="3" fill="#3D7EFF" stroke="#3D7EFF" stroke-width="1.2"/><text x="113" y="280" fill="#39404A">PRV</text>
+            <rect x="129" y="250" width="18" height="18" rx="3" fill="#3D7EFF" stroke="#3D7EFF" stroke-width="1.2"/><text x="138" y="280" fill="#39404A">CRD</text>
+            <rect x="154" y="250" width="18" height="18" rx="3" fill="#3D7EFF" stroke="#3D7EFF" stroke-width="1.2"/><text x="163" y="280" fill="#39404A">TOK</text>
+            <rect x="179" y="250" width="18" height="18" rx="3" fill="#3D7EFF" stroke="#3D7EFF" stroke-width="1.2"/><text x="188" y="280" fill="#39404A">EXE</text>
+            <rect x="204" y="250" width="18" height="18" rx="3" fill="#3D7EFF" stroke="#3D7EFF" stroke-width="1.2"/><text x="213" y="280" fill="#39404A">REV</text>
+          </g>
+          <text x="104" y="305" font-family="JetBrains Mono, monospace" font-size="8.4" font-weight="600" fill="#2E9C6A">least-privilege · each bounded · per-tenant revoke</text>
+
+          <!-- ============ Card C ============ -->
+          <rect x="62" y="328" width="240" height="118" rx="8" fill="#fff" stroke="#B5443C" stroke-width="1.4" stroke-dasharray="5 3"/>
+          <circle cx="84" cy="354" r="12" fill="#fff" stroke="#B5443C" stroke-width="1.4"/>
+          <text x="84" y="358.5" text-anchor="middle" font-family="Newsreader, serif" font-size="13" font-weight="600" fill="#B5443C">C</text>
+          <text x="104" y="350" font-family="Newsreader, serif" font-size="14" font-weight="600" fill="#171A1F">Defer / mock tenant</text>
+          <text x="104" y="366" font-family="Inter, sans-serif" font-size="9" fill="#646C76">shape undecided, placeholder everywhere</text>
+          <!-- module strip: all 5 hatched (undecided) -->
+          <g font-family="JetBrains Mono, monospace" font-size="6.4" font-weight="700" text-anchor="middle">
+            <rect x="104" y="378" width="18" height="18" rx="3" fill="url(#hatch)" stroke="#B5443C" stroke-width="1.1" stroke-dasharray="3 2"/><text x="113" y="408" fill="#8f6a66">PRV</text>
+            <rect x="129" y="378" width="18" height="18" rx="3" fill="url(#hatch)" stroke="#B5443C" stroke-width="1.1" stroke-dasharray="3 2"/><text x="138" y="408" fill="#8f6a66">CRD</text>
+            <rect x="154" y="378" width="18" height="18" rx="3" fill="url(#hatch)" stroke="#B5443C" stroke-width="1.1" stroke-dasharray="3 2"/><text x="163" y="408" fill="#8f6a66">TOK</text>
+            <rect x="179" y="378" width="18" height="18" rx="3" fill="url(#hatch)" stroke="#B5443C" stroke-width="1.1" stroke-dasharray="3 2"/><text x="188" y="408" fill="#8f6a66">EXE</text>
+            <rect x="204" y="378" width="18" height="18" rx="3" fill="url(#hatch)" stroke="#B5443C" stroke-width="1.1" stroke-dasharray="3 2"/><text x="213" y="408" fill="#8f6a66">REV</text>
+          </g>
+          <text x="104" y="433" font-family="JetBrains Mono, monospace" font-size="8.4" font-weight="600" fill="#B5443C">no shape decided · every module guesses</text>
+
+          <!-- legend row -->
+          <line x1="18" y1="462" x2="302" y2="462" stroke="#CDC8BC" stroke-width="1" stroke-dasharray="3 3"/>
+          <rect x="18" y="474" width="12" height="12" rx="2.5" fill="#3D7EFF"/><text x="35" y="483.5" font-family="Inter, sans-serif" font-size="9" fill="#646C76">committed / decided</text>
+          <rect x="150" y="474" width="12" height="12" rx="2.5" fill="url(#hatch)" stroke="#B5443C" stroke-width="1" stroke-dasharray="3 2"/><text x="167" y="483.5" font-family="Inter, sans-serif" font-size="9" fill="#646C76">undecided / leaking</text>
+        </svg>
+        <div class="cap">
+          Modules: <b>PRV</b> provisioning · <b>CRD</b> credential store · <b>TOK</b> token exchange ·
+          <b>EXE</b> executor · <b>REV</b> revocation. Deferring (C) does not shrink the blast radius —
+          it makes every module carry an undecided credential shape.
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="decide">
+    <div class="decide-h">
+      <h2>Decide</h2>
+      <span class="sub">pick one door — the rest of the build follows it</span>
+    </div>
+    <p class="lede">
+      A, B, and C are mutually exclusive — ✓ the one you want and ✗ the others, or ✎ any row to
+      answer in place instead of in the terminal. The last row is right no matter which door you pick.
+    </p>
+
+    <div class="item" data-companion-item data-item-label="Commit to Option B — per-tenant app registration + certificate credentials; scaffold provisioning + cert rotation first">
+      <div class="item-row">
+        <div class="item-main">
+          <div class="item-title">Commit to Option B — per-tenant app registration + certificate <span class="rec">recommended</span></div>
+          <div class="item-sub">Least-privilege, per-tenant revocation, passes a security review. ✓ and I scaffold the provisioning flow and <code>cert-rotation</code> as the first modules, then the tracer-bullet tenant. ✗ only if speed-to-first-customer genuinely outranks the review you will face — then mark A below.</div>
+        </div>
+        <div class="item-actions">
+          <button class="act do" data-action="approve" title="Build B">✓</button>
+          <button class="act info" data-action="comment" title="A concern about B">✎</button>
+          <button class="act skip" data-action="reject" title="Not B">✗</button>
+        </div>
+      </div>
+      <textarea data-comment hidden placeholder="e.g. 'we don't have a cert-rotation story yet — what would you use?'"></textarea>
+    </div>
+
+    <div class="item" data-companion-item data-item-label="Ship on Option A instead — single delegated-admin consent grant, live this week, org-wide consent accepted">
+      <div class="item-row">
+        <div class="item-main">
+          <div class="item-title">…or ship on Option A — a single delegated-admin consent grant</div>
+          <div class="item-sub">One app registration, live this week. The tradeoff you are accepting: every customer grants org-wide consent, and offboarding is all-or-nothing. ✓ if a first customer this week is worth a near-certain re-architecture before the enterprise deals.</div>
+        </div>
+        <div class="item-actions">
+          <button class="act do" data-action="approve" title="Ship A">✓</button>
+          <button class="act info" data-action="comment" title="Note on A">✎</button>
+          <button class="act skip" data-action="reject" title="Not A">✗</button>
+        </div>
+      </div>
+      <textarea data-comment hidden placeholder="What makes speed-to-first-customer the binding constraint right now?"></textarea>
+    </div>
+
+    <div class="item" data-companion-item data-item-label="Defer with Option C — build against a mock tenant and decide the auth model later">
+      <div class="item-row">
+        <div class="item-main">
+          <div class="item-title">…or defer with Option C — build against a mock tenant</div>
+          <div class="item-sub">Keeps momentum, but the undecided credential shape leaks into every module and the retrofit cost compounds each week. ✎ and I'll write the interface below so deferral stays cheap — and bound how many modules deep it stays reversible.</div>
+        </div>
+        <div class="item-actions">
+          <button class="act do" data-action="approve" title="Defer with C">✓</button>
+          <button class="act info" data-action="comment" title="Bound the deferral">✎</button>
+          <button class="act skip" data-action="reject" title="Don't defer">✗</button>
+        </div>
+      </div>
+      <textarea data-comment hidden placeholder="How long does 'decide later' need to hold — one demo, one sprint, one customer?"></textarea>
+    </div>
+
+    <div class="item" data-companion-item data-item-label="Regardless of A/B/C: put the credential store behind an interface before the first integration">
+      <div class="item-row">
+        <div class="item-main">
+          <div class="item-title">Regardless: put the credential store behind an interface first <span class="rec">recommended</span></div>
+          <div class="item-sub">Modules depend on the abstraction, not the auth shape — so a wrong door costs one adapter, not a rewrite. This is the single move that is correct under A, B, and C, and it is where I'd start writing code today.</div>
+        </div>
+        <div class="item-actions">
+          <button class="act do" data-action="approve" title="Do it">✓</button>
+          <button class="act info" data-action="comment" title="Note">✎</button>
+          <button class="act skip" data-action="reject" title="Skip">✗</button>
+        </div>
+      </div>
+      <textarea data-comment hidden placeholder="…"></textarea>
+    </div>
+
+    <div class="bar">
+      <span class="count" data-count>nothing marked yet</span>
+      <button class="doall" data-doall>✓ Do all</button>
+      <button class="submit" data-companion-submit="northwind-sync — auth fork + first moves">Submit → ⌘V</button>
+    </div>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre, [data-companion-block]";
+  var submitBtn = document.querySelector("[data-companion-submit]");
+  var countEl = document.querySelector("[data-count]");
+  var items = [].slice.call(document.querySelectorAll("[data-companion-item]"));
+  var comments = new Map();
+  var open = null;
+
+  // ambient comments on every commentable block (skipping review items)
+  var blocks = [];
+  [].slice.call(document.querySelectorAll("[data-companion-commentable]")).forEach(function (root) {
+    [].slice.call(root.querySelectorAll(BLOCK_SELECTOR)).forEach(function (b) {
+      if (b.closest("[data-companion-item]")) return;
+      if (b.parentElement && b.parentElement.closest(BLOCK_SELECTOR)) return; // avoid nested icons
+      blocks.push(b);
+    });
+  });
+  blocks.forEach(function (b, i) {
+    b.classList.add("companion-commentable");
+    b.dataset.cBlockId = "b" + i;
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "companion-ask-btn";
+    btn.title = "Comment on this block"; btn.textContent = "💬";
+    btn.addEventListener("click", function (e) { e.stopPropagation(); openFor(b); });
+    b.appendChild(btn);
+  });
+  function snippet(b) {
+    var c = b.cloneNode(true); var x = c.querySelector(".companion-ask-btn"); if (x) x.remove();
+    var t = (c.textContent || "").replace(/\s+/g, " ").trim();
+    return t.length > 80 ? t.slice(0, 77) + "…" : t;
+  }
+  function closeOpen() { if (open) { open.remove(); open = null; } }
+  function openFor(b) {
+    closeOpen();
+    var id = b.dataset.cBlockId;
+    var box = document.createElement("div");
+    box.className = "companion-composer";
+    box.innerHTML = '<div class="ref"></div>' +
+      '<textarea placeholder="Your question or comment about this block…"></textarea>' +
+      '<div class="row"><button type="button" class="delete">Discard</button>' +
+      '<div style="display:flex;gap:6px;"><button type="button" class="cancel">Cancel</button>' +
+      '<button type="button" class="save">Save</button></div></div>';
+    box.querySelector(".ref").textContent = snippet(b);
+    b.parentNode.insertBefore(box, b.nextSibling);
+    open = box;
+    var ta = box.querySelector("textarea"); ta.value = comments.get(id) || "";
+    setTimeout(function () { ta.focus(); }, 60);
+    box.querySelector(".save").addEventListener("click", function () {
+      var v = ta.value.trim();
+      if (v) { comments.set(id, v); b.classList.add("has-comment"); renderAnno(b, v); }
+      else { comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); }
+      closeOpen(); refresh();
+    });
+    box.querySelector(".cancel").addEventListener("click", closeOpen);
+    box.querySelector(".delete").addEventListener("click", function () {
+      comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); closeOpen(); refresh();
+    });
+  }
+  function renderAnno(b, t) {
+    removeAnno(b);
+    var note = document.createElement("div");
+    note.className = "companion-annotation"; note.dataset.forBlock = b.dataset.cBlockId;
+    note.textContent = t; note.addEventListener("click", function () { openFor(b); });
+    b.parentNode.insertBefore(note, b.nextSibling);
+  }
+  function removeAnno(b) {
+    var n = b.parentNode.querySelector('.companion-annotation[data-for-block="' + b.dataset.cBlockId + '"]');
+    if (n) n.remove();
+  }
+
+  // review items: ✓ approve / ✎ comment / ✗ reject.
+  // The comment box stays hidden until ✎ is clicked. Toggle via inline style.display
+  // (NOT the `hidden` attr) so author CSS like `.item textarea{display:block}` can't
+  // accidentally reveal it — inline style wins. Force-hide all boxes on load too.
+  items.forEach(function (it) { var t = it.querySelector("textarea[data-comment]"); if (t) t.style.display = "none"; });
+  function setState(item, action) {
+    var current = item.getAttribute("data-state");
+    var ta = item.querySelector("textarea[data-comment]");
+    if (current === action) { item.removeAttribute("data-state"); if (ta) ta.style.display = "none"; }
+    else { item.setAttribute("data-state", action); if (ta) ta.style.display = (action === "comment") ? "block" : "none";
+      if (action === "comment" && ta) setTimeout(function () { ta.focus(); }, 0); }
+    refresh();
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-action]");
+    if (btn) { var it = btn.closest("[data-companion-item]"); if (it) setState(it, btn.getAttribute("data-action")); return; }
+    if (e.target.closest("[data-doall]")) {
+      items.forEach(function (it) { it.setAttribute("data-state", "approve");
+        var ta = it.querySelector("textarea[data-comment]"); if (ta) ta.style.display = "none"; });
+      refresh(); return;
+    }
+    var sub = e.target.closest("[data-companion-submit]");
+    if (sub) doSubmit(sub);
+  });
+
+  var commentEl = null; // the single freeform comment field, injected below
+  function freeComment() { return commentEl ? commentEl.value.trim() : ""; }
+  function pending() {
+    return comments.size + document.querySelectorAll("[data-companion-item][data-state]").length + (freeComment() ? 1 : 0);
+  }
+  function refresh() {
+    var c = comments.size, d = document.querySelectorAll("[data-companion-item][data-state]").length, fc = freeComment() ? 1 : 0;
+    if (countEl) countEl.textContent = (c || d || fc)
+      ? (d + " decision" + (d !== 1 ? "s" : "") + (c ? (" · " + c + " comment" + (c !== 1 ? "s" : "")) : "") + (fc ? " · note added" : ""))
+      : "nothing marked yet";
+    if (submitBtn) submitBtn.classList.toggle("ready", (c + d + fc) > 0);
+  }
+  function meta() {
+    var el = document.getElementById("companion-meta");
+    if (!el) return [];
+    try { var m = JSON.parse(el.textContent); } catch (e) { return []; }
+    var L = ["[Companion artifact feedback]"];
+    if (m.subject) L.push("Subject: " + m.subject);
+    if (m.summary) L.push("About: " + m.summary);
+    if (m.project) L.push("Project: " + m.project + (m.branch ? " (" + m.branch + ")" : ""));
+    if (m.created) L.push("Created: " + m.created);
+    if (m.files && m.files.length) L.push("Files: " + m.files.join(", "));
+    L.push("");
+    return L;
+  }
+  function build(title) {
+    var lines = meta().concat(["Re: " + title, ""]);
+    var cBlocks = blocks.filter(function (b) { return comments.has(b.dataset.cBlockId); });
+    if (cBlocks.length) {
+      lines.push("— Questions / comments —", "");
+      cBlocks.forEach(function (b) {
+        lines.push("On: " + JSON.stringify(snippet(b)));
+        comments.get(b.dataset.cBlockId).split("\n").forEach(function (l) { lines.push("    " + l); });
+        lines.push("");
+      });
+    }
+    var marked = [].slice.call(document.querySelectorAll("[data-companion-item][data-state]"));
+    if (marked.length) {
+      var verb = { approve: "✓ Do it:", reject: "✗ Skip:", comment: "✎ Note:" };
+      lines.push("— Decisions —", "");
+      marked.forEach(function (it) {
+        var s = it.getAttribute("data-state");
+        lines.push(verb[s] + " " + (it.getAttribute("data-item-label") || "(unlabeled)"));
+        if (s === "comment") { var t = it.querySelector("textarea[data-comment]");
+          if (t && t.value.trim()) t.value.trim().split("\n").forEach(function (l) { lines.push("    " + l); }); }
+      });
+      lines.push("");
+    }
+    var fc = freeComment();
+    if (fc) {
+      lines.push("— Comment —", "");
+      fc.split("\n").forEach(function (l) { lines.push(l); });
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+  function fallbackCopy(text) {
+    try { var ta = document.createElement("textarea"); ta.value = text;
+      ta.style.position = "fixed"; ta.style.top = "-1000px"; document.body.appendChild(ta);
+      ta.focus(); ta.select(); var ok = document.execCommand("copy"); ta.remove(); return ok;
+    } catch (e) { return false; }
+  }
+  function flash(msg) {
+    if (!submitBtn) return;
+    var prev = submitBtn.dataset.label || submitBtn.textContent;
+    submitBtn.dataset.label = prev; submitBtn.textContent = msg;
+    clearTimeout(submitBtn._t); submitBtn._t = setTimeout(function () { submitBtn.textContent = submitBtn.dataset.label; }, 2000);
+  }
+  function doSubmit(sub) {
+    if (pending() === 0) { flash("Mark an item, leave a 💬, or write a comment first"); return; }
+    var text = build(sub.getAttribute("data-companion-submit") || "Review");
+    try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: text }, "*"); } catch (e) {}
+    // Inside the Companion overlay (iframed) the overlay is the single clipboard
+    // writer — it appends the artifact's file path before writing, so we must NOT
+    // also self-write here or the two race and the path-less copy can win. Only
+    // self-write when standalone (opened directly in a browser, not iframed).
+    if (window.parent === window) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(function () { flash("Copied ✓ — ⌘V to paste"); })
+          .catch(function () { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); });
+      } else { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); }
+    } else { flash("Sent to overlay ✓ — ⌘V to paste"); }
+    try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
+  }
+
+  // --- Comment field + post-submit "submitted" state ---------------------------
+  // The comment box and the decisions submit are ONE action. When a review form
+  // exists, the freeform comment sits directly above the Submit bar (end of the
+  // list → comment → Submit), and the single Submit button sends decisions +
+  // ambient comments + this comment together — there is no separate "Send".
+  // Only a pure-recap artifact (no Submit button at all) gets a standalone Send
+  // bar as a fallback. doSubmit() flips to a "submitted" screen either way.
+  (function () {
+    // ---- Pixel-art clawd waiting-splash library (adapted from clawd-tank, MIT) ----
+    // Shared character rig — body, arms, nested eyes. Drawn once per mount.
+    var CW_RIG =
+      '<g class="cw-rig">' +
+        '<g class="cw-body" fill="#d98a5c">' +
+          '<rect x="3" y="13" width="1" height="2"/><rect x="5" y="13" width="1" height="2"/>' +
+          '<rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>' +
+          '<rect x="2" y="6" width="11" height="7"/>' +
+          '<g class="cw-arm-l"><rect x="0" y="9" width="2" height="2"/></g>' +
+          '<g class="cw-arm-r"><rect x="13" y="9" width="2" height="2"/></g>' +
+        '</g>' +
+        '<g class="cw-eyes"><g class="cw-eyes-b" fill="#2a2018">' +
+          '<rect x="4.5" y="8" width="1" height="2"/><rect x="9.5" y="8" width="1" height="2"/>' +
+        '</g></g>' +
+      '</g>';
+
+    // Base CSS shared by every scene (halo, canvas, shadow, prop defaults).
+    var CW_BASE =
+      ".cmp-submitted .halo{position:absolute;top:50%;left:50%;width:200px;height:200px;transform:translate(-50%,-64%);background:radial-gradient(circle,rgba(217,138,92,.30) 0%,transparent 62%);filter:blur(6px);animation:cwHalo 4.5s ease-in-out infinite;pointer-events:none}" +
+      "@keyframes cwHalo{0%,100%{opacity:.5;transform:translate(-50%,-64%) scale(1)}50%{opacity:.85;transform:translate(-50%,-64%) scale(1.08)}}" +
+      ".cmp-submitted .cw{width:150px;height:150px;shape-rendering:crispEdges;overflow:visible}" +
+      ".cmp-submitted .cw-shadow{fill:#201b15;opacity:.4}" +
+      // sensible idle defaults so a scene only overrides what it animates
+      ".cmp-submitted .cw-eyes-b{transform-origin:7.5px 9px;animation:cwBlink 4.2s steps(1) infinite}" +
+      "@keyframes cwBlink{0%,45%,55%,100%{transform:scaleY(1)}50%{transform:scaleY(.12)}}" +
+      // Reduced motion: freeze every pose, but keep the floating props faintly
+      // visible (they start at opacity:0 and only the animation reveals them).
+      "@media (prefers-reduced-motion:reduce){.cmp-submitted .cw *,.cmp-submitted .halo{animation:none!important}.cmp-submitted .cw-bit,.cmp-submitted .cw-load,.cmp-submitted .cw-str,.cmp-submitted .cw-pk,.cmp-submitted .cw-dust,.cmp-submitted .cw-wave,.cmp-submitted .cw-star,.cmp-submitted .cw-q,.cmp-submitted .cw-sp{opacity:.6!important}}";
+
+    // Each scene: id, caption, behind/front prop SVG, and scoped CSS.
+    var CW_SCENES = [
+      { id:"typing", cap:"Claude’s heads-down in the code",
+        behind:'<g fill="#40c4ff"><rect class="cw-bit" x="-2" y="12" width="1.4" height="1.4"/><rect class="cw-bit b2" x="6" y="11" width="1.4" height="1.4"/><rect class="cw-bit b3" x="13" y="12" width="1.4" height="1.4"/><rect class="cw-bit b4" x="3" y="10" width="1.4" height="1.4"/></g>',
+        front:'<g transform="translate(2.5 10.5)"><rect x="-0.5" y="4.6" width="11" height="1" fill="#546e7a"/><rect x="0" y="0" width="10" height="4.8" fill="#78909c"/><rect x="4.5" y="2" width="1" height="1" fill="#fff"/></g>',
+        css:
+          ".cmp-submitted .cw--typing .cw-rig{transform-origin:7.5px 15px;animation:cwJitter .09s steps(2) infinite alternate}" +
+          "@keyframes cwJitter{from{transform:translateY(0)}to{transform:translateY(.5px)}}" +
+          ".cmp-submitted .cw--typing .cw-arm-l{transform-origin:2px 10px;animation:cwTypeL .16s ease-in-out infinite}" +
+          ".cmp-submitted .cw--typing .cw-arm-r{transform-origin:13px 10px;animation:cwTypeR .13s ease-in-out infinite}" +
+          "@keyframes cwTypeL{0%,100%{transform:rotate(58deg)}50%{transform:rotate(90deg)}}" +
+          "@keyframes cwTypeR{0%,100%{transform:rotate(-58deg)}50%{transform:rotate(-90deg)}}" +
+          ".cmp-submitted .cw--typing .cw-eyes{animation:cwRead 1.2s steps(1) infinite}" +
+          "@keyframes cwRead{0%,32%{transform:translateX(-1.2px)}33%,66%{transform:translateX(0)}67%,100%{transform:translateX(1.2px)}}" +
+          ".cmp-submitted .cw--typing .cw-eyes-b{animation:none}" +
+          ".cmp-submitted .cw--typing .cw-bit{opacity:0;animation:cwBit 1s linear infinite}" +
+          ".cmp-submitted .cw--typing .cw-bit.b2{animation-delay:.33s}.cmp-submitted .cw--typing .cw-bit.b3{animation-delay:.66s}.cmp-submitted .cw--typing .cw-bit.b4{animation-delay:.85s}" +
+          "@keyframes cwBit{0%{opacity:0;transform:translateY(0) scale(.5)}25%{opacity:.85}100%{opacity:0;transform:translateY(-13px) scale(1.15)}}" },
+
+      { id:"thinking", cap:"Claude’s turning it over",
+        behind:'<g transform="translate(7 -10)"><g fill="#fff" opacity="0.95"><rect x="2" y="1" width="8" height="6"/><rect x="1" y="2" width="10" height="4"/><rect x="3" y="0" width="6" height="8"/><rect x="2" y="7" width="2" height="2"/><rect x="1" y="9" width="1" height="1"/></g><g fill="#0082fc"><rect class="cw-load" x="2.5" y="3" width="1.2" height="1.2"/><rect class="cw-load l2" x="5.4" y="3" width="1.2" height="1.2"/><rect class="cw-load l3" x="8.3" y="3" width="1.2" height="1.2"/></g></g>',
+        front:"",
+        css:
+          ".cmp-submitted .cw--thinking .cw-rig{transform-origin:7.5px 15px;animation:cwSway 4s ease-in-out infinite}" +
+          "@keyframes cwSway{0%,100%{transform:rotate(0deg)}25%{transform:rotate(-3deg)}75%{transform:rotate(3deg)}}" +
+          ".cmp-submitted .cw--thinking .cw-arm-r{transform-origin:14px 10px;animation:cwTap .8s ease-in-out infinite alternate}" +
+          "@keyframes cwTap{0%{transform:rotate(-122deg)}100%{transform:rotate(-145deg)}}" +
+          ".cmp-submitted .cw--thinking .cw-load{opacity:.15;animation:cwLoad 2s infinite}" +
+          ".cmp-submitted .cw--thinking .cw-load.l2{animation-delay:.25s}.cmp-submitted .cw--thinking .cw-load.l3{animation-delay:.5s}" +
+          "@keyframes cwLoad{0%,18%{opacity:.15}40%,80%{opacity:1}100%{opacity:.15}}" },
+
+      { id:"conducting", cap:"Claude’s orchestrating the next move",
+        behind:'<g><rect class="cw-str" x="0" y="0" width="1.5" height="1.5" fill="#0082fc"/><rect class="cw-str s2" x="0" y="0" width="1.5" height="1.5" fill="#ffc107"/><rect class="cw-str s3" x="0" y="0" width="1.5" height="1.5" fill="#ff5252"/><rect class="cw-str s4" x="0" y="0" width="1.5" height="1.5" fill="#4caf50"/><rect class="cw-str s5" x="0" y="0" width="1.5" height="1.5" fill="#9c27b0"/></g>',
+        front:"",
+        css:
+          ".cmp-submitted .cw--conducting .cw-rig{transform-origin:7.5px 15px;animation:cwBob 2s ease-in-out infinite}" +
+          "@keyframes cwBob{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(1.5px) scaleY(.98)}}" +
+          ".cmp-submitted .cw--conducting .cw-arm-l{transform-origin:1px 10px;animation:cwCondL 2s ease-in-out infinite}" +
+          ".cmp-submitted .cw--conducting .cw-arm-r{transform-origin:14px 10px;animation:cwCondR 2s ease-in-out infinite}" +
+          "@keyframes cwCondL{0%,100%{transform:rotate(15deg)}50%{transform:rotate(85deg)}}" +
+          "@keyframes cwCondR{0%,100%{transform:rotate(-85deg)}50%{transform:rotate(-15deg)}}" +
+          ".cmp-submitted .cw--conducting .cw-str{opacity:0;animation:cwStream 2s linear infinite}" +
+          ".cmp-submitted .cw--conducting .cw-str.s2{animation-delay:.4s}.cmp-submitted .cw--conducting .cw-str.s3{animation-delay:.8s}.cmp-submitted .cw--conducting .cw-str.s4{animation-delay:1.2s}.cmp-submitted .cw--conducting .cw-str.s5{animation-delay:1.6s}" +
+          "@keyframes cwStream{0%{opacity:0;transform:translate(-2px,6px) scale(0)}15%{opacity:1;transform:translate(0,1px) scale(1)}50%{opacity:1;transform:translate(7.5px,-3px) scale(1.5)}85%{opacity:1;transform:translate(15px,1px) scale(1)}100%{opacity:0;transform:translate(17px,6px) scale(0)}}" },
+
+      { id:"juggling", cap:"Claude’s juggling a few threads",
+        behind:"",
+        front:'<g><rect class="cw-pk" x="-1" y="-1" width="2" height="2" fill="#ff5252"/><rect class="cw-pk p2" x="-1" y="-1" width="2" height="2" fill="#ffc107"/><rect class="cw-pk p3" x="-1" y="-1" width="2" height="2" fill="#4caf50"/></g>',
+        css:
+          ".cmp-submitted .cw--juggling .cw-rig{transform-origin:7.5px 15px;animation:cwRock .6s ease-in-out infinite alternate}" +
+          "@keyframes cwRock{0%{transform:rotate(-5deg)}100%{transform:rotate(5deg)}}" +
+          ".cmp-submitted .cw--juggling .cw-arm-l{transform-origin:1px 10px;animation:cwJugL .6s ease-in-out infinite alternate}" +
+          ".cmp-submitted .cw--juggling .cw-arm-r{transform-origin:14px 10px;animation:cwJugR .6s ease-in-out infinite alternate}" +
+          "@keyframes cwJugL{0%{transform:rotate(60deg)}100%{transform:rotate(10deg)}}" +
+          "@keyframes cwJugR{0%{transform:rotate(-10deg)}100%{transform:rotate(-60deg)}}" +
+          ".cmp-submitted .cw--juggling .cw-eyes{animation:cwDart 1.2s infinite}" +
+          "@keyframes cwDart{0%,100%{transform:translate(-2px,-2px)}25%{transform:translate(0,-3px)}50%{transform:translate(2px,-2px)}75%{transform:translate(0,0)}}" +
+          ".cmp-submitted .cw--juggling .cw-eyes-b{animation:none}" +
+          ".cmp-submitted .cw--juggling .cw-pk{animation:cwJuggle 1.2s linear infinite}" +
+          ".cmp-submitted .cw--juggling .cw-pk.p2{animation-delay:-.4s}.cmp-submitted .cw--juggling .cw-pk.p3{animation-delay:-.8s}" +
+          "@keyframes cwJuggle{0%{transform:translate(0,9px) rotate(0deg)}25%{transform:translate(8px,0) rotate(90deg)}50%{transform:translate(15px,9px) rotate(180deg)}75%{transform:translate(8px,4px) rotate(270deg)}100%{transform:translate(0,9px) rotate(360deg)}}" },
+
+      { id:"sweeping", cap:"Claude’s sweeping up the details",
+        behind:'<g class="cw-dust" fill="#9e9e9e"><rect x="0" y="0" width="1.5" height="1.5"/></g><g class="cw-dust d2" fill="#b0bec5"><rect x="0" y="0" width="1" height="1"/></g>',
+        front:'<g class="cw-broom"><rect x="13.5" y="4" width="1" height="10" fill="#795548"/><rect x="12" y="14" width="4" height="2" fill="#ffc107"/></g>',
+        css:
+          ".cmp-submitted .cw--sweeping .cw-rig{transform-origin:7.5px 15px;animation:cwLean 1.5s ease-in-out infinite}" +
+          "@keyframes cwLean{0%,100%{transform:rotate(5deg) translate(1px,0)}50%{transform:rotate(13deg) translate(3px,1px)}}" +
+          ".cmp-submitted .cw--sweeping .cw-arm-l{transform-origin:1px 10px;transform:translate(6px,1px) rotate(-15deg)}" +
+          ".cmp-submitted .cw--sweeping .cw-arm-r{transform-origin:14px 10px;animation:cwSwArm 1.5s ease-in-out infinite}" +
+          "@keyframes cwSwArm{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-20deg)}}" +
+          ".cmp-submitted .cw--sweeping .cw-broom{transform-origin:13.5px 14px;animation:cwBroom 1.5s ease-in-out infinite}" +
+          "@keyframes cwBroom{0%,100%{transform:rotate(10deg)}50%{transform:rotate(30deg) translate(2px,-1px)}}" +
+          ".cmp-submitted .cw--sweeping .cw-dust{opacity:0;animation:cwDust 1.5s ease-out infinite}" +
+          ".cmp-submitted .cw--sweeping .cw-dust.d2{animation-delay:.3s}" +
+          "@keyframes cwDust{0%,40%{transform:translate(17px,14px) scale(0);opacity:0}50%{transform:translate(19px,14px) scale(1);opacity:1}100%{transform:translate(25px,14px) scale(.5);opacity:0}}" },
+
+      { id:"beacon", cap:"Claude’s directing the subagents",
+        behind:'<g fill="none"><circle class="cw-wave" cx="7.5" cy="5" r="3" stroke="#0082fc" stroke-width="0.6"/><circle class="cw-wave w2" cx="7.5" cy="5" r="3" stroke="#ffc107" stroke-width="0.6"/><circle class="cw-wave w3" cx="7.5" cy="5" r="3" stroke="#ff5252" stroke-width="0.6"/></g>',
+        front:'<g><rect x="7" y="2" width="1" height="4" fill="#78909c"/><circle class="cw-ant" cx="7.5" cy="1.5" r="1" fill="#ff5252"/></g>',
+        css:
+          ".cmp-submitted .cw--beacon .cw-rig{transform-origin:7.5px 15px;animation:cwBeac 1.5s ease-in-out infinite}" +
+          "@keyframes cwBeac{0%,100%{transform:translateY(0)}50%{transform:translateY(.5px)}}" +
+          ".cmp-submitted .cw--beacon .cw-arm-l{transform-origin:1px 10px;transform:rotate(15deg)}" +
+          ".cmp-submitted .cw--beacon .cw-arm-r{transform-origin:14px 10px;transform:rotate(-15deg)}" +
+          ".cmp-submitted .cw--beacon .cw-wave{transform-origin:7.5px 5px;opacity:0;animation:cwWave 2s ease-out infinite}" +
+          ".cmp-submitted .cw--beacon .cw-wave.w2{animation-delay:.5s}.cmp-submitted .cw--beacon .cw-wave.w3{animation-delay:1s}" +
+          "@keyframes cwWave{0%{transform:scale(.4);opacity:0}10%{opacity:.7}100%{transform:scale(2.6);opacity:0}}" +
+          ".cmp-submitted .cw--beacon .cw-ant{animation:cwAnt .8s ease-in-out infinite alternate}" +
+          "@keyframes cwAnt{0%{opacity:.4}100%{opacity:1}}" },
+
+      { id:"wizard", cap:"Claude’s working some magic",
+        behind:'<g class="cw-stars"><polygon class="cw-star" points="14,-6 14.5,-5.5 15,-5.5 14.6,-5.1 14.8,-4.5 14,-4.9 13.2,-4.5 13.4,-5.1 13,-5.5 13.5,-5.5" fill="#ffd700"/><polygon class="cw-star sb" points="4,-4 4.5,-3.5 5,-3.5 4.6,-3.1 4.8,-2.5 4,-2.9 3.2,-2.5 3.4,-3.1 3,-3.5 3.5,-3.5" fill="#40c4ff"/><polygon class="cw-star sc" points="19,0 19.5,.5 20,.5 19.6,.9 19.8,1.5 19,1.1 18.2,1.5 18.4,.9 18,.5 18.5,.5" fill="#b388ff"/></g>',
+        front:'<g class="cw-wand"><rect x="13.5" y="4" width="1" height="6" fill="#8d6e63"/><rect x="13.5" y="4" width="1" height="1" fill="#ffd700"/></g><g transform="translate(7.5 6)"><polygon points="-4,0 4,0 0,-6" fill="#673ab7"/><rect x="-5" y="0" width="10" height="1" fill="#512da8"/></g>',
+        css:
+          ".cmp-submitted .cw--wizard .cw-rig{transform-origin:7.5px 15px;animation:cwFloat 3s ease-in-out infinite}" +
+          "@keyframes cwFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}" +
+          ".cmp-submitted .cw--wizard .cw-arm-l{transform-origin:1px 10px;animation:cwWizL 3s ease-in-out infinite}" +
+          "@keyframes cwWizL{0%,100%{transform:rotate(20deg)}50%{transform:rotate(120deg)}}" +
+          ".cmp-submitted .cw--wizard .cw-arm-r{transform-origin:13px 10px;animation:cwWizR 3s ease-in-out infinite}" +
+          ".cmp-submitted .cw--wizard .cw-wand{transform-origin:14px 10px;animation:cwWizR 3s ease-in-out infinite}" +
+          "@keyframes cwWizR{0%,100%{transform:rotate(-20deg)}50%{transform:rotate(-120deg)}}" +
+          ".cmp-submitted .cw--wizard .cw-star{opacity:0;animation:cwSparkle 2s ease-out infinite}" +
+          ".cmp-submitted .cw--wizard .cw-star.sb{animation-delay:.6s}.cmp-submitted .cw--wizard .cw-star.sc{animation-delay:1.2s}" +
+          "@keyframes cwSparkle{0%{opacity:0;transform:translateY(4px) scale(0) rotate(0)}20%{opacity:1}100%{opacity:0;transform:translateY(-13px) scale(1.4) rotate(180deg)}}" },
+
+      { id:"confused", cap:"Claude’s puzzling it out",
+        behind:'<g class="cw-q" fill="#40c4ff"><rect x="1" y="0" width="2" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="2"/><rect x="2" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="1" y="6" width="1" height="1"/></g><g class="cw-q q2" fill="#ffc107" transform="translate(10 0)"><rect x="1" y="0" width="2" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="2"/><rect x="2" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="1" y="6" width="1" height="1"/></g>',
+        front:"",
+        css:
+          ".cmp-submitted .cw--confused .cw-rig{transform-origin:7.5px 15px;animation:cwLook 6s ease-in-out infinite}" +
+          "@keyframes cwLook{0%,10%{transform:translate(0,0)}15%,35%{transform:translate(-2px,0) rotate(-2deg)}40%,45%{transform:translate(0,0)}50%,70%{transform:translate(2px,0) rotate(2deg)}75%,100%{transform:translate(0,0)}}" +
+          ".cmp-submitted .cw--confused .cw-arm-l{transform-origin:1px 10px;transform:translate(0,-2px) rotate(18deg)}" +
+          ".cmp-submitted .cw--confused .cw-eyes{animation:cwLookEye 6s ease-in-out infinite}" +
+          "@keyframes cwLookEye{0%,10%{transform:translate(0,0)}15%,35%{transform:translate(-2px,0)}40%,45%{transform:translate(0,0)}50%,70%{transform:translate(2px,0)}75%,100%{transform:translate(0,0)}}" +
+          ".cmp-submitted .cw--confused .cw-q{opacity:0;animation:cwQL 6s ease-in-out infinite}" +
+          ".cmp-submitted .cw--confused .cw-q.q2{animation:cwQR 6s ease-in-out infinite}" +
+          "@keyframes cwQL{0%,15%{opacity:0;transform:translate(-6px,6px) scale(.5)}20%,30%{opacity:1;transform:translate(-8px,-2px) scale(1)}35%,100%{opacity:0;transform:translate(-8px,-8px) scale(1.2)}}" +
+          "@keyframes cwQR{0%,50%{opacity:0;transform:translate(16px,6px) scale(.5)}55%,65%{opacity:1;transform:translate(18px,-2px) scale(1)}70%,100%{opacity:0;transform:translate(18px,-8px) scale(1.2)}}" },
+
+      { id:"happy", cap:"Claude’s pretty pleased with that",
+        behind:'<g class="cw-sp" fill="#ffd700"><rect x="-4" y="-2" width="1.4" height="1.4"/></g><g class="cw-sp sp2" fill="#ffa000"><rect x="18" y="-4" width="1.4" height="1.4"/></g><g class="cw-sp sp3" fill="#fff59d"><rect x="19" y="9" width="1.4" height="1.4"/></g><g class="cw-sp sp4" fill="#ffc107"><rect x="-5" y="11" width="1.4" height="1.4"/></g><g class="cw-sp sp5" fill="#fff59d"><rect x="7" y="-8" width="1.4" height="1.4"/></g>',
+        front:"",
+        css:
+          ".cmp-submitted .cw--happy .cw-rig{transform-origin:7.5px 15px;animation:cwBounce 1s ease-in-out infinite}" +
+          "@keyframes cwBounce{0%,15%,100%{transform:translateY(0) scaleY(1)}20%{transform:translateY(0) scaleY(.85)}40%{transform:translateY(-9px) scaleY(1.05)}50%{transform:translateY(-11px) scaleY(1)}60%{transform:translateY(-9px) scaleY(1.05)}80%{transform:translateY(0) scaleY(.85)}85%{transform:translateY(0) scaleY(1)}}" +
+          ".cmp-submitted .cw--happy .cw-arm-l{transform-origin:2px 10px;animation:cwHapL .15s ease-in-out infinite alternate}" +
+          ".cmp-submitted .cw--happy .cw-arm-r{transform-origin:13px 10px;animation:cwHapR .15s ease-in-out infinite alternate}" +
+          "@keyframes cwHapL{0%{transform:rotate(45deg)}100%{transform:rotate(85deg)}}" +
+          "@keyframes cwHapR{0%{transform:rotate(-45deg)}100%{transform:rotate(-85deg)}}" +
+          ".cmp-submitted .cw--happy .cw-sp{opacity:0;animation:cwSpark 1.5s step-end infinite}" +
+          ".cmp-submitted .cw--happy .cw-sp.sp2{animation-delay:.3s}.cmp-submitted .cw--happy .cw-sp.sp3{animation-delay:.6s}.cmp-submitted .cw--happy .cw-sp.sp4{animation-delay:.9s}.cmp-submitted .cw--happy .cw-sp.sp5{animation-delay:1.2s}" +
+          "@keyframes cwSpark{0%{opacity:0}12%{opacity:1}30%{opacity:0}100%{opacity:0}}" },
+    ];
+
+    // Assemble the full stylesheet (base + every scene) once.
+    var CW_CSS = CW_BASE + CW_SCENES.map(function (s) { return s.css; }).join("");
+
+    // Build one scene's SVG: shadow + behind props + shared rig + front props.
+    function cwSceneSVG(scene) {
+      return '<svg class="cw cw--' + scene.id + '" viewBox="-7 -12 30 30" aria-hidden="true">' +
+        '<rect class="cw-shadow" x="3" y="15" width="9" height="1"/>' +
+        scene.behind + CW_RIG + scene.front +
+        '</svg>';
+    }
+
+    var st = document.createElement("style");
+    st.textContent =
+      ".cmp-comment{grid-column:1/-1;margin:16px 0 0}" +
+      ".cmp-comment textarea{display:block;width:100%;box-sizing:border-box;min-height:54px;resize:vertical;padding:10px 12px;border:1px solid rgba(32,27,21,.22);border-radius:9px;font:13px/1.5 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
+      ".cmp-comment textarea:focus{border-color:#b0552f}" +
+      // Selection toolbar — floats above a highlight: 💬 Ask · ✦ New session.
+      ".cmp-seltb{position:fixed;z-index:10000;display:flex;align-items:center;gap:2px;padding:4px;border-radius:10px;background:#201b15;box-shadow:0 8px 22px -8px rgba(0,0,0,.5);font-family:-apple-system,system-ui,sans-serif;animation:cmpSelIn .12s ease both}" +
+      "@keyframes cmpSelIn{from{opacity:0;transform:translateY(3px) scale(.97)}to{opacity:1;transform:none}}" +
+      ".cmp-seltb button{border:0;background:transparent;color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:7px;cursor:pointer;white-space:nowrap}" +
+      ".cmp-seltb button:hover{background:rgba(255,255,255,.12)}" +
+      ".cmp-seltb .sep{width:1px;height:16px;background:rgba(255,255,255,.18)}" +
+      ".cmp-seltb-done{color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;white-space:nowrap}" +
+      ".cmp-chat{display:flex;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(32,27,21,.14);grid-column:1/-1}" +
+      ".cmp-chat input{flex:1;min-width:0;padding:9px 11px;border:1px solid rgba(32,27,21,.22);border-radius:8px;font:13px/1.4 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
+      ".cmp-chat input:focus{border-color:#b0552f}" +
+      ".cmp-chat button{flex:0 0 auto;padding:9px 14px;border-radius:8px;border:1px solid #201b15;background:#201b15;color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
+      // The post-submit "Claude is working" scene — a pixel-art clawd doing a
+      // random bit of work (typing, conducting, juggling, …) while the agent
+      // works the next step. A fresh pose rolls on every show, so the wait never
+      // feels stale. Keeps the user on the Board, out of the terminal. All motion
+      // is transform/opacity, scoped to .cmp-submitted, reduced-motion aware.
+      // The clawd library (CW_* above) carries the scenes + their CSS (CW_CSS).
+      ".cmp-submitted{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(120% 90% at 50% 32%,#fbf8f2 0%,rgba(244,241,236,.97) 70%);backdrop-filter:blur(3px);font-family:-apple-system,system-ui,sans-serif}" +
+      ".cmp-submitted .t{font-size:16px;font-weight:650;color:#201b15;text-align:center}" +
+      ".cmp-submitted .dots{margin-top:9px;text-align:center}" +
+      ".cmp-submitted .dots span{display:inline-block;width:5px;height:5px;border-radius:50%;background:#c06a3a;margin:0 2px;opacity:.3;animation:cmpBlink 1.4s ease-in-out infinite}" +
+      ".cmp-submitted .dots span:nth-child(2){animation-delay:.2s}.cmp-submitted .dots span:nth-child(3){animation-delay:.4s}" +
+      "@keyframes cmpBlink{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}" +
+      ".cmp-submitted .s{font-size:12px;color:#6e655b;margin-top:8px;text-align:center;max-width:300px}" +
+      ".cmp-submitted .b{margin-top:4px;padding:8px 14px;border-radius:8px;border:1px solid rgba(32,27,21,.25);background:#fff;color:#201b15;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
+      CW_CSS;
+    document.head.appendChild(st);
+
+    if (submitBtn) {
+      // Merged path: comment field directly above the Submit bar; Submit sends all.
+      var box = document.createElement("div");
+      box.className = "cmp-comment";
+      box.innerHTML = '<textarea placeholder="Add a comment for the terminal (optional)…" aria-label="Comment"></textarea>';
+      var bar = submitBtn.closest(".bar") || submitBtn.parentElement;
+      bar.parentNode.insertBefore(box, bar);
+      commentEl = box.querySelector("textarea");
+      commentEl.addEventListener("input", refresh);
+    } else {
+      // Fallback: no review form (pure recap / presentation-first). A freeform
+      // Send bar at the bottom that posts immediately to the owning terminal.
+      var root = document.querySelector("[data-fit-root]") || document.body;
+      var cbar = document.createElement("div");
+      cbar.className = "cmp-chat";
+      cbar.innerHTML = '<input type="text" placeholder="Message the terminal…" aria-label="Message the terminal" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><button type="button">Send</button>';
+      root.appendChild(cbar);
+      var inp = cbar.querySelector("input"), snd = cbar.querySelector("button");
+      var sendChat = function () {
+        var v = inp.value.trim(); if (!v) return;
+        try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: v }, "*"); } catch (e) {}
+        if (window.parent === window && navigator.clipboard) { navigator.clipboard.writeText(v).catch(function () {}); }
+        inp.value = ""; var p = snd.textContent; snd.textContent = "Sent ✓";
+        setTimeout(function () { snd.textContent = p; }, 1500);
+        try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
+      };
+      snd.addEventListener("click", sendChat);
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendChat(); } });
+    }
+
+    window.__cmpShowSubmitted = function () {
+      if (document.querySelector(".cmp-submitted")) return;
+      // Roll a fresh clawd pose every time — re-mounting the artifact (nav-back)
+      // re-rolls, which is exactly the "a new one each artifact" feel we want.
+      var scene = CW_SCENES[Math.floor(Math.random() * CW_SCENES.length)];
+      var ov = document.createElement("div"); ov.className = "cmp-submitted";
+      ov.innerHTML =
+        '<div class="halo"></div>' +
+        cwSceneSVG(scene) +
+        '<div><div class="t">' + scene.cap + '</div>' +
+        '<div class="dots"><span></span><span></span><span></span></div>' +
+        '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
+        '<button class="b" type="button">← View last artifact</button>';
+      // Dismissing the waiting splash means "I'm going back to read the last artifact" —
+      // tell the Board so it disarms auto-advance and the NEXT artifact arrives as a
+      // pill instead of yanking the reader. Staying on the splash keeps auto-advance on.
+      ov.querySelector("button").addEventListener("click", function () {
+        try { parent.postMessage({ source: "companion-artifact", kind: "splash-dismissed" }, "*"); } catch (e) {}
+        ov.remove();
+      });
+      document.body.appendChild(ov);
+    };
+
+    // The Board re-shows the "submitted" overlay when you navigate back to an
+    // artifact you already submitted from (the iframe reloads fresh, so the
+    // state would otherwise be lost). It posts this message after each reload.
+    window.addEventListener("message", function (e) {
+      var d = e.data;
+      if (d && d.source === "companion-board" && d.kind === "restore-submitted") {
+        try { window.__cmpShowSubmitted(); } catch (err) {}
+      }
+    });
+  })();
+
+  // --- Selection toolbar: highlight any text → 💬 Ask · ✦ New session ----------
+  // Rides the same postMessage rail. "✦ New session" asks the Board to spawn a fresh
+  // Claude session pre-filled with the quote (a tangent that deserves its own thread).
+  // "💬 Ask" drops the quoted selection into the comment field so it goes out with the
+  // next Submit (or the chat input on a pure-recap artifact). Self-contained.
+  (function () {
+    var subject = "";
+    try { subject = (JSON.parse(document.getElementById("companion-meta").textContent).subject) || ""; } catch (e) {}
+    var tb = null;
+    function clearTb() { if (tb) { tb.remove(); tb = null; } }
+    function selText() {
+      var s = window.getSelection();
+      if (!s || s.isCollapsed) return "";
+      return (s.toString() || "").replace(/\s+/g, " ").trim();
+    }
+    function flashTb(msg) {
+      if (!tb) return;
+      tb.innerHTML = '<span class="cmp-seltb-done">' + msg + "</span>";
+      setTimeout(clearTb, 1400);
+    }
+    function askAboutSelection(q) {
+      // Drop the quoted selection into the comment field so it rides the next Submit;
+      // fall back to the chat input on a pure-recap artifact.
+      var target = commentEl || document.querySelector(".cmp-chat input");
+      if (!target) return;
+      var ref = 'On: "' + (q.length > 100 ? q.slice(0, 97) + "…" : q) + '" — ';
+      target.value = (target.value ? target.value + "\n" : "") + ref;
+      target.focus();
+      try { target.setSelectionRange(target.value.length, target.value.length); } catch (e) {}
+      if (target === commentEl) refresh();
+    }
+    function showTb() {
+      var q = selText();
+      if (q.length < 3) { clearTb(); return; }
+      var sel = window.getSelection(), rect;
+      try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch (e) { return; }
+      if (!rect || (!rect.width && !rect.height)) return;
+      clearTb();
+      tb = document.createElement("div");
+      tb.className = "cmp-seltb";
+      tb.innerHTML =
+        '<button type="button" data-sel="ask">💬 Ask</button>' +
+        '<span class="sep"></span>' +
+        '<button type="button" data-sel="new">✦ New session</button>';
+      document.body.appendChild(tb);
+      var tw = tb.offsetWidth, th = tb.offsetHeight;
+      var left = Math.max(8, Math.min(rect.left + rect.width / 2 - tw / 2, window.innerWidth - tw - 8));
+      var top = rect.top - th - 8;
+      if (top < 6) top = rect.bottom + 8; // flip below the selection when no room above
+      tb.style.left = left + "px";
+      tb.style.top = top + "px";
+      // mousedown + preventDefault so clicking a button doesn't collapse the selection
+      // before the handler runs (we captured `q` already, but it keeps focus tidy).
+      tb.querySelector('[data-sel="new"]').addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        try { parent.postMessage({ source: "companion-artifact", kind: "new-session", quote: q, artifact: subject }, "*"); } catch (err) {}
+        flashTb("✦ Starting a session…");
+      });
+      tb.querySelector('[data-sel="ask"]').addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        askAboutSelection(q);
+        clearTb();
+      });
+    }
+    document.addEventListener("mouseup", function (e) { if (tb && tb.contains(e.target)) return; setTimeout(showTb, 10); });
+    document.addEventListener("selectionchange", function () { if (!selText()) clearTb(); });
+    document.addEventListener("mousedown", function (e) { if (tb && !tb.contains(e.target)) clearTb(); });
+    window.addEventListener("scroll", clearTb, true);
+  })();
+
+  refresh();
+})();
+</script>
+
+<script>
+  (function () {
+    var el = document.querySelector("[data-fit-root]") || document.body;
+    var post = function () {
+      parent.postMessage({ source: "companion-artifact", kind: "size",
+        w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
+    };
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+    addEventListener("load", post); post();
+  })();
+</script>
+</body>
+</html>

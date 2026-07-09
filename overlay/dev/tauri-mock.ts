@@ -7,7 +7,7 @@
    on the real app: nothing imports this outside dev/.
    ============================================================================= */
 
-interface MockArtifact {
+export interface MockArtifact {
   path: string;
   title: string;
   subject?: string | null;
@@ -17,6 +17,17 @@ interface MockArtifact {
   project?: string | null;
   unit_key?: string | null;
   source?: string | null;
+}
+
+/** Fixture set for the public demo build (`demo.html`). Passed IN rather than
+ *  imported, so the demo's inlined artifact HTML never bloats this harness. */
+export interface DemoProfile {
+  artifacts: MockArtifact[];
+  liveSources: { source: string; json: string }[];
+  /** Raw HTML for a demo artifact path, or null to fall through. */
+  artifactHtml: (path: string) => string | null;
+  /** Canned terminal replays, keyed by the cwd basename `spawn_pty` receives. */
+  transcripts: Record<string, { text: string; delay: number }[]>;
 }
 
 const now = Date.now();
@@ -57,7 +68,7 @@ const ARTIFACTS: MockArtifact[] = [
     size_bytes: 14_200,
     project: "~/claude-code-companion",
     unit_key: "claude-code-companion",
-    source: "claude-code-companion--e6e63a83",
+    source: "claude-code-companion--3f8c1d04",
   },
   {
     path: "/mock/artifacts/observer-latency.html",
@@ -68,13 +79,13 @@ const ARTIFACTS: MockArtifact[] = [
     size_bytes: 11_800,
     project: "~/claude-code-companion",
     unit_key: "claude-code-companion",
-    source: "claude-code-companion--e6e63a83",
+    source: "claude-code-companion--3f8c1d04",
   },
 ];
 
 /** One more artifact lands ~6s after boot — exercises the live-ingest path
  *  (unread bell + "New artifact" pill) so those states can be screenshotted.
- *  Routed to unit 1 so helpdesk-companion stays artifact-less (its blank hero
+ *  Routed to unit 1 so lantern stays artifact-less (its blank hero
  *  "Clawd's on it" composition needs a unit with no artifacts). */
 const LATE_ARTIFACT: MockArtifact = {
   path: "/mock/artifacts/harness-live-ingest.html",
@@ -85,7 +96,7 @@ const LATE_ARTIFACT: MockArtifact = {
   size_bytes: 9_000,
   project: "~/claude-code-companion",
   unit_key: "claude-code-companion",
-  source: "claude-code-companion--e6e63a83",
+  source: "claude-code-companion--3f8c1d04",
 };
 
 // ---- Identity-race scenarios (Phase 4 verification) --------------------------
@@ -98,7 +109,7 @@ const LATE_ARTIFACT: MockArtifact = {
 const RACE_APPEAR_MS = 3_000;
 const RACE_STAMP_MS = 6_000;
 const ORPHAN_APPEAR_MS = 4_000;
-const RACE_SID = "e6e63a83-f93c-4af9-8016-9145042f958c";
+const RACE_SID = "3f8c1d04-7b62-4e51-9a3d-1c5e802b6af7";
 const RACE_RESOLVED_BARE: MockArtifact = {
   path: "/mock/artifacts/race-resolved.html",
   title: "Race — identity arrives late",
@@ -115,7 +126,7 @@ const RACE_RESOLVED_BARE: MockArtifact = {
 const RACE_RESOLVED_STAMPED: MockArtifact = {
   ...RACE_RESOLVED_BARE,
   unit_key: "claude-code-companion",
-  source: "claude-code-companion--e6e63a83",
+  source: "claude-code-companion--3f8c1d04",
   ...({ session_id: RACE_SID } as object),
 };
 const RACE_ORPHAN: MockArtifact = {
@@ -125,7 +136,7 @@ const RACE_ORPHAN: MockArtifact = {
   summary: "No stamp ever lands; must alarm the warning row, never route silently.",
   modified_ms: now + ORPHAN_APPEAR_MS,
   size_bytes: 7_000,
-  project: "~/job-applier-bot",
+  project: "~/lantern",
   unit_key: null,
   source: null,
 };
@@ -142,7 +153,7 @@ const HUB_AGENTS = [
     name: "Hermes",
     emoji: "🪽",
     tagline: "Morning briefs, task triage, EOD filing",
-    capabilities: ["morning-brief", "todoist", "calendar"],
+    capabilities: ["morning-brief", "tasks", "calendar"],
     wake: null,
     registered_ms: now - 14 * 24 * 60 * MIN,
     updated_ms: now - 3 * MIN,
@@ -189,13 +200,13 @@ function morningBriefHtml(): string {
       <div style="font-family:Georgia,serif;font-size:27px;color:#211d1a;margin-top:8px;">
         One build move first, then the calls.</div>
       <p style="font-size:13.5px;line-height:1.6;color:#55504a;margin:12px 0 20px;">
-        No calendar commitments before 1pm. Highest-priority Todoist task is a meta-smell;
-        the most believable first move is shipping the agent-hub reply path.</p>
+        No calendar commitments before 1pm. The top task on the board is a meta-smell; the most
+        believable first move is landing the partial index on <code>harbor</code>.</p>
       <div style="background:oklch(0.988 0.007 60);border:1px solid rgba(40,30,20,.09);
                   border-radius:12px;padding:14px 18px;font-size:13px;color:#3a352f;">
-        <label style="display:block;padding:6px 0;"><input type="checkbox" checked> Ship agent-hub reply path</label>
-        <label style="display:block;padding:6px 0;"><input type="checkbox"> Clear Todoist meta-smells</label>
-        <label style="display:block;padding:6px 0;"><input type="checkbox"> 4pm — MSP demo call prep</label>
+        <label style="display:block;padding:6px 0;"><input type="checkbox" checked> Ship the harbor partial index</label>
+        <label style="display:block;padding:6px 0;"><input type="checkbox"> Re-run the tidepool differential</label>
+        <label style="display:block;padding:6px 0;"><input type="checkbox"> 4pm — northwind design review</label>
       </div>
       <button id="brief-submit" style="margin-top:18px;padding:10px 22px;border-radius:10px;
               border:1px solid rgba(40,30,20,.15);background:#cc785c;color:#fff;
@@ -212,7 +223,7 @@ function morningBriefHtml(): string {
 
 const LIVE_SOURCES = [
   {
-    source: "claude-code-companion--e6e63a83",
+    source: "claude-code-companion--3f8c1d04",
     json: JSON.stringify({
       working: "Polishing the Board chrome — hierarchy, rail, states",
       where: [
@@ -228,33 +239,35 @@ const LIVE_SOURCES = [
       is_repo: true,
       unit_key: "claude-code-companion",
       companion_session: "tab-mock-1",
-      session_id: "e6e63a83-f93c-4af9-8016-9145042f958c",
-      unit_dir: "/Users/gyatso/claude-code-companion",
+      session_id: "3f8c1d04-7b62-4e51-9a3d-1c5e802b6af7",
+      unit_dir: "/Users/dev/claude-code-companion",
       updated_ms: now - 2 * MIN,
     }),
   },
   {
-    source: "helpdesk-companion--b41c9d22",
+    source: "lantern--9d47a2e6",
     json: JSON.stringify({
-      working: "Wiring the MSP call companion transcript pane",
+      working: "Wiring the transcript pane",
       where: ["Transcript pane scaffolded"],
       next: [{ title: "Pick the diarization vendor", sub: "latency vs cost", kind: "decision" }],
-      project: "helpdesk-companion",
+      project: "lantern",
       is_repo: true,
-      unit_key: "helpdesk-companion",
-      session_id: "b41c9d22-0000-4000-8000-000000000001",
-      unit_dir: "/Users/gyatso/helpdesk-companion",
+      unit_key: "lantern",
+      session_id: "9d47a2e6-0000-4000-8000-000000000001",
+      unit_dir: "/Users/dev/lantern",
       updated_ms: now - 9 * MIN,
     }),
   },
 ];
 
+// Fixtures are shared with the PUBLIC demo build — keep every name, path and id
+// invented. No real project names, no real home directory.
 const RECENT_SESSIONS = [
-  { session_id: "r1", cwd: "/Users/gyatso/job-applier-bot", project: "/Users/gyatso/job-applier-bot", last_active_ms: now - 26 * 60 * MIN, size_bytes: 84_000, title: "Build LinkedIn auto-messaging flow" },
-  { session_id: "r2", cwd: "/Users/gyatso/clipping", project: "/Users/gyatso/clipping", last_active_ms: now - 49 * 60 * MIN, size_bytes: 52_000, title: "Fix clip export timestamps" },
-  { session_id: "r3", cwd: "/Users/gyatso/shikari-editor", project: "/Users/gyatso/shikari-editor", last_active_ms: now - 3 * 24 * 60 * MIN, size_bytes: 61_000, title: "Timeline scrubber inertia" },
-  { session_id: "r4", cwd: "/Users/gyatso/wtb", project: "/Users/gyatso/wtb", last_active_ms: now - 5 * 24 * 60 * MIN, size_bytes: 33_000, title: "Watchlist ingest dedupe" },
-  { session_id: "r5", cwd: "/Users/gyatso", project: "/Users/gyatso", last_active_ms: now - 6 * 24 * 60 * MIN, size_bytes: 28_000, title: "Sort downloads folder" },
+  { session_id: "r1", cwd: "/Users/dev/lantern", project: "/Users/dev/lantern", last_active_ms: now - 26 * 60 * MIN, size_bytes: 84_000, title: "Rate-limit the ingest worker" },
+  { session_id: "r2", cwd: "/Users/dev/orchard", project: "/Users/dev/orchard", last_active_ms: now - 49 * 60 * MIN, size_bytes: 52_000, title: "Fix export timestamps" },
+  { session_id: "r3", cwd: "/Users/dev/sundial", project: "/Users/dev/sundial", last_active_ms: now - 3 * 24 * 60 * MIN, size_bytes: 61_000, title: "Timeline scrubber inertia" },
+  { session_id: "r4", cwd: "/Users/dev/foundry", project: "/Users/dev/foundry", last_active_ms: now - 5 * 24 * 60 * MIN, size_bytes: 33_000, title: "Watchlist ingest dedupe" },
+  { session_id: "r5", cwd: "/Users/dev/kiln", project: "/Users/dev/kiln", last_active_ms: now - 6 * 24 * 60 * MIN, size_bytes: 28_000, title: "Cache the manifest build" },
 ];
 
 /* --- code-peek fixtures -------------------------------------------------- */
@@ -286,17 +299,28 @@ function sourceFor(relPath: string): string {
   return `# ${relPath}\n\nMocked source content for the harness.\n\n- one\n- two\n`;
 }
 
-export function installTauriMock(): void {
+export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
   const listeners = new Map<number, (msg: unknown) => void>();
+  // event name -> transformCallback id, so the mock can push events (pty output)
+  // back into the bundle the same way the Rust side does.
+  const eventHandlers = new Map<string, number>();
+  const emit = (event: string, payload: unknown): void => {
+    const id = eventHandlers.get(event);
+    if (id !== undefined) listeners.get(id)?.({ event, id, payload });
+  };
   let cbId = 1;
+  const demo = opts.demo ?? null;
   // ?idle=1 boots the Board with nothing live and nothing recent-fresh — the
   // idle-home hero (clawd splash, no project selected) for screenshots.
   const idle = new URLSearchParams(location.search).has("idle");
-  const liveSources = idle ? [] : LIVE_SOURCES;
+  const liveSources = idle ? [] : demo ? demo.liveSources : LIVE_SOURCES;
   // The artifact set is a pure function of elapsed time, so a reload replays the
   // whole scenario and the timeline is deterministic for scripted verification.
   const artifactsNow = (): MockArtifact[] => {
     if (idle) return [];
+    // The demo never replays the identity-race fixtures: RACE_ORPHAN exists to
+    // alarm the rail's warning row, and a red alarm is not a demo.
+    if (demo) return [...demo.artifacts, REMOTE_ARTIFACT];
     const t = Date.now() - now;
     const out = [...ARTIFACTS, REMOTE_ARTIFACT];
     if (t >= 6_000) out.push(LATE_ARTIFACT);
@@ -304,6 +328,10 @@ export function installTauriMock(): void {
     if (t >= ORPHAN_APPEAR_MS) out.push(RACE_ORPHAN);
     return out;
   };
+
+  // Tab ids whose canned transcript has already played — the Board remounts
+  // terminals on navigation, and a replay-on-remount would look like a glitch.
+  const replayed = new Set<string>();
 
   const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     trace_enabled: () => false,
@@ -316,7 +344,7 @@ export function installTauriMock(): void {
     poll_events: (args) => {
       const from = Number((args as { from?: number }).from ?? 0);
       const ready =
-        idle || Date.now() - now < RACE_STAMP_MS
+        idle || demo || Date.now() - now < RACE_STAMP_MS
           ? []
           : [
               {
@@ -330,7 +358,7 @@ export function installTauriMock(): void {
       return { events: ready.slice(from), next: Math.max(from, ready.length) };
     },
     read_unit_names: () => ({}),
-    resolve_home_dir: () => "/Users/gyatso",
+    resolve_home_dir: () => "/Users/dev",
     // No agent-authored home.html in the harness → the native L0 fallback (clawd +
     // the two home doors) renders, which is exactly what the door tests need.
     resolve_home: () => null,
@@ -353,6 +381,8 @@ export function installTauriMock(): void {
     artifact_in_scope: () => false,
     read_artifact: (args) => {
       const p = String(args.path ?? "");
+      const demoHtml = demo?.artifactHtml(p);
+      if (demoHtml) return demoHtml;
       if (p.includes("hermes-morning-brief")) return morningBriefHtml();
       if (p.includes("observer-latency")) {
         return artifactHtml(
@@ -365,7 +395,7 @@ export function installTauriMock(): void {
         return artifactHtml(
           "Harness — live ingest check",
           "This artifact arrived after boot to exercise unread affordances.",
-          [["Arrived", "just now"], ["Route", "helpdesk-companion"]],
+          [["Arrived", "just now"], ["Route", "lantern"]],
         );
       }
       if (p.includes("race-resolved")) {
@@ -391,15 +421,72 @@ export function installTauriMock(): void {
     // Code-peek fixtures — the changed-file list + read-back for the panel.
     list_changed_files: () => CHANGED_FILES,
     read_source_file: (args) => sourceFor(String(args.relPath ?? "")),
-    // PTY + session plumbing — accept and do nothing (the harness terminal stays dark).
-    spawn_pty: () => null,
-    write_pty: () => null,
+    // PTY + session plumbing. Without a demo profile the harness terminal stays
+    // dark (nothing to replay). With one, each unit's terminal types out its own
+    // recorded session, so the split view reads as live rather than broken.
+    spawn_pty: (args) => {
+      if (!demo) return null;
+      const tabId = String(args.tabId ?? "");
+      const cwd = String(args.cwd ?? "");
+      const key = cwd.split("/").filter(Boolean).pop() ?? "";
+      const chunks = demo.transcripts[key];
+      if (!chunks || replayed.has(tabId)) return null;
+      replayed.add(tabId);
+
+      const play = (): void => {
+        let at = 0;
+        for (const c of chunks) {
+          at += c.delay;
+          setTimeout(() => emit(`pty-output-${tabId}`, c.text), at);
+        }
+      };
+
+      // Terminals are spawned for every unit up front, but a unit's mount stays
+      // hidden until the visitor opens it. Hold the replay until then, so the
+      // transcript types out on arrival instead of finishing off-screen.
+      const mount = document.querySelector(`[data-tab="${tabId}"]`);
+      if (!mount) {
+        play();
+        return null;
+      }
+      const io = new IntersectionObserver((entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        io.disconnect();
+        play();
+      });
+      io.observe(mount);
+      return null;
+    },
+    // A visitor will type into the terminal. Echo it so the box feels alive, and
+    // on Enter say plainly why nothing happens — this demo has no model behind it.
+    write_pty: (args) => {
+      if (!demo) return null;
+      const tabId = String(args.tabId ?? "");
+      const data = String(args.data ?? "");
+      if (data === "\r") {
+        emit(
+          `pty-output-${tabId}`,
+          "\r\n\x1b[2m  This is a recorded demo — the terminal isn't wired to a model here.\r\n" +
+            "  In the app, this is a real Claude Code session.\x1b[0m\r\n\r\n\x1b[2m> \x1b[0m",
+        );
+      } else if (data >= " " && data <= "~") {
+        emit(`pty-output-${tabId}`, data);
+      }
+      return null;
+    },
     resize_pty: () => null,
     close_pty: () => null,
     set_unit_name: () => null,
     dismiss_session: () => null,
     launch_terminal_session: () => null,
-    "plugin:event|listen": () => cbId++,
+    // Remember which transformCallback serves which event, so `emit` can deliver
+    // pty output the way the Rust side does. Returns an event id, as Tauri does.
+    "plugin:event|listen": (args) => {
+      const event = String(args.event ?? "");
+      const handler = Number(args.handler);
+      if (event && Number.isFinite(handler)) eventHandlers.set(event, handler);
+      return cbId++;
+    },
     "plugin:event|unlisten": () => null,
   };
 
