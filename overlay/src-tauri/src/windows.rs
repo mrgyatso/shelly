@@ -194,6 +194,11 @@ pub fn open_live_window(app: &AppHandle) {
 /// artifact panel to host a grid of tiles. Re-invoking just re-reveals the
 /// existing window without rebuilding it.
 pub fn open_board_window(app: &AppHandle) {
+    // This path logged nothing, so a re-launch that surfaced no window was
+    // indistinguishable from one that did — which is why the 0.4.8 no-op stayed
+    // invisible for a day. One line, on the single entry point.
+    eprintln!("[overlay] surfacing board window");
+
     // The Board absorbs the live surface: its per-agent panes already show every
     // agent's live-state header, so the separate always-on `live_main` window
     // would just double-show it. Hide it (not close — the daemon keeps writing

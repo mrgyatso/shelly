@@ -1,0 +1,51 @@
+name: Rust tests
+
+# The overlay's Rust suite ran in no workflow at all until now — `cask-smoketest.yml`
+# validates the *install* layer against an already-released cask, never the source. A
+# unit test that runs nowhere is documentation, so this job is what makes the launch
+# guard (and PR #40's race fixes) actually load-bearing.
+#
+# The release check is not redundant with `cargo test`. The single-instance plugin
+# registration is `#[cfg(not(debug_assertions))]`, so a debug test build never compiles
+# that closure — only a release build type-checks it. Skipping this would let a closure
+# that does not compile merge green.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'overlay/src-tauri/**'
+      - '.github/workflows/rust-tests.yml'
+  pull_request:
+    paths:
+      - 'overlay/src-tauri/**'
+      - '.github/workflows/rust-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: cargo test + release check
+    runs-on: macos-14
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: overlay/src-tauri
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: cargo test
+        # Parallel by default, deliberately. The suite's bugs only surface under
+        # concurrency — two of them were fixed in #40 — so `--test-threads=1` here
+        # would pass while hiding the next one.
+        run: cargo test --locked
+
+      - name: cargo check --release
+        # Compiles the `cfg(not(debug_assertions))` single-instance closure, which
+        # `cargo test` above cannot see.
+        run: cargo check --locked --release
