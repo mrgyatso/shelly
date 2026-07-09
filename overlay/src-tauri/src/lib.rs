@@ -107,7 +107,12 @@ pub fn run() {
                             // artifact; just bring the shell forward.
                             windows::open_board_window(&handle);
                         } else {
-                            windows::raise_all(&handle);
+                            // A bare re-launch (double-click, `open -a`, or a newly
+                            // installed bundle at a different path). The Board is the
+                            // only surface, so surface it — same as `Reopen`. Raising
+                            // just the artifact panels used to be the answer; they no
+                            // longer exist, so that branch surfaced nothing at all.
+                            windows::open_board_window(&handle);
                         }
                     });
                 });
@@ -364,11 +369,27 @@ pub fn run() {
             // Guard the whole dispatch: this runs inside a CFRunLoop observer, so a
             // panic that unwound out of here would abort the daemon (see `guard`).
             guard(move || match event {
-                // Stay alive as a background daemon: closing the last panel must
-                // not quit, so a later `companion open` still forwards here.
-                tauri::RunEvent::ExitRequested { api, .. } => {
-                    eprintln!("[overlay] ExitRequested (prevented; daemon stays alive)");
-                    api.prevent_exit();
+                // Stay alive as a background daemon when the last PANEL closes, so a
+                // later `companion open` still forwards here — but honour a real Quit.
+                //
+                // `code` is the whole distinction, and it is not a detail:
+                //   None    — tao destroyed the last window (tauri-runtime-wry emits
+                //             `ExitRequested { code: None }` only from that path).
+                //   Some(_) — somebody called `app.exit(n)`. The tray's "Quit
+                //             Companion" is exactly this.
+                //
+                // Preventing BOTH made the app unquittable by any route, and an
+                // unquittable app is an un-upgradable one: it holds the single-instance
+                // socket for the life of the login session, so every newly installed
+                // build forwards its args to the stale process and exits 0 in silence.
+                // The upgrade appears to do nothing. Never prevent an explicit exit.
+                tauri::RunEvent::ExitRequested { api, code, .. } => {
+                    if code.is_none() {
+                        eprintln!("[overlay] last window closed (daemon stays alive)");
+                        api.prevent_exit();
+                    } else {
+                        eprintln!("[overlay] explicit exit requested — quitting");
+                    }
                 }
                 // A panel is about to close (✕ → JS `close()`): restore its
                 // original window class BEFORE tao tears it down, so the reclassed
