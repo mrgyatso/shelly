@@ -27,7 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
-import { rewritesNeedingReload } from "./ingest-logic";
+import { heroArtifactFor, rewritesNeedingReload } from "./ingest-logic";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { mountClawd } from "./clawd";
 import { initCodePeek, closeCodePeek } from "./code-peek";
@@ -1733,6 +1733,15 @@ function buildRailSessionRow(unitKey: string, s: LiveSource, shownTab: string | 
   time.textContent = relTimeShort(Math.max(sourceUpdatedMs(s), sourceHeartbeatMs(s)));
   row.append(dot, name, time);
 
+  const unread = unreadCountForSource(s.source);
+  if (unread > 0) {
+    const badge = document.createElement("span");
+    badge.className = "unit-subtab-unread";
+    badge.textContent = unread > 9 ? "9+" : String(unread);
+    badge.title = `${unread} unread artifact${unread === 1 ? "" : "s"} in this session`;
+    row.append(badge);
+  }
+
   // Always clickable: even a session marked "active" here may belong to a project
   // you're not currently viewing (its dropdown was opened cross-unit) — pickSession
   // no-ops only when it's already the shown session of the current unit.
@@ -2188,9 +2197,15 @@ function showRecentProjectMenu(e: MouseEvent, sessions: RecentSession[]): void {
 
 // ---- L2 unit home (hero + history) ------------------------------------------
 
-/** Enter L2: clear the unit's unread, render its hero surface + history. */
+/** Enter L2: render the unit's hero surface + history.
+ *
+ *  Entry does NOT clear the unit's unread. A unit holds every session's artifacts,
+ *  but the hero shows exactly ONE session's — so a blanket `clearUnread(unitKey)`
+ *  here marked a sibling session's artifact read that the user never laid eyes on,
+ *  and it sank into history with the badge zeroed. That was the disappearance.
+ *  Unread now means "not yet rendered": `renderHero` marks the artifact it actually
+ *  paints, the reader marks what it opens. Everything else stays queued in the bell. */
 function enterUnit(unitKey: string): void {
-  clearUnread(unitKey);
   pendingIngest.delete(unitKey);
   updateGlobalUnread();
   expandedActiveProject = null; // a fresh entry collapses any chooser — click a tab to reveal (like Recent)
@@ -2330,33 +2345,23 @@ async function renderHero(unitKey: string): Promise<void> {
     else showBlankHero(BLANK_FIRST, blankWorkingLine(flSrc));
     return;
   }
-  // Lead with the ACTIVE SESSION's most recent artifact. The hero
-  // follows the session shown in the terminal (matched by source slug), not the
-  // unit: a session just launched into an existing project has no artifacts of its
-  // own → blank hero, never a sibling session's last artifact (the reported bug).
+  // Lead with the ACTIVE SESSION's most recent artifact. The hero follows the session
+  // shown in the terminal (matched by source slug), not the unit. Selection lives in
+  // `heroArtifactFor` (ingest-logic.ts) so the sibling-scoping rule is pinned by
+  // `scripts/check-sibling-unread.ts` rather than re-derived here.
   applyBar(null);
   const src = activeSessionSource(unitKey);
   const unitArts = groupArtifactsByUnit().get(unitKey) ?? [];
-  // Source-bound units scope the hero to the ACTIVE session's own artifacts (a fresh
-  // session that owns none → blank, never a sibling's — the original per-session rule).
-  // But a unit with NO owned terminal AND no active source — the Cloud unit (remote/hub
-  // artifacts have no `source`), or a closed external session — has no session to scope
-  // to, so lead with its freshest artifact instead of blanking (else entering it looks
-  // empty). The `!ownedTabForUnit` guard keeps fresh-LAUNCHED units (which DO have an
-  // owned tab, just no live file yet) blank, so the sibling-artifact bug stays fixed.
-  const arts = src
-    ? unitArts.filter((a) => a.source === src)
-    : ownedTabForUnit(unitKey)
-      ? []
-      : unitArts;
-  const latest = arts.reduce<ArtifactEntry | null>(
-    (best, a) => (best === null || a.modified_ms > best.modified_ms ? a : best),
-    null,
-  );
+  const latest = heroArtifactFor(unitArts, src, ownedTabForUnit(unitKey) !== null);
   if (latest) {
     digestEl.removeAttribute("hidden");
     syncSurfaceStrip(true);
     digestPath = latest.path;
+    // The ONE artifact this entry actually puts in front of the user. Marking it —
+    // and only it — read is what lets `enterUnit` stop clearing the whole unit: a
+    // sibling session's artifact keeps its unread until its own session is picked
+    // (switchToSession → renderHero) or it is opened in the reader.
+    markArtifactRead(latest.path);
     await loadArtifactInto(latest.path, digestEl).catch((e) =>
       console.error("hero artifact load failed", e),
     );
@@ -3561,8 +3566,16 @@ function addUnread(unitKey: string, path: string): void {
 function unreadCount(unitKey: string): number {
   return unreadByUnit.get(unitKey)?.size ?? 0;
 }
-function clearUnread(unitKey: string): void {
-  unreadByUnit.delete(unitKey);
+/** Unread artifacts belonging to ONE session — the rail's per-session badge, so a
+ *  sibling's queued work says WHICH session to go look in. Unread is stored per unit,
+ *  so resolve each path's owning source through `allArtifacts` rather than keeping a
+ *  second map that could drift out of sync with it. */
+function unreadCountForSource(source: string): number {
+  const unread = new Set<string>();
+  for (const set of unreadByUnit.values()) for (const p of set) unread.add(p);
+  let n = 0;
+  for (const a of allArtifacts) if (a.source === source && unread.has(a.path)) n++;
+  return n;
 }
 function totalUnread(): number {
   let n = 0;

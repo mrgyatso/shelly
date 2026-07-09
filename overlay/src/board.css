@@ -1026,6 +1026,21 @@
 }
 .unit-subtab:hover .unit-subtab-time,
 .unit-subtab.active .unit-subtab-time { opacity: 0.95; }
+
+/* Per-session unread count: which sibling has work waiting. Mirrors .unit-tab-unread. */
+.unit-subtab-unread {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  font: 600 9px/1 var(--mono);
+  color: var(--board);
+  background: var(--accent);
+}
 .unit-tab-mark {
   flex: 0 0 auto;
   width: 26px;

@@ -10,7 +10,7 @@
     "build:demo": "node scripts/gen-demo-html.mjs && vite build --config vite.demo.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --experimental-strip-types scripts/check-ingest-rewrite.ts"
+    "test": "node --experimental-strip-types scripts/check-ingest-rewrite.ts && node --experimental-strip-types scripts/check-sibling-unread.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
