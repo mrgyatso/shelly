@@ -1,0 +1,158 @@
+#!/bin/bash
+#
+# Companion bootstrap — one command, from a factory-fresh Mac to a wired install.
+#
+#   curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash
+#
+# Checks for Homebrew, Node 18+, Claude Code and the Companion app; offers to
+# install whatever is missing; then hands off to `companion setup`, which wires
+# the plugin. Safe to re-run — every step it has already done is skipped.
+#
+# Flags:  -y, --yes    assume yes (required when there is no terminal to ask on)
+#             --check  report what is missing and exit, changing nothing
+
+set -euo pipefail
+
+ASSUME_YES=false
+CHECK_ONLY=false
+for arg in "$@"; do
+  case "$arg" in
+    -y|--yes) ASSUME_YES=true ;;
+    --check)  CHECK_ONLY=true ;;
+    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) printf 'install.sh: unknown option %s\n' "$arg" >&2; exit 1 ;;
+  esac
+done
+
+bold=""; dim=""; red=""; green=""; reset=""
+if [ -t 1 ]; then
+  bold=$'\033[1m'; dim=$'\033[2m'; red=$'\033[31m'; green=$'\033[32m'; reset=$'\033[0m'
+fi
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '  %s✓%s %s\n' "$green" "$reset" "$*"; }
+info() { printf '  %s·%s %s\n' "$dim" "$reset" "$*"; }
+die()  { printf '\n%sinstall.sh: %s%s\n' "$red" "$*" "$reset" >&2; exit 1; }
+
+# When run as `curl … | bash`, stdin is the script itself — a bare `read` would
+# swallow the rest of it. Always ask on the controlling terminal instead.
+ask() {
+  $ASSUME_YES && return 0
+  [ -r /dev/tty ] || die "no terminal to prompt on. Re-run with --yes to accept installs."
+  local reply
+  printf '  %s?%s %s [Y/n] ' "$bold" "$reset" "$1" > /dev/tty
+  read -r reply < /dev/tty
+  case "$reply" in [nN]*) return 1 ;; *) return 0 ;; esac
+}
+
+[ "$(uname -s)" = "Darwin" ] || die "Companion is macOS only."
+
+say ""
+say "${bold}Companion${reset} — checking what this machine needs"
+say ""
+
+# --- Homebrew -----------------------------------------------------------------
+# Each step must fix up PATH *in this running shell*, not merely append to a
+# profile — otherwise the next step can't see what the previous one installed.
+brew_shellenv() {
+  local b
+  for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$b" ] && { eval "$("$b" shellenv)"; return 0; }
+  done
+  return 1
+}
+
+if command -v brew >/dev/null 2>&1 || brew_shellenv; then
+  ok "Homebrew        $(command -v brew)"
+else
+  info "Homebrew is missing (it also installs Apple's command line tools)"
+  $CHECK_ONLY || ask "Install Homebrew? It will ask for your password." || die "Homebrew is required."
+  if ! $CHECK_ONLY; then
+    NONINTERACTIVE=1 /bin/bash -c \
+      "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    brew_shellenv || die "Homebrew installed but 'brew' is still not on PATH."
+    # On Apple Silicon brew lives in /opt/homebrew, which no shell knows about yet.
+    profile="$HOME/.zprofile"
+    line="eval \"\$($(command -v brew) shellenv)\""
+    grep -qsF "$line" "$profile" || printf '\n%s\n' "$line" >> "$profile"
+    ok "Homebrew installed"
+  fi
+fi
+
+# --- Node 18+ -----------------------------------------------------------------
+# Claude Code ships as a native binary, so having `claude` does NOT imply node.
+node_ok() {
+  command -v node >/dev/null 2>&1 || return 1
+  [ "$(node -v | sed 's/^v//' | cut -d. -f1)" -ge 18 ] 2>/dev/null
+}
+if node_ok; then
+  ok "Node            $(node -v)"
+else
+  if command -v node >/dev/null 2>&1; then
+    info "Node $(node -v) is too old — the plugin's hooks need 18 or later"
+  else
+    info "Node is missing — the plugin's hooks are Node scripts"
+  fi
+  $CHECK_ONLY || ask "Install Node via Homebrew?" || die "Node 18+ is required."
+  $CHECK_ONLY || { brew install node; node_ok || die "Node installed but still not 18+."; ok "Node $(node -v)"; }
+fi
+
+# --- Claude Code --------------------------------------------------------------
+claude_path() { command -v claude 2>/dev/null || { [ -x "$HOME/.local/bin/claude" ] && printf '%s\n' "$HOME/.local/bin/claude"; }; }
+if [ -n "$(claude_path)" ]; then
+  # It may exist but not be on PATH in this shell — the installer only edits rc files.
+  command -v claude >/dev/null 2>&1 || export PATH="$HOME/.local/bin:$PATH"
+  ok "Claude Code     $(command -v claude)"
+else
+  info "Claude Code is missing"
+  $CHECK_ONLY || ask "Install Claude Code?" || die "Claude Code is required."
+  if ! $CHECK_ONLY; then
+    curl -fsSL https://claude.ai/install.sh | bash
+    export PATH="$HOME/.local/bin:$PATH"
+    command -v claude >/dev/null 2>&1 || die "Claude Code installed but 'claude' is not on PATH."
+    ok "Claude Code installed"
+  fi
+fi
+
+# --- The app ------------------------------------------------------------------
+if command -v companion >/dev/null 2>&1; then
+  ok "Companion app   $(command -v companion)"
+else
+  info "The Companion app is missing"
+  $CHECK_ONLY || ask "Install it via Homebrew?" || die "The app is required."
+  if ! $CHECK_ONLY; then
+    brew install --cask mrgyatso/tap/claude-code-companion
+    command -v companion >/dev/null 2>&1 || die "Cask installed but 'companion' is not on PATH."
+    ok "Companion app installed"
+  fi
+fi
+
+if $CHECK_ONLY; then
+  say ""
+  say "Nothing was changed. Re-run without --check to install what's missing."
+  exit 0
+fi
+
+# --- Wire it up ---------------------------------------------------------------
+# `companion setup` adds the plugin marketplace, installs the plugin, creates the
+# watched folder and runs `companion doctor`. It is the only thing that touches
+# Claude Code's config, and it skips whatever it has already done.
+say ""
+say "${bold}Wiring the plugin${reset}"
+say ""
+if companion setup; then
+  say ""
+  say "${green}Done.${reset} Open a ${bold}claude${reset} session in any repo — the Board pops on the first artifact."
+else
+  # The likeliest cause on a brand-new machine: Claude Code has never been
+  # signed in, so its plugin commands have nothing to act on. Nothing here can
+  # automate a browser login, so hand the user the one manual step and stop.
+  say ""
+  say "${bold}Almost there.${reset} ${dim}companion setup${reset} could not finish."
+  say ""
+  say "  If you have not signed in to Claude Code yet, do that now:"
+  say ""
+  say "      claude          ${dim}# finish the browser login, then quit with Ctrl-C${reset}"
+  say ""
+  say "  Then run this script again — it skips everything already done."
+  exit 1
+fi
