@@ -38,3 +38,4 @@ Thumbs.db
 # Session handoff notes — working files, not part of the product. Archived to
 # ~/claude-code-companion-notes/handoffs. This repo is PUBLIC; keep them out.
 HANDOFF-*.md
+.claude/settings.json
