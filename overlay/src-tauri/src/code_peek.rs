@@ -67,12 +67,10 @@ fn cache() -> &'static Mutex<HashMap<String, Scan>> {
 /// memory. All are surfaced elsewhere in the UI; listing them here would bury the
 /// two or three source files the user actually wants to see.
 fn is_companion_bookkeeping(path: &str) -> bool {
-    let home = match std::env::var("HOME") {
-        Ok(h) => h,
-        Err(_) => return false,
+    let under = |dir: Option<PathBuf>| {
+        dir.is_some_and(|d| path.starts_with(&format!("{}/", d.display())))
     };
-    path.starts_with(&format!("{home}/.claude/companion/"))
-        || path.starts_with(&format!("{home}/.claude/projects/"))
+    under(crate::paths::companion_dir()) || under(crate::paths::projects_dir())
 }
 
 /// Fold one transcript line into a running scan, recording every path the assistant
@@ -586,5 +584,39 @@ mod tests {
         assert!(is_displayable(true, true)); // on disk, tracked (M)
         assert!(is_displayable(false, true)); // gone, but HEAD has it (D / MD) — show the deletion
         assert!(!is_displayable(false, false)); // gone, never committed (AD / RD / scratch) — no chip
+    }
+
+    /// `repo_toplevel` spawns `git`, and spawning reads `environ` to build the child's
+    /// `envp`. While tests mutated `$HOME`, writing this test would have raced that read
+    /// and failed with a spurious ENOENT — so it was never written, and the function went
+    /// untested. Nothing mutates the environment now (see `paths`), so it is safe.
+    #[test]
+    fn repo_toplevel_finds_the_root_and_rejects_a_non_repo() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let base = std::env::temp_dir().join(format!(
+            "cmp-peek-git-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        let nested = base.join("a/b");
+        std::fs::create_dir_all(&nested).unwrap();
+
+        // Not a repo yet — and `temp_dir()` is not inside one either.
+        assert!(repo_toplevel(&base).is_none());
+
+        assert!(Command::new("git")
+            .args(["-C", base.to_str().unwrap(), "init", "--quiet"])
+            .status()
+            .unwrap()
+            .success());
+
+        // From a nested dir, the toplevel is still the repo root. Canonicalize both:
+        // on macOS `/var` is a symlink to `/private/var`, and git reports the real path.
+        let top = repo_toplevel(&nested).unwrap();
+        assert_eq!(top, base.canonicalize().unwrap());
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

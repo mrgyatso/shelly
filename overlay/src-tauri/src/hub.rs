@@ -46,7 +46,7 @@ fn default_interval() -> u64 {
 }
 
 fn companion_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude").join("companion"))
+    crate::paths::companion_dir()
 }
 fn config_path() -> Option<PathBuf> {
     companion_dir().map(|d| d.join("hub.json"))

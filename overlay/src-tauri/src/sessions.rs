@@ -35,7 +35,7 @@ pub struct RecentSession {
 
 /// `~/.claude/projects` — Claude Code's per-project transcript root.
 fn projects_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude").join("projects"))
+    crate::paths::projects_dir()
 }
 
 /// The set of session-ids that actually have a transcript on disk (every `<uuid>.jsonl`

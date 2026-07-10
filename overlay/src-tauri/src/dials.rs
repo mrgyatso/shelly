@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 /// `~/.claude/companion` — the companion runtime dir.
 fn companion_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude").join("companion"))
+    crate::paths::companion_dir()
 }
 
 #[derive(serde::Serialize)]

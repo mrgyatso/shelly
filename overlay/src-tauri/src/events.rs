@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 fn events_path() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude/companion/events.ndjson"))
+    crate::paths::companion_dir().map(|d| d.join("events.ndjson"))
 }
 
 /// A batch of newly-appended events plus the offset to resume from next time.
@@ -91,16 +91,10 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    // Thread-local, so no lock and no environment mutation: each test owns its home.
     fn with_home<T>(home: &std::path::Path, f: impl FnOnce() -> T) -> T {
-        let _g = crate::test_env::env_lock();
-        let prev = std::env::var_os("HOME");
-        std::env::set_var("HOME", home);
-        let out = f();
-        match prev {
-            Some(p) => std::env::set_var("HOME", p),
-            None => std::env::remove_var("HOME"),
-        }
-        out
+        crate::paths::set_home_for_test(home);
+        f()
     }
 
     fn setup() -> PathBuf {
