@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 /// `~/.claude/companion` — the companion runtime dir.
 fn companion_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude").join("companion"))
+    crate::paths::companion_dir()
 }
 
 /// Filename-safe form of a session_id — identical to `companion-identity.cjs`'s `safeId`
@@ -82,18 +82,10 @@ pub fn resolve_unit(session_id: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    // $HOME is process-global; serialize against every other test that reads or
-    // writes the environment — including ones that only spawn a process.
+    // Thread-local, so no lock and no environment mutation: each test owns its home.
     fn with_home<T>(home: &std::path::Path, f: impl FnOnce() -> T) -> T {
-        let _g = crate::test_env::env_lock();
-        let prev = std::env::var_os("HOME");
-        std::env::set_var("HOME", home);
-        let out = f();
-        match prev {
-            Some(p) => std::env::set_var("HOME", p),
-            None => std::env::remove_var("HOME"),
-        }
-        out
+        crate::paths::set_home_for_test(home);
+        f()
     }
 
     fn write_record(home: &std::path::Path, sid: &str, unit: &str) {

@@ -108,7 +108,7 @@ fn is_agent_slug(project: &str) -> bool {
 /// The dir hub-pulled artifacts land in (`~/.claude/companion/remote`). An entry
 /// under it is a remote artifact with no local index identity.
 fn remote_artifacts_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|h| Path::new(&h).join(".claude/companion/remote"))
+    crate::paths::companion_dir().map(|d| d.join("remote"))
 }
 
 /// `foo-bar_baz.html` → `Foo Bar Baz`. Used when an artifact has no `<title>`.

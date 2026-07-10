@@ -115,9 +115,7 @@ pub(crate) fn transcript_path(session_id: &str) -> Option<PathBuf> {
     {
         return None;
     }
-    let root = PathBuf::from(std::env::var_os("HOME")?)
-        .join(".claude")
-        .join("projects");
+    let root = crate::paths::projects_dir()?;
     let fname = format!("{session_id}.jsonl");
     for pe in std::fs::read_dir(&root).ok()?.flatten() {
         let candidate = pe.path().join(&fname);
@@ -334,5 +332,38 @@ mod tests {
         assert!(transcript_path("../../../etc/passwd").is_none());
         assert!(transcript_path("a/b").is_none());
         assert!(transcript_path("").is_none());
+    }
+
+    /// Until `paths` existed this test could not be written: a *valid* id reaches the
+    /// `$HOME` read, and pointing that at a fixture meant mutating the process
+    /// environment. Every input above is rejected by the guard clause *before* the
+    /// read — so the happy path had never once been exercised.
+    #[test]
+    fn a_valid_session_id_resolves_to_its_transcript() {
+        let home = temp_home("usage-hit");
+        let proj = home.join(".claude/projects/-Users-me-repo");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("abc-123.jsonl"), "{}").unwrap();
+        crate::paths::set_home_for_test(&home);
+
+        assert_eq!(transcript_path("abc-123").unwrap(), proj.join("abc-123.jsonl"));
+        // A well-formed id with no file on disk is a miss, not a panic.
+        assert!(transcript_path("def-456").is_none());
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Never name a temp dir from a timestamp: macOS `SystemTime` is microsecond-
+    /// resolved, so two tests starting together used to collide. Use a counter.
+    fn temp_home(tag: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let p = std::env::temp_dir().join(format!(
+            "cmp-{tag}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&p);
+        p
     }
 }

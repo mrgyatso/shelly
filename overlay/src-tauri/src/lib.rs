@@ -9,11 +9,10 @@ mod launch;
 mod layout;
 mod live;
 mod macos_panel;
+mod paths;
 mod pty;
 mod registry;
 mod sessions;
-#[cfg(test)]
-mod test_env;
 mod trace;
 mod tray;
 mod usage;

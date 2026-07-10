@@ -49,3 +49,18 @@ jobs:
         # Compiles the `cfg(not(debug_assertions))` single-instance closure, which
         # `cargo test` above cannot see.
         run: cargo check --locked --release
+
+      - name: No environment mutation anywhere in the crate
+        # `std::env::set_var` is not thread-safe: a write racing another thread's read of
+        # `environ` is undefined behaviour, and it once made `/bin/sh` vanish from under an
+        # unrelated pty test with ENOENT. Tests point at a fake home through
+        # `paths::set_home_for_test` (a thread-local) instead. This turns that rule from a
+        # docstring into a mechanism — it is the guard that actually catches the class.
+        run: |
+          # Match calls, not prose: require the open paren, and drop comment lines
+          # (this file's own docs explain the ban by naming the function).
+          if grep -rnE 'env::(set_var|remove_var)[[:space:]]*\(' src/ | grep -vE ':[[:space:]]*//'; then
+            echo "::error::std::env::set_var/remove_var is banned in this crate — use paths::set_home_for_test"
+            exit 1
+          fi
+          echo "ok — nothing mutates the environment"
