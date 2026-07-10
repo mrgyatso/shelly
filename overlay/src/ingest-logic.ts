@@ -17,15 +17,49 @@ export interface DisplayState {
   focusPath: string | null;
 }
 
-/** A frame that must reload because the artifact it shows was rewritten in place. */
+/** A displayed frame whose artifact was rewritten in place. */
 export interface ReloadTarget {
   path: string;
   target: "reader" | "hero";
 }
 
+/** What the Board DOES about an in-place rewrite of an artifact it is displaying.
+ *  Never a reload: `loadArtifactInto` cache-busts the iframe `src`, so reloading
+ *  tears the document down and wipes any comment the user is mid-typing. */
+export interface RewriteEffect {
+  path: string;
+  target: "reader" | "hero";
+  /** "pill" = offer a click-to-refresh affordance; "defer" = leave the frame alone. */
+  action: "pill" | "defer";
+}
+
 /**
- * THE REWRITE-TO-DISPLAYED-HERO FIX. Return the on-screen artifacts that were
- * REWRITTEN IN PLACE (same path, newer mtime) and so must reload their frame.
+ * THE MID-TYPING COMMENT-LOSS FIX (2026-07-09). An agent re-authoring the same
+ * artifact path — observed 10× in 7 minutes — used to reload the frame showing it,
+ * destroying everything the user had typed into its 💬 blocks, silently and with no
+ * navigation involved.
+ *
+ * So a rewrite NEVER reloads a displayed frame. It is surfaced the same way a
+ * brand-new artifact is: passively. The HERO gets the click-to-advance pill (the
+ * user chooses to move on, so nothing is lost behind their back). The READER — the
+ * focused surface, where the user is demonstrably reading and typing — is left
+ * untouched entirely, matching `ingestIntoUnit`'s existing defer-while-open rule.
+ * Fresh content still lands on the next entry, nav, or re-open.
+ */
+export function effectsForRewrites(
+  prevMtime: ReadonlyMap<string, number>,
+  next: readonly ArtifactDelta[],
+  shown: DisplayState,
+): RewriteEffect[] {
+  return rewritesNeedingReload(prevMtime, next, shown).map((r) => ({
+    ...r,
+    action: r.target === "hero" ? "pill" : "defer",
+  }));
+}
+
+/**
+ * Return the on-screen artifacts that were REWRITTEN IN PLACE (same path, newer
+ * mtime). Detection only — `effectsForRewrites` owns what to do about them.
  *
  * The four routing roads in `ingestArtifacts` all key on path-novelty or
  * path-DIFFERENCE, so overwriting the artifact already on the hero
