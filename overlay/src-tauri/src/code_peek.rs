@@ -2,10 +2,10 @@
 //! pre-change text) for the read-only Monaco diff panel.
 //!
 //! "Peek and nudge," not an IDE. The "files in play" are the files THIS SESSION
-//! has actually written — every `file_path` the agent passed to Write/Edit, read
-//! straight out of Claude Code's own transcript, most-recent first. That is the
-//! only source that answers the question the panel is really asking ("what is the
-//! agent touching right now"):
+//! has actually written — every path the agent passed to a write tool, read straight
+//! out of Claude Code's own transcript, most-recent first. That is the only source
+//! that answers the question the panel is really asking ("what is the agent touching
+//! right now"):
 //!
 //!   * `git status` on the session's directory does not. A session's `unit_dir` is
 //!     frozen at SessionStart, so an agent working in a git worktree, or writing
@@ -28,8 +28,9 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::usage::transcript_path;
 
-/// The tools whose `file_path` means "the agent wrote here". Read is deliberately
-/// absent: the panel shows work done, not files glanced at.
+/// The tools whose path argument means "the agent wrote here". Read is deliberately
+/// absent: the panel shows work done, not files glanced at. Mind the key — every one
+/// of these carries `file_path` EXCEPT `NotebookEdit`, which uses `notebook_path`.
 const WRITE_TOOLS: [&str; 4] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
 
 /// A file the session has written.
@@ -101,7 +102,13 @@ fn fold_line(line: &str, scan: &mut Scan) {
         if !WRITE_TOOLS.contains(&name) {
             continue;
         }
-        let fp = match b.pointer("/input/file_path").and_then(|x| x.as_str()) {
+        // `NotebookEdit` names its target `notebook_path`; every other write tool
+        // uses `file_path`. Both are absolute by the tools' own contract.
+        let fp = match b
+            .get("input")
+            .and_then(|i| i.get("file_path").or_else(|| i.get("notebook_path")))
+            .and_then(|x| x.as_str())
+        {
             Some(p) if p.starts_with('/') => p,
             _ => continue, // a relative path can't be resolved after the fact
         };
@@ -245,13 +252,18 @@ fn root_for(path: &Path, roots: &mut HashMap<PathBuf, Option<PathBuf>>) -> Optio
         .clone()
 }
 
-/// A path the session wrote that is now gone AND that git never tracked: a scratch
-/// file the agent created and cleaned up after itself. There is nothing to show for
-/// it — no contents, no HEAD blob to diff — so it must not become a dead chip that
-/// errors when clicked. A file git DID track reports status `D` and stays, as a
-/// deletion the user should see.
-fn vanished_without_trace(real: &Path, status: &str) -> bool {
-    !status.starts_with('D') && !real.exists()
+/// Whether a touched path has anything left to render: the file on disk, or — once
+/// it's gone — a HEAD blob to show as a deletion.
+///
+/// Deliberately NOT keyed off the porcelain status. The code is two columns, and a
+/// `D` in either can mean different things: `MD` is a tracked file deleted from the
+/// worktree (HEAD has it — show the deletion), while `AD` and `RD` are paths git has
+/// never committed, deleted before they ever reached HEAD (nothing to show). Asking
+/// for the blob answers the question directly, and it is the same question
+/// [`read_touched_file`] asks — so the list and the read can never disagree about
+/// which chips are clickable.
+fn is_displayable(exists_on_disk: bool, has_head_blob: bool) -> bool {
+    exists_on_disk || has_head_blob
 }
 
 /// The files `session_id` has written, most recent first, each tagged with the
@@ -268,15 +280,16 @@ pub async fn session_files(session_id: String) -> Vec<TouchedFile> {
             .into_iter()
             .filter_map(|abs| {
                 let real = real_path(&abs);
-                let (rel, status) = match root_for(&real, &mut roots) {
+                let root = root_for(&real, &mut roots);
+                let (rel, status) = match &root {
                     Some(root) => {
                         let rel = real
-                            .strip_prefix(&root)
+                            .strip_prefix(root)
                             .map(|r| r.to_string_lossy().into_owned())
                             .unwrap_or_else(|_| abs.clone());
                         let status = statuses
                             .entry(root.clone())
-                            .or_insert_with(|| statuses_for(&root))
+                            .or_insert_with(|| statuses_for(root))
                             .get(&rel)
                             .cloned()
                             .unwrap_or_default();
@@ -285,7 +298,14 @@ pub async fn session_files(session_id: String) -> Vec<TouchedFile> {
                     // Outside any repo (a scratch dir, say): no rel, no status.
                     None => (abs.clone(), String::new()),
                 };
-                if vanished_without_trace(&real, &status) {
+                // The blob lookup costs a `git show`, so only pay it for a file that
+                // has left the disk — the rare case, and the only one it decides.
+                let exists = real.exists();
+                let has_head_blob = || match &root {
+                    Some(root) => head_blob(root, &rel).is_some(),
+                    None => false,
+                };
+                if !is_displayable(exists, !exists && has_head_blob()) {
                     return None;
                 }
                 Some(TouchedFile {
@@ -369,10 +389,17 @@ pub async fn read_touched_file(session_id: String, path: String) -> Result<FileV
 mod tests {
     use super::*;
 
-    /// One transcript line carrying a single write to `file_path`.
-    fn write_line(tool: &str, file_path: &str) -> String {
+    /// One transcript line carrying a single write, using the path key the tool
+    /// actually emits — `NotebookEdit` has no `file_path` at all. A fixture that
+    /// wrote `file_path` for every tool would assert against its own fiction.
+    fn write_line(tool: &str, path: &str) -> String {
+        let key = if tool == "NotebookEdit" {
+            "notebook_path"
+        } else {
+            "file_path"
+        };
         format!(
-            r#"{{"type":"assistant","message":{{"content":[{{"type":"tool_use","name":"{tool}","input":{{"file_path":"{file_path}"}}}}]}}}}"#
+            r#"{{"type":"assistant","message":{{"content":[{{"type":"tool_use","name":"{tool}","input":{{"{key}":"{path}"}}}}]}}}}"#
         )
     }
 
@@ -395,6 +422,14 @@ mod tests {
             .map(|(i, t)| write_line(t, &format!("/repo/f{i}.rs")))
             .collect();
         assert_eq!(scan_of(&lines).paths.len(), WRITE_TOOLS.len());
+    }
+
+    /// Regression: `fold_line` once read only `/input/file_path`, silently dropping
+    /// every notebook the session edited.
+    #[test]
+    fn a_notebook_edit_is_recorded_from_notebook_path() {
+        let scan = scan_of(&[write_line("NotebookEdit", "/repo/analysis.ipynb")]);
+        assert_eq!(scan.paths, vec!["/repo/analysis.ipynb"]);
     }
 
     #[test]
@@ -540,20 +575,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A scratch file the agent created and cleaned up leaves no chip; a file it
-    /// deleted out of the repo stays, so the user can see the deletion.
+    /// A file still on disk always shows. Once it's gone, only a HEAD blob can carry
+    /// it — which is why the porcelain code doesn't decide this: `MD` (tracked, then
+    /// deleted from the worktree) has a blob and must stay as a visible deletion,
+    /// while `AD`/`RD` and a plain scratch file never reached HEAD and have nothing
+    /// to render.
     #[test]
-    fn a_vanished_untracked_file_is_dropped_but_a_deletion_is_kept() {
-        let dir = temp_dir("vanished");
-        let gone = dir.join("scratch.tmp");
-        let present = dir.join("real.rs");
-        std::fs::write(&present, "fn main() {}").unwrap();
-
-        assert!(vanished_without_trace(&gone, "")); // created then removed
-        assert!(!vanished_without_trace(&gone, "D")); // git knows it — show the deletion
-        assert!(!vanished_without_trace(&present, "??")); // new, still on disk
-        assert!(!vanished_without_trace(&present, "M"));
-
-        let _ = std::fs::remove_dir_all(&dir);
+    fn a_file_shows_while_it_exists_or_while_head_still_has_it() {
+        assert!(is_displayable(true, false)); // on disk, new (?? / A)
+        assert!(is_displayable(true, true)); // on disk, tracked (M)
+        assert!(is_displayable(false, true)); // gone, but HEAD has it (D / MD) — show the deletion
+        assert!(!is_displayable(false, false)); // gone, never committed (AD / RD / scratch) — no chip
     }
 }
