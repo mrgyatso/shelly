@@ -548,10 +548,10 @@ export async function initBoard(): Promise<void> {
   (window as unknown as { __spawnOwned?: (cwd: string) => Promise<string> }).__spawnOwned =
     spawnOwnedSession;
 
-  // Code-peek side panel: view this session's changed files in Monaco. All its
+  // Code-peek side panel: view the files this session has written, in Monaco. All its
   // logic lives in code-peek.ts; here we just hand it a way to resolve the current
-  // unit's working dir. Monaco itself is lazy-loaded on first open.
-  initCodePeek(() => (currentUnitKey ? unitDirOf(currentUnitKey) : null));
+  // unit's active session. Monaco itself is lazy-loaded on first open.
+  initCodePeek(() => (currentUnitKey ? activeSessionId(currentUnitKey) : null));
 
   wireControls();
   wireKeyboard();
@@ -1251,6 +1251,15 @@ function activeSessionSource(unitKey: string): string | null {
     null,
   );
   return freshest?.source ?? null;
+}
+
+/** The Claude Code session id of a unit's active session — the key to everything read
+ *  from that session's own transcript (the usage meter, the code panel's files in
+ *  play). null when no session of this unit is live. */
+function activeSessionId(unitKey: string): string | null {
+  const src = activeSessionSource(unitKey);
+  if (!src) return null;
+  return parseState(allSources.find((s) => s.source === src)?.json ?? "").session_id ?? null;
 }
 
 /** A display name for a unit — the project name of its freshest source. */
@@ -2712,10 +2721,7 @@ async function renderUnitMeter(unitKey: string | null): Promise<void> {
     meterEl.dataset.unit = unitKey;
   }
 
-  const src = activeSessionSource(unitKey);
-  const sessionId = src
-    ? parseState(allSources.find((s) => s.source === src)?.json ?? "").session_id
-    : null;
+  const sessionId = activeSessionId(unitKey);
   if (!sessionId) return hide();
 
   const usage = await invoke<SessionUsage | null>("session_usage", { sessionId });

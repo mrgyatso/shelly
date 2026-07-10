@@ -272,31 +272,82 @@ const RECENT_SESSIONS = [
 
 /* --- code-peek fixtures -------------------------------------------------- */
 
-/** The "files in play" the code panel lists (list_changed_files). */
-const CHANGED_FILES = [
-  { path: "overlay/src/board.ts", status: "M" },
-  { path: "overlay/src/code-peek.ts", status: "??" },
-  { path: "overlay/src-tauri/src/code_peek.rs", status: "A" },
-  { path: "overlay/src/board.css", status: "M" },
-  { path: "overlay/index.html", status: "M" },
-  { path: "README.md", status: "M" },
+/** The "files in play" the code panel lists (session_files) — the files the mocked
+ *  session has written, most recent first. */
+const TOUCHED_FILES = [
+  { path: "/Users/dev/lantern/src/retry.ts", rel: "src/retry.ts", status: "??" },
+  { path: "/Users/dev/lantern/src/queue.ts", rel: "src/queue.ts", status: "M" },
+  { path: "/Users/dev/lantern/src/queue.test.ts", rel: "src/queue.test.ts", status: "M" },
 ];
 
-/** Believable source text for whatever file the panel opens (read_source_file). */
-function sourceFor(relPath: string): string {
-  if (relPath.endsWith(".rs")) {
-    return `// ${relPath}\nuse std::path::Path;\n\n/// Mocked source for the harness.\npub fn demo(root: &Path) -> bool {\n    root.exists()\n}\n`;
+/** A file long enough to scroll, so the harness exercises the same editor the real
+ *  panel does. Anything the fixtures don't name falls through to a short stub. */
+const QUEUE_TS = `import { backoff } from "./retry";
+
+export interface Job {
+  id: string;
+  attempts: number;
+  payload: unknown;
+}
+
+/** A bounded FIFO with at-most-\`maxAttempts\` redelivery. */
+export class Queue {
+  private jobs: Job[] = [];
+
+  constructor(
+    private readonly capacity: number,
+    private readonly maxAttempts = 3,
+  ) {}
+
+  get size(): number {
+    return this.jobs.length;
   }
-  if (relPath.endsWith(".ts")) {
-    return `// ${relPath}\nexport function demo(name: string): void {\n  // Mocked source for the harness.\n  console.log(\`hello, \${name}\`);\n}\n`;
+
+  push(job: Job): boolean {
+    if (this.jobs.length >= this.capacity) return false;
+    this.jobs.push(job);
+    return true;
   }
-  if (relPath.endsWith(".css")) {
-    return `/* ${relPath} */\n.demo {\n  color: var(--accent);\n  padding: 12px;\n}\n`;
+
+  pop(): Job | undefined {
+    return this.jobs.shift();
   }
-  if (relPath.endsWith(".html")) {
-    return `<!-- ${relPath} -->\n<div class="demo">\n  <h1>Mocked source for the harness</h1>\n</div>\n`;
+
+  /** Re-enqueue a failed job after its backoff, or drop it once spent. */
+  retry(job: Job): boolean {
+    if (job.attempts + 1 >= this.maxAttempts) return false;
+    const next = { ...job, attempts: job.attempts + 1 };
+    setTimeout(() => this.push(next), backoff(next.attempts));
+    return true;
   }
-  return `# ${relPath}\n\nMocked source content for the harness.\n\n- one\n- two\n`;
+}
+`;
+
+/** The same file before the session touched it — the diff editor's left-hand side.
+ *  `retry()` is what this mocked session is in the middle of adding. */
+const QUEUE_TS_HEAD = QUEUE_TS.replace(
+  /\n  \/\*\* Re-enqueue[\s\S]*?\n  }\n/,
+  "",
+).replace('import { backoff } from "./retry";\n\n', "");
+
+/** Fixture bodies for `read_touched_file`: [current, at-HEAD]. A `null` HEAD is a
+ *  file the session created, which the diff renders wholly as an addition. */
+const SOURCES: Record<string, [string, string | null]> = {
+  "/Users/dev/lantern/src/queue.ts": [QUEUE_TS, QUEUE_TS_HEAD],
+  "/Users/dev/lantern/src/retry.ts": [
+    `/** Exponential backoff, capped at 30s, with ±20% jitter. */
+export function backoff(attempt: number): number {
+  const base = Math.min(30_000, 2 ** attempt * 250);
+  return Math.round(base * (0.8 + Math.random() * 0.4));
+}
+`,
+    null, // new file
+  ],
+};
+
+function fileViewFor(path: string): { content: string; original: string | null; deleted: boolean } {
+  const [content, original] = SOURCES[path] ?? [`// ${path}\n`, null];
+  return { content, original, deleted: false };
 }
 
 export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
@@ -425,9 +476,9 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
         [["Top bar", "restructure"], ["Rail", "rows + bottom anchor"], ["States", "focus/active pass"], ["Frame", "hairline, not 2px black"]],
       );
     },
-    // Code-peek fixtures — the changed-file list + read-back for the panel.
-    list_changed_files: () => CHANGED_FILES,
-    read_source_file: (args) => sourceFor(String(args.relPath ?? "")),
+    // Code-peek fixtures — the session's written files + read-back for the panel.
+    session_files: () => TOUCHED_FILES,
+    read_touched_file: (args) => fileViewFor(String(args.path ?? "")),
     // PTY + session plumbing. Without a demo profile the harness terminal stays
     // dark (nothing to replay). With one, each unit's terminal types out its own
     // recorded session, so the split view reads as live rather than broken.

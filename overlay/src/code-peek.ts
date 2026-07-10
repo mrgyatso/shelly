@@ -1,17 +1,41 @@
-/* Code-peek side panel — view the files in play for the current session in an
- * embedded read-only Monaco editor. "Peek and nudge," not an IDE: read a changed
- * file, (fast-follow) tweak a line. Monaco is lazy-loaded on first open so it
- * never weighs down Board boot.
+/* Code-peek side panel — view the files THIS SESSION has written, in an embedded
+ * read-only Monaco diff editor: the full file, scrollable, with the session's
+ * changes marked against git HEAD. "Peek and nudge," not an IDE.
  *
- * All the panel logic lives here to keep board.ts's merge surface tiny — board.ts
- * only calls initCodePeek() once and resets the open flag on unit entry. */
+ * Two things the first cut got wrong, both fixed here:
+ *   - The list came from `git status` on the unit's frozen `unit_dir`, so an agent
+ *     working in a worktree (or anywhere outside its launch root) listed nothing,
+ *     while files it never opened sat at the top. It now comes from the session's
+ *     own transcript — see code_peek.rs.
+ *   - It was fetched once, on open. A file written while the panel was open never
+ *     appeared. It now refreshes on a poll, and the active file re-reads with it.
+ *
+ * Monaco is lazy-loaded on first open so it never weighs down Board boot. All the
+ * panel logic lives here to keep board.ts's merge surface tiny — board.ts only
+ * calls initCodePeek() once and resets the open flag on unit entry. */
 import type * as Monaco from "monaco-editor";
 import { invoke } from "@tauri-apps/api/core";
 
-interface ChangedFile {
-  path: string; // repo-root-relative
-  status: string; // trimmed porcelain code: M / A / D / R / ??
+/** A file the session wrote. `path` is absolute and round-trips to the backend's
+ *  scope guard; `rel` is repo-relative and for display only. */
+interface TouchedFile {
+  path: string;
+  rel: string;
+  status: string; // porcelain code: M / A / D / R / ?? / "" (clean, or no repo)
 }
+
+/** A file's text now, and at HEAD — `original` is null for a file git has never
+ *  seen, which Monaco then renders wholly as an addition. */
+interface FileView {
+  content: string;
+  original: string | null;
+  deleted: boolean;
+}
+
+/** How often the open panel re-reads the session's files. Fast enough that a write
+ *  lands while the user is still watching for it; slow enough that the transcript
+ *  scan (incremental) and one `git status` per repo stay noise. */
+const REFRESH_MS = 1500;
 
 /* --- lazy Monaco loader -------------------------------------------------- */
 
@@ -56,18 +80,28 @@ function languageForPath(path: string): string {
 
 /* --- editor mount -------------------------------------------------------- */
 
-let editor: Monaco.editor.IStandaloneCodeEditor | null = null;
+let diffEditor: Monaco.editor.IStandaloneDiffEditor | null = null;
+let originalModel: Monaco.editor.ITextModel | null = null;
+let modifiedModel: Monaco.editor.ITextModel | null = null;
 
-/** Mount (or re-use) the read-only editor in `container`, showing `value` with
- *  the language inferred from `path`. Re-uses the single model to avoid leaks. */
-async function mountEditor(container: HTMLElement, value: string, path: string): Promise<void> {
+/** Mount (or re-use) the read-only diff editor, showing `view` for `path`.
+ *
+ * Inline, not side-by-side: the drawer is narrow, and inline reads as "the whole
+ * file, with the changed lines lit up" — which is what a peek wants. The two models
+ * are reused across files so we don't leak one per open, and `setValue` is skipped
+ * when the text is unchanged so a poll never yanks the user's scroll position. */
+async function mountEditor(container: HTMLElement, view: FileView, path: string): Promise<void> {
   const monaco = await loadMonaco();
   const language = languageForPath(path);
-  if (!editor) {
-    editor = monaco.editor.create(container, {
-      value,
-      language,
+  const original = view.original ?? "";
+
+  if (!diffEditor) {
+    originalModel = monaco.editor.createModel(original, language);
+    modifiedModel = monaco.editor.createModel(view.content, language);
+    diffEditor = monaco.editor.createDiffEditor(container, {
       readOnly: true,
+      originalEditable: false,
+      renderSideBySide: false,
       theme: "vs", // light, to sit on the Board's warm paper surface
       automaticLayout: true,
       minimap: { enabled: false },
@@ -76,38 +110,45 @@ async function mountEditor(container: HTMLElement, value: string, path: string):
       lineNumbers: "on",
       renderWhitespace: "none",
       wordWrap: "off",
+      // The panel's job is "show me the file, and what changed in it". Folding the
+      // untouched regions away would leave a new file as one green block with no
+      // surrounding code to read it against.
+      hideUnchangedRegions: { enabled: false },
     });
-  } else {
-    const model = editor.getModel();
-    if (model) {
-      model.setValue(value);
-      monaco.editor.setModelLanguage(model, language);
-    } else {
-      editor.setModel(monaco.editor.createModel(value, language));
-    }
+    diffEditor.setModel({ original: originalModel, modified: modifiedModel });
+    return;
   }
+  if (!originalModel || !modifiedModel) return;
+  if (originalModel.getValue() !== original) originalModel.setValue(original);
+  if (modifiedModel.getValue() !== view.content) modifiedModel.setValue(view.content);
+  monaco.editor.setModelLanguage(originalModel, language);
+  monaco.editor.setModelLanguage(modifiedModel, language);
 }
 
 /* --- panel state + wiring ------------------------------------------------ */
 
-let resolveUnitDir: () => string | null = () => null;
+let resolveSessionId: () => string | null = () => null;
 let unitEl: HTMLElement | null = null;
 let filesEl: HTMLElement | null = null;
 let editorEl: HTMLElement | null = null;
 let statusEl: HTMLElement | null = null;
 let toggleBtn: HTMLElement | null = null;
 
-let currentDir: string | null = null;
+let currentSessionId: string | null = null;
 let activePath: string | null = null;
+/** The refresh loop — live only while the panel is open. */
+let timer: number | null = null;
+/** Signature of the last-rendered file list, so a poll only re-renders on change. */
+let lastListSig = "";
 
 function isOpen(): boolean {
   return unitEl?.dataset.code === "open";
 }
 
-/** Wire the panel once at Board init. `getUnitDir` yields the current unit's
- *  working dir (or null when there's none — e.g. the idle home). */
-export function initCodePeek(getUnitDir: () => string | null): void {
-  resolveUnitDir = getUnitDir;
+/** Wire the panel once at Board init. `getSessionId` yields the id of the unit's
+ *  active session (or null when there's none — e.g. the idle home). */
+export function initCodePeek(getSessionId: () => string | null): void {
+  resolveSessionId = getSessionId;
   unitEl = document.getElementById("board-unit");
   filesEl = document.getElementById("code-files");
   editorEl = document.getElementById("code-editor");
@@ -126,11 +167,20 @@ export function initCodePeek(getUnitDir: () => string | null): void {
   });
 }
 
-/** Close the slide-over (leaves it in the DOM; CSS transforms it off-screen).
- *  Exposed so board.ts can reset it on unit entry without reaching into state. */
+/** Close the slide-over (leaves it in the DOM; CSS transforms it off-screen) and
+ *  stop the refresh loop. Exposed so board.ts can reset it on unit entry without
+ *  reaching into state. */
 export function closeCodePeek(): void {
   if (unitEl) delete unitEl.dataset.code;
   toggleBtn?.classList.remove("on");
+  if (timer !== null) {
+    window.clearInterval(timer);
+    timer = null;
+  }
+  // The next unit's files have nothing to do with this one's.
+  currentSessionId = null;
+  activePath = null;
+  lastListSig = "";
 }
 
 function close(): void {
@@ -141,29 +191,56 @@ async function open(): Promise<void> {
   if (!unitEl) return;
   unitEl.dataset.code = "open";
   toggleBtn?.classList.add("on");
-  currentDir = resolveUnitDir();
-  if (!currentDir) {
-    renderFiles([]);
-    showStatus("No folder for this session.");
-    return;
-  }
   await refreshFiles();
+  // Keep the panel honest while it's open — watching the agent work is the point.
+  // Started unconditionally: a unit whose session isn't live YET must not be stuck
+  // on the empty state forever. Cleared by closeCodePeek().
+  if (timer === null) timer = window.setInterval(() => void refreshFiles(), REFRESH_MS);
 }
 
+/** Re-read the session's files, and the open one's contents with them. A failure on
+ *  the poll path stays quiet once something is on screen: a transient error must not
+ *  stomp the file the user is reading. */
 async function refreshFiles(): Promise<void> {
-  try {
-    const files = await invoke<ChangedFile[]>("list_changed_files", { unitDir: currentDir });
-    renderFiles(files);
-    if (files.length === 0) {
-      showStatus("No changed files — nothing in play yet.");
-      return;
-    }
-    // Keep the open file selected if it's still changed; else land on the first.
-    const keep = activePath && files.some((f) => f.path === activePath) ? activePath : files[0].path;
-    await openFile(keep);
-  } catch (e) {
-    showStatus(`Couldn't list files — ${e}`);
+  // Re-resolve every tick rather than latching on open. The unit's active session can
+  // change under an open panel — the rail's session switcher doesn't re-enter the unit
+  // — and a just-spawned session has no id at all until its live file appears. Latching
+  // would leave the drawer showing a sibling session's files, or a permanent empty state.
+  const sessionId = resolveSessionId();
+  if (sessionId !== currentSessionId) {
+    currentSessionId = sessionId;
+    activePath = null;
+    lastListSig = "";
+    renderFiles([]);
   }
+  if (!sessionId) {
+    showStatus("No session here yet.");
+    return;
+  }
+  let files: TouchedFile[];
+  try {
+    files = await invoke<TouchedFile[]>("session_files", { sessionId });
+  } catch (e) {
+    if (!lastListSig) showStatus(`Couldn't list files — ${e}`);
+    return;
+  }
+  // The await let the user close the panel, or switch units, out from under us.
+  if (!isOpen() || currentSessionId !== sessionId) return;
+
+  const sig = files.map((f) => `${f.path}:${f.status}`).join("\n");
+  if (sig !== lastListSig) {
+    lastListSig = sig;
+    renderFiles(files);
+  }
+  if (files.length === 0) {
+    activePath = null;
+    showStatus("No files written yet — nothing in play.");
+    return;
+  }
+  // Keep the open file selected if the session still owns it; else land on the most
+  // recently written one.
+  const keep = activePath && files.some((f) => f.path === activePath) ? activePath : files[0].path;
+  await openFile(keep);
 }
 
 /** One-char badge for a porcelain status. */
@@ -173,7 +250,7 @@ function statusBadge(status: string): string {
   return c === "" ? "•" : c; // M / A / D / R …
 }
 
-function renderFiles(files: ChangedFile[]): void {
+function renderFiles(files: TouchedFile[]): void {
   if (!filesEl) return;
   filesEl.replaceChildren(
     ...files.map((f) => {
@@ -181,14 +258,14 @@ function renderFiles(files: ChangedFile[]): void {
       chip.type = "button";
       chip.className = "code-file";
       chip.dataset.path = f.path;
-      chip.title = f.path;
+      chip.title = f.rel;
       chip.classList.toggle("on", f.path === activePath);
       const badge = document.createElement("span");
       badge.className = "cf-badge";
       badge.textContent = statusBadge(f.status);
       const name = document.createElement("span");
       name.className = "cf-name";
-      name.textContent = f.path.split("/").pop() ?? f.path;
+      name.textContent = f.rel.split("/").pop() ?? f.rel;
       chip.append(badge, name);
       return chip;
     }),
@@ -202,16 +279,16 @@ function markActiveChip(path: string): void {
 }
 
 async function openFile(path: string): Promise<void> {
-  if (!currentDir || !editorEl) return;
+  if (!currentSessionId || !editorEl) return;
+  const sessionId = currentSessionId;
   activePath = path;
   markActiveChip(path);
   try {
-    const content = await invoke<string>("read_source_file", {
-      unitDir: currentDir,
-      relPath: path,
-    });
+    const view = await invoke<FileView>("read_touched_file", { sessionId, path });
+    // Another poll (or a click) may have moved on while this read was in flight.
+    if (!isOpen() || currentSessionId !== sessionId || activePath !== path) return;
     hideStatus();
-    await mountEditor(editorEl, content, path);
+    await mountEditor(editorEl, view, path);
   } catch (e) {
     showStatus(`Couldn't read ${path} — ${e}`);
   }
