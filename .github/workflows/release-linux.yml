@@ -1,0 +1,77 @@
+name: Release (Linux bundles)
+
+# Builds the Ubuntu/Debian bundles and attaches them to the release.
+#
+# macOS releases are still cut by hand on a Mac (the universal DMG is built and
+# uploaded locally) — this workflow deliberately does NOT touch that path. It only
+# adds the Linux half, which no human is going to hand-build on a Mac.
+#
+# `install.sh`'s Ubuntu branch downloads the `_<arch>.deb` asset from the latest
+# release, so until this job has run once, that branch has nothing to fetch.
+#
+# Fires on a version tag, or on demand against an existing tag/release.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to build and attach Linux bundles to (e.g. v0.5.0)'
+        required: true
+
+jobs:
+  linux-bundles:
+    name: tauri build → .deb + AppImage
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_dispatch runs against a tag the maintainer names; a tag push
+          # already has the right ref checked out.
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: System deps (WebKitGTK + bundler)
+        # xdg-utils is not optional: the AppImage bundler shells out to `xdg-mime`
+        # and dies with "xdg-mime binary not found" without it. The .deb builds
+        # fine either way, so a missing xdg-utils fails only the AppImage — late,
+        # and after the deb has already been produced.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
+            patchelf file xdg-utils
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build the frontend + bundles
+        working-directory: overlay
+        # `bundle.targets` is "all", which on Linux means .deb + .rpm + AppImage.
+        # We ship the deb and the AppImage; the rpm is built but not attached
+        # (nothing claims to support Fedora yet — don't imply support we haven't tested).
+        run: |
+          npm ci
+          npm run tauri build
+
+      - name: Collect the artifacts
+        id: collect
+        run: |
+          mkdir -p out
+          find overlay/src-tauri/target/release/bundle -type f \
+            \( -name '*.deb' -o -name '*.AppImage' \) -exec cp {} out/ \;
+          ls -lh out/
+          test -n "$(ls -A out/)" || (echo "::error::no Linux bundles produced" && exit 1)
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        # --clobber so a re-run replaces the assets instead of erroring on a name
+        # collision (this workflow is re-runnable against an existing release).
+        run: gh release upload "$TAG" out/* --clobber --repo "$GITHUB_REPOSITORY"
