@@ -25,10 +25,16 @@ const POLL: Duration = Duration::from_secs(4);
 
 /// Build the status item and start its count poll. Call once from `setup`.
 pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
+    // The menu carries every global-shortcut action too: on Linux the tray is
+    // menu-only (no click events under libappindicator) and Wayland sessions can
+    // refuse global shortcuts, so this menu is the guaranteed way to reach each
+    // surface on every platform.
     let open = MenuItem::with_id(app, "open_board", "Open Board", true, None::<&str>)?;
+    let toggle = MenuItem::with_id(app, "toggle_panels", "Show / Hide Panels", true, None::<&str>)?;
+    let history = MenuItem::with_id(app, "open_history", "History", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Companion", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&open, &sep, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &toggle, &history, &sep, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -37,6 +43,8 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
         .tooltip("Companion")
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open_board" => crate::windows::open_board_window(app),
+            "toggle_panels" => crate::windows::toggle_all(app),
+            "open_history" => crate::windows::open_history_window(app),
             "quit" => app.exit(0),
             _ => {}
         })

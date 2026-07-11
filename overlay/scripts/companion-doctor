@@ -10,12 +10,21 @@
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/.claude/companion/artifacts}"
+OS=$(uname -s)
 
-# Locate the installed .app (needed for version + signing checks).
+# Locate the installed app (needed for version + signing checks).
+# macOS: the .app bundle. Linux: the .deb's /usr/bin binary.
 APP=""
-for a in "/Applications/Companion Overlay.app" "$HOME/Applications/Companion Overlay.app"; do
-  [ -d "$a" ] && { APP="$a"; break; }
-done
+LINUX_BIN=""
+if [ "$OS" = Darwin ]; then
+  for a in "/Applications/Companion Overlay.app" "$HOME/Applications/Companion Overlay.app"; do
+    [ -d "$a" ] && { APP="$a"; break; }
+  done
+else
+  for b in /usr/bin/companion-overlay /usr/local/bin/companion-overlay; do
+    [ -x "$b" ] && { LINUX_BIN="$b"; break; }
+  done
+fi
 
 # --- row accumulation: build HTML and plaintext in parallel ----------------
 HTML_ROWS=""
@@ -45,11 +54,16 @@ add() {  # $1=state(ok|warn|bad)  $2=label  $3=detail
 if [ -n "$APP" ]; then
   ver=$(/usr/bin/defaults read "$APP/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo "?")
   add ok "app installed" "$APP ($ver)"
+elif [ -n "$LINUX_BIN" ]; then
+  ver=$(dpkg-query -W -f='${Version}' companion-overlay 2>/dev/null || echo "?")
+  add ok "app installed" "$LINUX_BIN ($ver)"
 elif [ -x "$SCRIPT_DIR/../src-tauri/target/release/companion-overlay" ] \
   || [ -x "$SCRIPT_DIR/../src-tauri/target/debug/companion-overlay" ]; then
-  add warn "app installed" "not in /Applications — using a local dev build"
-else
+  add warn "app installed" "not installed system-wide — using a local dev build"
+elif [ "$OS" = Darwin ]; then
   add bad "app installed" "Companion Overlay.app not found — install the DMG"
+else
+  add bad "app installed" "companion-overlay not found — install the .deb"
 fi
 
 # 2. cli on PATH ----------------------------------------------------------
@@ -66,7 +80,11 @@ fi
 if command -v node >/dev/null 2>&1; then
   add ok "node" "$(node -v)"
 else
-  add bad "node" "absent — the plugin's hooks are Node scripts (brew install node)"
+  case "$OS" in
+    Darwin) node_hint="brew install node" ;;
+    *) node_hint="sudo apt install nodejs" ;;
+  esac
+  add bad "node" "absent — the plugin's hooks are Node scripts ($node_hint)"
 fi
 
 # 3. overlay daemon -------------------------------------------------------
@@ -115,15 +133,17 @@ else
   add warn "artifacts dir" "$ARTIFACTS_DIR (missing — set COMPANION_ARTIFACTS_DIR or create it)"
 fi
 
-# 6. signed / notarized ---------------------------------------------------
-if [ -n "$APP" ]; then
-  if spctl -a -t exec "$APP" >/dev/null 2>&1; then
-    add ok "signed / notarized" "accepted by Gatekeeper"
+# 6. signed / notarized (macOS only — Linux has no Gatekeeper) -------------
+if [ "$OS" = Darwin ]; then
+  if [ -n "$APP" ]; then
+    if spctl -a -t exec "$APP" >/dev/null 2>&1; then
+      add ok "signed / notarized" "accepted by Gatekeeper"
+    else
+      add warn "signed / notarized" "unsigned preview — right-click → Open the first time"
+    fi
   else
-    add warn "signed / notarized" "unsigned preview — right-click → Open the first time"
+    add warn "signed / notarized" "n/a — app not installed"
   fi
-else
-  add warn "signed / notarized" "n/a — app not installed"
 fi
 
 # --- headline ------------------------------------------------------------

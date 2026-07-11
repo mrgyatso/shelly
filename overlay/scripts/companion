@@ -28,8 +28,12 @@ case "$1" in
   hub) shift; exec "$SCRIPT_DIR/companion-hub" "$@" ;;
 esac
 
+# macOS: the installed .app. Linux: the .deb's /usr/bin binary. Both lists are
+# probed everywhere — a path that doesn't exist is just skipped.
 CANDIDATES="/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay
 $HOME/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay
+/usr/bin/companion-overlay
+/usr/local/bin/companion-overlay
 $SCRIPT_DIR/../src-tauri/target/release/companion-overlay
 $SCRIPT_DIR/../src-tauri/target/debug/companion-overlay"
 

@@ -1,4 +1,5 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { PASTE_KEY } from "./platform";
 
 // Interactive review artifacts post compiled-prose feedback up to the overlay
 // via `postMessage({source:"companion-artifact", kind:"submit", text})`. The
@@ -28,6 +29,9 @@ export async function handleSubmit(text: string, artifactPath?: string): Promise
 function showCopiedToast(): void {
   const el = document.getElementById("copied-toast");
   if (!el) return;
+  // The static index.html label says ⌘V; correct it for non-mac platforms.
+  const kbd = el.querySelector("kbd");
+  if (kbd) kbd.textContent = PASTE_KEY;
   el.classList.add("visible");
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => {
