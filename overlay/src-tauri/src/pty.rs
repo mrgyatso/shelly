@@ -69,13 +69,24 @@ fn drain_utf8(buf: &mut Vec<u8>) -> String {
     }
 }
 
+/// The user's shell, falling back to the platform default when `SHELL` is unset
+/// (macOS has defaulted to zsh since Catalina; Linux distros ship bash).
+fn user_shell() -> String {
+    let fallback = if cfg!(target_os = "macos") {
+        "/bin/zsh"
+    } else {
+        "/bin/bash"
+    };
+    std::env::var("SHELL").unwrap_or_else(|_| fallback.into())
+}
+
 /// Locate the user's `claude` binary. Mirrors TUICommander's detection: ask the
 /// login shell (so nvm / asdf / homebrew PATHs resolve even when the daemon was
 /// launched by launchd with a minimal PATH), then fall back to known install
 /// locations — including `~/.local/bin` (modern installer) and
 /// `~/.claude/local` (migrate-installer).
 fn find_claude() -> Option<String> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let shell = user_shell();
     if let Ok(out) = std::process::Command::new(&shell)
         .args(["-l", "-c", "command -v claude"])
         .output()
@@ -94,6 +105,7 @@ fn find_claude() -> Option<String> {
         format!("{home}/.claude/local/claude"),
         "/opt/homebrew/bin/claude".to_string(),
         "/usr/local/bin/claude".to_string(),
+        "/usr/bin/claude".to_string(),
         format!("{home}/.npm-global/bin/claude"),
     ]
     .into_iter()
@@ -207,7 +219,7 @@ pub async fn spawn_pty(
         })
         .map_err(|e| format!("openpty: {e}"))?;
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let shell = user_shell();
     let mut cmd = CommandBuilder::new(&shell);
     cmd.arg("-i");
     cmd.arg("-l");

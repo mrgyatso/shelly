@@ -1,12 +1,14 @@
 #!/bin/bash
 #
-# Companion bootstrap — one command, from a factory-fresh Mac to a wired install.
+# Companion bootstrap — one command, from a factory-fresh machine to a wired install.
+# Supports macOS (Homebrew cask) and Ubuntu/Debian (.deb from GitHub Releases).
 #
 #   curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash
 #
-# Checks for Homebrew, Node 18+, Claude Code and the Companion app; offers to
-# install whatever is missing; then hands off to `companion setup`, which wires
-# the plugin. Safe to re-run — every step it has already done is skipped.
+# Checks for Node 18+, Claude Code and the Companion app (plus Homebrew on
+# macOS); offers to install whatever is missing; then hands off to `companion
+# setup`, which wires the plugin. Safe to re-run — every step it has already
+# done is skipped.
 #
 # Flags:  -y, --yes    assume yes (required when there is no terminal to ask on)
 #             --check  report what is missing and exit, changing nothing
@@ -44,13 +46,21 @@ ask() {
   case "$reply" in [nN]*) return 1 ;; *) return 0 ;; esac
 }
 
-[ "$(uname -s)" = "Darwin" ] || die "Companion is macOS only."
+OS=$(uname -s)
+case "$OS" in
+  Darwin) ;;
+  Linux)
+    command -v apt-get >/dev/null 2>&1 \
+      || die "Linux support targets Ubuntu/Debian (.deb) — no apt-get found on this machine."
+    ;;
+  *) die "Companion supports macOS and Ubuntu/Debian Linux." ;;
+esac
 
 say ""
 say "${bold}Companion${reset} — checking what this machine needs"
 say ""
 
-# --- Homebrew -----------------------------------------------------------------
+# --- Homebrew (macOS only) ------------------------------------------------------
 # Each step must fix up PATH *in this running shell*, not merely append to a
 # profile — otherwise the next step can't see what the previous one installed.
 brew_shellenv() {
@@ -61,20 +71,22 @@ brew_shellenv() {
   return 1
 }
 
-if command -v brew >/dev/null 2>&1 || brew_shellenv; then
-  ok "Homebrew        $(command -v brew)"
-else
-  info "Homebrew is missing (it also installs Apple's command line tools)"
-  $CHECK_ONLY || ask "Install Homebrew? It will ask for your password." || die "Homebrew is required."
-  if ! $CHECK_ONLY; then
-    NONINTERACTIVE=1 /bin/bash -c \
-      "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    brew_shellenv || die "Homebrew installed but 'brew' is still not on PATH."
-    # On Apple Silicon brew lives in /opt/homebrew, which no shell knows about yet.
-    profile="$HOME/.zprofile"
-    line="eval \"\$($(command -v brew) shellenv)\""
-    grep -qsF "$line" "$profile" || printf '\n%s\n' "$line" >> "$profile"
-    ok "Homebrew installed"
+if [ "$OS" = Darwin ]; then
+  if command -v brew >/dev/null 2>&1 || brew_shellenv; then
+    ok "Homebrew        $(command -v brew)"
+  else
+    info "Homebrew is missing (it also installs Apple's command line tools)"
+    $CHECK_ONLY || ask "Install Homebrew? It will ask for your password." || die "Homebrew is required."
+    if ! $CHECK_ONLY; then
+      NONINTERACTIVE=1 /bin/bash -c \
+        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      brew_shellenv || die "Homebrew installed but 'brew' is still not on PATH."
+      # On Apple Silicon brew lives in /opt/homebrew, which no shell knows about yet.
+      profile="$HOME/.zprofile"
+      line="eval \"\$($(command -v brew) shellenv)\""
+      grep -qsF "$line" "$profile" || printf '\n%s\n' "$line" >> "$profile"
+      ok "Homebrew installed"
+    fi
   fi
 fi
 
@@ -92,8 +104,17 @@ else
   else
     info "Node is missing — the plugin's hooks are Node scripts"
   fi
-  $CHECK_ONLY || ask "Install Node via Homebrew?" || die "Node 18+ is required."
-  $CHECK_ONLY || { brew install node; node_ok || die "Node installed but still not 18+."; ok "Node $(node -v)"; }
+  if [ "$OS" = Darwin ]; then
+    $CHECK_ONLY || ask "Install Node via Homebrew?" || die "Node 18+ is required."
+    $CHECK_ONLY || { brew install node; node_ok || die "Node installed but still not 18+."; ok "Node $(node -v)"; }
+  else
+    $CHECK_ONLY || ask "Install Node via apt? It will ask for your password." || die "Node 18+ is required."
+    $CHECK_ONLY || {
+      sudo apt-get update -qq && sudo apt-get install -y nodejs
+      node_ok || die "Node installed but still not 18+ — install a newer Node (e.g. via nodesource or nvm) and re-run."
+      ok "Node $(node -v)"
+    }
+  fi
 fi
 
 # --- Claude Code --------------------------------------------------------------
@@ -114,9 +135,25 @@ else
 fi
 
 # --- The app ------------------------------------------------------------------
+# Linux: the .deb ships the CLI scripts as bundle resources; link `companion`
+# onto PATH from wherever the package put them (the exact libdir depends on the
+# bundler version, so probe the known layouts).
+link_linux_cli() {
+  local s
+  for s in "/usr/lib/companion-overlay/scripts/companion" \
+           "/usr/lib/Companion Overlay/scripts/companion" \
+           "/usr/lib/companion-overlay/resources/scripts/companion"; do
+    if [ -x "$s" ]; then
+      sudo ln -sf "$s" /usr/local/bin/companion
+      return 0
+    fi
+  done
+  return 1
+}
+
 if command -v companion >/dev/null 2>&1; then
   ok "Companion app   $(command -v companion)"
-else
+elif [ "$OS" = Darwin ]; then
   info "The Companion app is missing"
   $CHECK_ONLY || ask "Install it via Homebrew?" || die "The app is required."
   if ! $CHECK_ONLY; then
@@ -127,6 +164,25 @@ else
     fi
     brew install --cask mrgyatso/tap/claude-code-companion
     command -v companion >/dev/null 2>&1 || die "Cask installed but 'companion' is not on PATH."
+    ok "Companion app installed"
+  fi
+else
+  info "The Companion app is missing"
+  $CHECK_ONLY || ask "Download the latest .deb from GitHub Releases and install it? It will ask for your password." \
+    || die "The app is required."
+  if ! $CHECK_ONLY; then
+    arch=$(dpkg --print-architecture)
+    deb_url=$(curl -fsSL https://api.github.com/repos/mrgyatso/claude-code-companion/releases/latest \
+      | grep -o "\"browser_download_url\": *\"[^\"]*_${arch}\.deb\"" \
+      | head -1 | sed 's/.*"\(https[^"]*\)"/\1/')
+    [ -n "$deb_url" ] || die "no ${arch} .deb in the latest release — Linux builds may not have shipped yet (check the Releases page)."
+    deb_tmp=$(mktemp -t companion-overlay-XXXXXX.deb)
+    curl -fsSL -o "$deb_tmp" "$deb_url"
+    sudo apt-get install -y "$deb_tmp"
+    rm -f "$deb_tmp"
+    command -v companion >/dev/null 2>&1 || link_linux_cli \
+      || die "Package installed but the 'companion' CLI was not found in it."
+    command -v companion >/dev/null 2>&1 || export PATH="/usr/local/bin:$PATH"
     ok "Companion app installed"
   fi
 fi

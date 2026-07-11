@@ -276,28 +276,47 @@ pub fn run() {
                 // ⌘0 = show/hide all panels. ⌘9 = toggle Free ↔ Terminal (dock the
                 // column to the focused terminal window and follow it). ⌘8 = open
                 // the history HUD (a grid of past artifacts to re-open).
-                let toggle = Shortcut::new(Some(Modifiers::SUPER), Code::Digit0);
-                let follow = Shortcut::new(Some(Modifiers::SUPER), Code::Digit9);
-                let history = Shortcut::new(Some(Modifiers::SUPER), Code::Digit8);
+                //
+                // Linux: the chord is Ctrl+Alt+digit — GNOME reserves Super+digit
+                // for the dock. Follow mode (digit 9) stays macOS-only because it
+                // reads other windows' bounds, which only macOS exposes.
+                let mods = if cfg!(target_os = "macos") {
+                    Modifiers::SUPER
+                } else {
+                    Modifiers::CONTROL | Modifiers::ALT
+                };
+                let toggle = Shortcut::new(Some(mods), Code::Digit0);
+                let history = Shortcut::new(Some(mods), Code::Digit8);
+                #[cfg(target_os = "macos")]
+                let follow = Shortcut::new(Some(mods), Code::Digit9);
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
-                        .with_handler(|app, shortcut, event| {
+                        .with_handler(move |app, shortcut, event| {
                             if event.state != ShortcutState::Pressed {
                                 return;
                             }
-                            if shortcut.matches(Modifiers::SUPER, Code::Digit0) {
+                            if shortcut.matches(mods, Code::Digit0) {
                                 windows::toggle_all(app);
-                            } else if shortcut.matches(Modifiers::SUPER, Code::Digit9) {
+                            } else if shortcut.matches(mods, Code::Digit9) {
                                 crate::layout::toggle_mode(app);
-                            } else if shortcut.matches(Modifiers::SUPER, Code::Digit8) {
+                            } else if shortcut.matches(mods, Code::Digit8) {
                                 windows::open_history_window(app);
                             }
                         })
                         .build(),
                 )?;
-                app.global_shortcut().register(toggle)?;
-                app.global_shortcut().register(follow)?;
-                app.global_shortcut().register(history)?;
+                // Registration failure must not abort setup: Wayland sessions can
+                // refuse global shortcuts outright, and the tray menu carries the
+                // same actions as a fallback.
+                for (name, sc) in [("toggle", toggle), ("history", history)] {
+                    if let Err(e) = app.global_shortcut().register(sc) {
+                        eprintln!("[overlay] global shortcut '{name}' not registered: {e} (tray menu still works)");
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                if let Err(e) = app.global_shortcut().register(follow) {
+                    eprintln!("[overlay] global shortcut 'follow' not registered: {e}");
+                }
             }
 
             // Keep the column docked to the terminal while in Terminal mode.

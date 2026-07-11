@@ -17,6 +17,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { renderLiveState, type LiveState, type Action } from "./live-render";
+import { PASTE_KEY } from "./platform";
 
 /** How often to re-read the live file. It's tiny; a calm cadence is plenty. */
 const POLL_MS = 1200;
@@ -153,7 +154,10 @@ function wireFooter(): void {
     refresh();
   });
 
-  document.getElementById("live-submit")?.addEventListener("click", () => void submit());
+  const submitEl = document.getElementById("live-submit");
+  submitEl?.addEventListener("click", () => void submit());
+  // The static index.html label says ⌘V; correct it for non-mac platforms.
+  if (submitEl) submitEl.textContent = `Submit → ${PASTE_KEY}`;
 }
 
 function setState(card: HTMLElement, action: Action): void {
@@ -202,7 +206,7 @@ async function submit(): Promise<void> {
   }
   try {
     await writeText(lines.join("\n"));
-    flash(submitBtn, "Copied ✓ — ⌘V to paste");
+    flash(submitBtn, `Copied ✓ — ${PASTE_KEY} to paste`);
   } catch (e) {
     console.error("clipboard write failed", e);
     flash(submitBtn, "Copy failed");
@@ -211,7 +215,7 @@ async function submit(): Promise<void> {
 
 function flash(btn: HTMLElement | null, msg: string): void {
   if (!btn) return;
-  const prev = btn.dataset.label || btn.textContent || "Submit → ⌘V";
+  const prev = btn.dataset.label || btn.textContent || `Submit → ${PASTE_KEY}`;
   btn.dataset.label = prev;
   btn.textContent = msg;
   window.clearTimeout(Number(btn.dataset.t));

@@ -129,7 +129,8 @@ pub fn open_history_window(app: &AppHandle) {
             .title("Companion History")
             .inner_size(900.0, 640.0)
             .min_inner_size(560.0, 360.0)
-            .decorations(false)
+            // Same Linux-decorations rule as the Board (see open_board_window).
+            .decorations(cfg!(target_os = "linux"))
             .transparent(true)
             .resizable(true)
             .shadow(true)
@@ -220,7 +221,10 @@ pub fn open_board_window(app: &AppHandle) {
             .title("Companion Board")
             .inner_size(1000.0, 700.0)
             .min_inner_size(560.0, 400.0)
-            .decorations(false)
+            // Linux keeps native decorations: a frameless window on Wayland has no
+            // WM move/resize/close, and the Board runs as a normal app window there
+            // (the v1 Linux shape). macOS stays frameless — chrome is drawn in-page.
+            .decorations(cfg!(target_os = "linux"))
             .transparent(true)
             .resizable(true)
             .shadow(true)
