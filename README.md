@@ -4,6 +4,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/mrgyatso/claude-code-companion?include_prereleases&sort=semver)](https://github.com/mrgyatso/claude-code-companion/releases)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-black?logo=apple)](#requirements)
+[![Platform: Linux](https://img.shields.io/badge/platform-Ubuntu%2FDebian-e95420?logo=ubuntu&logoColor=white)](#requirements)
 [![Signing: unsigned preview](https://img.shields.io/badge/signing-unsigned%20preview-orange)](#first-launch)
 [![Downloads](https://img.shields.io/github/downloads/mrgyatso/claude-code-companion/total)](https://github.com/mrgyatso/claude-code-companion/releases)
 
@@ -44,21 +45,25 @@ Your agent writes each turn as one of those HTML pages. Companion watches for it
 
 ## Requirements
 
-- **macOS 11 or later.** The release is a universal build that runs natively on both Apple Silicon and Intel.
+- **An OS Companion runs on:**
+  - **macOS 11 or later.** The release is a universal build that runs natively on both Apple Silicon and Intel.
+  - **Ubuntu 22.04+ / Debian 12+** (x86_64 or arm64), on a `.deb` or an AppImage. The app is a WebKitGTK build; the package pulls in what it needs.
 - **[Claude Code](https://claude.com/claude-code).**
-- **Node 18 or later** (`brew install node`). The plugin's hooks are Node scripts. Claude Code now ships as a native binary, so having `claude` does **not** mean you have Node — check with `node -v`.
+- **Node 18 or later.** The plugin's hooks are Node scripts. Claude Code now ships as a native binary, so having `claude` does **not** mean you have Node — check with `node -v`.
 
 Starting from a machine with none of that? The installer below sets it all up. Building from source additionally needs Rust.
 
+Two platform differences are worth knowing up front, and both are called out again where they bite: the global shortcuts are `⌘`-chords on macOS but **`Ctrl+Alt`**-chords on Linux, and **Terminal-follow mode is macOS-only** (it reads other windows' bounds, which only macOS exposes). Everything else is the same on both.
+
 ## Install
 
-One command, from a factory-fresh Mac.
+One command, on either platform — from a factory-fresh Mac or a fresh Ubuntu box.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash
 ```
 
-It checks for Homebrew, Node 18+, Claude Code and the app, offers to install whatever is missing, and then wires the plugin. Everything it does is skipped on a re-run, so it is safe to run twice. Two flags are worth knowing: `--check` reports what is missing and changes nothing, and `--yes` accepts every install without asking (needed when there is no terminal to prompt on).
+It detects your platform, checks for Node 18+, Claude Code and the app (plus Homebrew on macOS), offers to install whatever is missing, and then wires the plugin. On macOS it installs the app from the Homebrew cask; on Ubuntu/Debian it pulls the `.deb` for your architecture from the latest release. Everything it does is skipped on a re-run, so it is safe to run twice. Two flags are worth knowing: `--check` reports what is missing and changes nothing, and `--yes` accepts every install without asking (needed when there is no terminal to prompt on).
 
 The one thing it cannot do for you is sign you in — that is a browser login. If Claude Code has never been authenticated, the installer stops, tells you to run `claude` and finish the login, and asks you to run it again. The second run picks up where it left off.
 
@@ -70,7 +75,7 @@ less install.sh && bash install.sh
 ```
 
 <details>
-<summary>Already have Homebrew, Node and Claude Code?</summary>
+<summary>macOS — already have Homebrew, Node and Claude Code?</summary>
 
 Then it is three commands, and the installer above is doing exactly this for you:
 
@@ -88,10 +93,26 @@ The second installs the app to `/Applications`, puts the `companion` CLI on your
 
 </details>
 
-Two things surprise people on a genuinely clean Mac, and the installer handles both. Homebrew installs to `/opt/homebrew` on Apple Silicon, which is not on `PATH` until you add it. And Claude Code installs to `~/.local/bin`, appending to your shell profile — which does not affect the shell you are already standing in. Install by hand and the next command will not find what you just installed.
+<details>
+<summary>Linux — already have Node and Claude Code?</summary>
+
+Then it is two commands. Grab the `.deb` for your architecture from the [latest release](https://github.com/mrgyatso/claude-code-companion/releases/latest) and install it:
+
+```bash
+sudo apt install ./Companion*_amd64.deb   # or _arm64.deb
+companion setup
+```
+
+`apt` pulls in WebKitGTK and the other system libraries the app links against. The package puts the app on your menu and the `companion` CLI on your `PATH`; `companion setup` then wires it to Claude Code — it adds the plugin marketplace, installs the `companion` plugin, creates the watched folder, and finishes by running `companion doctor` so you can see it worked.
+
+`companion setup` is safe to re-run; every step it has already done is skipped. Restart any `claude` session you had open so it picks up the plugin.
+
+</details>
+
+Two things surprise people on a genuinely clean Mac, and the installer handles both. Homebrew installs to `/opt/homebrew` on Apple Silicon, which is not on `PATH` until you add it. And Claude Code installs to `~/.local/bin`, appending to your shell profile — which does not affect the shell you are already standing in. Install by hand and the next command will not find what you just installed. The same `~/.local/bin` catch applies on Linux.
 
 <details>
-<summary>Installing without Homebrew</summary>
+<summary>macOS — installing without Homebrew</summary>
 
 1. Download the latest `.dmg` from the [Releases page](https://github.com/mrgyatso/claude-code-companion/releases) and drag Companion Overlay into Applications.
 2. The build isn't signed yet, so macOS blocks it the first time ("Companion Overlay can't be opened because Apple cannot check it for malicious software"). Clear the quarantine flag:
@@ -106,6 +127,40 @@ Two things surprise people on a genuinely clean Mac, and the installer handles b
 
 </details>
 
+<details>
+<summary>Linux — installing without apt (AppImage)</summary>
+
+Every release also carries an AppImage, which runs on distros the `.deb` doesn't target. It bundles its own libraries, so there is nothing to install:
+
+```bash
+chmod +x Companion_Overlay_*.AppImage
+./Companion_Overlay_*.AppImage
+```
+
+The AppImage does **not** put the `companion` CLI on your `PATH`, and `companion setup` is what wires the plugin to Claude Code — so on this path, extract the CLI once and link it:
+
+```bash
+./Companion_Overlay_*.AppImage --appimage-extract >/dev/null
+sudo ln -sf "$PWD/squashfs-root/usr/lib/companion-overlay/scripts/companion" /usr/local/bin/companion
+companion setup
+```
+
+If your distro has no AppImage support out of the box, install `libfuse2` (Ubuntu 22.04+: `sudo apt install libfuse2`).
+
+</details>
+
+## First launch
+
+**macOS.** The build is not signed or notarized yet, so Gatekeeper blocks it the first time: *"Companion Overlay can't be opened because Apple cannot check it for malicious software."* The Homebrew cask clears the quarantine flag for you. If you installed the `.dmg` by hand, clear it yourself:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Companion Overlay.app"
+```
+
+Signing and notarization are on the [roadmap](#roadmap).
+
+**Linux.** Nothing blocks the app, but two things are worth knowing. The global shortcuts are `Ctrl+Alt`-chords, not `⌘` (GNOME reserves `Super`+digit for the dock). And **on Wayland, the compositor can refuse global shortcuts outright** — if `Ctrl+Alt+0` does nothing, that is why, and it is not a bug you can fix from the app. The tray icon carries every shortcut's action as a menu item, so the app stays fully usable either way. `companion board` also brings it forward from any terminal.
+
 ## Using it
 
 Bring the app forward:
@@ -116,16 +171,21 @@ companion board
 
 You land on your home — every live session and connected agent, ordered by who needs a decision. Open one to read its latest page, answer its questions right there, and drop back. Start a new session from the home and it runs inside the app; type into its terminal whenever you want to.
 
-The app also runs quietly in the menu bar. Its icon shows how many agents need you, and a click gives you the same roster at a glance.
+The app also runs quietly in the menu bar (macOS) or the system tray (Linux). Its icon shows how many agents need you, and a click gives you the same roster at a glance. The tray menu also carries every shortcut below as a menu item — which is what you fall back on if a shortcut doesn't register.
 
 Shortcuts:
 
-- `⌘0` — show or hide the app
-- `⌘8` — the history of past pages
+| | macOS | Linux |
+|---|---|---|
+| Show or hide the app | `⌘0` | `Ctrl+Alt+0` |
+| The history of past pages | `⌘8` | `Ctrl+Alt+8` |
+| Toggle Free ↔ Terminal mode | `⌘9` | *macOS only* |
+
+Linux uses `Ctrl+Alt` because GNOME reserves `Super`+digit for the dock. Terminal mode docks the column to your focused terminal window and follows it, which needs to read other windows' bounds — only macOS exposes that, so it stays macOS-only. And on Wayland the compositor may refuse global shortcuts entirely; use the tray menu or `companion board`.
 
 ## Where your sessions have to run
 
-By default the plugin only acts in terminals **the app itself spawns**. Start a session from the home and everything works. Run `claude` in your own Terminal or iTerm and Companion stays silent by design — that session never joins the home and its pages are never rendered. This keeps agents that aren't using the app from cluttering it.
+By default the plugin only acts in terminals **the app itself spawns**. Start a session from the home and everything works. Run `claude` in your own terminal — Terminal or iTerm on macOS, GNOME Terminal or Kitty on Linux — and Companion stays silent by design: that session never joins the home and its pages are never rendered. This keeps agents that aren't using the app from cluttering it.
 
 If you'd rather have *every* session picked up, wherever you start it:
 
@@ -155,6 +215,13 @@ The watched folder defaults to `~/.claude/companion/artifacts` (override with `C
 
 If you'd rather not use the plugin, add a `PostToolUse` hook in `~/.claude/settings.json`. This renders pages the agent writes, but you don't get the skill, the slash commands, or the session roster — the agent won't know to author pages unless you ask it to.
 
+The hook script ships inside the app bundle, so the path depends on your platform:
+
+| Platform | `companion-hook` lives at |
+|---|---|
+| macOS | `/Applications/Companion Overlay.app/Contents/Resources/scripts/companion-hook` |
+| Linux (`.deb`) | `/usr/lib/companion-overlay/scripts/companion-hook` |
+
 ```json
 {
   "hooks": {
@@ -162,7 +229,7 @@ If you'd rather not use the plugin, add a `PostToolUse` hook in `~/.claude/setti
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "/Applications/Companion Overlay.app/Contents/Resources/scripts/companion-hook" }
+          { "type": "command", "command": "/usr/lib/companion-overlay/scripts/companion-hook" }
         ]
       }
     ]
@@ -174,7 +241,9 @@ The watched folder defaults to `~/.claude/companion/artifacts` (override with `C
 
 ## Build from source
 
-It's a Tauri v2 (Rust) app with a vanilla TypeScript frontend.
+It's a Tauri v2 (Rust) app with a vanilla TypeScript frontend. Both platforms need [Rust](https://rustup.rs) and Node 18+.
+
+**macOS:**
 
 ```bash
 git clone https://github.com/mrgyatso/claude-code-companion.git
@@ -186,6 +255,23 @@ ln -sf "$PWD/scripts/companion" /usr/local/bin/companion
 ```
 
 Use `--bundles dmg` to produce a distributable `.dmg` instead. Add `--target universal-apple-darwin` (with both `rustup target add aarch64-apple-darwin x86_64-apple-darwin`) to build the universal binary that ships in releases.
+
+**Ubuntu/Debian:** the app links against WebKitGTK, so install the system libraries first — a missing one fails the build deep into the Rust compile, not up front.
+
+```bash
+sudo apt update && sudo apt install -y libwebkit2gtk-4.1-dev build-essential \
+  curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils
+
+git clone https://github.com/mrgyatso/claude-code-companion.git
+cd claude-code-companion/overlay
+npm install
+npm run tauri build          # → .deb + .rpm + AppImage under src-tauri/target/release/bundle/
+sudo apt install ./src-tauri/target/release/bundle/deb/*.deb
+```
+
+`xdg-utils` is not optional: the AppImage bundler shells out to `xdg-mime` and dies without it — after the `.deb` has already been produced, which makes it look like a late, unrelated failure. `libayatana-appindicator3-dev` is what puts the tray icon in your system tray.
+
+Releases are cut by CI: [`release-linux.yml`](.github/workflows/release-linux.yml) builds the `.deb` and AppImage on a tag push and attaches them to the release. The macOS universal `.dmg` is still built by hand on a Mac.
 
 ## Roadmap
 
