@@ -2,7 +2,7 @@
 name = "companion-overlay"
 version = "0.1.0"
 description = "Ghostly floating overlay that renders Claude's HTML artifacts"
-authors = ["you"]
+authors = ["mrgyatso <zacharyawoods97@gmail.com>"]
 edition = "2021"
 
 [lib]

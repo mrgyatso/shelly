@@ -20,8 +20,9 @@ while [ -L "$SELF" ]; do
 done
 SCRIPT_DIR=$(cd "$(dirname "$SELF")" && pwd)
 
-# Subcommands handled in the wrapper. The binary only understands `open`, so
-# anything else must be intercepted here before we exec it.
+# Subcommands handled in the wrapper. Everything else is passed to the binary,
+# which routes on argv itself (see launch.rs): no args or `board` opens the
+# Board, plus `open <file>`, `history` and `live`.
 case "$1" in
   doctor) exec "$SCRIPT_DIR/companion-doctor" ;;
   setup) shift; exec "$SCRIPT_DIR/companion-setup" "$@" ;;

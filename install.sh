@@ -200,6 +200,11 @@ else
   if ! $CHECK_ONLY; then
     deb_tmp=$(mktemp -t companion-overlay-XXXXXX.deb)
     curl -fsSL -o "$deb_tmp" "$deb_url"
+    # mktemp gives 0600, which the `_apt` user cannot read — apt then warns
+    # ("Download is performed unsandboxed as root ... Permission denied") and
+    # drops its sandbox to install anyway. Noisy on a first run, and a hard
+    # failure where apt is configured not to fall back.
+    chmod 644 "$deb_tmp"
     sudo apt-get install -y "$deb_tmp"
     rm -f "$deb_tmp"
     command -v companion >/dev/null 2>&1 || link_linux_cli \
@@ -233,7 +238,12 @@ say "${bold}Wiring the plugin${reset}"
 say ""
 if companion setup; then
   say ""
-  say "${green}Done.${reset} Open a ${bold}claude${reset} session in any repo — the Board pops on the first artifact."
+  say "${green}Done.${reset} Open the app whenever you like:"
+  say ""
+  say "      ${bold}companion board${reset}      ${dim}# or launch Companion Overlay from your apps${reset}"
+  say ""
+  say "  It also surfaces on its own: start a ${bold}claude${reset} session in any repo and the"
+  say "  Board comes forward the moment the agent writes its first page."
 else
   # The likeliest cause on a brand-new machine: Claude Code has never been
   # signed in, so its plugin commands have nothing to act on. Nothing here can
