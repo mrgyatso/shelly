@@ -50,6 +50,26 @@ jobs:
         with:
           node-version: '20'
 
+      - name: The tag and the app version must agree
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        # Tauri bakes tauri.conf.json's version into the binary, and the updater
+        # compares THAT against the version advertised for the release. Let them
+        # drift and the updater either never fires, or reinstalls the same build
+        # forever. v0.5.0 shipped a binary calling itself 0.1.11 exactly this way.
+        #
+        # tauri.conf.json stays the source of truth rather than being stamped from
+        # the tag here: macOS bundles are built off this repo too, and stamping in
+        # this workflow would keep Linux honest while letting macOS drift on.
+        run: |
+          conf=$(jq -r .version overlay/src-tauri/tauri.conf.json)
+          want=${TAG#v}
+          if [ "$conf" != "$want" ]; then
+            echo "::error::tag $TAG wants version $want, but tauri.conf.json says $conf — bump it before tagging"
+            exit 1
+          fi
+          echo "version $conf matches tag $TAG"
+
       - name: Build the frontend + bundles
         working-directory: overlay
         # `bundle.targets` is "all", which on Linux means .deb + .rpm + AppImage.
