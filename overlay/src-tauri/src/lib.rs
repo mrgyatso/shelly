@@ -264,6 +264,24 @@ pub fn run() {
                 let _ = app.deep_link().register_all();
             }
 
+            // Linux: WebKitGTK has no GPU compositing layer to promote CSS
+            // animations to, so every ambient loop is a full software repaint —
+            // one 6px infinite pulse measures 15–25% of a core here, and the
+            // idle Board's clawd scenes held the shared WebProcess near 70%.
+            // Flip the app-local GTK animations toggle so every webview (Board,
+            // panels, artifact iframes) reports `prefers-reduced-motion: reduce`.
+            // The surfaces are designed for that mode already (clawd.ts freezes
+            // poses, board.css gates its loops), so this degrades ambience to
+            // still art instead of a hot idle. App-local: the user's desktop
+            // setting is untouched.
+            #[cfg(target_os = "linux")]
+            {
+                use gtk::prelude::*;
+                if let Some(settings) = gtk::Settings::default() {
+                    settings.set_gtk_enable_animations(false);
+                }
+            }
+
             // Global show/hide toggle (⌘0). Registered from Rust, so it needs no
             // capability permission — capabilities only gate frontend IPC. This is
             // the guaranteed escape hatch once the window goes frameless (Q2) and
