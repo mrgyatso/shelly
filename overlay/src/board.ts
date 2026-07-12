@@ -29,6 +29,16 @@ import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
 import { heroArtifactFor, effectsForRewrites } from "./ingest-logic";
 import {
+  HOME_UNIT,
+  isScratchDir,
+  normalizeDir,
+  projectSlug,
+  sourceProjectKey as sourceProjectKeyPure,
+  unitKeyOf as unitKeyOfPure,
+  isEphemeralUnit as isEphemeralUnitPure,
+  type UnitSource,
+} from "./unit-identity";
+import {
   abandonCompact,
   beginCompact,
   compactBtn,
@@ -455,12 +465,6 @@ let homeDir: string | null = null;
 
 /** Strip trailing slashes so a recorded root and $HOME compare equal regardless of a
  *  stray trailing separator. Returns null for a null/empty input. */
-function normalizeDir(dir: string | null | undefined): string | null {
-  if (!dir) return null;
-  const trimmed = dir.replace(/\/+$/, "");
-  return trimmed || "/";
-}
-
 // ---- trace harness ----------------------------------------------------------
 // Routes Board-side events to the SAME on-disk NDJSON the shell + Rust layers write
 // (~/.claude/companion/logs/trace.ndjson), so one artifact write yields one joined,
@@ -1060,56 +1064,23 @@ function parseState(json: string): LiveState {
   }
 }
 
-/** The shared unit every $HOME-launched session lands in — the "Home" shelf. Sessions
- *  here have no project of their own yet; the rail tells them apart by their
- *  first-prompt title (see sessionLabel), not by a folder name. A session LEAVES this
- *  unit for good once it establishes a real root (`git init`) — see companion-adopt. */
-const HOME_UNIT = "__home__";
+/** Adapt a LiveSource to the DOM-free shape unit-identity.ts reasons over. */
+function unitSourceOf(s: LiveSource): UnitSource {
+  const st = parseState(s.json);
+  return { source: s.source, unit_dir: st.unit_dir, project: st.project };
+}
 
-/**
- * The UNIT a source belongs to — always a function of its DIRECTORY, never of any
- * label the agent wrote. That is the whole rule: `unit_dir` is written by the hook and
- * is agent-proof, whereas `project` is a cosmetic field the agent rewrites freely. Key
- * a unit off the label and a session TELEPORTS between units the moment its agent
- * renames itself (the whatnot-api → gyatso bug). So: directory in, unit out.
- */
+/** The UNIT a source belongs to — see unit-identity.ts for the rule (directory in, unit
+ *  out; never the agent's label). */
 function unitKeyOf(s: LiveSource): string {
-  // $HOME is not a project — it's where you live. Every ~-launched session shares the
-  // one "Home" shelf rather than minting a unit named after the user's username.
-  if (isHomeRooted(s)) return HOME_UNIT;
-  return sourceProjectKey(s);
+  return unitKeyOfPure(unitSourceOf(s), homeDir);
 }
 
-/** True when this session's recorded project root is still the user's $HOME — i.e. it
- *  was launched from ~ and has not yet adopted a project directory of its own. */
-function isHomeRooted(s: LiveSource): boolean {
-  if (!homeDir) return false;
-  const dir = normalizeDir(parseState(s.json).unit_dir);
-  return dir !== null && dir === homeDir;
-}
-
-/** A throwaway/scratch directory: the system temp roots, or a folder literally named
- *  `tmp`/`temp`. Sessions rooted here are incidental, not projects. */
-function isScratchDir(dir: string): boolean {
-  const base = dir.split("/").filter(Boolean).pop()?.toLowerCase() ?? "";
-  if (base === "tmp" || base === "temp") return true;
-  return /^\/(private\/)?tmp(\/|$)|^\/var\/folders\//.test(dir);
-}
-
-/** An INCIDENTAL unit the roster should ignore entirely: one rooted in a scratch/temp
- *  dir. Those are genuinely throwaway — "if I wanted it in here I would have run it in
- *  here." Cloud units never are.
- *
- *  $HOME used to be lumped in here, which is what made ~-launched sessions vanish: the
- *  Board hid them while SessionStart still told their agent to write artifacts, so the
- *  agent filed cards into a unit that was never rendered. Home is now a real, visible
- *  shelf (HOME_UNIT) that a session graduates OUT of on `git init`. Scratch stays gone. */
+/** An INCIDENTAL unit the roster ignores: rooted in a scratch/temp dir. Cloud never is.
+ *  ($HOME is NOT ephemeral any more — that is what made ~-launched sessions vanish.) */
 function isEphemeralUnit(unitKey: string, sources: LiveSource[]): boolean {
   if (isCloudUnit(unitKey)) return false;
-  return sources.some((s) => {
-    const dir = normalizeDir(parseState(s.json).unit_dir);
-    return dir !== null && isScratchDir(dir);
-  });
+  return isEphemeralUnitPure(sources.map(unitSourceOf));
 }
 
 /** The absolute project dir for a unit — the `unit_dir` of any live source that
@@ -3055,34 +3026,10 @@ function markFor(name: string): string {
   return first ? first.toUpperCase() : "·";
 }
 
-/** `~/claude-code-companion` → `claude-code-companion`; `hermes` → `hermes`. */
-function projectSlug(project?: string | null): string | null {
-  if (!project) return null;
-  const trimmed = project.replace(/\/+$/, "");
-  const base = trimmed.split("/").pop() || trimmed;
-  return base || null;
-}
-
-/** The project-match key for a source — the basename of its `unit_dir`, the REAL
- *  directory the hook recorded for this session.
- *
- *  This deliberately does NOT key off the live `project` field. `project` is written by
- *  the agent and is cosmetic; keying a unit off it lets a session hop to another unit
- *  the instant its agent renames itself. `unit_dir` comes from session-dirs.json (hook
- *  -written, agent-proof) and is the same basename `project` normally holds — verified
- *  identical across every live session — so this is a no-op except where the label had
- *  drifted, which is exactly the case it fixes.
- *
- *  Falls back to `project`, then the stem's slug prefix, for pre-hook sources that carry
- *  no unit_dir. */
+/** The project-match key for a source — see unit-identity.ts (basename of the REAL
+ *  `unit_dir`, never the agent's cosmetic `project` label). */
 function sourceProjectKey(s: LiveSource): string {
-  const st = parseState(s.json);
-  const fromDir = projectSlug(normalizeDir(st.unit_dir) ?? undefined);
-  if (fromDir) return fromDir;
-  const fromJson = projectSlug(st.project ?? undefined);
-  if (fromJson) return fromJson;
-  const i = s.source.indexOf("--");
-  return i >= 0 ? s.source.slice(0, i) : s.source;
+  return sourceProjectKeyPure(unitSourceOf(s));
 }
 
 /** File mtime injected by read_all_live; 0 if unparseable. */
