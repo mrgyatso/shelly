@@ -126,7 +126,7 @@ if command -v codex >/dev/null 2>&1; then
       warn "codex plug  could not install — run by hand: codex plugin add ${PLUGIN}"
     fi
   fi
-  say "codex       one-time step: run /hooks inside codex and trust the companion hooks"
+  say "codex       one-time step: your first codex session opens with 'Hooks need review' — choose 'Trust all and continue'"
 else
   say "codex       not installed — skipped (Codex support wires itself when codex is on PATH)"
 fi

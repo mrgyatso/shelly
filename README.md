@@ -208,7 +208,7 @@ To go back to app-spawned sessions only, `rm ~/.claude/companion/external-termin
 Companion also runs [OpenAI Codex CLI](https://developers.openai.com/codex) sessions (0.144+). Codex's plugin system consumes the same Companion plugin unchanged, and its hooks system runs the same scripts — so a Codex session gets the full treatment: it joins the home, its pages render, and you answer it with the same ✓/✎/✗ clicks.
 
 - **Wiring is automatic.** `companion setup` detects `codex` on your PATH and adds the marketplace + plugin to it. Installed Codex after Companion? Just re-run `companion setup`.
-- **One manual step, once.** Codex quarantines third-party hooks until you approve them: run `/hooks` inside any codex session and trust the companion hooks. Until then, Codex sessions stay off the home.
+- **One keypress, once.** Codex quarantines third-party hooks until you approve them — and asks on its own: your first codex session (in a Companion terminal or your own) opens with *“Hooks need review”*. Choose **Trust all and continue** and every session after is tracked. Until then, Codex sessions stay off the home. (`/hooks` inside codex reaches the same screen anytime.)
 - **Start and resume from the app.** "+ New session" grows *Start codex* entries when Codex is installed, and a Codex session in the Recent band resumes through `codex resume` automatically — each session remembers which CLI owns it.
 - The same [external-terminals rule](#where-your-sessions-have-to-run) applies: by default, only app-spawned codex sessions are tracked.
 
