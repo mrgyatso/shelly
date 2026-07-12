@@ -27,6 +27,7 @@ case "$1" in
   doctor) exec "$SCRIPT_DIR/companion-doctor" ;;
   setup) shift; exec "$SCRIPT_DIR/companion-setup" "$@" ;;
   hub) shift; exec "$SCRIPT_DIR/companion-hub" "$@" ;;
+  uninstall) shift; exec "$SCRIPT_DIR/companion-uninstall" "$@" ;;
 esac
 
 # macOS: the installed .app. Linux: the .deb's /usr/bin binary. Both lists are

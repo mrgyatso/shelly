@@ -1,0 +1,255 @@
+#!/usr/bin/env sh
+# companion-uninstall — undo everything `install.sh` and `companion setup` did.
+#
+#   companion uninstall            remove the plugin and the app; keep your artifacts
+#   companion uninstall --purge    also delete ~/.claude/companion (artifacts, history)
+#
+# The mirror of `companion setup`: removes the plugin, drops the marketplace, then
+# uninstalls the app itself — the Homebrew cask on macOS, the .deb on Ubuntu/Debian,
+# or the symlinks of a from-source install. Safe to re-run; anything already gone is
+# reported and skipped.
+#
+# Flags:
+#   -y, --yes    assume yes (required when there is no terminal to ask on)
+#       --purge  also delete the state dir: artifacts, history, session records
+#       --check  report what would be removed and exit, changing nothing
+#       --force  uninstall even when the overlay is hosting this very terminal
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+STATE_DIR="$HOME/.claude/companion"
+MARKETPLACE=claude-code-companion
+PLUGIN=companion@claude-code-companion
+
+ASSUME_YES=false
+PURGE=false
+CHECK_ONLY=false
+FORCE=false
+for arg in "$@"; do
+  case "$arg" in
+    -y|--yes) ASSUME_YES=true ;;
+    --purge)  PURGE=true ;;
+    --check)  CHECK_ONLY=true ;;
+    --force)  FORCE=true ;;
+    -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) printf 'companion uninstall: unknown flag %s\n' "$arg" >&2; exit 2 ;;
+  esac
+done
+
+bold=""; dim=""; red=""; green=""; reset=""
+if [ -t 1 ]; then
+  bold=$(printf '\033[1m'); dim=$(printf '\033[2m'); red=$(printf '\033[31m')
+  green=$(printf '\033[32m'); reset=$(printf '\033[0m')
+fi
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '  %s✓%s %s\n' "$green" "$reset" "$*"; }
+info() { printf '  %s·%s %s\n' "$dim" "$reset" "$*"; }
+die()  { printf '\n%scompanion uninstall: %s%s\n' "$red" "$*" "$reset" >&2; exit 1; }
+
+# Ask on the controlling terminal, not stdin — this may be piped.
+ask() {
+  $ASSUME_YES && return 0
+  [ -r /dev/tty ] || die "no terminal to prompt on. Re-run with --yes."
+  printf '  %s?%s %s [y/N] ' "$bold" "$reset" "$1" > /dev/tty
+  read -r reply < /dev/tty
+  case "$reply" in [yY]*) return 0 ;; *) return 1 ;; esac
+}
+
+# The app can host your terminal in a PTY: `claude` sessions started from the Board
+# are children of the overlay process. Removing the app then kills the very shell
+# running this script, mid-uninstall. Walk our ancestry and refuse if we find it.
+hosted_by_overlay() {
+  pid=$$
+  i=0
+  while [ "$pid" -gt 1 ] && [ "$i" -lt 24 ]; do
+    # Linux truncates `comm` to 15 chars — the process reads as "companion-overl",
+    # never "companion-overlay". Match the short form so this fires on both platforms.
+    case "$(ps -o comm= -p "$pid" 2>/dev/null)" in
+      *companion-overl*) return 0 ;;
+    esac
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    [ -n "$pid" ] || return 1
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# Every running overlay, hosted or not. `comm` is truncated to 15 chars on Linux
+# ("companion-overl") and not on macOS, so anchor on the short form. Matching comm
+# rather than the cmdline keeps this from ever selecting the uninstaller itself.
+overlay_pids() {
+  ps -eo pid=,comm= 2>/dev/null \
+    | awk '$2 ~ /^companion-overl/ { printf "%s ", $1 }' \
+    | sed 's/ *$//'
+}
+
+say ""
+say "${bold}Companion${reset} — removing"
+say ""
+
+if hosted_by_overlay && ! $FORCE && ! $CHECK_ONLY; then
+  say "  ${red}This terminal is running inside the Companion app.${reset}"
+  say ""
+  say "  Uninstalling would kill the overlay — and this shell with it, halfway"
+  say "  through. Quit the app first and re-run from a normal terminal:"
+  say ""
+  say "      ${bold}pkill companion-overlay${reset}   ${dim}# or Quit from the app${reset}"
+  say ""
+  say "  ${dim}Or pass --force if you really mean it.${reset}"
+  say ""
+  exit 1
+fi
+
+# --- The plugin ---------------------------------------------------------------
+if command -v claude >/dev/null 2>&1; then
+  if claude plugin list 2>/dev/null | grep -q "${PLUGIN}"; then
+    if $CHECK_ONLY; then
+      info "would remove plugin      ${PLUGIN}"
+    else
+      claude plugin uninstall "${PLUGIN}" >/dev/null 2>&1 \
+        && ok "plugin      ${PLUGIN}" \
+        || info "plugin      could not be removed — 'claude plugin uninstall ${PLUGIN}' by hand"
+    fi
+  else
+    info "plugin      not installed"
+  fi
+
+  if claude plugin marketplace list 2>/dev/null | grep -q "❯ ${MARKETPLACE}\$"; then
+    if $CHECK_ONLY; then
+      info "would remove marketplace ${MARKETPLACE}"
+    else
+      claude plugin marketplace remove "${MARKETPLACE}" >/dev/null 2>&1 \
+        && ok "marketplace ${MARKETPLACE}" \
+        || info "marketplace could not be removed — 'claude plugin marketplace remove ${MARKETPLACE}' by hand"
+    fi
+  else
+    info "marketplace not configured"
+  fi
+else
+  info "claude      not on PATH — skipping plugin and marketplace"
+fi
+
+# --- The app ------------------------------------------------------------------
+# The overlay may still be running even when it is not hosting this terminal.
+# Removing the app then yanks the binary out from under a live process, leaving
+# it running with no files on disk. Offer to quit it first.
+pids=$(overlay_pids)
+if [ -n "$pids" ] && ! $CHECK_ONLY; then
+  say ""
+  say "  ${dim}The overlay is still running (pid ${pids}).${reset}"
+  if ask "Quit it before removing the app?"; then
+    kill $pids 2>/dev/null
+    n=0
+    while [ -n "$(overlay_pids)" ] && [ "$n" -lt 25 ]; do sleep .2; n=$((n + 1)); done
+    if [ -n "$(overlay_pids)" ]; then
+      info "app         would not quit — removing anyway"
+    else
+      ok "quit        overlay stopped"
+    fi
+  fi
+fi
+
+# Three ways it could have got here: a .deb, a Homebrew cask, or a from-source
+# build symlinked onto PATH. Handle whichever we actually find.
+removed_app=false
+
+# Ask dpkg which package owns the installed binary rather than assuming the name —
+# a rename in tauri.conf.json would otherwise make removal silently do nothing.
+deb_pkg=$(dpkg -S /usr/bin/companion-overlay 2>/dev/null | cut -d: -f1)
+[ -n "$deb_pkg" ] || deb_pkg=companion-overlay
+
+if command -v dpkg >/dev/null 2>&1 && dpkg -s "$deb_pkg" >/dev/null 2>&1; then
+  if $CHECK_ONLY; then
+    info "would remove package     ${deb_pkg} (.deb)"
+  else
+    say ""
+    ask "Remove the ${deb_pkg} package? It will ask for your password." || die "stopped."
+    sudo apt-get remove -y "$deb_pkg" >/dev/null 2>&1 \
+      || die "apt-get could not remove ${deb_pkg}."
+    ok "package     ${deb_pkg}"
+  fi
+  removed_app=true
+fi
+
+if command -v brew >/dev/null 2>&1 \
+   && brew list --cask claude-code-companion >/dev/null 2>&1; then
+  if $CHECK_ONLY; then
+    info "would remove cask        claude-code-companion"
+  else
+    say ""
+    ask "Remove the claude-code-companion cask?" || die "stopped."
+    brew uninstall --cask claude-code-companion >/dev/null 2>&1 \
+      || die "brew could not uninstall the cask."
+    ok "cask        claude-code-companion"
+  fi
+  removed_app=true
+fi
+
+# `install.sh` drops this symlink when the .deb's own CLI is not already on PATH.
+if [ -L /usr/local/bin/companion ]; then
+  if $CHECK_ONLY; then
+    info "would remove symlink     /usr/local/bin/companion"
+  else
+    sudo rm -f /usr/local/bin/companion && ok "symlink     /usr/local/bin/companion"
+  fi
+  removed_app=true
+fi
+
+# A from-source install: `companion` symlinked out of a checkout, plus the two
+# .desktop entries the Linux port writes into the user's applications dir.
+if [ -L "$HOME/.local/bin/companion" ]; then
+  src=$(readlink -f "$HOME/.local/bin/companion" 2>/dev/null)
+  if $CHECK_ONLY; then
+    info "would remove symlink     ~/.local/bin/companion ${dim}→ ${src}${reset}"
+  else
+    rm -f "$HOME/.local/bin/companion"
+    ok "symlink     ~/.local/bin/companion ${dim}(the checkout at ${src%/overlay/scripts/companion} is left alone)${reset}"
+  fi
+  removed_app=true
+fi
+
+apps_dir="$HOME/.local/share/applications"
+dropped_desktop=false
+for d in companion-overlay companion-overlay-handler; do
+  f="$apps_dir/$d.desktop"
+  [ -f "$f" ] || continue
+  if $CHECK_ONLY; then
+    info "would remove desktop     ~/.local/share/applications/$d.desktop"
+  else
+    rm -f "$f" && ok "desktop     $d.desktop" && dropped_desktop=true
+  fi
+done
+# Without this the entries linger in the launcher menu until the cache is rebuilt.
+if $dropped_desktop && command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$apps_dir" >/dev/null 2>&1
+fi
+
+$removed_app || $CHECK_ONLY || info "app         not installed"
+
+# --- State --------------------------------------------------------------------
+# Artifacts and history are the user's, not ours. Keep them unless asked.
+if [ -d "$STATE_DIR" ]; then
+  if $PURGE; then
+    if $CHECK_ONLY; then
+      info "would DELETE state       $STATE_DIR"
+    else
+      say ""
+      ask "Delete $STATE_DIR? Every artifact and all history goes with it." || die "stopped."
+      rm -rf "$STATE_DIR"
+      ok "state       $STATE_DIR deleted"
+    fi
+  else
+    info "state       $STATE_DIR kept ${dim}(--purge to delete)${reset}"
+  fi
+fi
+
+if $CHECK_ONLY; then
+  say ""
+  say "Nothing was changed. Re-run without --check to remove the above."
+  exit 0
+fi
+
+say ""
+say "${green}Done.${reset} Reinstall any time:"
+say ""
+say "      ${bold}curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash${reset}"
+say ""
