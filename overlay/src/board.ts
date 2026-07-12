@@ -28,6 +28,13 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
 import { heroArtifactFor, effectsForRewrites } from "./ingest-logic";
+import {
+  compactBtn,
+  resolveCompact,
+  COMPACT_DONE_MS,
+  NO_COMPACT,
+  type CompactState,
+} from "./compact-logic";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
 import { mountClawd } from "./clawd";
 import { initCodePeek, closeCodePeek } from "./code-peek";
@@ -413,6 +420,9 @@ let meterBarEl: HTMLElement | null = null;
 let meterFillEl: HTMLElement | null = null;
 let meterTextEl: HTMLElement | null = null;
 let compactBtnEl: HTMLButtonElement | null = null;
+/** The Compact button's state — a typed `/compact` in flight, and one that just landed.
+ *  The rules live in compact-logic.ts, where a check pins them. */
+let compactState: CompactState = NO_COMPACT;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
 let currentUnitKey: string | null = null;
 let lastRailActiveUnit: string | null = null; // tracks which unit the rail was last rendered for
@@ -2695,6 +2705,9 @@ interface SessionUsage {
   outputTokens: number;
   model: string;
   limit: number;
+  /** Compactions this transcript has FINISHED. Counted over the whole file, so it
+   *  survives a Board restart. `runCompact` baselines it and waits for it to tick. */
+  compactions: number;
 }
 
 /** Token counts read at a glance: `114k`, `1M`. Precision past three significant
@@ -2745,11 +2758,47 @@ async function renderUnitMeter(unitKey: string | null): Promise<void> {
     `(${pct.toFixed(0)}%) on ${usage.model}\n` +
     `${usage.outputTokens.toLocaleString()} tokens generated this session`;
 
-  const tabId = ownedTabForUnit(unitKey);
-  compactBtnEl.disabled = !tabId;
-  compactBtnEl.title = tabId
-    ? "Run /compact in this session — summarises the conversation and frees context"
-    : "The Board doesn't own this session's terminal, so it can't run /compact here";
+  // The meter's own poll is what watches for the compaction to land — waiting costs no
+  // timer of its own. It also means a compaction can finish while the user is away in
+  // another unit: the count comes from the whole transcript, so the watch still resolves
+  // correctly the moment they come back to it.
+  const waiting = compactState.watch;
+  compactState = resolveCompact(compactState, {
+    unitKey,
+    sessionId,
+    compactions: usage.compactions,
+    now: Date.now(),
+  });
+  // It landed just now: take the button back out of "Compacted" on time, rather than
+  // whenever the next poll happens to come round.
+  if (waiting && !compactState.watch && compactState.done) {
+    window.setTimeout(() => void renderUnitMeter(currentUnitKey), COMPACT_DONE_MS);
+  }
+  paintCompactBtn(unitKey, sessionId, ownedTabForUnit(unitKey));
+}
+
+/** The button's whole appearance, derived in ONE place from whatever currently owns it.
+ *  `renderUnitMeter` used to set `disabled` straight from the tab on every poll — which
+ *  is exactly what wiped the in-flight label four seconds after the click. */
+function paintCompactBtn(unitKey: string, sessionId: string, tabId: string | null): void {
+  if (!compactBtnEl) return;
+  const b = compactBtnEl;
+  const state = compactBtn(compactState, { unitKey, sessionId, tabId, now: Date.now() });
+  // Busy and done are both disabled: typing into a compacting session would only queue
+  // up behind it. The CSS tells the three apart — `unavailable` greys out, `busy` keeps
+  // its accent and breathes, `done` goes green.
+  b.disabled = state !== "ready";
+  if (state === "busy" || state === "done") b.dataset.state = state;
+  else delete b.dataset.state;
+  b.textContent = state === "busy" ? "Compacting…" : state === "done" ? "Compacted" : "Compact";
+  b.title =
+    state === "busy"
+      ? "Summarising the conversation. This takes a minute on a full context."
+      : state === "done"
+        ? "Compaction finished. The meter drops to its new level on the session's next turn."
+        : state === "ready"
+          ? "Run /compact in this session — summarises the conversation and frees context"
+          : "The Board doesn't own this session's terminal, so it can't run /compact here";
 }
 
 /** The session the meter is currently measuring for `unitKey`, re-resolved after an
@@ -2766,20 +2815,30 @@ function lastMeterSessionId(unitKey: string): string | null {
  *  paste of a slash command executes it rather than submitting it as a prompt. */
 async function runCompact(): Promise<void> {
   if (!currentUnitKey || !compactBtnEl) return;
-  const tabId = ownedTabForUnit(currentUnitKey);
-  if (!tabId) return;
   const unitKey = currentUnitKey;
-  compactBtnEl.disabled = true;
-  compactBtnEl.textContent = "Compacting…";
+  const tabId = ownedTabForUnit(unitKey);
+  const sessionId = activeSessionId(unitKey);
+  if (!tabId || !sessionId) return;
+
+  // Count the compactions already in the transcript BEFORE typing, so the one we are
+  // about to cause is the one that resolves the watch — not an older one.
+  const baseline =
+    (await invoke<SessionUsage | null>("session_usage", { sessionId }))?.compactions ?? 0;
+  compactState = { watch: { unitKey, sessionId, baseline, startedAt: Date.now() }, done: null };
+  paintCompactBtn(unitKey, sessionId, tabId);
+
   try {
     await submitIntoPty(tabId, "/compact");
-    // Compaction takes a while and only shows up once Claude writes its next turn.
-    // Re-read then, so the bar visibly drops instead of waiting out the poll.
-    window.setTimeout(() => void renderUnitMeter(unitKey), 6000);
-  } finally {
-    compactBtnEl.textContent = "Compact";
-    void renderUnitMeter(currentUnitKey);
+  } catch (e) {
+    // The keystroke never landed, so no compaction is coming and nothing will ever tick
+    // the count. Drop the watch now rather than let the button sit at "Compacting…" for
+    // the full timeout over a compaction that was never started.
+    compactState = NO_COMPACT;
+    void renderUnitMeter(unitKey);
+    console.error("compact: could not type /compact into the session", e);
   }
+  // On success the button STAYS busy. It is released by the meter poll, once the
+  // transcript says the compaction actually finished — see resolveCompact.
 }
 
 /** Size the two stacked surfaces. "split" shares the pane; "artifact" grows the

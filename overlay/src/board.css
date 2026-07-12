@@ -1255,6 +1255,35 @@
   opacity: 0.45;
   cursor: default;
 }
+/* WORKING, and nothing like unavailable. A compaction runs for a minute or more with
+   no other outward sign, so the button has to carry the whole signal: it keeps its
+   accent (out-specifying the grayscale above, which would read as "dead") and breathes,
+   which is the part that says "still going" rather than "stuck". */
+.meter-compact[data-state="busy"]:disabled {
+  filter: none;
+  opacity: 1;
+  cursor: progress;
+  animation: compact-breathe 1.6s ease-in-out infinite;
+}
+@keyframes compact-breathe {
+  50% { opacity: 0.5; }
+}
+/* Landed. Green for the beat it is up — the one moment this button reports rather
+   than asks. The meter beside it is still showing the old level (it only re-reads on
+   the session's next turn), so this is what tells the user the compaction is done.
+   Out-specifies the `high` rule below, which would otherwise repaint it solid clay at
+   exactly the fill where a user is most likely to have pressed it. */
+.unit-meter .meter-compact[data-state="done"]:disabled {
+  filter: none;
+  opacity: 1;
+  cursor: default;
+  background: color-mix(in oklab, var(--ok) 14%, transparent);
+  border-color: color-mix(in oklab, var(--ok) 45%, transparent);
+  color: var(--ok);
+}
+@media (prefers-reduced-motion: reduce) {
+  .meter-compact[data-state="busy"]:disabled { animation: none; }
+}
 
 /* Two thresholds, both set in board.ts. `warn` is "start thinking about it";
    `high` is "the next long tool result may not fit". The fill needs no override —
