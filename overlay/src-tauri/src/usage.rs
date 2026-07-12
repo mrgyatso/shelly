@@ -6,12 +6,17 @@
 //! no API to ask, and the CLI prints the number only when the user types
 //! `/context`.
 //!
-//! Two different quantities come out of the same scan:
+//! Three quantities come out of the same scan:
 //!
 //!   * CONTEXT — what the next request will carry. It is the LAST real assistant
 //!     turn's four token fields, summed. Not cumulative: it is overwritten each
 //!     turn, and it drops sharply after a `/compact`.
 //!   * OUTPUT — tokens this session has generated. Cumulative: summed over turns.
+//!   * COMPACTIONS — how many compactions have FINISHED. Claude writes the boundary
+//!     record on completion (it carries the `durationMs` the run took), which makes
+//!     this the Board's only local signal that a `/compact` it typed is done. The
+//!     Compact button baselines the count and waits for it to tick; see
+//!     `compact-logic.ts`.
 //!
 //! The context formula is verified against the number the user actually sees, not
 //! inferred:
@@ -56,6 +61,11 @@ pub struct SessionUsage {
     pub model: String,
     /// That model's context window.
     pub limit: u64,
+    /// How many compactions this transcript has completed. Counted from the whole
+    /// file, so it is stable across Board restarts. The Board takes a baseline when
+    /// it types `/compact` and watches for this to tick — that is how it knows the
+    /// compaction has FINISHED, which no other local signal tells it.
+    pub compactions: u64,
 }
 
 /// Everything a transcript scan carries forward, so the next call only reads the
@@ -67,6 +77,7 @@ struct Scan {
     output_tokens: u64,
     context_tokens: u64,
     model: String,
+    compactions: u64,
 }
 
 fn cache() -> &'static Mutex<HashMap<String, Scan>> {
@@ -135,13 +146,30 @@ pub(crate) fn transcript_path(session_id: &str) -> Option<PathBuf> {
 ///   * `isSidechain` — a subagent's turn. Its usage belongs to the subagent's own
 ///     context, not this session's, and folding it in would inflate both numbers.
 fn fold_line(line: &str, scan: &mut Scan) {
-    if !line.contains("\"usage\"") {
-        return; // cheap reject: most lines are user turns or tool results
+    // Cheap reject: most lines are neither an assistant turn nor a compact boundary.
+    // The boundary line carries no `usage`, so it needs its own gate here — folding it
+    // in behind the usage check would mean never seeing it at all.
+    let may_compact = line.contains("compactMetadata");
+    if !line.contains("\"usage\"") && !may_compact {
+        return;
     }
     let v: serde_json::Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(_) => return,
     };
+    // A FINISHED compaction. Claude writes this line once the compaction completes —
+    // it reports the `durationMs` the run took — which is what makes it a done-signal
+    // rather than a started-signal.
+    //
+    // Match the parsed TOP-LEVEL key, never the raw substring: a session that merely
+    // *discusses* compaction carries the word `compactMetadata` inside tool results and
+    // message text, and a substring counter would tick on every one of them. Count this
+    // line alone — the `isCompactSummary` user line that Claude writes at the same
+    // instant is the same boundary, and counting both would double every compaction.
+    if v.get("compactMetadata").is_some() {
+        scan.compactions += 1;
+        return;
+    }
     if v.get("type").and_then(|x| x.as_str()) != Some("assistant") {
         return;
     }
@@ -219,6 +247,7 @@ pub async fn session_usage(session_id: String) -> Option<SessionUsage> {
             output_tokens: 0,
             context_tokens: 0,
             model: String::new(),
+            compactions: 0,
         });
         rescan(&path, scan);
         if scan.model.is_empty() {
@@ -229,6 +258,7 @@ pub async fn session_usage(session_id: String) -> Option<SessionUsage> {
             output_tokens: scan.output_tokens,
             model: scan.model.clone(),
             limit: window_for(&scan.model),
+            compactions: scan.compactions,
         })
     })
     .await
@@ -246,6 +276,7 @@ mod tests {
             output_tokens: 0,
             context_tokens: 0,
             model: String::new(),
+            compactions: 0,
         }
     }
 
@@ -317,6 +348,86 @@ mod tests {
         fold_line(&line, &mut s);
         assert_eq!(s.context_tokens, 113_948);
         assert_eq!(s.output_tokens, 351);
+    }
+
+    /// The line Claude writes when a compaction FINISHES, copied from real transcripts.
+    /// `durationMs` is the tell that it lands at the END of the run, not the start —
+    /// which is what lets the Board resolve its "Compacting…" button on it.
+    ///
+    /// Both triggers write the SAME shape, which is what makes one counter enough. Taken
+    /// from the two real boundaries on this machine: `auto` ran 42s over a 202k context,
+    /// `manual` — the case the Compact button actually produces — ran 119s over 402k.
+    fn compact_boundary(trigger: &str) -> String {
+        let (pre, post, ms) = match trigger {
+            "manual" => (402_404, 14_488, 119_120),
+            _ => (202_258, 6_151, 42_452),
+        };
+        serde_json::json!({
+            "type": "system",
+            "subtype": "compact_boundary",
+            "compactMetadata": {
+                "trigger": trigger, "preTokens": pre, "postTokens": post,
+                "durationMs": ms, "cumulativeDroppedTokens": pre - post,
+            },
+        })
+        .to_string()
+    }
+
+    /// One tick per compaction, whatever triggered it. The Board watches the count
+    /// rather than the trigger: if an auto-compact lands while the user's manual one
+    /// is in flight, the context still got compacted and the button is still done.
+    #[test]
+    fn a_finished_compaction_ticks_the_counter() {
+        let mut s = scan();
+        fold_line(&compact_boundary("manual"), &mut s);
+        assert_eq!(s.compactions, 1);
+        fold_line(&compact_boundary("auto"), &mut s);
+        assert_eq!(s.compactions, 2, "auto-compactions count too");
+    }
+
+    /// Claude writes the summary as a SECOND line, at the same instant and for the same
+    /// boundary. Counting it as well would double every compaction — and the Board would
+    /// call the button done on a compaction that never happened.
+    #[test]
+    fn the_summary_line_is_the_same_boundary_and_does_not_count_again() {
+        let mut s = scan();
+        let summary = serde_json::json!({
+            "type": "user",
+            "isCompactSummary": true,
+            "message": {"role": "user", "content": "This session is being continued…"},
+        })
+        .to_string();
+        fold_line(&compact_boundary("auto"), &mut s);
+        fold_line(&summary, &mut s);
+        assert_eq!(s.compactions, 1, "one boundary, one tick");
+    }
+
+    /// The trap this counter is built to avoid. A session that merely TALKS about
+    /// compaction — a grep hit, a tool result, this very file quoted back — carries the
+    /// word `compactMetadata` in its content with no such top-level key. Match the
+    /// parsed key, never the substring, or reading about compaction looks like doing it.
+    #[test]
+    fn merely_discussing_compaction_does_not_count_as_one() {
+        let mut s = scan();
+        let tool_result = serde_json::json!({
+            "type": "user",
+            "message": {"role": "user", "content": "grep found compactMetadata on line 263"},
+            "toolUseResult": {"stdout": "\"compactMetadata\": {\"trigger\": \"auto\"}"},
+        })
+        .to_string();
+        fold_line(&tool_result, &mut s);
+        assert_eq!(s.compactions, 0, "the word is not the event");
+    }
+
+    /// The boundary line carries no `usage` block, so the usage fast-path would reject it
+    /// before it was ever parsed. Guards the ordering inside `fold_line`.
+    #[test]
+    fn the_boundary_survives_the_usage_fast_path() {
+        let line = compact_boundary("manual");
+        assert!(!line.contains("\"usage\""), "fixture must not smuggle in a usage block");
+        let mut s = scan();
+        fold_line(&line, &mut s);
+        assert_eq!(s.compactions, 1, "a line with no usage block still reaches the counter");
     }
 
     #[test]
