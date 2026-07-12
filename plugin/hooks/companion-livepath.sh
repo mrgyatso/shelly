@@ -65,7 +65,17 @@ if [ -n "$existing" ]; then
   [ -n "$project" ] || project="$slug"
   [ -n "$is_repo" ] || is_repo=0
   [ -n "$unit_key" ] || unit_key="$slug"
-  root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); [ -n "$root" ] || root="$cwd"
+  # The ROOT is frozen too — and may have been ADOPTED mid-session (a homeless session
+  # that ran `git init` and graduated off the Home shelf). Re-deriving it from the
+  # current cwd would silently UN-adopt on the next compact/resume and drop the session
+  # back into Home. So prefer the root already recorded for this stem in
+  # session-dirs.json; only derive from cwd when there is no record yet.
+  root=$(STEM="$stem" DIRS="${HOME}/.claude/companion/session-dirs.json" node -e '
+    try{var m=JSON.parse(require("fs").readFileSync(process.env.DIRS,"utf8"))||{};
+    process.stdout.write(m[process.env.STEM]||"");}catch(e){}' 2>/dev/null)
+  if [ -z "$root" ]; then
+    root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null); [ -n "$root" ] || root="$cwd"
+  fi
   trace livepath reuse "shortid=$shortid" "cwd=$cwd" "existing=$existing" "slug=$slug" "is_repo=$is_repo" "unit_key=$unit_key"
 else
   gitroot=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
@@ -77,7 +87,15 @@ else
   # Unit identity: a session belongs to its PROJECT DIRECTORY (unit_key = slug),
   # repo or not — so every session that STARTS in one folder shares one unit (home,
   # artifacts, rail group) and the rail switches between that folder's sessions.
+  #
+  # $HOME is the exception: it is not a project, it is where the user lives. Keying it
+  # by slug names a "project" after the user's USERNAME and collapses every unrelated
+  # ~-launched session into it. Home-rooted sessions share one reserved HOME unit
+  # instead (the Board's HOME_UNIT / "Home" shelf), which they GRADUATE out of the
+  # moment they establish a real root — see companion-adopt.cjs. The slug still names
+  # the live FILE (identity is frozen per session), only the unit changes.
   unit_key="$slug"
+  [ "$root" = "$HOME" ] && unit_key="__home__"
   live_path="${live_dir}/${slug}--${shortid}.json"
   trace livepath fresh "shortid=$shortid" "cwd=$cwd" "gitroot=$gitroot" "root=$root" "slug=$slug" "is_repo=$is_repo" "unit_key=$unit_key"
 fi

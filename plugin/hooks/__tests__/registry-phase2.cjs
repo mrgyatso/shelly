@@ -18,6 +18,12 @@ function ok(c, m) { if (c) { pass++; console.log("  ✓ " + m); } else { fail++;
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "cmp-p2-"));
 fs.mkdirSync(path.join(home, ".claude", "companion", "logs"), { recursive: true });
+// Hermetic: track external terminals in the sandbox, and don't inherit the developer
+// shell's COMPANION_SESSION — without these the hook bails as an untracked terminal
+// on CI (no Companion app) while silently passing on a dev machine.
+fs.writeFileSync(path.join(home, ".claude", "companion", "external-terminals"), "on");
+const baseEnv = { ...process.env, HOME: home, COMPANION_TRACE: "1" };
+delete baseEnv.COMPANION_SESSION;
 const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cmp-p2-repo-")));
 execFileSync("git", ["init", "-q"], { cwd: repo });
 const SID = "deadbeef-2222-3333-4444-555566667777";
@@ -25,7 +31,7 @@ const SID = "deadbeef-2222-3333-4444-555566667777";
 // 1. Register via the real SessionStart hook.
 execFileSync("sh", [path.join(HOOKS, "companion-session")], {
   input: JSON.stringify({ cwd: repo, session_id: SID }),
-  env: { ...process.env, HOME: home, COMPANION_TRACE: "1" },
+  env: baseEnv,
   encoding: "utf8",
 });
 const recPath = path.join(home, ".claude", "companion", "sessions", SID + ".json");
@@ -39,7 +45,7 @@ const artifact = path.join(home, ".claude", "companion", "artifacts", "demo.html
 fs.mkdirSync(path.dirname(artifact), { recursive: true });
 fs.writeFileSync(artifact, "<html></html>");
 execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), artifact, liveDir, indexPath], {
-  env: { ...process.env, HOME: home, SID, COMPANION_TRACE: "1" },
+  env: { ...baseEnv, SID },
   encoding: "utf8",
 });
 ok(fs.existsSync(indexPath), "index stamped");
@@ -63,7 +69,7 @@ const art2 = path.join(home, ".claude", "companion", "artifacts", "legacy.html")
 fs.writeFileSync(art2, "<html></html>");
 // Seed a live file so the shortid glob has a unit_key to stamp (legacy path).
 execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), art2, liveDir, indexPath], {
-  env: { ...process.env, HOME: home, SID: "", COMPANION_TRACE: "1" },
+  env: { ...baseEnv, SID: "" },
   encoding: "utf8",
 });
 const idx2 = JSON.parse(fs.readFileSync(indexPath, "utf8"));

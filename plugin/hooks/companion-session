@@ -96,6 +96,23 @@ trace session start "sid=$shortid" "cwd=$cwd" "live=$live_path" "project=$projec
 live_dir=$(dirname "$live_path")
 mkdir -p "$live_dir" 2>/dev/null
 
+# 1a-bis. THE HOMELESS LATCH. A session rooted in $HOME has no project of its own yet: it
+#     sits on the shared Home shelf and is allowed to GRADUATE, exactly once, the first
+#     time it writes into a real git repo (companion-adopt.cjs, from the Write/Edit hook).
+#     The marker IS that permission — no marker means "already rooted", and rooted is
+#     terminal, so a session can never adopt twice or wander between projects.
+#     Its other job is a cost guard: companion-hook skips the adoption path entirely when
+#     this dir is empty, so a machine whose sessions are all in real repos pays nothing.
+#     Cleared on resume of an already-adopted session (root moved off $HOME).
+homeless_dir="${HOME}/.claude/companion/homeless"
+if [ "$unit_key" = "__home__" ]; then
+  mkdir -p "$homeless_dir" 2>/dev/null
+  : > "${homeless_dir}/${shortid}" 2>/dev/null
+  trace session homeless "sid=$shortid" "root=$root"
+else
+  rm -f "${homeless_dir}/${shortid}" 2>/dev/null
+fi
+
 # 1. Seed an initial stub if this instance has no file yet (resume/compact reuse
 #    the same session_id, so they find the existing file and leave it untouched).
 #    is_repo + unit_key let the Board group sessions into a per-UNIT home; the
@@ -203,6 +220,13 @@ REGISTRY_PRUNE_DAYS=30 LIVE_DIR="$live_dir" CMP_DIR="${HOME}/.claude/companion" 
       if (changed) { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t,p); }
     } catch(e){}
   }
+  // homeless/<shortid> latches: drop any whose live session is gone, so a crashed
+  // home session cannot leave a marker behind that keeps the adoption path (and its
+  // node spawn) armed on every Write forever.
+  try {
+    const hd=path.join(cmp,"homeless");
+    for (const f of fs.readdirSync(hd)) if (!liveShort.has(f)) { try { fs.rmSync(path.join(hd,f)); } catch(e){} }
+  } catch(e){}
   // dismissed.json is an ARRAY of stems
   try {
     const p=path.join(cmp,"dismissed.json");

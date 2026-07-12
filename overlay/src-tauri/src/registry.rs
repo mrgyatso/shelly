@@ -52,30 +52,57 @@ pub fn read_record(session_id: &str) -> Option<serde_json::Value> {
     serde_json::from_str(&text).ok()
 }
 
-/// Resolve a session's authoritative `unit_key` from its record, or `None` if there is no
+/// A session's frozen identity: the fields the Board GROUPS and LABELS by. Every one of
+/// them is recorded once at SessionStart, so none may be taken from the live file — that
+/// file is rewritten by the model each turn, and a model that fat-fingers `project` into a
+/// freeform description would otherwise re-home and re-title its own tile.
+pub struct Identity {
+    pub unit_key: String,
+    pub project: Option<String>,
+    pub is_repo: Option<bool>,
+}
+
+/// Resolve a session's authoritative identity from its record, or `None` if there is no
 /// record yet (caller falls back to the old derivation in Phase 2). Emits a
 /// `registry/resolve` | `registry/resolve-miss` trace breadcrumb so the oracle shows which
 /// road each routing took.
-pub fn resolve_unit(session_id: &str) -> Option<String> {
-    let unit = read_record(session_id)
-        .as_ref()
-        .and_then(|v| v.get("unit_key"))
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
+pub fn resolve_identity(session_id: &str) -> Option<Identity> {
+    let rec = read_record(session_id);
+    let str_field = |k: &str| {
+        rec.as_ref()
+            .and_then(|v| v.get(k))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    };
+    // The record is only an identity if it names a unit — a record without one resolves to
+    // nothing rather than stamping a half-identity over the live file's values.
+    let id = str_field("unit_key").map(|unit_key| Identity {
+        unit_key,
+        project: str_field("project"),
+        is_repo: rec
+            .as_ref()
+            .and_then(|v| v.get("is_repo"))
+            .and_then(|v| v.as_bool()),
+    });
     crate::trace::emit(
         "registry",
-        if unit.is_some() {
-            "resolve"
-        } else {
-            "resolve-miss"
-        },
+        if id.is_some() { "resolve" } else { "resolve-miss" },
         &[
             ("session_id", &safe_id(session_id)),
-            ("unit_key", unit.as_deref().unwrap_or("")),
+            (
+                "unit_key",
+                id.as_ref().map(|i| i.unit_key.as_str()).unwrap_or(""),
+            ),
         ],
     );
-    unit
+    id
+}
+
+/// Resolve a session's authoritative `unit_key` alone — the artifact-routing caller, which
+/// needs the unit and nothing else.
+pub fn resolve_unit(session_id: &str) -> Option<String> {
+    resolve_identity(session_id).map(|i| i.unit_key)
 }
 
 /// The provider recorded for a session — "claude" or "codex" — or `None` when the

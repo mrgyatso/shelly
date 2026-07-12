@@ -1,0 +1,66 @@
+name: Board + hook tests
+
+# The Board's TypeScript checks and the plugin's hook-integration suites ran in NO
+# workflow at all until now — `rust-tests.yml` covers src-tauri, and the release
+# workflows only `npm ci && npm run build`. A unit test that runs nowhere is
+# documentation (the same argument that workflow makes for cargo), and these two suites
+# are the whole safety net under session identity: which shelf a session lands on, and
+# whether a homeless session graduates correctly when it runs `git init`.
+#
+# `tsc --noEmit` is not redundant with the tests. board.ts is module-scoped and mounts
+# the Tauri webview at import, so the type-checker is the only thing that ever looks at
+# the wiring between it and the pure logic in `unit-identity.ts` / `ingest-logic.ts`.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'overlay/src/**'
+      - 'overlay/scripts/**'
+      - 'overlay/package.json'
+      - 'overlay/package-lock.json'
+      - 'overlay/tsconfig.json'
+      - 'plugin/hooks/**'
+      - '.github/workflows/js-tests.yml'
+  pull_request:
+    paths:
+      - 'overlay/src/**'
+      - 'overlay/scripts/**'
+      - 'overlay/package.json'
+      - 'overlay/package-lock.json'
+      - 'overlay/tsconfig.json'
+      - 'plugin/hooks/**'
+      - '.github/workflows/js-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tsc + Board checks + hook suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: overlay
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The Board's checks run as TypeScript directly under
+          # `node --experimental-strip-types`, which needs Node 22+.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: overlay/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Board checks + plugin hook suites
+        # `npm test` runs the pure-logic checks (ingest, sibling-unread, compact-state,
+        # unit-identity) and then the hook suites, which drive the REAL shell+node hook
+        # path under a sandboxed HOME. Those shell out to `git init`, which the runner has.
+        run: npm test

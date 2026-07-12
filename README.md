@@ -64,7 +64,9 @@ One command, on either platform — from a factory-fresh Mac or a fresh Ubuntu b
 curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash
 ```
 
-It detects your platform, checks for Node 18+, Claude Code and the app (plus Homebrew on macOS), offers to install whatever is missing, and then wires the plugin. On macOS it installs the app from the Homebrew cask; on Ubuntu/Debian it pulls the `.deb` for your architecture from the latest release. Everything it does is skipped on a re-run, so it is safe to run twice. Two flags are worth knowing: `--check` reports what is missing and changes nothing, and `--yes` accepts every install without asking (needed when there is no terminal to prompt on).
+It detects your platform, checks for Node 18+, Claude Code and the app (plus Homebrew on macOS), offers to install whatever is missing, and then wires the plugin. On macOS it installs the app from the Homebrew cask; on Ubuntu/Debian it pulls the `.deb` for your architecture from the latest release. Two flags are worth knowing: `--check` reports what is missing and changes nothing, and `--yes` accepts every install without asking (needed when there is no terminal to prompt on).
+
+Re-running it is safe — and re-running it is also how you upgrade. See [Updating](#updating).
 
 The one thing it cannot do for you is sign you in — that is a browser login. If Claude Code has never been authenticated, the installer stops, tells you to run `claude` and finish the login, and asks you to run it again. The second run picks up where it left off.
 
@@ -156,6 +158,29 @@ companion setup
 If your distro has no AppImage support out of the box, install `libfuse2` (Ubuntu 22.04+: `sudo apt install libfuse2`).
 
 </details>
+
+## Updating
+
+The app does not update itself. Run the same one-liner again:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash
+```
+
+It compares what you have against the [latest release](https://github.com/mrgyatso/claude-code-companion/releases/latest) and offers to upgrade the app when it is behind — on macOS through the Homebrew cask, on Ubuntu/Debian through the `.deb` for your architecture. It then hands off to `companion setup`, which refreshes the plugin.
+
+Both halves matter, because they move independently: the app ships as a release asset, while the plugin is fetched from the marketplace. A newer app does not bring a newer plugin with it, and `companion setup` alone will not update the app. The one-liner does both.
+
+`--check` tells you where you stand without changing anything:
+
+```
+  ✓ Companion app   /usr/bin/companion
+  ·   0.6.0 is behind 0.6.1
+```
+
+Restart any `claude` session you had open afterwards, so it picks up the refreshed plugin.
+
+An AppImage or a build from source is not managed by the installer — it leaves those alone. Upgrade them the way you installed them.
 
 ## First launch
 
