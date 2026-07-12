@@ -1060,33 +1060,28 @@ function parseState(json: string): LiveState {
   }
 }
 
+/** The shared unit every $HOME-launched session lands in — the "Home" shelf. Sessions
+ *  here have no project of their own yet; the rail tells them apart by their
+ *  first-prompt title (see sessionLabel), not by a folder name. A session LEAVES this
+ *  unit for good once it establishes a real root (`git init`) — see companion-adopt. */
+const HOME_UNIT = "__home__";
+
 /**
- * The UNIT a source belongs to. The hook-emitted `unit_key` is AUTHORITATIVE
- * (the digest filename keys off it); we derive only as a fallback for pre-hook
- * sessions: a non-repo session is its own unit (its stem), a repo session keys
- * by its project slug so two agents in one repo collapse to one unit.
+ * The UNIT a source belongs to — always a function of its DIRECTORY, never of any
+ * label the agent wrote. That is the whole rule: `unit_dir` is written by the hook and
+ * is agent-proof, whereas `project` is a cosmetic field the agent rewrites freely. Key
+ * a unit off the label and a session TELEPORTS between units the moment its agent
+ * renames itself (the whatnot-api → gyatso bug). So: directory in, unit out.
  */
 function unitKeyOf(s: LiveSource): string {
-  // A session launched from $HOME is NOT a shared project. Without this, every
-  // ~-launched session collapses into one "gyatso" unit (basename of $HOME) — and an
-  // agent's cosmetic `project` label ("whatnot-api") floats over a unit whose real
-  // dir is still ~, so "+ session here" spawns in ~ and the card reverts to the home
-  // slug the moment the labelling session dies (the whatnot-api → gyatso bug). Give
-  // each home-rooted session its OWN unit (its stem); its display name still comes
-  // from `project`, so the card can read "whatnot-api" while standing alone.
-  if (isHomeRooted(s)) return s.source;
-  // Otherwise a session belongs to its PROJECT, keyed by the project directory (the
-  // source's `project` basename, NOT the stored unit_key — so plugin-cache drift in
-  // unit_key can't split one project across units). This applies to NON-repo dirs
-  // too: a second `claude` opened in the same folder (e.g. `clipping`) must land in
-  // the EXISTING unit, not clone a fresh tab per session. Per-session identity lives
-  // in the rail's session switcher, not the unit key.
+  // $HOME is not a project — it's where you live. Every ~-launched session shares the
+  // one "Home" shelf rather than minting a unit named after the user's username.
+  if (isHomeRooted(s)) return HOME_UNIT;
   return sourceProjectKey(s);
 }
 
-/** True when this session's recorded project root is the user's $HOME — i.e. it was
- *  launched from ~ and has no real project directory of its own, so it must stand as
- *  its own unit rather than merge into a shared home card. */
+/** True when this session's recorded project root is still the user's $HOME — i.e. it
+ *  was launched from ~ and has not yet adopted a project directory of its own. */
 function isHomeRooted(s: LiveSource): boolean {
   if (!homeDir) return false;
   const dir = normalizeDir(parseState(s.json).unit_dir);
@@ -1101,14 +1096,16 @@ function isScratchDir(dir: string): boolean {
   return /^\/(private\/)?tmp(\/|$)|^\/var\/folders\//.test(dir);
 }
 
-/** An INCIDENTAL unit the roster should ignore entirely: a bare session launched in
- *  $HOME (an ad-hoc "+ New session", not a project the user opened deliberately) or one
- *  rooted in a scratch/temp dir. Kept off the roster per user preference — "if I wanted
- *  it in here I would have run it in here." Deliberate `Start from Folder` sessions in a
- *  real project dir (repo or not) are NOT ephemeral and stay. Cloud units never are. */
+/** An INCIDENTAL unit the roster should ignore entirely: one rooted in a scratch/temp
+ *  dir. Those are genuinely throwaway — "if I wanted it in here I would have run it in
+ *  here." Cloud units never are.
+ *
+ *  $HOME used to be lumped in here, which is what made ~-launched sessions vanish: the
+ *  Board hid them while SessionStart still told their agent to write artifacts, so the
+ *  agent filed cards into a unit that was never rendered. Home is now a real, visible
+ *  shelf (HOME_UNIT) that a session graduates OUT of on `git init`. Scratch stays gone. */
 function isEphemeralUnit(unitKey: string, sources: LiveSource[]): boolean {
   if (isCloudUnit(unitKey)) return false;
-  if (sources.some(isHomeRooted)) return true;
   return sources.some((s) => {
     const dir = normalizeDir(parseState(s.json).unit_dir);
     return dir !== null && isScratchDir(dir);
@@ -1290,6 +1287,9 @@ function unitName(unitKey: string, sources: LiveSource[]): string {
   }
   const custom = unitNames.get(unitKey);
   if (custom) return custom; // user-assigned name wins over the folder/slug label
+  // The Home shelf is named for what it IS, not for the folder it sits in — whose
+  // basename is the user's username, which is what made it read as a bogus project.
+  if (unitKey === HOME_UNIT) return "Home";
   const fresh = sources[0];
   return fresh ? (parseState(fresh.json).project || unitKey) : unitKey;
 }
@@ -3063,10 +3063,23 @@ function projectSlug(project?: string | null): string | null {
   return base || null;
 }
 
-/** The project-match key for a source — the basename of its live `project`
- *  field, falling back to the stem's slug prefix. */
+/** The project-match key for a source — the basename of its `unit_dir`, the REAL
+ *  directory the hook recorded for this session.
+ *
+ *  This deliberately does NOT key off the live `project` field. `project` is written by
+ *  the agent and is cosmetic; keying a unit off it lets a session hop to another unit
+ *  the instant its agent renames itself. `unit_dir` comes from session-dirs.json (hook
+ *  -written, agent-proof) and is the same basename `project` normally holds — verified
+ *  identical across every live session — so this is a no-op except where the label had
+ *  drifted, which is exactly the case it fixes.
+ *
+ *  Falls back to `project`, then the stem's slug prefix, for pre-hook sources that carry
+ *  no unit_dir. */
 function sourceProjectKey(s: LiveSource): string {
-  const fromJson = projectSlug(parseState(s.json).project ?? undefined);
+  const st = parseState(s.json);
+  const fromDir = projectSlug(normalizeDir(st.unit_dir) ?? undefined);
+  if (fromDir) return fromDir;
+  const fromJson = projectSlug(st.project ?? undefined);
   if (fromJson) return fromJson;
   const i = s.source.indexOf("--");
   return i >= 0 ? s.source.slice(0, i) : s.source;
