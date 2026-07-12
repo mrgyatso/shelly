@@ -81,6 +81,40 @@ else
   say "plugin      ${PLUGIN} (installed)"
 fi
 
+# 4b. Codex CLI (optional). Codex's plugin system consumes this same Claude-format
+#     marketplace and plugin as-is, and its hooks system runs the same hook scripts —
+#     so wiring it is the same two steps under the other CLI. Entirely skipped when
+#     codex isn't installed; never fatal (Claude is the primary path).
+#     Same never-re-`add` rule as step 3: an add would repoint a contributor's local
+#     marketplace source, so a configured one only ever gets `upgrade`d (which is a
+#     no-op for local sources).
+if command -v codex >/dev/null 2>&1; then
+  if codex plugin marketplace list 2>/dev/null | grep -q "^${MARKETPLACE}[[:space:]]"; then
+    codex plugin marketplace upgrade "${MARKETPLACE}" >/dev/null 2>&1 \
+      && say "codex mkt   ${MARKETPLACE} (refreshed)" \
+      || say "codex mkt   ${MARKETPLACE} (configured)"
+  else
+    if codex plugin marketplace add "https://github.com/mrgyatso/claude-code-companion" >/dev/null 2>&1; then
+      say "codex mkt   ${MARKETPLACE} (added)"
+    else
+      warn "codex mkt   could not add the marketplace — wire it by hand:"
+      warn "            codex plugin marketplace add https://github.com/mrgyatso/claude-code-companion"
+    fi
+  fi
+  if codex plugin list 2>/dev/null | grep -q "^${PLUGIN}[[:space:]]"; then
+    say "codex plug  ${PLUGIN} (installed)"
+  else
+    if codex plugin add "${PLUGIN}" >/dev/null 2>&1; then
+      say "codex plug  ${PLUGIN} (installed)"
+    else
+      warn "codex plug  could not install — run by hand: codex plugin add ${PLUGIN}"
+    fi
+  fi
+  say "codex       one-time step: run /hooks inside codex and trust the companion hooks"
+else
+  say "codex       not installed — skipped (Codex support wires itself when codex is on PATH)"
+fi
+
 # 5. Watched dirs — the overlay polls these; create them so the first artifact
 #    write doesn't race a missing directory.
 mkdir -p "$ARTIFACTS_DIR" "$STATE_DIR/live"

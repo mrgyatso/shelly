@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|apply_patch|shell|shell_command|unified_exec|exec_command",
         "hooks": [
           {
             "type": "command",

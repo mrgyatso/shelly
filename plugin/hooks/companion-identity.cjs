@@ -143,6 +143,10 @@ function register(rec, opts) {
     project: rec.project || "",
     created_ms: Date.now(),
     owned_tab: rec.owned_tab || null,
+    // Which CLI runs this session ("claude" | "codex"). Absent on pre-Codex records,
+    // so readers treat a missing value as "claude". Frozen like the rest: the CLI
+    // that starts a session is the CLI that resumes it.
+    provider: rec.provider || "claude",
   };
 
   // Atomic create: temp + rename, so a concurrent reader never sees a partial file.
@@ -231,12 +235,12 @@ module.exports = { register, resolveUnit, readRecord, appendEvent, routeArtifact
 
 // CLI form for the sh hooks (companion-session). Mirrors companion-trace.cjs's
 // require.main pattern. Positional args keep the sh call site simple:
-//   register <session_id> <unit_key> <is_repo> <project_root> <project> [owned_tab]
+//   register <session_id> <unit_key> <is_repo> <project_root> <project> [owned_tab] [provider]
 // is_repo is the string "1"/"0" the sh hooks already carry.
 if (require.main === module) {
   const [cmd, ...rest] = process.argv.slice(2);
   if (cmd === "register") {
-    const [session_id, unit_key, is_repo, project_root, project, owned_tab] = rest;
+    const [session_id, unit_key, is_repo, project_root, project, owned_tab, provider] = rest;
     register({
       session_id,
       unit_key,
@@ -244,6 +248,7 @@ if (require.main === module) {
       project_root,
       project,
       owned_tab: owned_tab || null,
+      provider: provider || "claude",
     });
   } else if (cmd === "resolve") {
     const unit = resolveUnit(rest[0]);

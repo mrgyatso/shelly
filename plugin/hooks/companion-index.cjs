@@ -97,6 +97,7 @@ if (!rec) {
       project_root: f[5] || "",
       project: f[1] || "",
       owned_tab: process.env.COMPANION_SESSION || null,
+      provider: process.env.PROVIDER || "claude",
     });
     rec = identity.readRecord(sessionId);
     trace.emit("index", "late-register", { corr: key, unit_key: (rec && rec.unit_key) || "" });

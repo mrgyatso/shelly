@@ -152,6 +152,7 @@ pub fn run() {
             pty::write_pty,
             pty::resize_pty,
             pty::close_pty,
+            pty::codex_available,
             sessions::list_recent_sessions,
             usage::session_usage,
             hub::read_live_from_hub,

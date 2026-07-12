@@ -51,32 +51,40 @@ fi
 # Seam to the app: if the overlay CLI isn't installed, do nothing.
 command -v companion >/dev/null 2>&1 || { trace hook no-companion-cli "corr=${_t_fp:-}"; exit 0; }
 
-# Pull tool_input.file_path + session_id + cwd out of the payload (Write/Edit carry them).
-# cwd feeds companion-index's LATE REGISTRATION only (a session with no registry record);
-# a registered session's identity comes from its frozen record, never from cwd.
-fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log((JSON.parse(d).tool_input||{}).file_path||"")}catch(e){}})' 2>/dev/null)
+# Pull the artifact path(s) + session_id + cwd out of the payload. Claude's Write/Edit
+# carry the target as tool_input.file_path; Codex's apply_patch/shell tools embed it in
+# patch/command text — companion-artifact-paths.cjs owns that difference and prints one
+# path per line. cwd feeds companion-index's LATE REGISTRATION only (a session with no
+# registry record); a registered session's identity comes from its frozen record.
+paths=$(printf '%s' "$payload" | ARTIFACTS_DIR="$ARTIFACTS_DIR" node "$SCRIPT_DIR/companion-artifact-paths.cjs" 2>/dev/null)
 SID=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})' 2>/dev/null)
 CWD=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||"")}catch(e){}})' 2>/dev/null)
+# Which CLI produced this session — codex transcripts live under ~/.codex (rollout-*.jsonl),
+# Claude's under ~/.claude/projects. Feeds late registration's provider field only.
+PROVIDER=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const t=JSON.parse(d).transcript_path||"";console.log(/\/\.codex\/|\/rollout-[^/]*\.jsonl$/.test(t)?"codex":"claude")}catch(e){console.log("claude")}})' 2>/dev/null)
 
 # Push-pop disabled: artifacts no longer spawn their own OS window. The Board is
 # the single surface — it ingests artifacts as tiles inside their session via the
 # live poll. We DO stamp the routing index here so the Board groups the artifact
 # under the WRITING session's unit (keyed on session_id; unit_key resolved from
 # that session's live file — cwd is volatile, so never derive from it).
-case "$fp" in
-  "$ARTIFACTS_DIR"/home.html|"$ARTIFACTS_DIR"/home.*.html)
-    # Agent-authored Hub/unit-home surfaces — hosted by the Board, never indexed
-    # as one-off artifacts. This arm sits ABOVE the *.html arm (case matches top-down).
-    trace hook skip-index "corr=$fp" "reason=unit-home"
-    ;;
-  "$ARTIFACTS_DIR"/_*.html)
-    trace hook skip-index "corr=$fp" "reason=diagnostic-scaffold"
-    ;;
-  "$ARTIFACTS_DIR"/*.html)
-    trace hook index-spawn "corr=$fp"
-    SID="$SID" CWD="$CWD" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
-    trace hook index-done "corr=$fp"
-    ;;
-esac
+printf '%s\n' "$paths" | while IFS= read -r fp; do
+  [ -n "$fp" ] || continue
+  case "$fp" in
+    "$ARTIFACTS_DIR"/home.html|"$ARTIFACTS_DIR"/home.*.html)
+      # Agent-authored Hub/unit-home surfaces — hosted by the Board, never indexed
+      # as one-off artifacts. This arm sits ABOVE the *.html arm (case matches top-down).
+      trace hook skip-index "corr=$fp" "reason=unit-home"
+      ;;
+    "$ARTIFACTS_DIR"/_*.html)
+      trace hook skip-index "corr=$fp" "reason=diagnostic-scaffold"
+      ;;
+    "$ARTIFACTS_DIR"/*.html)
+      trace hook index-spawn "corr=$fp"
+      SID="$SID" CWD="$CWD" PROVIDER="$PROVIDER" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
+      trace hook index-done "corr=$fp"
+      ;;
+  esac
+done
 
 exit 0

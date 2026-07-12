@@ -17,6 +17,7 @@ const suites = [
   "registry-phase5.cjs",
   "artifact-gate.cjs",
   "charset.cjs",
+  "codex-provider.cjs",
 ];
 let failed = 0;
 for (const s of suites) {

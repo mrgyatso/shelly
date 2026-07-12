@@ -78,6 +78,18 @@ pub fn resolve_unit(session_id: &str) -> Option<String> {
     unit
 }
 
+/// The provider recorded for a session — "claude" or "codex" — or `None` when the
+/// session is unregistered or its record predates the provider field (readers treat
+/// that as claude, the only provider that existed before the field did).
+pub fn resolve_provider(session_id: &str) -> Option<String> {
+    read_record(session_id)
+        .as_ref()
+        .and_then(|v| v.get("provider"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +117,29 @@ mod tests {
         write_record(&tmp, sid, "my-repo");
         let got = with_home(&tmp, || resolve_unit(sid));
         assert_eq!(got.as_deref(), Some("my-repo"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn resolves_provider_and_defaults_to_none_when_absent() {
+        let tmp = std::env::temp_dir().join(format!("cmp-reg-prov-{}", std::process::id()));
+        let dir = tmp.join(".claude/companion/sessions");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("codex-sid.json"),
+            r#"{"session_id":"codex-sid","unit_key":"repo","provider":"codex"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("old-sid.json"),
+            r#"{"session_id":"old-sid","unit_key":"repo"}"#,
+        )
+        .unwrap();
+        let (codex, old) = with_home(&tmp, || {
+            (resolve_provider("codex-sid"), resolve_provider("old-sid"))
+        });
+        assert_eq!(codex.as_deref(), Some("codex"));
+        assert_eq!(old, None); // pre-provider record → caller treats as claude
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

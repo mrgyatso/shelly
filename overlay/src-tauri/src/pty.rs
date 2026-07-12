@@ -95,15 +95,16 @@ fn user_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| fallback.into())
 }
 
-/// Locate the user's `claude` binary. Mirrors TUICommander's detection: ask the
-/// login shell (so nvm / asdf / homebrew PATHs resolve even when the daemon was
-/// launched by launchd with a minimal PATH), then fall back to known install
-/// locations — including `~/.local/bin` (modern installer) and
-/// `~/.claude/local` (migrate-installer).
-fn find_claude() -> Option<String> {
+/// Locate an agent CLI (`claude` or `codex`). Mirrors TUICommander's detection:
+/// ask the login shell (so nvm / asdf / homebrew PATHs resolve even when the
+/// daemon was launched by launchd with a minimal PATH), then fall back to known
+/// install locations — including `~/.local/bin` (modern installer),
+/// `~/.claude/local` (claude migrate-installer), and `~/.local/node/bin`
+/// (a user-prefix node that carries a global npm codex).
+fn find_agent(bin: &str) -> Option<String> {
     let shell = user_shell();
     if let Ok(out) = std::process::Command::new(&shell)
-        .args(["-l", "-c", "command -v claude"])
+        .args(["-l", "-c", &format!("command -v {bin}")])
         .output()
     {
         if out.status.success() {
@@ -116,12 +117,13 @@ fn find_claude() -> Option<String> {
 
     let home = std::env::var("HOME").unwrap_or_default();
     [
-        format!("{home}/.local/bin/claude"),
-        format!("{home}/.claude/local/claude"),
-        "/opt/homebrew/bin/claude".to_string(),
-        "/usr/local/bin/claude".to_string(),
-        "/usr/bin/claude".to_string(),
-        format!("{home}/.npm-global/bin/claude"),
+        format!("{home}/.local/bin/{bin}"),
+        format!("{home}/.claude/local/{bin}"),
+        format!("{home}/.local/node/bin/{bin}"),
+        format!("/opt/homebrew/bin/{bin}"),
+        format!("/usr/local/bin/{bin}"),
+        format!("/usr/bin/{bin}"),
+        format!("{home}/.npm-global/bin/{bin}"),
     ]
     .into_iter()
     .find(|p| std::path::Path::new(p).exists())
@@ -234,12 +236,17 @@ fn shell_quote(path: &str) -> String {
 /// foreground process group; Ctrl-C from the tty then reaches `claude` alone and
 /// never tears down the surrounding shell. The `;` (not `&&`) drops to the shell
 /// regardless of how `claude` exited.
-fn claude_then_shell_script(claude: &str, shell: &str, resume: Option<&str>) -> String {
+fn claude_then_shell_script(agent_path: &str, shell: &str, resume: Option<&str>, agent: &str) -> String {
     let launch = match resume {
         // Rejoin a specific prior session by its full id (used when reopening a
-        // session that was closed off the Board roster).
-        Some(id) => format!("{} --resume {}", shell_quote(claude), shell_quote(id)),
-        None => shell_quote(claude),
+        // session that was closed off the Board roster). The resume verb is the
+        // one CLI-visible difference between the agents: `claude --resume <id>`
+        // vs `codex resume <id>`.
+        Some(id) if agent == "codex" => {
+            format!("{} resume {}", shell_quote(agent_path), shell_quote(id))
+        }
+        Some(id) => format!("{} --resume {}", shell_quote(agent_path), shell_quote(id)),
+        None => shell_quote(agent_path),
     };
     // Between claude exiting and the drop-to-shell, proactively disable mouse
     // tracking + bracketed paste and restore the cursor/screen buffer. A `claude`
@@ -273,10 +280,19 @@ pub async fn spawn_pty(
     cols: u16,
     cwd: Option<String>,
     resume: Option<String>,
+    agent: Option<String>,
 ) -> Result<(), String> {
-    let claude = find_claude().ok_or_else(|| {
-        "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"
-            .to_string()
+    // Which agent CLI this tab embeds. "claude" (default) or "codex" — the
+    // provider recorded in the session's registry record at SessionStart, echoed
+    // back by the frontend on resume so a Codex session rejoins through codex.
+    let agent = match agent.as_deref() {
+        Some("codex") => "codex",
+        _ => "claude",
+    };
+    let agent_path = find_agent(agent).ok_or_else(|| match agent {
+        "codex" => "Codex CLI not found. Install it with: npm install -g @openai/codex".to_string(),
+        _ => "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"
+            .to_string(),
     })?;
 
     let pty_system = native_pty_system();
@@ -294,17 +310,24 @@ pub async fn spawn_pty(
     cmd.arg("-i");
     cmd.arg("-l");
     cmd.arg("-c");
-    cmd.arg(claude_then_shell_script(&claude, &shell, resume.as_deref()));
+    cmd.arg(claude_then_shell_script(&agent_path, &shell, resume.as_deref(), agent));
     inject_env(&mut cmd, &tab_id);
-    // A resume MUST run in the session's launch dir — the only place `claude --resume`
+    // A resume MUST run in the session's launch dir — the only place a resume
     // can find the transcript. The caller's cwd is the unit's `unit_dir`, which is the
     // GITROOT (for unit grouping) and so differs from the launch cwd for any session
     // started in a repo subdir (or after a mid-run `cd`). For a resume we therefore
     // resolve the authoritative dir from the transcript head and prefer it; otherwise
-    // (and on lookup miss) we fall back to the supplied cwd, then HOME.
+    // (and on lookup miss) we fall back to the supplied cwd, then HOME. (Codex records
+    // its own launch cwd in the rollout's session_meta line; same idea, different file.)
     let effective_cwd = resume
         .as_deref()
-        .and_then(crate::sessions::cwd_for_session)
+        .and_then(|id| {
+            if agent == "codex" {
+                crate::sessions::cwd_for_codex_session(id)
+            } else {
+                crate::sessions::cwd_for_session(id)
+            }
+        })
         .or(cwd);
     if let Some(dir) = effective_cwd {
         cmd.cwd(dir);
@@ -339,6 +362,13 @@ pub async fn spawn_pty(
         },
     );
     Ok(())
+}
+
+/// Whether the Codex CLI is installed on this machine — gates the Board's
+/// "+ New codex session" menu entries (checked once per menu open, frontend-cached).
+#[tauri::command]
+pub fn codex_available() -> bool {
+    find_agent("codex").is_some()
 }
 
 /// Write raw bytes (keystrokes, or a bracketed-paste turn) into a tab's PTY.
@@ -419,7 +449,7 @@ mod tests {
 
     #[test]
     fn launch_script_runs_claude_then_drops_to_shell() {
-        let s = claude_then_shell_script("/usr/bin/claude", "/bin/zsh", None);
+        let s = claude_then_shell_script("/usr/bin/claude", "/bin/zsh", None, "claude");
         // claude runs first (quoted), so a path with spaces can't word-split.
         assert!(s.starts_with("'/usr/bin/claude';"), "got: {s}");
         // then exec a fresh interactive login shell — no wrapper left lingering.
@@ -433,13 +463,27 @@ mod tests {
 
     #[test]
     fn launch_script_resumes_a_session_when_given_an_id() {
-        let s = claude_then_shell_script("/usr/bin/claude", "/bin/zsh", Some("sess-42"));
+        let s = claude_then_shell_script("/usr/bin/claude", "/bin/zsh", Some("sess-42"), "claude");
         // resume the exact prior session, id quoted so it can't word-split.
         assert!(
             s.starts_with("'/usr/bin/claude' --resume 'sess-42';"),
             "got: {s}"
         );
         assert!(s.contains("exec '/bin/zsh' -i -l"), "got: {s}");
+    }
+
+    #[test]
+    fn launch_script_resumes_codex_with_its_own_verb() {
+        // Codex spells it `codex resume <id>` (a subcommand, not a flag).
+        let s = claude_then_shell_script("/usr/bin/codex", "/bin/zsh", Some("0199a213-81c0"), "codex");
+        assert!(
+            s.starts_with("'/usr/bin/codex' resume '0199a213-81c0';"),
+            "got: {s}"
+        );
+        assert!(s.contains("exec '/bin/zsh' -i -l"), "got: {s}");
+        // and a plain codex spawn is just the binary.
+        let plain = claude_then_shell_script("/usr/bin/codex", "/bin/zsh", None, "codex");
+        assert!(plain.starts_with("'/usr/bin/codex';"), "got: {plain}");
     }
 
     #[test]
