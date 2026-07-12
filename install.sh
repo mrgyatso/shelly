@@ -111,7 +111,15 @@ else
     $CHECK_ONLY || ask "Install Node via apt? It will ask for your password." || die "Node 18+ is required."
     $CHECK_ONLY || {
       sudo apt-get update -qq && sudo apt-get install -y nodejs
-      node_ok || die "Node installed but still not 18+ — install a newer Node (e.g. via nodesource or nvm) and re-run."
+      # The distro's own `nodejs` is 18+ on Ubuntu 24.04 and Debian 12, but Ubuntu
+      # 22.04 — still the most common LTS — ships Node 12. Fall back to NodeSource's
+      # current LTS rather than dying on a box where apt "succeeded".
+      if ! node_ok; then
+        info "apt gave us Node $(node -v 2>/dev/null || echo 'none') — too old; fetching a current LTS from NodeSource"
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+      fi
+      node_ok || die "Node installed but still not 18+ — install one by hand (nvm, or deb.nodesource.com) and re-run."
       ok "Node $(node -v)"
     }
   fi
@@ -135,6 +143,18 @@ else
 fi
 
 # --- The app ------------------------------------------------------------------
+# The Linux branch can only install if the latest release actually carries a .deb
+# for this architecture — the Linux bundles are built by a separate CI job, so a
+# release can exist with macOS assets only. Resolve the URL up front so `--check`
+# can say so instead of promising a re-run that is guaranteed to fail.
+latest_deb_url() {
+  local arch
+  arch=$(dpkg --print-architecture)
+  curl -fsSL https://api.github.com/repos/mrgyatso/claude-code-companion/releases/latest \
+    | grep -o "\"browser_download_url\": *\"[^\"]*_${arch}\.deb\"" \
+    | head -1 | sed 's/.*"\(https[^"]*\)"/\1/'
+}
+
 # Linux: the .deb ships the CLI scripts as bundle resources; link `companion`
 # onto PATH from wherever the package put them (the exact libdir depends on the
 # bundler version, so probe the known layouts).
@@ -168,14 +188,16 @@ elif [ "$OS" = Darwin ]; then
   fi
 else
   info "The Companion app is missing"
+  deb_url=$(latest_deb_url || true)
+  if [ -z "$deb_url" ]; then
+    NO_LINUX_ASSET=true
+    info "  ...and the latest release has no $(dpkg --print-architecture) .deb to install"
+  fi
+  $CHECK_ONLY || [ -n "$deb_url" ] \
+    || die "no $(dpkg --print-architecture) .deb in the latest release — the Linux bundles have not shipped yet. Grab an AppImage or build from source: https://github.com/mrgyatso/claude-code-companion/releases/latest"
   $CHECK_ONLY || ask "Download the latest .deb from GitHub Releases and install it? It will ask for your password." \
     || die "The app is required."
   if ! $CHECK_ONLY; then
-    arch=$(dpkg --print-architecture)
-    deb_url=$(curl -fsSL https://api.github.com/repos/mrgyatso/claude-code-companion/releases/latest \
-      | grep -o "\"browser_download_url\": *\"[^\"]*_${arch}\.deb\"" \
-      | head -1 | sed 's/.*"\(https[^"]*\)"/\1/')
-    [ -n "$deb_url" ] || die "no ${arch} .deb in the latest release — Linux builds may not have shipped yet (check the Releases page)."
     deb_tmp=$(mktemp -t companion-overlay-XXXXXX.deb)
     curl -fsSL -o "$deb_tmp" "$deb_url"
     sudo apt-get install -y "$deb_tmp"
@@ -189,6 +211,15 @@ fi
 
 if $CHECK_ONLY; then
   say ""
+  if ${NO_LINUX_ASSET:-false}; then
+    say "${red}Re-running without --check will not fix this.${reset} The latest release carries no"
+    say "$(dpkg --print-architecture) .deb, so the installer has nothing to download. Use the AppImage"
+    say "from the Releases page, or build from source:"
+    say ""
+    say "      https://github.com/mrgyatso/claude-code-companion/releases/latest"
+    say ""
+    exit 1
+  fi
   say "Nothing was changed. Re-run without --check to install what's missing."
   exit 0
 fi
