@@ -29,7 +29,10 @@ import { handleSubmit } from "./submit";
 import { loadArtifactInto } from "./artifact-view";
 import { heroArtifactFor, effectsForRewrites } from "./ingest-logic";
 import {
+  abandonCompact,
+  beginCompact,
   compactBtn,
+  compactEntry,
   resolveCompact,
   COMPACT_DONE_MS,
   NO_COMPACT,
@@ -420,7 +423,8 @@ let meterBarEl: HTMLElement | null = null;
 let meterFillEl: HTMLElement | null = null;
 let meterTextEl: HTMLElement | null = null;
 let compactBtnEl: HTMLButtonElement | null = null;
-/** The Compact button's state — a typed `/compact` in flight, and one that just landed.
+/** Every session's Compact state, keyed by (unit, session) — sessions compact concurrently,
+ *  and a compaction running in one must not be disturbed by a `/compact` typed into another.
  *  The rules live in compact-logic.ts, where a check pins them. */
 let compactState: CompactState = NO_COMPACT;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
@@ -2762,7 +2766,7 @@ async function renderUnitMeter(unitKey: string | null): Promise<void> {
   // timer of its own. It also means a compaction can finish while the user is away in
   // another unit: the count comes from the whole transcript, so the watch still resolves
   // correctly the moment they come back to it.
-  const waiting = compactState.watch;
+  const before = compactEntry(compactState, unitKey, sessionId);
   compactState = resolveCompact(compactState, {
     unitKey,
     sessionId,
@@ -2771,7 +2775,8 @@ async function renderUnitMeter(unitKey: string | null): Promise<void> {
   });
   // It landed just now: take the button back out of "Compacted" on time, rather than
   // whenever the next poll happens to come round.
-  if (waiting && !compactState.watch && compactState.done) {
+  const after = compactEntry(compactState, unitKey, sessionId);
+  if (before?.kind === "watch" && after?.kind === "done") {
     window.setTimeout(() => void renderUnitMeter(currentUnitKey), COMPACT_DONE_MS);
   }
   paintCompactBtn(unitKey, sessionId, ownedTabForUnit(unitKey));
@@ -2824,16 +2829,17 @@ async function runCompact(): Promise<void> {
   // about to cause is the one that resolves the watch — not an older one.
   const baseline =
     (await invoke<SessionUsage | null>("session_usage", { sessionId }))?.compactions ?? 0;
-  compactState = { watch: { unitKey, sessionId, baseline, startedAt: Date.now() }, done: null };
+  compactState = beginCompact(compactState, { unitKey, sessionId, baseline, startedAt: Date.now() });
   paintCompactBtn(unitKey, sessionId, tabId);
 
   try {
     await submitIntoPty(tabId, "/compact");
   } catch (e) {
     // The keystroke never landed, so no compaction is coming and nothing will ever tick
-    // the count. Drop the watch now rather than let the button sit at "Compacting…" for
-    // the full timeout over a compaction that was never started.
-    compactState = NO_COMPACT;
+    // the count. Drop THIS session's watch rather than let its button sit at "Compacting…"
+    // for the full timeout — and only this one, since another session may well be
+    // mid-compaction and is none of our business.
+    compactState = abandonCompact(compactState, unitKey, sessionId);
     void renderUnitMeter(unitKey);
     console.error("compact: could not type /compact into the session", e);
   }

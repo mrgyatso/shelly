@@ -22,33 +22,39 @@
  * file, so it also survives a Board restart mid-compaction and catches auto-compactions
  * for free.
  *
- * WHY EVERY STATE IS SCOPED TO (unit, session): one button element serves every unit on
- * the Board. An unscoped "busy" flag paints "Compacting…" onto whatever unit the user
- * switches to next, and the finish then lands on the wrong one.
+ * WHY THE STATE IS A MAP KEYED BY (unit, session), and not one slot: sessions compact
+ * CONCURRENTLY. One button element serves every unit on the Board, so a single slot fails
+ * twice over — it paints "Compacting…" onto whatever unit the user switches to next, and,
+ * worse, starting a second `/compact` elsewhere silently EVICTS the first one's watch. When
+ * that first compaction then finishes, nothing is left to resolve it: its button quietly
+ * goes back to reading "Compact" while it is still running, which is the very bug this
+ * whole module exists to kill. Compactions take minutes, so starting one, moving to another
+ * session, and compacting that too is an ordinary thing to do. Each session owns its own
+ * entry, and nothing another session does can touch it.
  */
 
-/** A `/compact` that has been typed and has not landed yet. */
-export interface CompactWatch {
-  unitKey: string;
-  sessionId: string;
-  /** Compactions already in the transcript when we typed — the one we caused is the next. */
-  baseline: number;
-  startedAt: number;
+/** The key a session's compact state lives under. A NUL cannot occur in a unit key or a
+ *  session id, so no two pairs can collide by concatenation. */
+export function compactKey(unitKey: string, sessionId: string): string {
+  return `${unitKey}\u0000${sessionId}`;
 }
 
-/** A compaction that just landed, held on screen long enough to be read. */
-export interface CompactDone {
-  unitKey: string;
-  sessionId: string;
-  at: number;
-}
+/** One session's compact state. A session is either waiting on a compaction or showing the
+ *  one that just landed — never both, which is why this is a union and not two fields. */
+export type CompactEntry =
+  | {
+      kind: "watch";
+      /** Compactions already in the transcript when we typed — the one we caused is next. */
+      baseline: number;
+      startedAt: number;
+    }
+  | { kind: "done"; at: number };
 
-export interface CompactState {
-  watch: CompactWatch | null;
-  done: CompactDone | null;
-}
+/** Every session's compact state. Treated as immutable: each function below returns a new
+ *  Map rather than mutating, so a stale reference can never rewrite live state. */
+export type CompactState = ReadonlyMap<string, CompactEntry>;
 
-export const NO_COMPACT: CompactState = { watch: null, done: null };
+export const NO_COMPACT: CompactState = new Map();
 
 /** What the button shows. `ready` is the only enabled one. */
 export type CompactBtn = "busy" | "done" | "ready" | "unavailable";
@@ -65,44 +71,95 @@ export const COMPACT_WAIT_MS = 5 * 60 * 1000;
  *  away while it ran. */
 export const COMPACT_DONE_MS = 2500;
 
+/** What this one session has going on, or `null` for nothing. */
+export function compactEntry(
+  state: CompactState,
+  unitKey: string,
+  sessionId: string,
+): CompactEntry | null {
+  return state.get(compactKey(unitKey, sessionId)) ?? null;
+}
+
+/** A `/compact` has just been typed into this session. Touches only this session's entry —
+ *  a compaction already running in another session keeps its own. */
+export function beginCompact(
+  state: CompactState,
+  w: { unitKey: string; sessionId: string; baseline: number; startedAt: number },
+): CompactState {
+  const next = new Map(state);
+  next.set(compactKey(w.unitKey, w.sessionId), {
+    kind: "watch",
+    baseline: w.baseline,
+    startedAt: w.startedAt,
+  });
+  return next;
+}
+
+/** The `/compact` never reached the session (the keystroke failed), so no compaction is
+ *  coming and nothing will ever tick the count. Drop THIS session's watch — and only it. */
+export function abandonCompact(
+  state: CompactState,
+  unitKey: string,
+  sessionId: string,
+): CompactState {
+  const k = compactKey(unitKey, sessionId);
+  if (!state.has(k)) return state;
+  const next = new Map(state);
+  next.delete(k);
+  return next;
+}
+
 /** One meter poll, folded into the compact state.
  *
  *  A watch resolves on ANY new compaction, not only a `manual` one: if an auto-compact
- *  wins the race with the user's click, the context still got compacted and the button
- *  has nothing left to wait for.
+ *  wins the race with the user's click, the context still got compacted and the button has
+ *  nothing left to wait for.
  *
- *  Only ever resolves the watch for the session it was opened on, so a poll of some
- *  other session cannot finish (or time out) a compaction running elsewhere. */
+ *  Reads and writes only the polled session's entry, so a poll can neither finish nor time
+ *  out a compaction running in some other session. */
 export function resolveCompact(
   state: CompactState,
   poll: { unitKey: string; sessionId: string; compactions: number; now: number },
 ): CompactState {
-  const w = state.watch;
-  if (!w || w.unitKey !== poll.unitKey || w.sessionId !== poll.sessionId) return state;
+  const k = compactKey(poll.unitKey, poll.sessionId);
+  const e = state.get(k);
+  if (!e) return state;
 
-  if (poll.compactions > w.baseline) {
-    return { watch: null, done: { unitKey: w.unitKey, sessionId: w.sessionId, at: poll.now } };
+  if (e.kind === "done") {
+    // Its moment on screen has passed. Drop it, so the map cannot grow without bound.
+    if (poll.now - e.at >= COMPACT_DONE_MS) {
+      const next = new Map(state);
+      next.delete(k);
+      return next;
+    }
+    return state;
   }
-  if (poll.now - w.startedAt > COMPACT_WAIT_MS) {
-    return { watch: null, done: null }; // it is not coming — see COMPACT_WAIT_MS
+
+  if (poll.compactions > e.baseline) {
+    const next = new Map(state);
+    next.set(k, { kind: "done", at: poll.now });
+    return next;
+  }
+  if (poll.now - e.startedAt > COMPACT_WAIT_MS) {
+    const next = new Map(state); // it is not coming — see COMPACT_WAIT_MS
+    next.delete(k);
+    return next;
   }
   return state; // still running
 }
 
 /** What the button must show for the unit and session currently on screen.
  *
- *  `tabId` is null when the Board does not own the session's terminal, so it has
- *  nothing to type `/compact` into — that is `unavailable`, and it is the ONLY reason
- *  the button is greyed. A compaction in flight outranks it: the state is a fact about
- *  the session, not about which unit happens to be on screen. */
+ *  `tabId` is null when the Board does not own the session's terminal, so it has nothing to
+ *  type `/compact` into — that is `unavailable`, and it is the ONLY reason the button is
+ *  greyed. A compaction in flight outranks it: the state is a fact about the session, not
+ *  about which terminal the Board happens to own. */
 export function compactBtn(
   state: CompactState,
   view: { unitKey: string; sessionId: string; tabId: string | null; now: number },
 ): CompactBtn {
-  const mine = (c: CompactWatch | CompactDone | null): boolean =>
-    !!c && c.unitKey === view.unitKey && c.sessionId === view.sessionId;
-
-  if (mine(state.watch)) return "busy";
-  if (mine(state.done) && view.now - state.done!.at < COMPACT_DONE_MS) return "done";
+  const e = compactEntry(state, view.unitKey, view.sessionId);
+  if (e?.kind === "watch") return "busy";
+  if (e?.kind === "done" && view.now - e.at < COMPACT_DONE_MS) return "done";
   return view.tabId ? "ready" : "unavailable";
 }
