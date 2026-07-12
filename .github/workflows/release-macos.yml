@@ -1,0 +1,82 @@
+name: Release (macOS bundle)
+
+# Builds the universal macOS .dmg and attaches it to the release.
+#
+# Until v0.6.0 the DMG was built by hand on a Mac, which is why macOS releases
+# stalled at v0.4.9 while Linux kept shipping. This workflow is the fix: the
+# same tag push that builds the Linux bundles now builds the Mac one.
+#
+# The Homebrew cask (mrgyatso/homebrew-tap) downloads this asset by name —
+# `Companion.Overlay_<version>_universal.dmg` — so after a release, bump the
+# cask's `version` and `sha256` to match.
+#
+# Fires on a version tag, or on demand against an existing tag/release.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to build and attach the macOS bundle to (e.g. v0.6.0)'
+        required: true
+
+jobs:
+  macos-bundle:
+    name: tauri build → universal .dmg
+    runs-on: macos-14
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_dispatch runs against a tag the maintainer names; a tag push
+          # already has the right ref checked out.
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Rust targets for the universal build
+        # The runner is Apple Silicon; a universal binary needs both halves.
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: The tag and the app version must agree
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        # Same gate as release-linux.yml: Tauri bakes tauri.conf.json's version
+        # into the binary, and a drifting version breaks the updater and ships
+        # bundles that lie about what they are (v0.5.0 shipped a 0.1.11 binary).
+        run: |
+          conf=$(jq -r .version overlay/src-tauri/tauri.conf.json)
+          want=${TAG#v}
+          if [ "$conf" != "$want" ]; then
+            echo "::error::tag $TAG wants version $want, but tauri.conf.json says $conf — bump it before tagging"
+            exit 1
+          fi
+          echo "version $conf matches tag $TAG"
+
+      - name: Build the frontend + universal bundle
+        working-directory: overlay
+        run: |
+          npm ci
+          npm run tauri build -- --target universal-apple-darwin
+
+      - name: Collect the artifact
+        run: |
+          mkdir -p out
+          find overlay/src-tauri/target/universal-apple-darwin/release/bundle -type f \
+            -name '*.dmg' -exec cp {} out/ \;
+          ls -lh out/
+          test -n "$(ls -A out/)" || (echo "::error::no macOS bundle produced" && exit 1)
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        # --clobber so a re-run replaces the asset instead of erroring on a name
+        # collision (this workflow is re-runnable against an existing release).
+        run: gh release upload "$TAG" out/* --clobber --repo "$GITHUB_REPOSITORY"

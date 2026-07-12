@@ -278,7 +278,19 @@ sudo apt install ./src-tauri/target/release/bundle/deb/*.deb
 
 `xdg-utils` is not optional: the AppImage bundler shells out to `xdg-mime` and dies without it — after the `.deb` has already been produced, which makes it look like a late, unrelated failure. `libayatana-appindicator3-dev` is what puts the tray icon in your system tray.
 
-Releases are cut by CI: [`release-linux.yml`](.github/workflows/release-linux.yml) builds the `.deb` and AppImage on a tag push and attaches them to the release. The macOS universal `.dmg` is still built by hand on a Mac.
+Releases are cut by CI: on a tag push, [`release-linux.yml`](.github/workflows/release-linux.yml) builds the `.deb` and AppImage for amd64 and arm64, and [`release-macos.yml`](.github/workflows/release-macos.yml) builds the universal `.dmg`; all of them are attached to the release.
+
+## Uninstall
+
+The mirror of the installer — one command removes what it set up:
+
+```bash
+companion uninstall
+```
+
+It removes the plugin and the marketplace wiring, then the app itself — the Homebrew cask on macOS, the `.deb` on Ubuntu/Debian, or the symlinks of a from-source install. Your artifacts and history under `~/.claude/companion` survive by default; add `--purge` to delete those too. It is safe to re-run: anything already gone is reported and skipped.
+
+The flags mirror the installer's: `--check` reports what would be removed and changes nothing, and `--yes` accepts every prompt. One guard worth knowing about: sessions started from the Board run *inside* the app's process, so an uninstall launched from one would kill its own terminal mid-run — the script detects that, refuses, and asks you to quit the app and re-run from a normal terminal (`--force` overrides).
 
 ## Roadmap
 
