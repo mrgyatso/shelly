@@ -107,6 +107,8 @@ interface RecentSession {
   last_active_ms: number;
   size_bytes: number;
   title?: string | null;
+  /** Which CLI owns the transcript ("claude" | "codex") — picks the resume verb. */
+  provider?: string;
 }
 
 interface NextItem {
@@ -141,6 +143,9 @@ interface LiveState {
   /** Injected by read_all_live from session-ids.json: the FULL Claude Code
    *  session id, so a closed Board session can be rejoined via `claude --resume`. */
   session_id?: string;
+  /** Injected by read_all_live from the identity registry: which CLI runs this
+   *  session ("claude" | "codex"). Absent → claude (pre-provider records). */
+  provider?: string;
 }
 
 type StatusLevel = "wait" | "busy" | "ok" | "idle";
@@ -678,29 +683,37 @@ export async function initBoard(): Promise<void> {
  *  common case is "just give me a claude here." Pick a specific folder/repo via
  *  the adjacent caret (newFolderSession). Falls back to the picker if HOME can't
  *  be resolved. */
-async function newHomeSession(): Promise<void> {
+/** Once-per-session check for a codex CLI on this machine (gates the menu entries). */
+let codexAvailableCache: Promise<boolean> | null = null;
+function codexAvailable(): Promise<boolean> {
+  codexAvailableCache ??= invoke<boolean>("codex_available").catch(() => false);
+  return codexAvailableCache;
+}
+
+async function newHomeSession(agent?: string): Promise<void> {
   let home: string | null = null;
   try {
     home = await invoke<string | null>("resolve_home_dir");
   } catch (e) {
     console.error("resolve_home_dir failed", e);
   }
-  if (!home) return void newFolderSession();
-  void launchSessionIn(home);
+  if (!home) return void newFolderSession(agent);
+  void launchSessionIn(home, agent);
 }
 
 /** "+ New session in a folder…" (secondary): pick a folder/repo, spawn there. */
-async function newFolderSession(): Promise<void> {
+async function newFolderSession(agent?: string): Promise<void> {
   let dir: string | null = null;
+  const label = agent === "codex" ? "codex" : "claude";
   try {
-    const picked = await openDialog({ directory: true, title: "Start a claude session in…" });
+    const picked = await openDialog({ directory: true, title: `Start a ${label} session in…` });
     dir = typeof picked === "string" ? picked : null;
   } catch (e) {
     console.error("folder picker failed", e);
     return;
   }
   if (!dir) return;
-  void launchSessionIn(dir);
+  void launchSessionIn(dir, agent);
 }
 
 /** Spawn a Board-owned claude in `dir` and reveal it. Shows the terminal
@@ -718,12 +731,12 @@ async function newFolderSession(): Promise<void> {
  *  same-repo launches can't collapse onto one card before either has a live file;
  *  reconcileBindings re-homes it to the project key once its live file appears. */
 let provisionalSeq = 0;
-async function launchSessionIn(dir: string): Promise<string | null> {
+async function launchSessionIn(dir: string, agent?: string): Promise<string | null> {
   const base = dir.split("/").filter(Boolean).pop() || dir;
   const existing = allSources.some((s) => unitKeyOf(s) === base);
   const provisional = existing ? base : `${base}~${++provisionalSeq}`;
   try {
-    const tabId = await spawnOwnedSession(dir, provisional);
+    const tabId = await spawnOwnedSession(dir, provisional, undefined, agent);
     if (!existing) {
       // A BRAND-NEW unit (first session of this project): re-nav when the throwaway
       // provisional re-homes, and land terminal-focused — there's no artifact yet, so
@@ -794,6 +807,30 @@ function toggleNewSessionMenu(anchor: HTMLElement): void {
     '<span class="ns-ico">⌂</span><span class="ns-tx">Start at home<small>~</small></span></button>' +
     '<button class="ns-item" role="menuitem" data-ns="folder">' +
     '<span class="ns-ico">📁</span><span class="ns-tx">Start in a folder…</span></button>';
+  // Codex entries appear only on machines that actually have the codex CLI —
+  // checked once, then remembered for the session (installs mid-session are rare).
+  void codexAvailable().then((ok) => {
+    if (!ok || !menu.isConnected) return;
+    const codexHome = document.createElement("button");
+    codexHome.className = "ns-item";
+    codexHome.setAttribute("role", "menuitem");
+    codexHome.dataset.ns = "codex-home";
+    codexHome.innerHTML = '<span class="ns-ico">◆</span><span class="ns-tx">Start codex at home<small>~</small></span>';
+    const codexFolder = document.createElement("button");
+    codexFolder.className = "ns-item";
+    codexFolder.setAttribute("role", "menuitem");
+    codexFolder.dataset.ns = "codex-folder";
+    codexFolder.innerHTML = '<span class="ns-ico">◆</span><span class="ns-tx">Start codex in a folder…</span>';
+    menu.append(codexHome, codexFolder);
+    codexHome.addEventListener("click", () => {
+      closeNewSessionMenu();
+      void newHomeSession("codex");
+    });
+    codexFolder.addEventListener("click", () => {
+      closeNewSessionMenu();
+      void newFolderSession("codex");
+    });
+  });
   const r = anchor.getBoundingClientRect();
   menu.style.top = `${Math.round(r.bottom + 7)}px`;
   menu.style.right = `${Math.round(window.innerWidth - r.right)}px`;
@@ -1125,7 +1162,7 @@ function buildEmptyUnitState(unitKey: string): EmptyUnitState | null {
 
 /** Resume `resumeId` into `unitKey` from the empty-state, then reveal it. */
 async function resumeSessionInUnit(unitKey: string, resumeId: string): Promise<void> {
-  await ensureOwnedTerminal(unitKey, resumeId);
+  await ensureOwnedTerminal(unitKey, resumeId, providerForResumeId(resumeId));
   if (currentUnitKey === unitKey) showOwnedTerminals(unitKey);
 }
 
@@ -1353,7 +1390,7 @@ async function resumeRecentSession(rs: RecentSession): Promise<void> {
   const existing = allSources.some((s) => unitKeyOf(s) === base);
   const provisional = existing ? base : `${base}~${++provisionalSeq}`;
   try {
-    const tabId = await spawnOwnedSession(rs.cwd, provisional, rs.session_id);
+    const tabId = await spawnOwnedSession(rs.cwd, provisional, rs.session_id, rs.provider);
     if (!existing) {
       pendingNavTab = tabId;
       pendingNavFresh = false; // a resume: keep the hero on the re-nav (don't skip the digest)
@@ -1766,7 +1803,7 @@ function pickSession(unitKey: string, s: LiveSource): void {
     return;
   }
   const st = parseState(s.json);
-  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null).then(() => {
+  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null, st.provider).then(() => {
     goUnit(unitKey); // enterUnit collapses the chooser on a fresh entry…
     expandedActiveProject = unitKey; // …so re-open it after landing and repaint the rail
     renderUnitRail(unitKey);
@@ -1894,7 +1931,7 @@ function buildRecentSessionRow(rs: RecentSession): HTMLElement {
  *  leave the hero/state visible — never a duplicate spawn. */
 function switchToSession(unitKey: string, s: LiveSource): void {
   const st = parseState(s.json);
-  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null).then(() => {
+  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null, st.provider).then(() => {
     if (currentUnitKey === unitKey) {
       renderUnitRail(unitKey);
       // The hero follows the now-active session. A click is the ONLY sanctioned
@@ -2249,12 +2286,22 @@ function enterUnit(unitKey: string): void {
 async function ensureAndShowTerminal(unitKey: string): Promise<void> {
   if (!ownedTabForUnit(unitKey)) {
     const resumeId = resumableSessionFor(unitKey);
-    if (resumeId) await ensureOwnedTerminal(unitKey, resumeId);
+    if (resumeId) await ensureOwnedTerminal(unitKey, resumeId, providerForResumeId(resumeId));
     // No resume id ⇒ external session running in the user's own terminal: the
     // Board can't attach to a PTY it doesn't own, so it shows the unit's state
     // only and NEVER spawns a duplicate claude (the hook's documented intent).
   }
   if (currentUnitKey === unitKey) showOwnedTerminals(unitKey);
+}
+
+/** The provider of the live source carrying `resumeId`, so a resume rejoins through
+ *  the CLI that owns the transcript. Absent (pre-provider sessions) ⇒ claude. */
+function providerForResumeId(resumeId: string): string | undefined {
+  for (const s of allSources) {
+    const st = parseState(s.json);
+    if (st.session_id === resumeId) return st.provider;
+  }
+  return undefined;
 }
 
 /** The resumable Claude session id for a unit, or null. Present only for sessions

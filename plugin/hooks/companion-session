@@ -27,6 +27,12 @@ fi
 
 cwd=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||process.cwd())}catch(e){console.log(process.cwd())}})')
 session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})')
+# Which CLI is running this session. Codex CLI runs these same hooks (its hooks
+# system is Claude-Code-shaped and its plugin loader consumes this plugin as-is);
+# its transcripts are rollout-*.jsonl files under ~/.codex, Claude's live under
+# ~/.claude/projects. Recorded in the identity registry so the app knows which
+# CLI to `--resume` a session with. Defaults to claude when there is no signal.
+provider=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const t=JSON.parse(d).transcript_path||"";console.log(/\/\.codex\/|\/rollout-[^/]*\.jsonl$/.test(t)?"codex":"claude")}catch(e){console.log("claude")}})')
 
 # Ignore tool-internal observer sessions. claude-mem (and similar) spawn long-lived
 # `claude` processes under ~/.claude-mem/observer-sessions to watch other sessions;
@@ -82,8 +88,8 @@ digest_path="${HOME}/.claude/companion/artifacts/home.${unit_key}.html"
 #     .claude-mem bail so the observer's own worker never self-registers.
 if [ -n "$session_id" ]; then
   node "$CMP_HOOK_DIR/companion-identity.cjs" register \
-    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${COMPANION_SESSION:-}" 2>/dev/null
-  trace session register "sid=$shortid" "unit_key=$unit_key" "root=$root"
+    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${COMPANION_SESSION:-}" "$provider" 2>/dev/null
+  trace session register "sid=$shortid" "unit_key=$unit_key" "root=$root" "provider=$provider"
 fi
 trace session start "sid=$shortid" "cwd=$cwd" "live=$live_path" "project=$project" "is_repo=$is_repo" "unit_key=$unit_key" "owned=${COMPANION_SESSION:-}"
 
@@ -112,10 +118,11 @@ fi
 #    is_repo + unit_key let the Board group sessions into a per-UNIT home; the
 #    agent is asked (below) to preserve them when it rewrites this file.
 if [ ! -f "$live_path" ]; then
-  LIVE_PATH="$live_path" PROJECT="$project" IS_REPO="$is_repo" UNIT_KEY="$unit_key" node -e '
+  LIVE_PATH="$live_path" PROJECT="$project" IS_REPO="$is_repo" UNIT_KEY="$unit_key" PROVIDER="$provider" node -e '
     const fs=require("fs");
     const stub={working:"Session started",where:[],next:[],project:process.env.PROJECT,
-      is_repo:process.env.IS_REPO==="1",unit_key:process.env.UNIT_KEY};
+      is_repo:process.env.IS_REPO==="1",unit_key:process.env.UNIT_KEY,
+      provider:process.env.PROVIDER||"claude"};
     try { fs.writeFileSync(process.env.LIVE_PATH, JSON.stringify(stub)); } catch (e) {}
   ' 2>/dev/null
 fi
@@ -277,8 +284,8 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `STATUS heartbeat only — it drives the Board roster AND the always-on status strip; it is NOT `+
     `rendered into an artifact. Shape: {"working":"…","where":["…"],"next":[{"title":"…","sub":"…",`+
     `"kind":"decision|todo|blocked"}],"project":"…","is_repo":<bool>,"unit_key":"…"}. Use exactly `+
-    `this path — keyed to this session instance — and PRESERVE is_repo + unit_key verbatim (the `+
-    `Board groups sessions into a per-unit home by them). working = what you are doing now; `+
+    `this path — keyed to this session instance — and PRESERVE is_repo + unit_key + provider `+
+    `verbatim (the Board groups sessions into a per-unit home by them). working = what you are doing now; `+
     `where[] = cumulative state THIS SESSION (not only this turn); next[] = the propulsive next `+
     `moves. Every work turn, drive toward shipping: end on the next move — recommend the strongest `+
     `option and why, ask sharp questions the user can decide in one read, and make next[] concrete `+

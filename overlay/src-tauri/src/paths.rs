@@ -48,6 +48,25 @@ pub fn projects_dir() -> Option<PathBuf> {
     home().map(|h| h.join(".claude").join("projects"))
 }
 
+/// `~/.codex/sessions` — where Codex CLI writes its rollout transcripts
+/// (`YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl`). Honors `CODEX_HOME` the way
+/// Codex itself does; the test override wins over both so sandboxed tests never
+/// read a real Codex tree.
+pub fn codex_sessions_dir() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        if let Some(h) = HOME_OVERRIDE.with(|h| h.borrow().clone()) {
+            return Some(h.join(".codex").join("sessions"));
+        }
+    }
+    if let Some(ch) = std::env::var_os("CODEX_HOME") {
+        if !ch.is_empty() {
+            return Some(PathBuf::from(ch).join("sessions"));
+        }
+    }
+    home().map(|h| h.join(".codex").join("sessions"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

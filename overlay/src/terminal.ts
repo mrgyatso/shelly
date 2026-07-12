@@ -54,6 +54,9 @@ export interface CreateTerminalOptions {
   /** Full session id to rejoin via `claude --resume <id>` (reopening a closed
    *  Board session). Omit for a fresh session. */
   resume?: string;
+  /** Which agent CLI to embed: "claude" (default) or "codex". A resume must carry
+   *  the session's own provider — the id only exists in that CLI's transcripts. */
+  agent?: string;
   /** Called when the PTY exits (the child died or was killed). */
   onExit?: () => void;
   /** Called when output arrives while the terminal is hidden — for an activity
@@ -214,7 +217,7 @@ export async function createTerminal(
     cols = term.cols;
   }
   try {
-    await invoke("spawn_pty", { tabId, rows, cols, cwd: opts.cwd ?? null, resume: opts.resume ?? null });
+    await invoke("spawn_pty", { tabId, rows, cols, cwd: opts.cwd ?? null, resume: opts.resume ?? null, agent: opts.agent ?? null });
   } catch (e) {
     term.write(`\r\n\x1b[31m${String(e)}\x1b[0m\r\n`);
   }

@@ -49,6 +49,7 @@ Your agent writes each turn as one of those HTML pages. Companion watches for it
   - **macOS 11 or later.** The release is a universal build that runs natively on both Apple Silicon and Intel.
   - **Ubuntu 22.04+ / Debian 12+** (x86_64 or arm64), on a `.deb` or an AppImage. The app is a WebKitGTK build; the package pulls in what it needs.
 - **[Claude Code](https://claude.com/claude-code).**
+- **[Codex CLI](https://developers.openai.com/codex)** *(optional)* — with `codex` installed, Companion runs and tracks Codex sessions too. See [Codex sessions](#codex-sessions-not-just-claude).
 - **Node 18 or later.** The plugin's hooks are Node scripts. Claude Code now ships as a native binary, so having `claude` does **not** mean you have Node — check with `node -v`.
 
 Starting from a machine with none of that? The installer below sets it all up. Building from source additionally needs Rust.
@@ -226,6 +227,15 @@ companion setup --external-terminals
 ```
 
 To go back to app-spawned sessions only, `rm ~/.claude/companion/external-terminals`. Either way, `companion doctor` tells you which mode you're in. (Remote agents pushing pages through the hub are a separate path and aren't affected by this setting.)
+
+## Codex sessions, not just Claude
+
+Companion also runs [OpenAI Codex CLI](https://developers.openai.com/codex) sessions (0.144+). Codex's plugin system consumes the same Companion plugin unchanged, and its hooks system runs the same scripts — so a Codex session gets the full treatment: it joins the home, its pages render, and you answer it with the same ✓/✎/✗ clicks.
+
+- **Wiring is automatic.** `companion setup` detects `codex` on your PATH and adds the marketplace + plugin to it. Installed Codex after Companion? Just re-run `companion setup`.
+- **One keypress, once.** Codex quarantines third-party hooks until you approve them — and asks on its own: your first codex session (in a Companion terminal or your own) opens with *“Hooks need review”*. Choose **Trust all and continue** and every session after is tracked. Until then, Codex sessions stay off the home. (`/hooks` inside codex reaches the same screen anytime.)
+- **Start and resume from the app.** "+ New session" grows *Start codex* entries when Codex is installed, and a Codex session in the Recent band resumes through `codex resume` automatically — each session remembers which CLI owns it.
+- The same [external-terminals rule](#where-your-sessions-have-to-run) applies: by default, only app-spawned codex sessions are tracked.
 
 ## What the plugin adds
 

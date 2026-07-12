@@ -234,7 +234,7 @@ pub fn read_live() -> String {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    inject_fields(&raw, updated_ms, None, None, false, None, None)
+    inject_fields(&raw, updated_ms, None, None, false, None, None, None)
 }
 
 /// One agent's live-state, tagged with the slug of the file it came from. The
@@ -315,6 +315,13 @@ pub fn read_all_live() -> Vec<LiveSource> {
         let identity = sids
             .get(&source)
             .and_then(|id| crate::registry::resolve_identity(id));
+        // Which CLI owns this session — from the same frozen record. Lets the Board
+        // badge Codex sessions and pick the right resume verb. Only resolvable for
+        // owned sessions (the sidecar carries the full id); external sessions keep
+        // whatever provider their live stub recorded.
+        let provider = sids
+            .get(&source)
+            .and_then(|id| crate::registry::resolve_provider(id));
         out.push(LiveSource {
             json: inject_fields(
                 &raw,
@@ -324,6 +331,7 @@ pub fn read_all_live() -> Vec<LiveSource> {
                 is_dismissed,
                 session_id,
                 identity.as_ref(),
+                provider.as_deref(),
             ),
             source,
         });
@@ -364,6 +372,7 @@ fn inject_fields(
     dismissed: bool,
     session_id: Option<&str>,
     identity: Option<&crate::registry::Identity>,
+    provider: Option<&str>,
 ) -> String {
     match serde_json::from_str::<serde_json::Value>(raw) {
         Ok(mut v) => {
@@ -405,6 +414,11 @@ fn inject_fields(
                         obj.insert("is_repo".into(), serde_json::json!(r));
                     }
                 }
+                // The registry's provider wins over whatever the live file carries
+                // (the agent may drop the field when rewriting its heartbeat).
+                if let Some(p) = provider {
+                    obj.insert("provider".into(), serde_json::json!(p));
+                }
             }
             v.to_string()
         }
@@ -426,6 +440,7 @@ mod tests {
             false,
             Some("abc-123-full"),
             None,
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["companion_session"], "board-3");
@@ -438,7 +453,7 @@ mod tests {
 
     #[test]
     fn omits_optional_fields_when_external() {
-        let out = inject_fields(r#"{"working":"x"}"#, 7, None, None, false, None, None);
+        let out = inject_fields(r#"{"working":"x"}"#, 7, None, None, false, None, None, None);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v.get("companion_session").is_none());
         assert!(v.get("unit_dir").is_none());
@@ -449,7 +464,7 @@ mod tests {
 
     #[test]
     fn injects_dismissed_only_when_true() {
-        let out = inject_fields(r#"{"working":"x"}"#, 1, None, None, true, None, None);
+        let out = inject_fields(r#"{"working":"x"}"#, 1, None, None, true, None, None, None);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["dismissed"], true);
     }
@@ -485,6 +500,7 @@ mod tests {
             false,
             None,
             Some(&id),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["unit_key"], "true-unit");
@@ -509,6 +525,7 @@ mod tests {
             false,
             Some("a7ce6917-2e13-4e7e-9448-19905a93d953"),
             Some(&id),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         // Identity — every self-reported field is overruled by the record.
@@ -532,6 +549,7 @@ mod tests {
             false,
             None,
             Some(&id),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["unit_key"], "repo");
@@ -552,6 +570,7 @@ mod tests {
             false,
             None,
             Some(&id),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["unit_key"], "repo");
@@ -569,9 +588,40 @@ mod tests {
             false,
             None,
             None,
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["unit_key"], "repo");
+    }
+
+    #[test]
+    fn provider_from_registry_wins_over_live_file() {
+        // A Codex session whose agent dropped the field on rewrite gets it back…
+        let out = inject_fields(
+            r#"{"working":"x"}"#,
+            5,
+            None,
+            None,
+            false,
+            None,
+            None,
+            Some("codex"),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["provider"], "codex");
+        // …and with no registry value, whatever the live file carries survives.
+        let keep = inject_fields(
+            r#"{"working":"x","provider":"codex"}"#,
+            5,
+            None,
+            None,
+            false,
+            None,
+            None,
+            None,
+        );
+        let v: serde_json::Value = serde_json::from_str(&keep).unwrap();
+        assert_eq!(v["provider"], "codex");
     }
 
     #[test]
@@ -585,6 +635,7 @@ mod tests {
             true,
             Some("x"),
             Some(&id),
+            None,
         );
         assert_eq!(out, "not json");
     }

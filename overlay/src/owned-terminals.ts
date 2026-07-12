@@ -116,6 +116,7 @@ export async function spawnOwnedSession(
   cwd: string,
   provisionalUnit?: string,
   resume?: string,
+  agent?: string,
 ): Promise<string> {
   if (!bodyEl) throw new Error("owned terminals not initialized");
   seq += 1;
@@ -143,6 +144,7 @@ export async function spawnOwnedSession(
   owned.handle = await createTerminal(tabId, mount, {
     cwd,
     resume,
+    agent,
     onExit: () => {
       owned.exited = true;
     },
@@ -316,14 +318,18 @@ export function ownedUnits(): string[] {
  *  guard prevents a double-spawn from rapid re-entry. Returns whether a terminal
  *  is now present. */
 const spawningUnits = new Set<string>();
-export async function ensureOwnedTerminal(unitKey: string, resume?: string): Promise<boolean> {
+export async function ensureOwnedTerminal(
+  unitKey: string,
+  resume?: string,
+  agent?: string,
+): Promise<boolean> {
   if (shownForUnit(unitKey)) return true;
   if (spawningUnits.has(unitKey)) return false;
   const dir = resolveDir(unitKey);
   if (!dir) return false;
   spawningUnits.add(unitKey);
   try {
-    const tabId = await spawnOwnedSession(dir, unitKey, resume);
+    const tabId = await spawnOwnedSession(dir, unitKey, resume, agent);
     activeByUnit.set(unitKey, tabId);
     return true;
   } finally {
@@ -343,6 +349,7 @@ export async function showSessionInUnit(
   unitKey: string,
   tabId: string | null,
   resumeId: string | null,
+  agent?: string,
 ): Promise<boolean> {
   if (tabId) {
     const t = terminals.get(tabId);
@@ -358,7 +365,7 @@ export async function showSessionInUnit(
     if (!dir) return false;
     resumingSessions.add(resumeId);
     try {
-      const newTab = await spawnOwnedSession(dir, unitKey, resumeId);
+      const newTab = await spawnOwnedSession(dir, unitKey, resumeId, agent);
       activeByUnit.set(unitKey, newTab);
       showOwnedTerminals(unitKey);
       return true;
