@@ -14,6 +14,12 @@ function ok(c, m) { if (c) { pass++; console.log("  ✓ " + m); } else { fail++;
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "cmp-p3-"));
 fs.mkdirSync(path.join(home, ".claude", "companion", "logs"), { recursive: true });
+// Hermetic: track external terminals in the sandbox, and don't inherit the developer
+// shell's COMPANION_SESSION — without these the hook bails as an untracked terminal
+// on CI (no Companion app) while silently passing on a dev machine.
+fs.writeFileSync(path.join(home, ".claude", "companion", "external-terminals"), "on");
+const baseEnv = { ...process.env, HOME: home, COMPANION_TRACE: "1" };
+delete baseEnv.COMPANION_SESSION;
 const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cmp-p3-repo-")));
 execFileSync("git", ["init", "-q"], { cwd: repo });
 const SID = "feed1234-aaaa-bbbb-cccc-eventroute0001";
@@ -21,7 +27,7 @@ const SID = "feed1234-aaaa-bbbb-cccc-eventroute0001";
 // Register the session (writes the record + a session.registered event).
 execFileSync("sh", [path.join(HOOKS, "companion-session")], {
   input: JSON.stringify({ cwd: repo, session_id: SID }),
-  env: { ...process.env, HOME: home, COMPANION_TRACE: "1" },
+  env: baseEnv,
   encoding: "utf8",
 });
 const rec = JSON.parse(fs.readFileSync(path.join(home, ".claude/companion/sessions", SID + ".json"), "utf8"));
@@ -33,7 +39,7 @@ const artifact = path.join(home, ".claude/companion/artifacts", "p3.html");
 fs.mkdirSync(path.dirname(artifact), { recursive: true });
 fs.writeFileSync(artifact, "<html></html>");
 execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), artifact, liveDir, indexPath], {
-  env: { ...process.env, HOME: home, SID, COMPANION_TRACE: "1" },
+  env: { ...baseEnv, SID },
   encoding: "utf8",
 });
 
@@ -53,7 +59,7 @@ ok(evs.some((e) => e.evt === "session.registered" && e.session_id === SID), "ses
 const art2 = path.join(home, ".claude/companion/artifacts", "legacy.html");
 fs.writeFileSync(art2, "<html></html>");
 execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), art2, liveDir, indexPath], {
-  env: { ...process.env, HOME: home, SID: "", COMPANION_TRACE: "1" },
+  env: { ...baseEnv, SID: "" },
   encoding: "utf8",
 });
 ok(events(home).filter((e) => e.evt === "artifact.routed").length === 1, "no-SID write appends no artifact.routed");

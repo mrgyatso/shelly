@@ -28,6 +28,19 @@ if [ -z "$COMPANION_SESSION" ] && [ "$(cat "${HOME}/.claude/companion/external-t
   exit 0
 fi
 
+# ADOPTION — a session still on the Home shelf graduates to its own project the first
+# time it writes into a git repo that isn't $HOME (i.e. it ran `git init`). This must run
+# BEFORE the artifacts pre-filter below, because the triggering write is a PROJECT file
+# (~/snake/snake.py), not an artifact — the pre-filter would drop it.
+#
+# The cost guard: only a homeless session carries a marker, and the marker dir is empty
+# whenever every live session is already rooted (the overwhelmingly common case). So this
+# is one readdir on the hot path and spawns node ONLY while a homeless session exists —
+# never for the steady-state "all my sessions are in real repos" case.
+if [ -n "$(ls -A "${HOME}/.claude/companion/homeless" 2>/dev/null)" ]; then
+  printf '%s' "$payload" | node "$SCRIPT_DIR/companion-adopt.cjs" 2>/dev/null
+fi
+
 # Cheap pre-filter: skip the JSON parse for the 99% of writes that aren't artifacts.
 case "$payload" in
   *"$ARTIFACTS_DIR"/*) ;;

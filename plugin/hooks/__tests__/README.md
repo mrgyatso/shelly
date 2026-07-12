@@ -18,6 +18,12 @@ node plugin/hooks/__tests__/run.cjs
   unit_key round-trips with parity; no-SID write stays un-indexed (8 checks).
 - `registry-phase3.cjs` — a successful index stamp appends an `artifact.routed` event with
   path + session_id + the registry unit; no-SID write appends none (6 checks).
+- `home-adoption.cjs` — the Home shelf + graduation: a `$HOME` session keys to `__home__`
+  (not the username) and is latched homeless; a rooted session never is; adoption fires on
+  the first write into a git repo that isn't `$HOME` (and not on an artifact / non-repo /
+  bare-`$HOME` write); it is ONE-WAY (a second repo can't steal an adopted session); it
+  survives resume/compact; and pre-adoption artifacts are re-stamped to the new unit so the
+  session's history doesn't split (27 checks).
 
 The Rust side (`registry.rs`, `events.rs`, `live.rs`) has its own committed
 `#[cfg(test)]` units — run with `cd overlay/src-tauri && cargo test --lib`.
