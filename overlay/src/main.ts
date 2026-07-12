@@ -2,6 +2,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { initFit, resetFit } from "./resize";
+import { IS_LINUX } from "./platform";
 
 declare global {
   interface Window {
@@ -100,6 +101,19 @@ if (import.meta.env.DEV) {
     "box-shadow:0 2px 8px rgba(0,0,0,.35);";
   addEventListener("DOMContentLoaded", () => document.body.appendChild(badge));
   if (document.body) document.body.appendChild(badge);
+}
+
+// Stamp the platform on the root element so CSS can gate on it. Every window
+// boots through here, so one line covers the Board and the History HUD — the
+// two that wear a native titlebar on Linux and must drop their in-page shell.
+if (IS_LINUX) document.documentElement.classList.add("linux");
+
+// The frameless, resizable windows — artifact panels and the live surface — get
+// their own resize grips on Linux, where an undecorated window has no WM resize
+// border. The Board and History have a real frame there; the popover is
+// `resizable(false)`. All three are excluded.
+if (!window.__BOARD_MODE__ && !window.__HISTORY_MODE__ && !window.__POPOVER_MODE__) {
+  void import("./edge-resize").then((m) => m.initEdgeResize());
 }
 
 if (window.__LIVE_MODE__) {

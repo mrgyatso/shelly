@@ -408,11 +408,25 @@ pub fn run() {
                 // close — let the teardown proceed on the restored class.
                 tauri::RunEvent::WindowEvent {
                     label,
-                    event: tauri::WindowEvent::CloseRequested { .. },
+                    event: tauri::WindowEvent::CloseRequested { api, .. },
                     ..
                 } => {
+                    // Linux: the Board and History wear a native titlebar, so its ✕
+                    // is the ONLY close affordance (the in-page one is hidden there —
+                    // two sets of window buttons read as broken). That in-page button
+                    // hid the window rather than destroying it, keeping scroll/rail
+                    // state across a re-summon; make the native ✕ do the same, so
+                    // dropping the button costs nothing.
+                    let framed = cfg!(target_os = "linux")
+                        && (label == crate::windows::BOARD_LABEL
+                            || label == crate::windows::HISTORY_LABEL);
                     if let Some(win) = app_handle.get_webview_window(&label) {
-                        crate::macos_panel::restore_original_class(&win);
+                        if framed {
+                            api.prevent_close();
+                            let _ = win.hide();
+                        } else {
+                            crate::macos_panel::restore_original_class(&win);
+                        }
                     }
                 }
                 // A panel moved. If it's a genuine user drag (the panel is visible
