@@ -155,6 +155,81 @@ latest_deb_url() {
     | head -1 | sed 's/.*"\(https[^"]*\)"/\1/'
 }
 
+# The version the latest release advertises, with the tag's leading v stripped so
+# it can be compared against what dpkg reports.
+latest_version() {
+  curl -fsSL https://api.github.com/repos/mrgyatso/claude-code-companion/releases/latest \
+    | grep -o '"tag_name": *"[^"]*"' | head -1 \
+    | sed 's/.*"\([^"]*\)"$/\1/; s/^v//'
+}
+
+install_deb() {
+  local deb_tmp
+  deb_tmp=$(mktemp -t companion-overlay-XXXXXX.deb)
+  curl -fsSL -o "$deb_tmp" "$1"
+  # mktemp gives 0600, which the `_apt` user cannot read — apt then warns
+  # ("Download is performed unsandboxed as root ... Permission denied") and
+  # drops its sandbox to install anyway. Noisy on a first run, and a hard
+  # failure where apt is configured not to fall back.
+  chmod 644 "$deb_tmp"
+  sudo apt-get install -y "$deb_tmp"
+  rm -f "$deb_tmp"
+}
+
+# `companion` on PATH proves the app was installed once. It says nothing about
+# WHICH version — and the app is fetched from a release asset, so a newer release
+# never reaches an existing machine on its own. Without this check, anyone who ran
+# the installer once stayed on that original build forever, however many times
+# they re-ran it. (`companion setup` had the same bug with the plugin.)
+refresh_app() {
+  if [ "$OS" = Darwin ]; then
+    $CHECK_ONLY && return 0
+    # Homebrew knows what is current; `upgrade` is a no-op when the cask already is.
+    if brew upgrade --cask mrgyatso/tap/claude-code-companion >/dev/null 2>&1; then
+      ok "  the app is up to date"
+    else
+      info "  could not reach Homebrew to check for a newer app — carrying on"
+    fi
+    return 0
+  fi
+
+  local installed latest url
+  installed=$(dpkg-query -W -f='${Version}' companion-overlay 2>/dev/null || true)
+  if [ -z "$installed" ]; then
+    # An AppImage or a source build is not dpkg-managed. There is no version to
+    # read, and dropping a .deb on top would leave the machine with two apps.
+    info "  not installed from a .deb — leaving it alone"
+    return 0
+  fi
+
+  latest=$(latest_version || true)
+  if [ -z "$latest" ]; then
+    # Already wired and working; it just did not get to check for newer code.
+    info "  could not reach GitHub to check for a newer app — carrying on"
+    return 0
+  fi
+
+  if ! dpkg --compare-versions "$installed" lt "$latest"; then
+    ok "  $installed is current"
+    return 0
+  fi
+
+  info "  $installed is behind $latest"
+  if $CHECK_ONLY; then
+    APP_STALE="$installed to $latest"
+    return 0
+  fi
+
+  url=$(latest_deb_url || true)
+  if [ -z "$url" ]; then
+    info "  the latest release carries no $(dpkg --print-architecture) .deb — keeping $installed"
+    return 0
+  fi
+  ask "Upgrade the app from $installed to $latest? It will ask for your password." || return 0
+  install_deb "$url"
+  ok "Companion app upgraded to $latest"
+}
+
 # Linux: the .deb ships the CLI scripts as bundle resources; link `companion`
 # onto PATH from wherever the package put them (the exact libdir depends on the
 # bundler version, so probe the known layouts).
@@ -173,6 +248,7 @@ link_linux_cli() {
 
 if command -v companion >/dev/null 2>&1; then
   ok "Companion app   $(command -v companion)"
+  refresh_app
 elif [ "$OS" = Darwin ]; then
   info "The Companion app is missing"
   $CHECK_ONLY || ask "Install it via Homebrew?" || die "The app is required."
@@ -198,15 +274,7 @@ else
   $CHECK_ONLY || ask "Download the latest .deb from GitHub Releases and install it? It will ask for your password." \
     || die "The app is required."
   if ! $CHECK_ONLY; then
-    deb_tmp=$(mktemp -t companion-overlay-XXXXXX.deb)
-    curl -fsSL -o "$deb_tmp" "$deb_url"
-    # mktemp gives 0600, which the `_apt` user cannot read — apt then warns
-    # ("Download is performed unsandboxed as root ... Permission denied") and
-    # drops its sandbox to install anyway. Noisy on a first run, and a hard
-    # failure where apt is configured not to fall back.
-    chmod 644 "$deb_tmp"
-    sudo apt-get install -y "$deb_tmp"
-    rm -f "$deb_tmp"
+    install_deb "$deb_url"
     command -v companion >/dev/null 2>&1 || link_linux_cli \
       || die "Package installed but the 'companion' CLI was not found in it."
     command -v companion >/dev/null 2>&1 || export PATH="/usr/local/bin:$PATH"
@@ -224,6 +292,11 @@ if $CHECK_ONLY; then
     say "      https://github.com/mrgyatso/claude-code-companion/releases/latest"
     say ""
     exit 1
+  fi
+  if [ -n "${APP_STALE:-}" ]; then
+    say "The app can be upgraded ($APP_STALE)."
+    say "Nothing was changed. Re-run without --check to upgrade it."
+    exit 0
   fi
   say "Nothing was changed. Re-run without --check to install what's missing."
   exit 0
