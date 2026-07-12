@@ -108,6 +108,14 @@ if (import.meta.env.DEV) {
 // two that wear a native titlebar on Linux and must drop their in-page shell.
 if (IS_LINUX) document.documentElement.classList.add("linux");
 
+// The frameless, resizable windows — artifact panels and the live surface — get
+// their own resize grips on Linux, where an undecorated window has no WM resize
+// border. The Board and History have a real frame there; the popover is
+// `resizable(false)`. All three are excluded.
+if (!window.__BOARD_MODE__ && !window.__HISTORY_MODE__ && !window.__POPOVER_MODE__) {
+  void import("./edge-resize").then((m) => m.initEdgeResize());
+}
+
 if (window.__LIVE_MODE__) {
   void import("./live").then((m) => m.initLive());
 } else if (window.__HISTORY_MODE__) {
