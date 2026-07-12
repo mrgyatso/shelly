@@ -2708,6 +2708,9 @@ interface SessionUsage {
   /** Compactions this transcript has FINISHED. Counted over the whole file, so it
    *  survives a Board restart. `runCompact` baselines it and waits for it to tick. */
   compactions: number;
+  /** A compaction has landed and no real turn has followed it, so `contextTokens` is
+   *  stale — it measures a request that no longer exists. The meter shows no level. */
+  awaitingTurn: boolean;
 }
 
 /** Token counts read at a glance: `114k`, `1M`. Precision past three significant
@@ -2747,16 +2750,35 @@ async function renderUnitMeter(unitKey: string | null): Promise<void> {
   if (currentUnitKey !== unitKey || sessionId !== lastMeterSessionId(unitKey)) return;
   if (!usage) return hide();
 
-  const pct = Math.min(100, (usage.contextTokens / usage.limit) * 100);
   meterEl.hidden = false;
-  meterEl.dataset.level = pct >= METER_HIGH_PCT ? "high" : pct >= METER_WARN_PCT ? "warn" : "ok";
-  meterFillEl.style.width = `${pct.toFixed(1)}%`;
-  meterBarEl.setAttribute("aria-valuenow", String(Math.round(pct)));
-  meterTextEl.textContent = `${fmtTokens(usage.contextTokens)}/${fmtTokens(usage.limit)} · ${fmtTokens(usage.outputTokens)} out`;
-  meterTextEl.title =
-    `${usage.contextTokens.toLocaleString()} of ${usage.limit.toLocaleString()} context tokens ` +
-    `(${pct.toFixed(0)}%) on ${usage.model}\n` +
-    `${usage.outputTokens.toLocaleString()} tokens generated this session`;
+  if (usage.awaitingTurn) {
+    // A compaction has landed and nothing has re-measured the context yet, so there is no
+    // honest number to draw: the last turn's figure describes a request that no longer
+    // exists. Drain the bar — which is also the drop the user pressed Compact to see —
+    // and say the level is unknown rather than print a number we cannot stand behind.
+    // The next real turn fills it back in with a measured one.
+    meterEl.dataset.level = "awaiting";
+    meterFillEl.style.width = "0%";
+    meterBarEl.removeAttribute("aria-valuenow");
+    meterBarEl.setAttribute("aria-valuetext", "compacted — level unknown until the next turn");
+    meterTextEl.textContent = "compacted · awaiting turn";
+    meterTextEl.title =
+      `Compacted on ${usage.model}. Nothing measures what the next request will carry ` +
+      `until this session takes its next turn, so the meter shows no level rather than ` +
+      `the pre-compaction number.\n` +
+      `${usage.outputTokens.toLocaleString()} tokens generated this session`;
+  } else {
+    const pct = Math.min(100, (usage.contextTokens / usage.limit) * 100);
+    meterEl.dataset.level = pct >= METER_HIGH_PCT ? "high" : pct >= METER_WARN_PCT ? "warn" : "ok";
+    meterFillEl.style.width = `${pct.toFixed(1)}%`;
+    meterBarEl.removeAttribute("aria-valuetext");
+    meterBarEl.setAttribute("aria-valuenow", String(Math.round(pct)));
+    meterTextEl.textContent = `${fmtTokens(usage.contextTokens)}/${fmtTokens(usage.limit)} · ${fmtTokens(usage.outputTokens)} out`;
+    meterTextEl.title =
+      `${usage.contextTokens.toLocaleString()} of ${usage.limit.toLocaleString()} context tokens ` +
+      `(${pct.toFixed(0)}%) on ${usage.model}\n` +
+      `${usage.outputTokens.toLocaleString()} tokens generated this session`;
+  }
 
   // The meter's own poll is what watches for the compaction to land — waiting costs no
   // timer of its own. It also means a compaction can finish while the user is away in

@@ -1285,6 +1285,13 @@
   .meter-compact[data-state="busy"]:disabled { animation: none; }
 }
 
+/* Compacted, with no turn since — so the level is genuinely UNKNOWN, not zero. The bar
+   drains (the drop the user pressed Compact to see) but the empty track must not read as
+   a confident measurement of nothing: fade it, and let the text carry the caveat. The
+   next real turn restores a measured level. */
+.unit-meter[data-level="awaiting"] .meter-bar { opacity: 0.4; }
+.unit-meter[data-level="awaiting"] .meter-text { color: var(--ink-3); opacity: 0.75; }
+
 /* Two thresholds, both set in board.ts. `warn` is "start thinking about it";
    `high` is "the next long tool result may not fit". The fill needs no override —
    by the time it reaches these marks the ramp has already coloured itself. */
