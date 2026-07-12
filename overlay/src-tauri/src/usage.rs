@@ -66,6 +66,12 @@ pub struct SessionUsage {
     /// it types `/compact` and watches for this to tick — that is how it knows the
     /// compaction has FINISHED, which no other local signal tells it.
     pub compactions: u64,
+    /// True when a compaction has landed and NO real assistant turn has followed it —
+    /// so `context_tokens` still describes the request that ran BEFORE the compaction
+    /// and is now stale by a wide margin. Nothing in the transcript says what the next
+    /// request will carry until it is made, so the meter must report "unknown" here
+    /// rather than a number it cannot stand behind. Cleared by the next real turn.
+    pub awaiting_turn: bool,
 }
 
 /// Everything a transcript scan carries forward, so the next call only reads the
@@ -78,6 +84,7 @@ struct Scan {
     context_tokens: u64,
     model: String,
     compactions: u64,
+    awaiting_turn: bool,
 }
 
 fn cache() -> &'static Mutex<HashMap<String, Scan>> {
@@ -168,6 +175,11 @@ fn fold_line(line: &str, scan: &mut Scan) {
     // instant is the same boundary, and counting both would double every compaction.
     if v.get("compactMetadata").is_some() {
         scan.compactions += 1;
+        // Everything the scan knows about context was measured on the request that ran
+        // BEFORE this boundary, and that request no longer exists. Mark it stale until a
+        // real turn re-measures it — the alternative is a meter that reads 100% full
+        // moments after the user emptied it.
+        scan.awaiting_turn = true;
         return;
     }
     if v.get("type").and_then(|x| x.as_str()) != Some("assistant") {
@@ -197,6 +209,9 @@ fn fold_line(line: &str, scan: &mut Scan) {
         + field("cache_creation_input_tokens")
         + output;
     scan.model = model.to_string();
+    // A real turn has been measured, so whatever compaction preceded it is now accounted
+    // for: this IS what the next request carries.
+    scan.awaiting_turn = false;
 }
 
 /// Read whatever has been appended since the last call and fold it in.
@@ -248,6 +263,7 @@ pub async fn session_usage(session_id: String) -> Option<SessionUsage> {
             context_tokens: 0,
             model: String::new(),
             compactions: 0,
+            awaiting_turn: false,
         });
         rescan(&path, scan);
         if scan.model.is_empty() {
@@ -259,6 +275,7 @@ pub async fn session_usage(session_id: String) -> Option<SessionUsage> {
             model: scan.model.clone(),
             limit: window_for(&scan.model),
             compactions: scan.compactions,
+            awaiting_turn: scan.awaiting_turn,
         })
     })
     .await
@@ -277,6 +294,7 @@ mod tests {
             context_tokens: 0,
             model: String::new(),
             compactions: 0,
+            awaiting_turn: false,
         }
     }
 
@@ -428,6 +446,60 @@ mod tests {
         let mut s = scan();
         fold_line(&line, &mut s);
         assert_eq!(s.compactions, 1, "a line with no usage block still reaches the counter");
+    }
+
+    /// THE STALE-METER BUG. Replayed from the real boundary in session f2e5f23d: the last
+    /// turn before it measured 200_001 context tokens, and the transcript then carries NO
+    /// assistant turn until the user speaks again. Without the flag the meter goes on
+    /// reporting 200_001 — pinned to the top of the bar — for as long as the session sits
+    /// idle at the prompt, which is exactly when the user has just watched the Compact
+    /// button say it succeeded.
+    #[test]
+    fn context_is_flagged_stale_between_a_compaction_and_the_next_turn() {
+        let mut s = scan();
+        fold_line(&assistant(1, 199_000, 0, 1_000), &mut s);
+        assert_eq!(s.context_tokens, 200_001);
+        assert!(!s.awaiting_turn, "a plain turn is not awaiting anything");
+
+        fold_line(&compact_boundary("manual"), &mut s);
+        assert!(s.awaiting_turn, "the compacted context has not been measured yet");
+        assert_eq!(
+            s.context_tokens, 200_001,
+            "the stale number is still THERE — the flag is what stops it being shown"
+        );
+    }
+
+    /// The next real turn is the only thing that knows what the compacted context costs.
+    /// (17_154 is what session f2e5f23d actually carried on the turn after its boundary —
+    /// note it is nowhere near the 6_151 that the boundary's own `postTokens` claimed,
+    /// which is why that field is not used to fill the gap.)
+    #[test]
+    fn the_next_real_turn_clears_the_stale_flag_and_re_measures() {
+        let mut s = scan();
+        fold_line(&assistant(1, 199_000, 0, 1_000), &mut s);
+        fold_line(&compact_boundary("manual"), &mut s);
+        fold_line(&assistant(4, 16_000, 1_000, 150), &mut s);
+        assert!(!s.awaiting_turn, "a real turn has re-measured the context");
+        assert_eq!(s.context_tokens, 17_154);
+    }
+
+    /// Only a REAL turn may clear it. A subagent's turn or a `<synthetic>` stub carries a
+    /// usage block but says nothing about this session's compacted context — clearing on
+    /// one would put the stale number straight back on the meter.
+    #[test]
+    fn sidechain_and_synthetic_turns_do_not_clear_the_stale_flag() {
+        let mut s = scan();
+        fold_line(&assistant(1, 199_000, 0, 1_000), &mut s);
+        fold_line(&compact_boundary("auto"), &mut s);
+        let sidechain = serde_json::json!({"type":"assistant","isSidechain":true,
+            "message":{"model":"claude-opus-4-8","usage":{"output_tokens":99}}})
+        .to_string();
+        let synthetic = serde_json::json!({"type":"assistant",
+            "message":{"model":"<synthetic>","usage":{"output_tokens":99}}})
+        .to_string();
+        fold_line(&sidechain, &mut s);
+        fold_line(&synthetic, &mut s);
+        assert!(s.awaiting_turn, "neither one re-measured this session's context");
     }
 
     #[test]
