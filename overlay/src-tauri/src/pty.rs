@@ -15,10 +15,25 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter, State};
+
+/// How long the flusher lets PTY bytes pool before handing them to the webview.
+///
+/// A PTY delivers output as it arrives, so a streaming `claude` produces many
+/// small reads — measured at ~640 reads/s averaging ~570 B across a Board of 7
+/// live sessions. Emitting per read put that many IPC messages, and that many
+/// `term.write()` calls, on the webview's *main* thread — the one thread that
+/// also lays out, paints, and dispatches input — pinning it at 54–91% of a core
+/// and starving keystrokes. (The machine was 95% idle throughout: this is a
+/// single-thread latency problem, not a throughput one, so a faster CPU never
+/// fixed it.) One batch per frame collapses that to ~60 wakeups/s per terminal.
+/// The cost is at most one frame of added latency, which is imperceptible.
+const FLUSH: Duration = Duration::from_millis(16);
 
 /// One live PTY: the writer end, the master (for resizing), and the child handle
 /// (for killing on close). The reader half lives in its own thread.
@@ -132,7 +147,16 @@ fn inject_env(cmd: &mut CommandBuilder, tab_id: &str) {
 /// Spawn the reader thread: read bytes off the PTY master, decode to UTF-8, and
 /// emit `pty-output-<tabId>` events the Workspace pipes into xterm.js. On EOF
 /// (the child exited or the master was dropped) emit `pty-exit-<tabId>` and end.
-fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, tab_id: String, app: AppHandle) {
+fn spawn_reader_thread(reader: Box<dyn Read + Send>, tab_id: String, app: AppHandle) {
+    let (tx, rx) = mpsc::channel::<String>();
+    spawn_pty_pump(reader, tx);
+    spawn_flusher(rx, tab_id, app);
+}
+
+/// PTY → channel. Reads stay off the webview entirely: this thread must never
+/// block on an `emit`, or a slow frame in the webview would back-pressure the
+/// terminal the user is actually typing into.
+fn spawn_pty_pump(mut reader: Box<dyn Read + Send>, tx: mpsc::Sender<String>) {
     std::thread::spawn(move || {
         let mut raw = [0u8; 65536];
         let mut carry: Vec<u8> = Vec::new();
@@ -142,14 +166,60 @@ fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, tab_id: String, app: Ap
                 Ok(n) => {
                     carry.extend_from_slice(&raw[..n]);
                     let data = drain_utf8(&mut carry);
-                    if !data.is_empty() {
-                        let _ = app.emit(&format!("pty-output-{tab_id}"), data);
+                    // Receiver gone (session torn down): stop pumping.
+                    if !data.is_empty() && tx.send(data).is_err() {
+                        return;
                     }
                 }
                 Err(_) => break,
             }
         }
-        let _ = app.emit(&format!("pty-exit-{tab_id}"), &tab_id);
+        // Dropping `tx` disconnects the channel, which is how the flusher learns
+        // the PTY hit EOF — it emits `pty-exit` only after draining the last byte.
+    });
+}
+
+/// Channel → webview, at most one `pty-output` per [`FLUSH`] window.
+///
+/// Rate-limiting inside the read loop instead would strand the tail: `read()`
+/// blocks, so a withheld chunk (a shell prompt, say) would sit unsent until the
+/// *next* byte arrived — which, at a prompt, is exactly never. Pooling on a
+/// deadline in its own thread bounds the delay whether or not more output comes.
+fn spawn_flusher(rx: mpsc::Receiver<String>, tab_id: String, app: AppHandle) {
+    std::thread::spawn(move || {
+        let out_evt = format!("pty-output-{tab_id}");
+        let exit_evt = format!("pty-exit-{tab_id}");
+        let mut batch = String::new();
+
+        loop {
+            // Idle: block outright. An idle terminal costs zero wakeups, so a
+            // Board full of parked sessions is free.
+            match rx.recv() {
+                Ok(first) => batch.push_str(&first),
+                Err(_) => break, // EOF with nothing pending
+            }
+
+            // First byte of a batch opens the window; absorb whatever lands inside it.
+            let deadline = Instant::now() + FLUSH;
+            loop {
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    break;
+                }
+                match rx.recv_timeout(left) {
+                    Ok(more) => batch.push_str(&more),
+                    Err(RecvTimeoutError::Timeout) => break,
+                    Err(RecvTimeoutError::Disconnected) => {
+                        let _ = app.emit(&out_evt, std::mem::take(&mut batch));
+                        let _ = app.emit(&exit_evt, &tab_id);
+                        return;
+                    }
+                }
+            }
+            let _ = app.emit(&out_evt, std::mem::take(&mut batch));
+        }
+
+        let _ = app.emit(&exit_evt, &tab_id);
     });
 }
 

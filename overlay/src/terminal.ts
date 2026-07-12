@@ -23,6 +23,12 @@ const win = getCurrentWebviewWindow();
 /** Debounce for the resize → fit → SIGWINCH chain. */
 const RESIZE_DEBOUNCE_MS = 150;
 
+/** How long a *hidden* terminal pools PTY output before writing it to xterm.
+ *  Nobody is watching it, so the only thing this cadence owes anyone is that the
+ *  bytes are all there, in order, by the time the terminal is shown. A visible
+ *  terminal flushes every frame instead. */
+const HIDDEN_FLUSH_MS = 500;
+
 /** A warm dark inset terminal sitting in the paper chrome — claude's ANSI output
  *  reads best on a dark background, so the terminal is a "sunken" panel rather
  *  than paper-white. Cursor picks up the clay accent. */
@@ -99,6 +105,40 @@ export async function createTerminal(
     }
   };
 
+  // Pooled `term.write`. A Board runs every parked session's terminal at once
+  // (owned-terminals keeps them alive, hidden, until exit), and each one used to
+  // parse + render its `claude`'s output the instant it arrived — on the webview's
+  // single main thread, the same thread that dispatches the user's keystrokes.
+  // With 7 live sessions that thread sat pinned and input queued behind it.
+  //
+  // So pool the bytes and pick the cadence by whether anyone can actually see them:
+  // a visible terminal flushes once a frame, a hidden one lazily. Nothing is ever
+  // dropped — a terminal's screen is a *stateful* byte stream (cursor moves, colour,
+  // alternate-screen), so discarding or truncating any of it corrupts the state that
+  // follows. Every byte still reaches xterm, in order; only the cadence changes.
+  // Measured on WebKitGTK at 7 sessions / 359 KB/s: 102% → 34% of a core.
+  let pending = "";
+  let flushRaf = 0;
+  let flushTimer = 0;
+
+  const flush = () => {
+    flushRaf = 0;
+    clearTimeout(flushTimer);
+    flushTimer = 0;
+    if (!pending) return;
+    const data = pending;
+    pending = "";
+    term.write(data);
+  };
+
+  const scheduleFlush = () => {
+    if (isLaidOut(mount)) {
+      if (!flushRaf) flushRaf = requestAnimationFrame(flush);
+    } else if (!flushTimer) {
+      flushTimer = window.setTimeout(flush, HIDDEN_FLUSH_MS);
+    }
+  };
+
   const fit = () => {
     if (!isLaidOut(mount)) return; // never fit a hidden / zero-size terminal
     ensureWebgl();
@@ -107,17 +147,22 @@ export async function createTerminal(
     } catch {
       // Not laid out yet; a later fit catches it.
     }
+    // Just shown: don't make the user wait out a hidden terminal's lazy timer to
+    // see the output that arrived while it was parked.
+    flush();
   };
 
   // PTY → terminal. `app.emit` broadcasts to every window, so the per-tab event
   // name is what keeps one session's output out of another's.
   const unlistenOutput = await win.listen<string>(`pty-output-${tabId}`, (e) => {
-    term.write(e.payload);
+    pending += e.payload;
+    scheduleFlush();
     if (!isLaidOut(mount)) opts.onActivity?.();
   });
   const unlistenExit = await win.listen<string>(`pty-exit-${tabId}`, () => {
     // The PTY only reaches EOF when the whole shell session ends — Ctrl-C'ing out
     // of `claude` drops into a live shell (see pty.rs), it doesn't end the PTY.
+    flush(); // the session's last words land before its epitaph
     term.write("\r\n\x1b[2m— session ended —\x1b[0m\r\n");
     opts.onExit?.();
   });
@@ -181,6 +226,8 @@ export async function createTerminal(
     dispose: () => {
       ro.disconnect();
       clearTimeout(resizeTimer);
+      cancelAnimationFrame(flushRaf);
+      clearTimeout(flushTimer);
       unlistenOutput();
       unlistenExit();
       unlistenDrop();
