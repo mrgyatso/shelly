@@ -1897,6 +1897,16 @@
   font-weight: 600 !important;
 }
 .reader-next:hover { background: oklch(from var(--accent) l c h / 0.12) !important; color: var(--clay-deep) !important; }
+.reader-refresh {
+  /* "The agent replaced what you're reading." Green, not clay, so it never reads as
+     the "agents need you" jump next to it — this is fresh content HERE, not elsewhere.
+     Tinted fill so it's noticed without a modal: the whole point is to end the silence. */
+  border-color: oklch(from var(--ok) l c h / 0.45) !important;
+  background: oklch(from var(--ok) l c h / 0.12) !important;
+  color: var(--ok) !important;
+  font-weight: 600 !important;
+}
+.reader-refresh:hover { background: oklch(from var(--ok) l c h / 0.2) !important; color: var(--ok) !important; }
 
 /* =========================================================================
    MENU-BAR POPOVER — the roster glance dropped from the status item

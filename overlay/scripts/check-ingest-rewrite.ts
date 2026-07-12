@@ -12,7 +12,7 @@
  * reload, never a silent no-op. If a future refactor reintroduces the bug (all roads
  * keyed on path-novelty/difference), case 1 fails.
  */
-import { rewritesNeedingReload, effectsForRewrites } from "../src/ingest-logic.ts";
+import { rewritesOnScreen, effectsForRewrites } from "../src/ingest-logic.ts";
 
 let failed = 0;
 function check(name: string, cond: boolean): void {
@@ -21,13 +21,13 @@ function check(name: string, cond: boolean): void {
 }
 const eq = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
-// ---- rewritesNeedingReload — THE canonical signature -----------------------
+// ---- rewritesOnScreen — THE canonical signature ----------------------------
 const P = "/art/ac-condensate-pump-shopping-list.html";
 
 check(
   "1. rewrite of the on-screen hero is detected (the reported bug)",
   eq(
-    rewritesNeedingReload(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
+    rewritesOnScreen(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
       digestPath: P,
       focusPath: null,
     }),
@@ -38,7 +38,7 @@ check(
 check(
   "2. rewrite of the artifact open in the reader targets the reader (reader wins)",
   eq(
-    rewritesNeedingReload(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
+    rewritesOnScreen(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
       digestPath: P,
       focusPath: P,
     }),
@@ -49,7 +49,7 @@ check(
 check(
   "3. brand-new artifact is left to the routing roads (not a content refresh)",
   eq(
-    rewritesNeedingReload(new Map(), [{ path: P, modified_ms: 2000 }], {
+    rewritesOnScreen(new Map(), [{ path: P, modified_ms: 2000 }], {
       digestPath: null,
       focusPath: null,
     }),
@@ -60,7 +60,7 @@ check(
 check(
   "4. unchanged artifact does not reload (idempotent poll)",
   eq(
-    rewritesNeedingReload(new Map([[P, 2000]]), [{ path: P, modified_ms: 2000 }], {
+    rewritesOnScreen(new Map([[P, 2000]]), [{ path: P, modified_ms: 2000 }], {
       digestPath: P,
       focusPath: null,
     }),
@@ -71,7 +71,7 @@ check(
 check(
   "5. rewrite of an OFF-screen artifact does not reload",
   eq(
-    rewritesNeedingReload(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
+    rewritesOnScreen(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
       digestPath: "/art/other.html",
       focusPath: null,
     }),
@@ -79,30 +79,37 @@ check(
   ),
 );
 
-// ---- effectsForRewrites — NO REWRITE MAY EVER RELOAD A DISPLAYED FRAME ------
-// The comment-loss bug (2026-07-09): an agent re-authored one artifact 10× in 7
-// minutes; every rewrite reloaded the frame showing it and destroyed the comments
-// the user had typed into it. These pin the reaction, not the detection.
+// ---- the two rules, which are NOT the same rule ------------------------------
+// NEVER RELOAD (2026-07-09): an agent re-authored one artifact 10× in 7 minutes;
+// every rewrite reloaded the frame showing it and destroyed the comments the user
+// had typed in. Enforced in board.ts — nothing here returns a reload.
+//
+// NEVER GO SILENT (2026-07-11): that fix over-corrected. A rewrite under the OPEN
+// READER was deferred *and unmentioned*, so an agent could replace what the user
+// was reading and the user would never know — observed live, with the user
+// answering a recommendation that had already been superseded twice. A rewritten
+// reader must therefore be REPORTED (case 7); board.ts turns that into a "↻
+// Updated · Refresh" button, never an automatic reload.
 
 check(
-  "6. a rewritten hero is offered as a pill, never reloaded",
+  "6. a rewritten hero is offered the advance pill, never reloaded",
   eq(
     effectsForRewrites(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
       digestPath: P,
       focusPath: null,
     }),
-    [{ path: P, target: "hero", action: "pill" }],
+    [{ path: P, affordance: "hero-pill" }],
   ),
 );
 
 check(
-  "7. a rewrite under the OPEN READER is deferred — the focused frame is never touched",
+  "7. THE SILENCE BUG: a rewrite under the OPEN READER offers a refresh, and is NOT swallowed",
   eq(
     effectsForRewrites(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
       digestPath: P,
       focusPath: P,
     }),
-    [{ path: P, target: "reader", action: "defer" }],
+    [{ path: P, affordance: "reader-refresh" }],
   ),
 );
 
@@ -113,18 +120,24 @@ check(
       digestPath: P,
       focusPath: "/art/other.html",
     }),
-    [{ path: P, target: "hero", action: "pill" }],
+    [{ path: P, affordance: "hero-pill" }],
   ),
 );
 
+// The regression this file exists for, stated as a property rather than an example:
+// EVERY on-screen rewrite must hand the user something to act on. The old bug was a
+// reader rewrite mapping to "defer" — an effect the user could never see or reach.
 check(
-  "9. no rewrite anywhere produces a reload action",
+  "9. no on-screen rewrite is ever dropped on the floor (hero AND reader both offered)",
   eq(
-    effectsForRewrites(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
-      digestPath: P,
-      focusPath: null,
-    }).some((e) => (e.action as string) === "reload"),
-    false,
+    (["hero", "reader"] as const).map(
+      (surface) =>
+        effectsForRewrites(new Map([[P, 1000]]), [{ path: P, modified_ms: 2000 }], {
+          digestPath: P,
+          focusPath: surface === "reader" ? P : null,
+        })[0]?.affordance ?? "DROPPED",
+    ),
+    ["hero-pill", "reader-refresh"],
   ),
 );
 

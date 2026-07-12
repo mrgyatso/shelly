@@ -287,6 +287,10 @@ let freshLaunchUnit: string | null = null;
 /** The reader overlay's dedicated live iframe + the path it's showing (null = closed). */
 let focusFrame: HTMLIFrameElement | null = null;
 let focusPath: string | null = null;
+/** Set when the artifact open in the reader is rewritten under it. Drives the
+ *  "↻ Updated" button in the reader nav — an OFFER, never an automatic reload, so
+ *  a comment being typed survives (see the two rules in ingest-logic.ts). */
+let readerStalePath: string | null = null;
 /** Artifact paths visited in this reader session, for "← Back" after jumping
  *  through the agents-need-you queue. Cleared when the reader closes. */
 const readerBackStack: string[] = [];
@@ -3254,6 +3258,7 @@ function navigateTo(to: string): void {
 async function openReader(path: string): Promise<void> {
   if (focusPath) return;
   focusPath = path;
+  readerStalePath = null; // opening loads current content
 
   const card = document.createElement("div");
   card.className = "reader";
@@ -3359,6 +3364,16 @@ function renderReaderNav(): void {
     back.addEventListener("click", () => void readerBack());
     nav.append(back);
   }
+  // The agent replaced what you are reading. Say so — but let the user pull it,
+  // so a half-typed comment is never destroyed by a poll they didn't ask for.
+  if (readerStalePath !== null && readerStalePath === focusPath) {
+    const refresh = document.createElement("button");
+    refresh.className = "reader-refresh";
+    refresh.textContent = "↻ Updated · Refresh";
+    refresh.title = "The agent rewrote this artifact. Reload it (anything typed here is lost).";
+    refresh.addEventListener("click", () => void readerRefresh());
+    nav.append(refresh);
+  }
   if (q.length) {
     const next = document.createElement("button");
     next.className = "reader-next";
@@ -3368,6 +3383,17 @@ function renderReaderNav(): void {
     nav.append(next);
   }
   nav.toggleAttribute("hidden", nav.childElementCount === 0);
+}
+
+/** User-initiated reload of the artifact open in the reader, after an agent rewrote
+ *  it underneath. The ONLY sanctioned reader reload while a unit is live — a click,
+ *  not the poll — so it cannot wipe a comment behind the user's back. */
+async function readerRefresh(): Promise<void> {
+  const path = readerStalePath;
+  readerStalePath = null;
+  if (!path || !focusFrame || focusPath !== path) return renderReaderNav();
+  renderReaderNav();
+  await loadArtifactInto(path, focusFrame).catch((e) => console.error("reader refresh failed", path, e));
 }
 
 /** Jump the reader to the next agent's freshest unread artifact, pushing the
@@ -3380,6 +3406,7 @@ async function readerJumpNext(): Promise<void> {
   const next = q[0].path;
   if (focusPath) readerBackStack.push(focusPath);
   focusPath = next;
+  readerStalePath = null; // the jump loads current content
   markArtifactRead(next); // also refreshes the nav via updateGlobalUnread
   renderReaderNav();
   await loadArtifactInto(next, focusFrame).catch((e) => console.error("reader jump failed", next, e));
@@ -3391,6 +3418,7 @@ async function readerBack(): Promise<void> {
   if (prev === undefined || !focusFrame) return;
   awaitingAdvanceSource = null; // manual nav cancels a pending auto-advance
   focusPath = prev;
+  readerStalePath = null; // going back re-loads current content
   renderReaderNav();
   await loadArtifactInto(prev, focusFrame).catch((e) => console.error("reader back failed", prev, e));
 }
@@ -3402,6 +3430,7 @@ function closeFocus(): void {
   card?.remove();
   focusFrame = null;
   focusPath = null;
+  readerStalePath = null;
   awaitingAdvanceSource = null;
   readerBackStack.length = 0;
   if (pendingIngest.size) {
@@ -3659,10 +3688,14 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   for (const a of artifacts) lastMtimeByPath.set(a.path, a.modified_ms);
   for (const p of [...lastMtimeByPath.keys()]) if (!present.has(p)) lastMtimeByPath.delete(p);
   for (const r of rewrites) {
-    trace("ingest.content-refresh", { corr: r.path, target: r.target, action: r.action });
-    // "defer" (the reader): the focused surface is never disturbed. It re-reads fresh
-    // on the next nav/back/re-open, exactly as ingestIntoUnit defers its unit rebuild.
-    if (r.action !== "pill") continue;
+    trace("ingest.content-refresh", { corr: r.path, affordance: r.affordance });
+    if (r.affordance === "reader-refresh") {
+      // The focused frame is still never touched — but it no longer goes silent.
+      // Mark it stale and let the nav offer "↻ Updated"; the reload is the user's click.
+      readerStalePath = r.path;
+      renderReaderNav();
+      continue;
+    }
     if (currentView().level !== "unit") continue;
     // Don't clobber a pill already offering a DIFFERENT, newer artifact — that one is
     // the more useful advance. Same path (or none pending) ⇒ ours to show.
