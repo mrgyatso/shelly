@@ -73,6 +73,15 @@ hosted_by_overlay() {
   return 1
 }
 
+# Every running overlay, hosted or not. `comm` is truncated to 15 chars on Linux
+# ("companion-overl") and not on macOS, so anchor on the short form. Matching comm
+# rather than the cmdline keeps this from ever selecting the uninstaller itself.
+overlay_pids() {
+  ps -eo pid=,comm= 2>/dev/null \
+    | awk '$2 ~ /^companion-overl/ { printf "%s ", $1 }' \
+    | sed 's/ *$//'
+}
+
 say ""
 say "${bold}Companion${reset} — removing"
 say ""
@@ -120,19 +129,43 @@ else
 fi
 
 # --- The app ------------------------------------------------------------------
+# The overlay may still be running even when it is not hosting this terminal.
+# Removing the app then yanks the binary out from under a live process, leaving
+# it running with no files on disk. Offer to quit it first.
+pids=$(overlay_pids)
+if [ -n "$pids" ] && ! $CHECK_ONLY; then
+  say ""
+  say "  ${dim}The overlay is still running (pid ${pids}).${reset}"
+  if ask "Quit it before removing the app?"; then
+    kill $pids 2>/dev/null
+    n=0
+    while [ -n "$(overlay_pids)" ] && [ "$n" -lt 25 ]; do sleep .2; n=$((n + 1)); done
+    if [ -n "$(overlay_pids)" ]; then
+      info "app         would not quit — removing anyway"
+    else
+      ok "quit        overlay stopped"
+    fi
+  fi
+fi
+
 # Three ways it could have got here: a .deb, a Homebrew cask, or a from-source
 # build symlinked onto PATH. Handle whichever we actually find.
 removed_app=false
 
-if command -v dpkg >/dev/null 2>&1 && dpkg -s companion-overlay >/dev/null 2>&1; then
+# Ask dpkg which package owns the installed binary rather than assuming the name —
+# a rename in tauri.conf.json would otherwise make removal silently do nothing.
+deb_pkg=$(dpkg -S /usr/bin/companion-overlay 2>/dev/null | cut -d: -f1)
+[ -n "$deb_pkg" ] || deb_pkg=companion-overlay
+
+if command -v dpkg >/dev/null 2>&1 && dpkg -s "$deb_pkg" >/dev/null 2>&1; then
   if $CHECK_ONLY; then
-    info "would remove package     companion-overlay (.deb)"
+    info "would remove package     ${deb_pkg} (.deb)"
   else
     say ""
-    ask "Remove the companion-overlay package? It will ask for your password." || die "stopped."
-    sudo apt-get remove -y companion-overlay >/dev/null 2>&1 \
-      || die "apt-get could not remove companion-overlay."
-    ok "package     companion-overlay"
+    ask "Remove the ${deb_pkg} package? It will ask for your password." || die "stopped."
+    sudo apt-get remove -y "$deb_pkg" >/dev/null 2>&1 \
+      || die "apt-get could not remove ${deb_pkg}."
+    ok "package     ${deb_pkg}"
   fi
   removed_app=true
 fi
@@ -142,6 +175,8 @@ if command -v brew >/dev/null 2>&1 \
   if $CHECK_ONLY; then
     info "would remove cask        claude-code-companion"
   else
+    say ""
+    ask "Remove the claude-code-companion cask?" || die "stopped."
     brew uninstall --cask claude-code-companion >/dev/null 2>&1 \
       || die "brew could not uninstall the cask."
     ok "cask        claude-code-companion"
@@ -156,6 +191,7 @@ if [ -L /usr/local/bin/companion ]; then
   else
     sudo rm -f /usr/local/bin/companion && ok "symlink     /usr/local/bin/companion"
   fi
+  removed_app=true
 fi
 
 # A from-source install: `companion` symlinked out of a checkout, plus the two
@@ -171,15 +207,21 @@ if [ -L "$HOME/.local/bin/companion" ]; then
   removed_app=true
 fi
 
+apps_dir="$HOME/.local/share/applications"
+dropped_desktop=false
 for d in companion-overlay companion-overlay-handler; do
-  f="$HOME/.local/share/applications/$d.desktop"
+  f="$apps_dir/$d.desktop"
   [ -f "$f" ] || continue
   if $CHECK_ONLY; then
     info "would remove desktop     ~/.local/share/applications/$d.desktop"
   else
-    rm -f "$f" && ok "desktop     $d.desktop"
+    rm -f "$f" && ok "desktop     $d.desktop" && dropped_desktop=true
   fi
 done
+# Without this the entries linger in the launcher menu until the cache is rebuilt.
+if $dropped_desktop && command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$apps_dir" >/dev/null 2>&1
+fi
 
 $removed_app || $CHECK_ONLY || info "app         not installed"
 
