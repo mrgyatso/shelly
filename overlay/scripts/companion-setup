@@ -29,6 +29,9 @@ for arg in "$@"; do
 done
 
 say()  { printf '  %s\n' "$1"; }
+# A refresh that fails is not fatal — the machine is already wired and working, it just
+# did not get newer code (no network, most likely). Say so and carry on.
+warn() { printf '  %s\n' "$1" >&2; }
 fail() { printf '\ncompanion setup: %s\n' "$1" >&2; shift; for l in "$@"; do printf '  %s\n' "$l" >&2; done; exit 1; }
 
 printf '\ncompanion setup\n\n'
@@ -45,10 +48,15 @@ command -v claude >/dev/null 2>&1 || fail "claude not found on PATH." \
   "Install Claude Code first: https://claude.com/claude-code"
 say "claude      $(command -v claude)"
 
-# 3. Marketplace. Only add when absent: a re-add overwrites the source, which
-#    would silently repoint a contributor's local checkout at GitHub.
+# 3. Marketplace. Never re-`add` when present: a re-add overwrites the source, which
+#    would silently repoint a contributor's local checkout at GitHub. `update` pulls
+#    from whatever source is already configured, so it is safe for both.
 if claude plugin marketplace list 2>/dev/null | grep -q "❯ ${MARKETPLACE}\$"; then
-  say "marketplace ${MARKETPLACE} (already configured)"
+  if claude plugin marketplace update "${MARKETPLACE}" >/dev/null 2>&1; then
+    say "marketplace ${MARKETPLACE} (refreshed)"
+  else
+    warn "marketplace ${MARKETPLACE} (configured; could not refresh — offline?)"
+  fi
 else
   claude plugin marketplace add mrgyatso/claude-code-companion >/dev/null 2>&1 \
     || fail "could not add the marketplace." "Run it by hand to see why:" \
@@ -56,9 +64,16 @@ else
   say "marketplace ${MARKETPLACE} (added)"
 fi
 
-# 4. Plugin.
+# 4. Plugin. An install that is already present still needs `update` — the plugin is
+#    fetched from the marketplace, NOT carried in the app bundle, so a newer app does
+#    not imply newer plugin code. Without this, re-running the installer left the old
+#    hooks and skills in place forever.
 if claude plugin list 2>/dev/null | grep -q "${PLUGIN}"; then
-  say "plugin      ${PLUGIN} (already installed)"
+  if claude plugin update "${PLUGIN}" >/dev/null 2>&1; then
+    say "plugin      ${PLUGIN} (updated)"
+  else
+    warn "plugin      ${PLUGIN} (installed; could not update — offline?)"
+  fi
 else
   claude plugin install "${PLUGIN}" >/dev/null 2>&1 \
     || fail "could not install the plugin." "Run it by hand to see why:" \
