@@ -1789,6 +1789,20 @@
   letter-spacing: -0.01em;
 }
 .settings-head p { font: 400 13px/1.5 var(--ui-font); color: var(--ink-3); margin: 0; }
+/* Installed app version, so an upgrade is verifiable at a glance. */
+.settings-version {
+  display: inline-block;
+  vertical-align: 3px;
+  margin-left: 8px;
+  font: 600 10.5px/1 var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 9px;
+}
+.settings-version:empty { display: none; }
 .settings-group { display: flex; flex-direction: column; gap: 8px; }
 .settings-row {
   display: flex;
