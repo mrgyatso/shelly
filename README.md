@@ -105,6 +105,11 @@ companion setup
 
 `apt` pulls in WebKitGTK and the other system libraries the app links against. The package puts the app on your menu and the `companion` CLI on your `PATH`; `companion setup` then wires it to Claude Code — it adds the plugin marketplace, installs the `companion` plugin, creates the watched folder, and finishes by running `companion doctor` so you can see it worked.
 
+> **Installing a `.deb` older than 0.1.11?** Those packages never linked the CLI onto `PATH`, so `companion setup` comes back `command not found`. Link it once and carry on — or just use the one-command installer above, which does this for you:
+> ```bash
+> sudo ln -sf "/usr/lib/Companion Overlay/scripts/companion" /usr/bin/companion
+> ```
+
 `companion setup` is safe to re-run; every step it has already done is skipped. Restart any `claude` session you had open so it picks up the plugin.
 
 </details>
@@ -140,10 +145,12 @@ chmod +x Companion_Overlay_*.AppImage
 The AppImage does **not** put the `companion` CLI on your `PATH`, and `companion setup` is what wires the plugin to Claude Code — so on this path, extract the CLI once and link it:
 
 ```bash
-./Companion_Overlay_*.AppImage --appimage-extract >/dev/null
-sudo ln -sf "$PWD/squashfs-root/usr/lib/companion-overlay/scripts/companion" /usr/local/bin/companion
+./Companion*.AppImage --appimage-extract >/dev/null
+sudo ln -sf "$PWD/squashfs-root/usr/lib/Companion Overlay/scripts/companion" /usr/local/bin/companion
 companion setup
 ```
+
+(The path really does have a capital and a space in it — that is the Tauri product name.)
 
 If your distro has no AppImage support out of the box, install `libfuse2` (Ubuntu 22.04+: `sudo apt install libfuse2`).
 
@@ -220,7 +227,7 @@ The hook script ships inside the app bundle, so the path depends on your platfor
 | Platform | `companion-hook` lives at |
 |---|---|
 | macOS | `/Applications/Companion Overlay.app/Contents/Resources/scripts/companion-hook` |
-| Linux (`.deb`) | `/usr/lib/companion-overlay/scripts/companion-hook` |
+| Linux (`.deb`) | `/usr/lib/Companion Overlay/scripts/companion-hook` |
 
 ```json
 {
@@ -229,7 +236,7 @@ The hook script ships inside the app bundle, so the path depends on your platfor
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": "/usr/lib/companion-overlay/scripts/companion-hook" }
+          { "type": "command", "command": "/usr/lib/Companion Overlay/scripts/companion-hook" }
         ]
       }
     ]
