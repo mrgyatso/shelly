@@ -88,7 +88,14 @@ else
 fi
 
 # 3. overlay daemon -------------------------------------------------------
-pids=$(pgrep -x companion-overlay 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+# Linux truncates `comm` to 15 chars, so the process reads as "companion-overl" and
+# `pgrep -x companion-overlay` never matches it — the daemon always reported idle,
+# even with the app on screen. Anchor on the short form, which is also what macOS's
+# untruncated name starts with. Matching `comm` rather than the full cmdline keeps
+# this from ever selecting the doctor itself.
+pids=$(ps -eo pid=,comm= 2>/dev/null \
+  | awk '$2 ~ /^companion-overl/ { printf "%s ", $1 }' \
+  | sed 's/ *$//')
 if [ -n "$pids" ]; then
   add ok "overlay daemon" "running (pid $pids)"
 else
