@@ -1,13 +1,12 @@
 name: Release (Linux bundles)
 
-# Builds the Ubuntu/Debian bundles and attaches them to the release.
-#
-# macOS releases are still cut by hand on a Mac (the universal DMG is built and
-# uploaded locally) — this workflow deliberately does NOT touch that path. It only
-# adds the Linux half, which no human is going to hand-build on a Mac.
+# Builds the Ubuntu/Debian bundles — amd64 and arm64 — and attaches them to the
+# release. The macOS half lives in release-macos.yml; both fire on the same tag.
 #
 # `install.sh`'s Ubuntu branch downloads the `_<arch>.deb` asset from the latest
-# release, so until this job has run once, that branch has nothing to fetch.
+# release, so until this job has run once, that branch has nothing to fetch —
+# and until the arm64 leg has run once, `install.sh` on an arm64 box dies with
+# "no arm64 .deb in the latest release".
 #
 # Fires on a version tag, or on demand against an existing tag/release.
 
@@ -22,11 +21,20 @@ on:
 
 jobs:
   linux-bundles:
-    name: tauri build → .deb + AppImage
-    runs-on: ubuntu-latest
+    name: tauri build → .deb + AppImage (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     permissions:
       contents: write
+    strategy:
+      # One architecture failing must not cancel the other's upload.
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
 
     steps:
       - uses: actions/checkout@v4
