@@ -7,8 +7,12 @@
 #
 # Checks for Node 18+, Claude Code and the Companion app (plus Homebrew on
 # macOS); offers to install whatever is missing; then hands off to `companion
-# setup`, which wires the plugin. Safe to re-run — every step it has already
-# done is skipped.
+# setup`, which wires the plugin.
+#
+# Safe to re-run, and re-running is how you upgrade: steps already done are
+# skipped, but an app behind the latest release is offered an update (there is no
+# auto-updater — this script is the only thing that moves an installed app
+# forward), and `companion setup` refreshes the plugin.
 #
 # Flags:  -y, --yes    assume yes (required when there is no terminal to ask on)
 #             --check  report what is missing and exit, changing nothing
