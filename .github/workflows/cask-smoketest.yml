@@ -23,7 +23,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-13]
+        # macos-13 was the Intel leg until GitHub retired the image — a job asking
+        # for it now queues forever (11h observed) and never schedules. Both current
+        # images are Apple Silicon; Intel coverage is gone until a self-hosted
+        # runner or a human on an Intel Mac provides it.
+        os: [macos-14, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
 
@@ -64,16 +68,23 @@ jobs:
 
       - name: Run companion doctor
         run: |
-          companion doctor || echo "doctor exit: $?"
+          # The artifacts dir is normally created by `companion setup`, which needs
+          # Claude Code and never runs here; pre-create it so doctor's dir row
+          # exercises the path-detection logic rather than always warning.
+          mkdir -p "$HOME/.claude/companion/artifacts"
+          companion doctor > doctor.out 2>&1 || echo "doctor exit: $?"
+          cat doctor.out
+          # Doctor ends by rendering its health panel through `companion open`, which
+          # detaches the daemon (#84) rather than becoming it — so doctor returns, but
+          # it may leave a headless overlay behind. Reap it so the runner exits clean.
+          pkill -f companion-overlay 2>/dev/null || true
 
       - name: Doctor reports app + cli + dir green
         run: |
-          out=$(companion doctor 2>&1 || true)
-          echo "$out"
           # Require at least the deterministic, headless-safe rows.
-          echo "$out" | grep -q "ok  app installed"  || (echo "::error::doctor: app row missing"   && exit 1)
-          echo "$out" | grep -q "ok  cli on PATH"    || (echo "::error::doctor: cli row missing"   && exit 1)
-          echo "$out" | grep -q "ok  artifacts dir"  || (echo "::error::doctor: dir row missing"   && exit 1)
+          grep -q "ok  app installed"  doctor.out || (echo "::error::doctor: app row missing"   && exit 1)
+          grep -q "ok  cli on PATH"    doctor.out || (echo "::error::doctor: cli row missing"   && exit 1)
+          grep -q "ok  artifacts dir"  doctor.out || (echo "::error::doctor: dir row missing"   && exit 1)
           # Note: 'overlay daemon' and 'PostToolUse hook' rows may NOT be green on a
           # fresh CI runner (the daemon hasn't been launched and ~/.claude/settings.json
           # has no user hook). That's expected; this job validates the install layer
