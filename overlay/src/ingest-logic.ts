@@ -23,43 +23,44 @@ export interface ReloadTarget {
   target: "reader" | "hero";
 }
 
-/** What the Board DOES about an in-place rewrite of an artifact it is displaying.
- *  Never a reload: `loadArtifactInto` cache-busts the iframe `src`, so reloading
- *  tears the document down and wipes any comment the user is mid-typing. */
+/**
+ * The passive affordance the Board offers for a rewritten artifact.
+ *
+ * THE UNION HAS NO "none"/"defer" MEMBER, AND THAT IS THE POINT. The 2026-07-11
+ * silence bug was exactly a rewrite mapping to "do nothing" — so the type now makes
+ * that unsayable. Every on-screen rewrite must name a surface the user can act on.
+ * Neither value reloads anything: both are offers, and the reload is the user's click.
+ */
+export type RewriteAffordance = "hero-pill" | "reader-refresh";
+
+/** What the Board must OFFER about an in-place rewrite of an artifact it displays. */
 export interface RewriteEffect {
   path: string;
-  target: "reader" | "hero";
-  /** "pill" = offer a click-to-refresh affordance; "defer" = leave the frame alone. */
-  action: "pill" | "defer";
+  affordance: RewriteAffordance;
 }
 
 /**
- * THE MID-TYPING COMMENT-LOSS FIX (2026-07-09). An agent re-authoring the same
- * artifact path — observed 10× in 7 minutes — used to reload the frame showing it,
- * destroying everything the user had typed into its 💬 blocks, silently and with no
- * navigation involved.
+ * Map each on-screen rewrite to the affordance the Board owes the user.
  *
- * So a rewrite NEVER reloads a displayed frame. It is surfaced the same way a
- * brand-new artifact is: passively. The HERO gets the click-to-advance pill (the
- * user chooses to move on, so nothing is lost behind their back). The READER — the
- * focused surface, where the user is demonstrably reading and typing — is left
- * untouched entirely, matching `ingestIntoUnit`'s existing defer-while-open rule.
- * Fresh content still lands on the next entry, nav, or re-open.
+ * This exists as a pure function *because* the bug it fixes lived in the gap between
+ * detection and reaction: `rewritesOnScreen` always reported the reader, and board.ts
+ * silently dropped it. A regression test against detection alone would pass on the
+ * buggy code. Pinning the REACTION here is what makes the test real.
  */
 export function effectsForRewrites(
   prevMtime: ReadonlyMap<string, number>,
   next: readonly ArtifactDelta[],
   shown: DisplayState,
 ): RewriteEffect[] {
-  return rewritesNeedingReload(prevMtime, next, shown).map((r) => ({
-    ...r,
-    action: r.target === "hero" ? "pill" : "defer",
+  return rewritesOnScreen(prevMtime, next, shown).map((r) => ({
+    path: r.path,
+    affordance: r.target === "hero" ? "hero-pill" : "reader-refresh",
   }));
 }
 
 /**
  * Return the on-screen artifacts that were REWRITTEN IN PLACE (same path, newer
- * mtime). Detection only — `effectsForRewrites` owns what to do about them.
+ * mtime). Detection only — `effectsForRewrites` owns what the user is offered.
  *
  * The four routing roads in `ingestArtifacts` all key on path-novelty or
  * path-DIFFERENCE, so overwriting the artifact already on the hero
@@ -68,8 +69,27 @@ export function effectsForRewrites(
  * actually displayed. Brand-new paths (no prior mtime) and unchanged paths return
  * nothing; routing owns those. The reader wins over the hero when both match,
  * since the reader is the focused surface.
+ *
+ * TWO RULES, AND THEY ARE NOT THE SAME RULE.
+ *
+ * 1. NEVER RELOAD (the 2026-07-09 comment-loss fix). An agent re-authoring one
+ *    path — observed 10× in 7 minutes — used to reload the frame showing it,
+ *    destroying whatever the user had typed into its 💬 blocks, silently and with
+ *    no navigation involved. So a rewrite still never reloads a displayed frame.
+ *    Both surfaces only ever *offer*; the reload is the user's click.
+ *
+ * 2. NEVER GO SILENT (2026-07-11). That fix over-corrected: the reader was left
+ *    untouched *and unmentioned*, so an agent could replace the artifact the user
+ *    was reading and the user would never know. "Don't reload" had quietly become
+ *    "don't tell" — the user reads stale content believing it is current, and the
+ *    agent silently fails to reach them. Observed live: a recommendation flipped
+ *    twice under an open reader; the user answered the superseded version.
+ *
+ * So BOTH targets are surfaced, passively: the hero gets the click-to-advance
+ * pill, the reader gets a refresh button in its nav. Nothing moves behind the
+ * user's back, and nothing is hidden from them either.
  */
-export function rewritesNeedingReload(
+export function rewritesOnScreen(
   prevMtime: ReadonlyMap<string, number>,
   next: readonly ArtifactDelta[],
   shown: DisplayState,

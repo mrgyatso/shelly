@@ -83,6 +83,15 @@ const ARTIFACTS: MockArtifact[] = [
   },
 ];
 
+// ---- Rewrite-under-the-reader scenario (the 2026-07-11 silence bug) ----------
+// At ~10s the agent RE-AUTHORS an artifact already on screen: same path, newer
+// mtime. The Board must OFFER the new content — "↻ Updated · Refresh" in the reader
+// nav if it is open there, the advance pill on the hero — and must never reload the
+// frame by itself (that would wipe a comment being typed). Open the reader on "Board
+// UI audit" within the first 10s to watch the affordance appear.
+const REWRITTEN_PATH = "/mock/artifacts/board-ui-audit.html";
+const REWRITE_AT_MS = 10_000;
+
 /** One more artifact lands ~6s after boot — exercises the live-ingest path
  *  (unread bell + "New artifact" pill) so those states can be screenshotted.
  *  Routed to unit 1 so lantern stays artifact-less (its blank hero
@@ -373,7 +382,17 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
     // alarm the rail's warning row, and a red alarm is not a demo.
     if (demo) return [...demo.artifacts, REMOTE_ARTIFACT];
     const t = Date.now() - now;
-    const out = [...ARTIFACTS, REMOTE_ARTIFACT];
+    // Same path, newer mtime — an in-place rewrite, not a new artifact.
+    const out: MockArtifact[] = ARTIFACTS.map((a) =>
+      a.path === REWRITTEN_PATH && t >= REWRITE_AT_MS
+        ? {
+            ...a,
+            modified_ms: now + REWRITE_AT_MS,
+            summary: "REWRITTEN in place — the agent replaced this while you were reading it.",
+          }
+        : a,
+    );
+    out.push(REMOTE_ARTIFACT);
     if (t >= 6_000) out.push(LATE_ARTIFACT);
     if (t >= RACE_APPEAR_MS) out.push(t >= RACE_STAMP_MS ? RACE_RESOLVED_STAMPED : RACE_RESOLVED_BARE);
     if (t >= ORPHAN_APPEAR_MS) out.push(RACE_ORPHAN);
