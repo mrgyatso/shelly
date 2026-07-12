@@ -1,6 +1,7 @@
 mod artifact;
 mod artifact_watch;
 mod code_peek;
+mod codex_wire;
 mod dials;
 mod events;
 mod history;
@@ -257,6 +258,11 @@ pub fn run() {
             // initial sync. No-op until a hub is configured; re-reads config each
             // tick so `companion hub set …` needs no restart.
             hub::start_pull_loop(app.handle().clone());
+
+            // Auto-unlock Codex: a codex CLI installed after setup gets the
+            // Companion marketplace + plugin wired on the next app launch —
+            // background thread, best-effort, never re-adds anything present.
+            codex_wire::auto_wire_on_launch();
 
             // Runtime deep-link registration (needed in dev / on Linux).
             #[cfg(any(target_os = "linux", debug_assertions))]

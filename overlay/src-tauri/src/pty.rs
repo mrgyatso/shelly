@@ -101,7 +101,7 @@ fn user_shell() -> String {
 /// install locations — including `~/.local/bin` (modern installer),
 /// `~/.claude/local` (claude migrate-installer), and `~/.local/node/bin`
 /// (a user-prefix node that carries a global npm codex).
-fn find_agent(bin: &str) -> Option<String> {
+pub(crate) fn find_agent(bin: &str) -> Option<String> {
     let shell = user_shell();
     if let Ok(out) = std::process::Command::new(&shell)
         .args(["-l", "-c", &format!("command -v {bin}")])

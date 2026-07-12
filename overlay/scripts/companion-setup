@@ -43,42 +43,58 @@ command -v node >/dev/null 2>&1 || fail "node not found on PATH." \
   "  brew install node"
 say "node        $(node -v)"
 
-# 2. Claude Code — the plugin lives inside it.
-command -v claude >/dev/null 2>&1 || fail "claude not found on PATH." \
-  "Install Claude Code first: https://claude.com/claude-code"
-say "claude      $(command -v claude)"
+# 2. At least one agent CLI — the plugin lives inside whichever you use. Neither
+#    installed is the only fatal case; one missing CLI is just skipped (it wires
+#    itself when it appears: re-run setup, or the app auto-wires codex on launch).
+HAVE_CLAUDE=""
+HAVE_CODEX=""
+command -v claude >/dev/null 2>&1 && HAVE_CLAUDE=1
+command -v codex >/dev/null 2>&1 && HAVE_CODEX=1
+[ -n "${HAVE_CLAUDE}${HAVE_CODEX}" ] || fail "no agent CLI found on PATH." \
+  "Companion wires itself into Claude Code and/or Codex — install one first:" \
+  "  Claude Code: https://claude.com/claude-code" \
+  "  Codex:       npm install -g @openai/codex"
+if [ -n "$HAVE_CLAUDE" ]; then
+  say "claude      $(command -v claude)"
+else
+  say "claude      not installed — skipped (wires itself once installed)"
+fi
 
 # 3. Marketplace. Never re-`add` when present: a re-add overwrites the source, which
 #    would silently repoint a contributor's local checkout at GitHub. `update` pulls
 #    from whatever source is already configured, so it is safe for both.
-if claude plugin marketplace list 2>/dev/null | grep -q "❯ ${MARKETPLACE}\$"; then
-  if claude plugin marketplace update "${MARKETPLACE}" >/dev/null 2>&1; then
-    say "marketplace ${MARKETPLACE} (refreshed)"
+if [ -n "$HAVE_CLAUDE" ]; then
+  if claude plugin marketplace list 2>/dev/null | grep -q "❯ ${MARKETPLACE}\$"; then
+    if claude plugin marketplace update "${MARKETPLACE}" >/dev/null 2>&1; then
+      say "marketplace ${MARKETPLACE} (refreshed)"
+    else
+      warn "marketplace ${MARKETPLACE} (configured; could not refresh — offline?)"
+    fi
   else
-    warn "marketplace ${MARKETPLACE} (configured; could not refresh — offline?)"
+    claude plugin marketplace add mrgyatso/claude-code-companion >/dev/null 2>&1 \
+      || fail "could not add the marketplace." "Run it by hand to see why:" \
+              "  claude plugin marketplace add mrgyatso/claude-code-companion"
+    say "marketplace ${MARKETPLACE} (added)"
   fi
-else
-  claude plugin marketplace add mrgyatso/claude-code-companion >/dev/null 2>&1 \
-    || fail "could not add the marketplace." "Run it by hand to see why:" \
-            "  claude plugin marketplace add mrgyatso/claude-code-companion"
-  say "marketplace ${MARKETPLACE} (added)"
 fi
 
 # 4. Plugin. An install that is already present still needs `update` — the plugin is
 #    fetched from the marketplace, NOT carried in the app bundle, so a newer app does
 #    not imply newer plugin code. Without this, re-running the installer left the old
 #    hooks and skills in place forever.
-if claude plugin list 2>/dev/null | grep -q "${PLUGIN}"; then
-  if claude plugin update "${PLUGIN}" >/dev/null 2>&1; then
-    say "plugin      ${PLUGIN} (updated)"
+if [ -n "$HAVE_CLAUDE" ]; then
+  if claude plugin list 2>/dev/null | grep -q "${PLUGIN}"; then
+    if claude plugin update "${PLUGIN}" >/dev/null 2>&1; then
+      say "plugin      ${PLUGIN} (updated)"
+    else
+      warn "plugin      ${PLUGIN} (installed; could not update — offline?)"
+    fi
   else
-    warn "plugin      ${PLUGIN} (installed; could not update — offline?)"
+    claude plugin install "${PLUGIN}" >/dev/null 2>&1 \
+      || fail "could not install the plugin." "Run it by hand to see why:" \
+              "  claude plugin install ${PLUGIN}"
+    say "plugin      ${PLUGIN} (installed)"
   fi
-else
-  claude plugin install "${PLUGIN}" >/dev/null 2>&1 \
-    || fail "could not install the plugin." "Run it by hand to see why:" \
-            "  claude plugin install ${PLUGIN}"
-  say "plugin      ${PLUGIN} (installed)"
 fi
 
 # 4b. Codex CLI (optional). Codex's plugin system consumes this same Claude-format

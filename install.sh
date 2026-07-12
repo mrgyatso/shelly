@@ -125,20 +125,73 @@ else
   fi
 fi
 
-# --- Claude Code --------------------------------------------------------------
+# --- Agent CLIs (Claude Code / Codex) -------------------------------------------
+# Companion needs AT LEAST ONE agent CLI and uses whichever you have — having one
+# never triggers a pitch for the other. Only a machine with neither gets asked
+# which to install (--yes takes the default, Claude Code). A Codex installed later
+# unlocks by itself: the app wires it on its next launch, and `companion setup`
+# picks it up too.
 claude_path() { command -v claude 2>/dev/null || { [ -x "$HOME/.local/bin/claude" ] && printf '%s\n' "$HOME/.local/bin/claude"; }; }
+codex_path()  { command -v codex  2>/dev/null || { [ -x "$HOME/.local/bin/codex" ] && printf '%s\n' "$HOME/.local/bin/codex"; }; }
+
+install_claude() {
+  curl -fsSL https://claude.ai/install.sh | bash
+  export PATH="$HOME/.local/bin:$PATH"
+  command -v claude >/dev/null 2>&1 || die "Claude Code installed but 'claude' is not on PATH."
+  ok "Claude Code installed"
+}
+
+install_codex() {
+  # Node 18+ is already ensured above. A system (apt) node has a root-owned global
+  # prefix, so retry with sudo when the plain install can't write.
+  npm install -g @openai/codex >/dev/null 2>&1 || sudo npm install -g @openai/codex \
+    || die "could not install Codex — run it by hand: npm install -g @openai/codex"
+  # npm's global bin dir may not be on PATH (a user-prefix node); make `codex`
+  # reachable the same way Claude Code is, via ~/.local/bin.
+  if ! command -v codex >/dev/null 2>&1; then
+    npm_bin="$(npm prefix -g 2>/dev/null)/bin"
+    [ -x "$npm_bin/codex" ] || die "Codex installed but its binary was not found under $npm_bin."
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$npm_bin/codex" "$HOME/.local/bin/codex"
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  command -v codex >/dev/null 2>&1 || die "Codex installed but 'codex' is not on PATH."
+  ok "Codex installed  $(command -v codex)"
+}
+
+# Which CLI to install when the machine has neither. --yes (no terminal) takes
+# Claude Code — the documented default.
+choose_agent() {
+  $ASSUME_YES && { printf 'claude'; return 0; }
+  [ -r /dev/tty ] || die "no terminal to prompt on. Re-run with --yes to accept the default (Claude Code)."
+  local reply
+  printf '  %s?%s Which agent CLI should Companion set up? [1] Claude Code (default) · [2] Codex · [3] both: ' \
+    "$bold" "$reset" > /dev/tty
+  read -r reply < /dev/tty
+  case "$reply" in
+    2*) printf 'codex' ;;
+    3*) printf 'both' ;;
+    *) printf 'claude' ;;
+  esac
+}
+
 if [ -n "$(claude_path)" ]; then
   # It may exist but not be on PATH in this shell — the installer only edits rc files.
   command -v claude >/dev/null 2>&1 || export PATH="$HOME/.local/bin:$PATH"
   ok "Claude Code     $(command -v claude)"
-else
-  info "Claude Code is missing"
-  $CHECK_ONLY || ask "Install Claude Code?" || die "Claude Code is required."
+fi
+if [ -n "$(codex_path)" ]; then
+  command -v codex >/dev/null 2>&1 || export PATH="$HOME/.local/bin:$PATH"
+  ok "Codex           $(command -v codex)"
+fi
+if [ -z "$(claude_path)" ] && [ -z "$(codex_path)" ]; then
+  info "No agent CLI found — Companion needs Claude Code or Codex (or both)"
   if ! $CHECK_ONLY; then
-    curl -fsSL https://claude.ai/install.sh | bash
-    export PATH="$HOME/.local/bin:$PATH"
-    command -v claude >/dev/null 2>&1 || die "Claude Code installed but 'claude' is not on PATH."
-    ok "Claude Code installed"
+    case "$(choose_agent)" in
+      claude) install_claude ;;
+      codex)  install_codex ;;
+      both)   install_claude; install_codex ;;
+    esac
   fi
 fi
 
@@ -324,9 +377,10 @@ else
   say ""
   say "${bold}Almost there.${reset} ${dim}companion setup${reset} could not finish."
   say ""
-  say "  If you have not signed in to Claude Code yet, do that now:"
+  say "  If you have not signed in to your agent CLI yet, do that now:"
   say ""
   say "      claude          ${dim}# finish the browser login, then quit with Ctrl-C${reset}"
+  say "      codex login     ${dim}# if you use Codex${reset}"
   say ""
   say "  Then run this script again — it skips everything already done."
   exit 1
