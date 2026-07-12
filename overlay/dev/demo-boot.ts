@@ -9,11 +9,13 @@
 import { installTauriMock } from "./tauri-mock";
 import {
   DEMO_ARTIFACTS,
+  DEMO_FOLLOWUP,
   DEMO_LIVE_SOURCES,
   DEMO_TRANSCRIPTS,
   DEMO_UNITS,
   bindDemoSession,
   demoArtifactHtml,
+  tidepoolFollowUpTty,
 } from "./demo-profile";
 
 installTauriMock({
@@ -22,6 +24,9 @@ installTauriMock({
     liveSources: DEMO_LIVE_SOURCES,
     artifactHtml: demoArtifactHtml,
     transcripts: DEMO_TRANSCRIPTS,
+    followUp: DEMO_FOLLOWUP,
+    followUpTty: tidepoolFollowUpTty,
+    followUpUnit: "tidepool",
   },
 });
 
