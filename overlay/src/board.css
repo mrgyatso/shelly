@@ -127,6 +127,27 @@
   user-select: text;
   -webkit-user-select: text;
 }
+
+/* =========================================================================
+   LINUX — the Board is a normal app window inside a NATIVE titlebar
+   =========================================================================
+   Everything above draws a rounded, transparent, floating card because on
+   macOS that card IS the window (no decorations, no titlebar). On Linux the WM
+   draws a real titlebar, so the same card ends up floating inside someone
+   else's frame — two stacked chromes with see-through corners between them.
+   Here the shell stands down and the app fills the frame it was given. */
+.linux .stage {
+  border-radius: 0;
+  /* The dark letterbox only exists to surround a floating card. There is no
+     card here — the board fills the window — so it would only ever show as a
+     seam at the edges. */
+  background: var(--board);
+}
+.linux .board {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
 .board.paper-tex::before {
   content: "";
   position: absolute;
@@ -266,6 +287,13 @@
 .ctl:hover { background: var(--card); color: var(--ink); border-color: var(--line-2); }
 .ctl:active { transform: scale(0.94); }
 .ctl svg { width: 16px; height: 16px; display: block; }
+/* Linux: the titlebar already carries close/minimize/maximize. Both of these
+   only ever called win.hide(), which is exactly what the native ✕ now does
+   (lib.rs hides the Board instead of destroying it there) — so drawing our own
+   is a second set of window buttons that do the same thing. New-session and the
+   unread badge stay: the WM has no equivalent. */
+.linux #board-close,
+.linux #board-collapse { display: none; }
 
 /* The "+ New session" menu — a small popover under the + offering the two ways
    to start a session (home, or a picked folder). */

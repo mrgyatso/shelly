@@ -1,5 +1,8 @@
 :root {
   --bg: rgba(15, 18, 30, 0.82);
+  /* --bg with the alpha burned in — for windows that sit in a native frame
+     (Linux) and so can't be see-through. */
+  --bg-solid: #0f121e;
   --fg: #e8ecf6;
   --muted: #8b93a7;
   --accent: #ff6a5a;
@@ -115,6 +118,16 @@ body:hover .controls { opacity: 1; pointer-events: auto; }
   overflow: hidden;
 }
 .history[hidden] { display: none; }
+/* Linux: the History HUD wears a native titlebar (same rule as the Board), so
+   its rounded translucent shell would float inside the WM's frame. Fill the
+   frame instead, and let the titlebar's ✕ be the only close button. */
+.linux .history {
+  border-radius: 0;
+  background: var(--bg-solid);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.linux #history-close { display: none; }
 
 .history-bar {
   display: flex;

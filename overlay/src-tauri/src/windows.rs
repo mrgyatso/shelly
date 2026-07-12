@@ -131,7 +131,7 @@ pub fn open_history_window(app: &AppHandle) {
             .min_inner_size(560.0, 360.0)
             // Same Linux-decorations rule as the Board (see open_board_window).
             .decorations(cfg!(target_os = "linux"))
-            .transparent(true)
+            .transparent(!cfg!(target_os = "linux"))
             .resizable(true)
             .shadow(true)
             .always_on_top(true)
@@ -225,7 +225,11 @@ pub fn open_board_window(app: &AppHandle) {
             // WM move/resize/close, and the Board runs as a normal app window there
             // (the v1 Linux shape). macOS stays frameless — chrome is drawn in-page.
             .decorations(cfg!(target_os = "linux"))
-            .transparent(true)
+            // ...and a decorated window must be opaque. Left transparent, the
+            // compositor draws its frame + shadow around a see-through canvas and
+            // the rounded in-page card shows through as an app floating inside
+            // another app. The `html.linux` CSS squares the shell off to match.
+            .transparent(!cfg!(target_os = "linux"))
             .resizable(true)
             .shadow(true)
             // The Board is a normal app window now: it layers like any other window

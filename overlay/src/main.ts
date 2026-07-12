@@ -2,6 +2,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { initFit, resetFit } from "./resize";
+import { IS_LINUX } from "./platform";
 
 declare global {
   interface Window {
@@ -101,6 +102,11 @@ if (import.meta.env.DEV) {
   addEventListener("DOMContentLoaded", () => document.body.appendChild(badge));
   if (document.body) document.body.appendChild(badge);
 }
+
+// Stamp the platform on the root element so CSS can gate on it. Every window
+// boots through here, so one line covers the Board and the History HUD — the
+// two that wear a native titlebar on Linux and must drop their in-page shell.
+if (IS_LINUX) document.documentElement.classList.add("linux");
 
 if (window.__LIVE_MODE__) {
   void import("./live").then((m) => m.initLive());
