@@ -54,3 +54,10 @@ objc2-app-kit = { version = "0.3", features = ["NSResponder", "NSView", "NSWindo
 # Read the focused terminal window's bounds via CGWindowListCopyWindowInfo (the
 # Follow-Ghostty docking mode in layout.rs). Already in the tree via tao/wry.
 core-foundation = "0.10"
+
+# Linux-only: app-local GtkSettings override (gtk-enable-animations=false) so
+# webviews report `prefers-reduced-motion: reduce` — WebKitGTK software-renders
+# CSS animations, so ambient loops burn CPU (see lib.rs). Version matches the
+# gtk already in the dep tree via tao/wry.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
