@@ -60,6 +60,14 @@ case "$OS" in
   *) die "Companion supports macOS and Ubuntu/Debian Linux." ;;
 esac
 
+# Every apt call goes through here, because under `curl … | bash` this script IS
+# bash's stdin — and a package's postinst (debconf, a dpkg trigger) will read
+# from stdin if you let it, swallowing the rest of the script. Bash then hits an
+# early EOF and exits 0 mid-install: the app lands, `companion setup` never runs,
+# and nothing reports a failure. Feeding apt /dev/null is what keeps the script
+# intact all the way to the end.
+apt_get() { sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" </dev/null; }
+
 say ""
 say "${bold}Companion${reset} — checking what this machine needs"
 say ""
@@ -114,17 +122,36 @@ else
   else
     $CHECK_ONLY || ask "Install Node via apt? It will ask for your password." || die "Node 18+ is required."
     $CHECK_ONLY || {
-      sudo apt-get update -qq && sudo apt-get install -y nodejs
+      apt_get update -qq && apt_get install -y nodejs
       # The distro's own `nodejs` is 18+ on Ubuntu 24.04 and Debian 12, but Ubuntu
       # 22.04 — still the most common LTS — ships Node 12. Fall back to NodeSource's
       # current LTS rather than dying on a box where apt "succeeded".
       if ! node_ok; then
         info "apt gave us Node $(node -v 2>/dev/null || echo 'none') — too old; fetching a current LTS from NodeSource"
         curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-        sudo apt-get install -y nodejs
+        apt_get install -y nodejs
       fi
       node_ok || die "Node installed but still not 18+ — install one by hand (nvm, or deb.nodesource.com) and re-run."
       ok "Node $(node -v)"
+    }
+  fi
+fi
+
+# --- git (Linux) ----------------------------------------------------------------
+# The plugin marketplace is a git clone: `claude plugin marketplace add` shells
+# out to git, and without it setup fails at the last step — with an error that
+# reads like a login problem. macOS always has git, because Homebrew drags in
+# Apple's command line tools. A factory-fresh Ubuntu box does not.
+if [ "$OS" != Darwin ]; then
+  if command -v git >/dev/null 2>&1; then
+    ok "git             $(git --version | awk '{print $3}')"
+  else
+    info "git is missing — the plugin marketplace is a git clone"
+    $CHECK_ONLY || ask "Install git via apt? It will ask for your password." || die "git is required."
+    $CHECK_ONLY || {
+      apt_get update -qq && apt_get install -y git
+      command -v git >/dev/null 2>&1 || die "git installed but still not on PATH."
+      ok "git $(git --version | awk '{print $3}')"
     }
   fi
 fi
@@ -229,7 +256,7 @@ install_deb() {
   # drops its sandbox to install anyway. Noisy on a first run, and a hard
   # failure where apt is configured not to fall back.
   chmod 644 "$deb_tmp"
-  sudo apt-get install -y "$deb_tmp"
+  apt_get install -y "$deb_tmp"
   rm -f "$deb_tmp"
 }
 

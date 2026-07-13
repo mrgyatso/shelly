@@ -141,8 +141,8 @@ Two things surprise people on a genuinely clean Mac, and the installer handles b
 Every release also carries an AppImage, which runs on distros the `.deb` doesn't target. It bundles its own libraries, so there is nothing to install:
 
 ```bash
-chmod +x Companion_Overlay_*.AppImage
-./Companion_Overlay_*.AppImage
+chmod +x Companion.Overlay_*.AppImage
+./Companion.Overlay_*.AppImage
 ```
 
 The AppImage does **not** put the `companion` CLI on your `PATH`, and `companion setup` is what wires the plugin to Claude Code — so on this path, extract the CLI once and link it:
