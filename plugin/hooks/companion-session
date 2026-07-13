@@ -290,23 +290,26 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `moves. Every work turn, drive toward shipping: end on the next move — recommend the strongest `+
     `option and why, ask sharp questions the user can decide in one read, and make next[] concrete `+
     `actions and real decisions (not a recap). State decisions, status, and blockers plainly.\n\n`+
-    `Artifacts: when a turn is substantive enough to earn a visual — a decision, comparison, plan, `+
-    `analysis, or a status the user will want to see and react to — AUTHOR THE HTML YOURSELF: write `+
-    `a self-contained .html into ${a}. There is no renderer and no background observer; you write `+
-    `the file, in full context, the first time (highest-quality, and cheapest on a warm cache). An `+
-    `artifact is a STEERING surface, not a transcript: lead with the pending decision or blocker and `+
-    `make it the loudest thing; show only what is needed to act on it; push evidence down and keep it `+
-    `collapsible; CUT the recap of what already happened. ALMOST EVERY artifact must END WITH AN `+
-    `ANSWERABLE SURFACE — a short "Next steps" ballot of concrete moves the user acts on from the Board `+
-    `(✓ do it / ✎ note / ✗ skip), plus every question you raise wired as its OWN clickable item. A `+
-    `question left as prose the user cannot click is a bug; the lone chat bar is a fallback, not the `+
-    `answer. This holds even for a "done"/recap or a bespoke look-at design — the visual is yours to `+
-    `craft, but the user must still be able to respond in place (at least a "what next →"). Skip only `+
-    `genuine one-liners (a status pill, nothing to decide). EVERY artifact must include `+
-    `the size-reporter script and the companion-meta block (code in the skill) or it renders at the `+
-    `wrong size. Load the prefer-html skill for the how — the interaction helper (commentable blocks + `+
-    `the Decide review form), those required snippets, and the Broadsheet house style. A Stop-hook `+
-    `backstop reminds you once if a substantive turn ends with nothing written, but author it inline.`+wt;
+    `Artifacts: EVERY TURN ENDS WITH ONE — no exemptions. You are not deciding whether, only what `+
+    `shape. AUTHOR THE HTML YOURSELF: write a self-contained .html into ${a}. There is no renderer `+
+    `and no background observer; you write the file, in full context, the first time (highest-quality, `+
+    `and cheapest on a warm cache). SIZE IT TO THE TURN: a decision, plan, review or analysis earns a `+
+    `full document; a quick answer or a lookup earns a COMPACT CARD — small is the correct finished `+
+    `form for a light turn, so do not pad it. An artifact is a STEERING surface, not a transcript: lead `+
+    `with the pending decision or blocker and make it the loudest thing; show only what is needed to `+
+    `act on it; push evidence down and keep it collapsible; CUT the recap of what already happened. `+
+    `EVERY artifact must END WITH AN ANSWERABLE SURFACE — a short "Next steps" ballot of concrete moves `+
+    `the user acts on from the Board (✓ do it / ✎ note / ✗ skip), plus every question you raise wired as `+
+    `its OWN clickable item. A question left as prose the user cannot click is a bug; the lone chat bar `+
+    `is a fallback, not the answer. This holds even when the work is DONE: say so, then hand over the `+
+    `next move ("nothing left here; here is what I would pick up next, or tell me where to go"). `+
+    `"Nothing to decide" is never true — choosing the next piece of work IS the decision. It holds for a bespoke `+
+    `look-at design too: the visual is yours to craft, but the user must still be able to respond in `+
+    `place. EVERY artifact must include the size-reporter script and the companion-meta block (code in `+
+    `the skill) or it renders at the wrong size. Load the prefer-html skill for the how — the interaction `+
+    `helper (commentable blocks + the Decide review form), those required snippets, and the Broadsheet `+
+    `house style. A Stop-hook backstop hands the turn back once if it ends with nothing written, but `+
+    `author it inline.`+wt;
   process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:ctx}}));
 '
 exit 0

@@ -10,18 +10,25 @@ Companion artifact is authored inline by the working agent** — there is no bac
 and no deterministic renderer (both removed in 0.4.5). You write the file yourself, in full
 context; this skill is the single source for *how* to make it good.
 
-## When to author (and when not to)
+## When to author: ALWAYS
 
-You decide this inline, every turn — nothing else does it for you:
+**Every turn ends with an artifact. There is no exemption.** You are not deciding *whether* —
+only *what shape*. If the user is in the app, they are here for the artifact; the off switch is
+which **terminal** they're in (external terminals are skipped entirely, in the sh wrapper), not
+a judgment you make turn by turn.
 
-- **Author** when a turn is substantive enough to earn a visual the user will want to see and
-  react to: a decision, comparison, plan, analysis, review, or a status worth steering from.
+- **Size it to the turn.** A decision, plan, review or analysis earns a full document. A quick
+  answer or a lookup earns a **compact card** — small is the *correct finished form* for a light
+  turn, not a degraded one. Never pad a thin turn to fill a page.
 - **Update** the current artifact (reuse its slug) when the same subject advances; write a
   **fresh slug** when the subject changes.
-- **Skip** trivial turns — quick answers, lookups, conversational replies. No artifact.
+- **Even "we're done" is an artifact.** Say the work is finished, then hand over the next move —
+  *"nothing left here; here's what I'd pick up next, or tell me where to go."* Wire it as
+  something they can answer in place. "Nothing to decide" is never true: choosing the next piece
+  of work IS the decision.
 
-A Stop-hook backstop (`companion-artifact-gate`) reminds you once if a substantive turn ends
-with nothing written — but author it inline rather than lean on the reminder.
+A Stop-hook backstop (`companion-artifact-gate`) hands the turn back once if it ends with
+nothing written — but author it inline rather than lean on the reminder.
 
 ## What to show — and what to cut
 
@@ -73,15 +80,15 @@ multi-agent steering. When the content is **presentation-first** — a morning d
 dashboard, a data visualization, a recap or explainer the user wants to *see beautifully*, a
 celebration, a one-off custom interface — **design a fully bespoke UI**: the layout, structure,
 and feel are yours to craft, and a rigid template on a debrief is worse than a custom one.
-**What "bespoke" does NOT license is shipping an artifact with no way to respond.** Almost
-every artifact — bespoke ones included — still ends with an **answerable surface**: at minimum
-a "what's next →" the user can click, and usually a short Next-steps ballot of ✓/✎/✗ moves. The
-design is yours; the responder does not disappear. **Ask: does the user need to *act on* this,
-or *look at* it?** Act on → the full combined shape. Look at → bespoke design, but STILL carry
-a forward-driving responder where the next moves live. The only artifacts that legitimately
-carry none are genuine one-liners — a status pill with nothing to decide. (Always keep the
-required `data-fit-root` + size-reporter snippet and the `companion-meta` block; those are
-plumbing, not shape.)
+**What "bespoke" does NOT license is shipping an artifact with no way to respond.** **Every**
+artifact — bespoke ones included — ends with an **answerable surface**: at minimum a "what's
+next →" the user can click, and usually a short Next-steps ballot of ✓/✎/✗ moves. The design is
+yours; the responder never disappears. **Ask: does the user need to *act on* this, or *look at*
+it?** Act on → the full combined shape. Look at → bespoke design, but STILL carry a
+forward-driving responder where the next moves live. There is no artifact that legitimately
+carries none: if you think there's nothing to decide, the next step is choosing the next piece
+of work, and that is a decision — put it on the page. (Always keep the required `data-fit-root`
++ size-reporter snippet and the `companion-meta` block; those are plumbing, not shape.)
 
 **A question posed only as prose is a bug.** If the artifact raises a question — "should we
 X?", "which of A or B?", "is Y actually the goal?" — wire it as its **own** `data-companion-item`
@@ -182,26 +189,27 @@ The ambient-comments and review-form snippets documented later in this file rema
 for **single-purpose** artifacts (a pure recap, or a pure decision list). The unified helper
 above supersedes them whenever a single artifact carries both.
 
-Skip the dual shape only for genuine one-liners (a pill status flip) — nothing to question,
-nothing to decide.
+A light turn drops the *dual* shape for a compact card — but the card still carries a next step.
+Nothing ships without a responder.
 
 ## The pull verb
 
 The user can run `/companion:html` at any time to ask for an artifact about the current turn.
-`/companion:render` is the deprecated alias and still works for one release. (When to author on
-your own initiative is covered above under **When to author** — you decide it inline; nothing
-else does.)
+`/companion:render` is the deprecated alias and still works for one release. (You never have to
+decide *whether* to author — see **When to author: ALWAYS** above. This verb just lets the user
+ask for a fresh one mid-turn.)
 
 ## The form factor: size by density — but ALWAYS drive forward
 
 Pick the artifact's **visual weight** from the content's density — but never let "small"
-become "passive." Even the lightest artifact on a substantive turn carries a next step.
+become "passive." Every artifact, down to the lightest, carries a next step.
 
-- **Compact card — a light change, but still propelling.** A glanceable "this is what
+- **Compact card — a light turn, but still propelling.** A glanceable "this is what
   changed" (title + 1–5 lines) that **still names the next move** — a recommended action, a
   one-tap decision, or the question that unblocks progress. Right for bug fixes, small edits,
-  a status flip. NOT an inert dead-end: if there is genuinely nothing to decide or ask, the
-  turn was trivial and you should not have rendered at all.
+  a quick lookup, a status flip. This is the *finished* form for a light turn, not a degraded
+  one — so don't pad it into a document. But it is never an inert dead-end: if you can't find
+  a next move, the next move is "what should I pick up?" — ask it, answerably.
 - **Full document — when the content earns it.** Use the room for diagrams, graphs, tables,
   multi-section plans, code reviews, comparisons, post-mortems — and end it in a decision /
   Next-steps surface that pushes the work forward.
