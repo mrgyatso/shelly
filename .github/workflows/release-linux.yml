@@ -23,7 +23,15 @@ jobs:
   linux-bundles:
     name: tauri build → .deb + AppImage (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    # The build runs INSIDE jammy, not on the runner. glibc is backwards- but not
+    # forwards-compatible: a binary linked against the runner's glibc 2.39 will not
+    # start on anything older, and `.deb`s carry no glibc floor of their own — so
+    # v0.7.0 installed cleanly on Ubuntu 22.04 and then died with
+    # "version `GLIBC_2.39' not found", while the README promised 22.04+.
+    # Building against the OLDEST glibc we support makes one bundle that runs on
+    # 22.04 through current. Raise this image only when we drop a release.
+    container: ubuntu:22.04
+    timeout-minutes: 60
     permissions:
       contents: write
     strategy:
@@ -37,22 +45,36 @@ jobs:
             arch: arm64
 
     steps:
+      - name: System deps (WebKitGTK + bundler + toolchain)
+        # The container is a bare image: no curl, no git, no compiler, and no sudo
+        # (we are already root). actions/checkout needs git, and rustup needs curl,
+        # so this has to come BEFORE the checkout.
+        #
+        # xdg-utils is not optional: the AppImage bundler shells out to `xdg-mime`
+        # and dies with "xdg-mime binary not found" without it. The .deb builds
+        # fine either way, so a missing xdg-utils fails only the AppImage — late,
+        # and after the deb has already been produced.
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq curl git ca-certificates build-essential pkg-config \
+            libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
+            patchelf file xdg-utils jq
+
       - uses: actions/checkout@v4
         with:
           # workflow_dispatch runs against a tag the maintainer names; a tag push
           # already has the right ref checked out.
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: System deps (WebKitGTK + bundler)
-        # xdg-utils is not optional: the AppImage bundler shells out to `xdg-mime`
-        # and dies with "xdg-mime binary not found" without it. The .deb builds
-        # fine either way, so a missing xdg-utils fails only the AppImage — late,
-        # and after the deb has already been produced.
+      - name: Rust
+        # rustup rather than an action: the toolchain must be installed inside the
+        # container, against its glibc — not inherited from the host runner.
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
-            patchelf file xdg-utils
+          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - uses: actions/setup-node@v4
         with:
@@ -86,6 +108,22 @@ jobs:
         run: |
           npm ci
           npm run tauri build
+
+      - name: The binary must not demand a glibc newer than we claim to support
+        # The failure this guards against is silent and late: a too-new glibc still
+        # produces a .deb that installs perfectly, and only refuses to start on the
+        # user's machine. Assert the floor here, where it is loud and free — if this
+        # trips, the container image moved and the README's claim moved with it.
+        env:
+          FLOOR: '2.35' # Ubuntu 22.04 / Debian 12
+        run: |
+          bin=overlay/src-tauri/target/release/companion-overlay
+          want=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
+          echo "binary needs at most glibc $want; the floor is $FLOOR"
+          if [ "$(printf '%s\n%s\n' "$want" "$FLOOR" | sort -V | tail -1)" != "$FLOOR" ]; then
+            echo "::error::binary needs glibc $want but we promise $FLOOR — it will install and then fail to launch"
+            exit 1
+          fi
 
       - name: Collect the artifacts
         id: collect
