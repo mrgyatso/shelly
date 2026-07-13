@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "harness": "vite --port 1430 --open /dev/board-harness.html",
     "build": "tsc && vite build",
     "demo": "node scripts/gen-demo-html.mjs && vite --config vite.demo.config.ts",
     "build:demo": "node scripts/gen-demo-html.mjs && vite build --config vite.demo.config.ts",
