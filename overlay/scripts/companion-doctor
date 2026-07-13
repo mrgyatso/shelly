@@ -226,4 +226,10 @@ cat > "$OUT" <<HTML
 HTML
 
 # Render it (ignore failure — plaintext above already gave the diagnosis).
-"$SCRIPT_DIR/companion" open "$OUT" >/dev/null 2>&1 || true
+#
+# Only when someone is actually watching. With no TTY on stdout we're in CI, a
+# pipe, or a hook: popping a GUI there strands a daemon nobody asked for and
+# nobody will quit. The plaintext diagnosis above is the whole answer in that case.
+if [ -t 1 ]; then
+  "$SCRIPT_DIR/companion" open "$OUT" >/dev/null 2>&1 || true
+fi
