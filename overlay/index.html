@@ -253,6 +253,34 @@
                   <h2>Settings</h2>
                   <p>Companion preferences. These write the same dial files the plugin reads.</p>
                 </header>
+                <!-- Version + update. Companion is two independently-rotting halves —
+                     the app (Homebrew cask / .deb) and the Claude Code plugin (a cached
+                     snapshot, moved by `claude plugin update`). One button moves both. -->
+                <div class="settings-group">
+                  <div class="settings-row">
+                    <div class="settings-row-main">
+                      <div class="settings-row-title">Version</div>
+                      <div class="settings-row-sub">The app and the plugin update separately.</div>
+                    </div>
+                    <div class="settings-vers">
+                      <div class="settings-ver">
+                        <span class="settings-ver-k">App</span>
+                        <span class="settings-ver-v" id="ver-app">…</span>
+                      </div>
+                      <div class="settings-ver">
+                        <span class="settings-ver-k">Plugin</span>
+                        <span class="settings-ver-v" id="ver-plugin">…</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <div class="settings-row-main">
+                      <div class="settings-row-title">Updates</div>
+                      <div class="settings-row-sub" id="update-sub">Checking for a newer release…</div>
+                    </div>
+                    <button type="button" class="settings-update" id="update-btn" disabled>Update</button>
+                  </div>
+                </div>
                 <div class="settings-group">
                   <div class="settings-row">
                     <div class="settings-row-main">

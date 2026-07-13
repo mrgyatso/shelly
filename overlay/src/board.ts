@@ -26,6 +26,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
+import { IS_LINUX } from "./platform";
 import { loadArtifactInto } from "./artifact-view";
 import { heroArtifactFor, effectsForRewrites } from "./ingest-logic";
 import {
@@ -586,6 +587,7 @@ export async function initBoard(): Promise<void> {
   wireHistoryClicks();
   wireUnitChrome();
   wireSettings();
+  wireUpdate();
   wireScrollGating();
 
   setStatus(status, "Loading…");
@@ -2575,7 +2577,12 @@ function setUnitView(view: "session" | "history" | "settings"): void {
   unitEl.dataset.view = view;
   if (view !== "session") unitEl.dataset.rail = "menu";
   if (view === "history" && currentUnitKey) renderHistory(currentUnitKey);
-  if (view === "settings") void syncDials();
+  if (view === "settings") {
+    void syncDials();
+    // Re-checked on every entry, not once at boot: the release you're behind can land
+    // while the app is open, and this daemon stays up for days.
+    void syncUpdate();
+  }
 }
 
 /** Highlight the active button in a `.settings-seg` segmented control. */
@@ -2594,6 +2601,83 @@ async function syncDials(): Promise<void> {
   } catch (e) {
     console.error("read_dials failed", e);
   }
+}
+
+/** What the app is running, what the plugin is running, and what's been released.
+ *  `latest: null` means GitHub was unreachable — NOT that we're up to date. */
+type UpdateStatus = {
+  app: string;
+  plugin: string | null;
+  latest: string | null;
+  behind: boolean;
+};
+
+/** Read both versions + the latest release, and paint the Version/Updates rows.
+ *
+ *  The button runs the same script on every path, because it always has something to
+ *  do: even under a perfectly current app, the PLUGIN may be stale — and that is the
+ *  half that rots silently. So the label never changes, only the urgency. */
+async function syncUpdate(): Promise<void> {
+  const appEl = document.getElementById("ver-app");
+  const pluginEl = document.getElementById("ver-plugin");
+  const subEl = document.getElementById("update-sub");
+  const btn = document.getElementById("update-btn") as HTMLButtonElement | null;
+  if (!appEl || !pluginEl || !subEl || !btn) return;
+
+  // Linux installs a system .deb, so the swap needs root and polkit will ask for it.
+  // Say so up front — a password dialog that appears after the app has vanished is a
+  // fright if it wasn't advertised.
+  const restart = IS_LINUX
+    ? "Companion will close, ask for your password, and reopen."
+    : "Companion will close and reopen.";
+
+  try {
+    const s = await invoke<UpdateStatus>("update_status");
+    appEl.textContent = s.app;
+    pluginEl.textContent = s.plugin ?? "—";
+    btn.disabled = false;
+
+    if (s.behind && s.latest) {
+      btn.dataset.state = "behind";
+      subEl.textContent = `Version ${s.latest} is available. ${restart}`;
+    } else if (s.latest) {
+      delete btn.dataset.state;
+      subEl.textContent = `You're on the latest release. Updating still refreshes the plugin. ${restart}`;
+    } else {
+      // Unreachable ≠ current. Never invent good news: say we couldn't look, and leave
+      // the button live, because updating is still the right move if they want it.
+      delete btn.dataset.state;
+      subEl.textContent = `Couldn't reach GitHub to check for a newer release. ${restart}`;
+    }
+  } catch (e) {
+    console.error("update_status failed", e);
+    subEl.textContent = "Couldn't read the version.";
+    btn.disabled = true;
+  }
+}
+
+/** Wire the Update button. It hands off to the detached `companion-update` helper and
+ *  the app then quits itself — the helper is blocked on our PID and cannot replace a
+ *  bundle that is still running. So this is the last thing the UI does. */
+function wireUpdate(): void {
+  const btn = document.getElementById("update-btn") as HTMLButtonElement | null;
+  const subEl = document.getElementById("update-sub");
+  btn?.addEventListener("click", async () => {
+    btn.disabled = true;
+    delete btn.dataset.state;
+    btn.textContent = "Updating…";
+    if (subEl) subEl.textContent = "Updating both halves. Companion will reopen when it's done.";
+    try {
+      await invoke("run_update");
+    } catch (e) {
+      console.error("run_update failed", e);
+      // The helper never started, so the app is NOT about to quit — put the button back
+      // rather than leaving a dead "Updating…" that outlives the thing it describes.
+      btn.disabled = false;
+      btn.textContent = "Update";
+      if (subEl) subEl.textContent = `Couldn't start the updater: ${e}`;
+    }
+  });
 }
 
 /** Wire the Settings segmented controls: a click writes the dial file (optimistic,

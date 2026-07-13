@@ -1,0 +1,197 @@
+#!/usr/bin/env sh
+# companion-update — move BOTH halves of Companion forward, then bring the app back.
+#
+#   companion-update <pid> [--dry-run]
+#
+# Companion is two independently-rotting halves, and a real update moves both:
+#
+#   the app     Homebrew cask (macOS) or a .deb from GitHub Releases (Linux).
+#               A newer release never reaches an installed machine on its own.
+#   the plugin  `companion setup`, which runs `claude plugin update`. The plugin
+#               executes from a CACHED snapshot, so it can sit stale forever with
+#               nothing in the UI saying so. This is the half users actually feel.
+#
+# This is the same work `install.sh` does when you re-run it — which has always been
+# the documented way to upgrade. The Update button just runs it for you.
+#
+# ---------------------------------------------------------------------------------
+# Run DETACHED, from a COPY in a temp dir. Never from inside the app bundle.
+#
+# `sh` reads a script incrementally, not into memory up front. `brew upgrade` deletes
+# and replaces the entire .app — so a helper still executing from inside it would go
+# on reading itself out of a file that no longer exists, and die somewhere arbitrary.
+# (Same shape as the `curl | bash` stdin trap in install.sh: anything that moves the
+# script out from under the interpreter mid-run truncates it, silently.)
+#
+# update.rs stages the copy and spawns us with setsid; it then quits the app so we can
+# replace it. We wait for that PID to actually go before touching anything.
+# ---------------------------------------------------------------------------------
+
+set -eu
+
+PID=""
+DRY_RUN=false
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=true ;;
+    *) PID="$arg" ;;
+  esac
+done
+
+# A GUI-launched app on macOS inherits launchd's minimal PATH (/usr/bin:/bin:/usr/sbin:
+# /sbin) — which contains neither `brew` nor the `companion` symlink. We are that app's
+# child, so we inherit the same stunted PATH. Put the real dirs back before anything
+# tries to resolve a binary.
+PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+export PATH
+
+LOG="$HOME/.claude/companion/update.log"
+mkdir -p "$(dirname "$LOG")"
+
+log() {
+  printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"
+  $DRY_RUN && printf '%s\n' "$*"
+  return 0
+}
+
+# The app is GONE while we work — there is no UI left to report into. The log is the
+# only account of what happened, so a failing step records why and we carry on to the
+# next one: a broken app update must not also cost the user their plugin update, and
+# whatever happens we still bring the app back up at the end.
+run() {
+  if $DRY_RUN; then
+    log "would run: $*"
+    return 0
+  fi
+  if "$@" >> "$LOG" 2>&1; then
+    return 0
+  fi
+  log "FAILED: $*"
+  return 1
+}
+
+log "--- update started (pid to await: ${PID:-none}) ---"
+
+# --- 1. Wait for the app to actually exit ---------------------------------------
+# We cannot replace a bundle that is still running: on macOS the cask quits it for us
+# during `brew upgrade`, but the app also quits itself right after spawning us. Give it
+# a bounded wait — if it will not die, carry on anyway rather than hanging forever with
+# no UI to explain the silence. dpkg and brew both cope with a running binary; it is
+# only the RESTART that needs it gone, and the relaunch at the end handles that.
+if [ -n "$PID" ] && ! $DRY_RUN; then
+  waited=0
+  while kill -0 "$PID" 2>/dev/null; do
+    [ "$waited" -ge 30 ] && { log "app (pid $PID) did not exit within 30s — carrying on"; break; }
+    sleep 1
+    waited=$((waited + 1))
+  done
+  [ "$waited" -lt 30 ] && log "app exited after ${waited}s"
+fi
+
+# --- 2. The app ------------------------------------------------------------------
+OS=$(uname -s)
+
+update_app_macos() {
+  if ! command -v brew >/dev/null 2>&1; then
+    log "no brew on PATH — cannot update the app (the plugin update below still runs)"
+    return 1
+  fi
+  # `upgrade` is a no-op when the cask is already current, so this is safe to run
+  # unconditionally — the button also exists to refresh a stale PLUGIN under a
+  # perfectly current app.
+  log "updating the app via Homebrew"
+  run brew upgrade --cask mrgyatso/tap/claude-code-companion
+}
+
+# The release's .deb for THIS architecture, or empty. Same resolution install.sh uses:
+# /releases/latest excludes prereleases, so a build we deliberately left unpromoted
+# stays invisible here too.
+latest_deb_url() {
+  arch=$(dpkg --print-architecture)
+  curl -fsSL https://api.github.com/repos/mrgyatso/claude-code-companion/releases/latest \
+    | grep -o "\"browser_download_url\": *\"[^\"]*_${arch}\.deb\"" \
+    | head -1 | sed 's/.*"\(https[^"]*\)"/\1/'
+}
+
+# Root, from a detached process with no terminal to prompt on. `sudo` would need a tty
+# and there isn't one, so this is pkexec's whole reason for existing: it asks the
+# desktop's polkit agent, which puts up a normal password dialog. The agent belongs to
+# the login session, not to our app, so it is still there after the app has quit.
+escalate() {
+  if command -v pkexec >/dev/null 2>&1; then
+    pkexec /usr/bin/env DEBIAN_FRONTEND=noninteractive "$@"
+  elif sudo -n true 2>/dev/null; then
+    # A passwordless sudo (rare, but some machines have it) — no dialog needed.
+    sudo -n env DEBIAN_FRONTEND=noninteractive "$@"
+  else
+    log "no pkexec and sudo needs a password — cannot install the .deb without a terminal."
+    log "run the installer by hand:"
+    log "  curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash"
+    return 1
+  fi
+}
+
+update_app_linux() {
+  installed=$(dpkg-query -W -f='${Version}' companion-overlay 2>/dev/null || true)
+  if [ -z "$installed" ]; then
+    # An AppImage or a source build is not dpkg-managed: there is no version to read,
+    # and dropping a .deb on top would leave the machine holding two apps.
+    log "not installed from a .deb — leaving the app alone"
+    return 0
+  fi
+
+  url=$(latest_deb_url || true)
+  if [ -z "$url" ]; then
+    log "no $(dpkg --print-architecture) .deb in the latest release — keeping $installed"
+    return 0
+  fi
+
+  deb=$(mktemp -t companion-overlay-XXXXXX.deb)
+  log "downloading $url"
+  run curl -fsSL -o "$deb" "$url" || { rm -f "$deb"; return 1; }
+  # mktemp gives 0600, which the `_apt` user cannot read — apt then drops its sandbox
+  # to install anyway (noisy), or hard-fails where it is configured not to.
+  chmod 644 "$deb"
+  log "installing the .deb (this asks for your password)"
+  if $DRY_RUN; then
+    log "would run: escalate apt-get install -y $deb"
+  else
+    escalate apt-get install -y "$deb" >> "$LOG" 2>&1 || log "FAILED: apt-get install"
+  fi
+  rm -f "$deb"
+}
+
+case "$OS" in
+  Darwin) update_app_macos || true ;;
+  Linux)  update_app_linux || true ;;
+  *) log "unsupported OS: $OS" ;;
+esac
+
+# --- 3. The plugin ---------------------------------------------------------------
+# The half that silently rots. `companion setup` runs `claude plugin update`, which
+# bumps the CACHED snapshot the hooks actually execute from — updating the app alone
+# would leave this exactly where it was.
+#
+# `companion` lives inside the bundle we may have just replaced, reached through the
+# /usr/local/bin symlink. The symlink target is a stable path, so it now points at the
+# NEW bundle — which is what we want: the new app's setup script wires the new plugin.
+if command -v companion >/dev/null 2>&1; then
+  log "refreshing the Claude Code plugin"
+  run companion setup || true
+else
+  log "no 'companion' on PATH — skipping the plugin refresh"
+fi
+
+# --- 4. Bring it back ------------------------------------------------------------
+# Unconditional: whatever failed above, the user clicked a button in an app that then
+# vanished. It has to come back.
+if $DRY_RUN; then
+  log "would relaunch the app"
+elif command -v companion >/dev/null 2>&1; then
+  log "relaunching"
+  companion board >> "$LOG" 2>&1 || log "FAILED to relaunch — open Companion Overlay by hand"
+else
+  log "cannot relaunch: no 'companion' on PATH — open Companion Overlay by hand"
+fi
+
+log "--- update finished ---"
