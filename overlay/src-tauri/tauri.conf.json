@@ -35,7 +35,10 @@
     "linux": {
       "deb": {
         "postInstallScript": "linux/postinst.sh",
-        "preRemoveScript": "linux/prerm.sh"
+        "preRemoveScript": "linux/prerm.sh",
+        "depends": [
+          "libc6 (>= 2.35)"
+        ]
       }
     },
     "resources": {
