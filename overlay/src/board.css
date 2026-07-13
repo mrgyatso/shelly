@@ -1899,6 +1899,74 @@
 /* Ink fill, matching the toolbar's resize segments — chrome selection is ink;
    the accent stays reserved for live/unread signals. */
 .settings-seg button.on { background: var(--ink); color: var(--card); }
+.settings-group + .settings-group { margin-top: 8px; }
+
+/* Version readout: the two halves side by side, because they move separately and
+   the whole point of showing them is that either one can be the stale one. */
+.settings-vers {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+}
+.settings-ver {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 62px;
+  padding: 6px 10px;
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.settings-ver-k {
+  font: 600 9px/1 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+}
+.settings-ver-v { font: 600 12.5px/1 var(--mono); color: var(--ink); }
+
+/* The Update button. Ink-filled like every other chrome control; it turns ACCENT
+   only when a newer release actually exists — an available update is precisely the
+   unread-signal class the accent is reserved for, and nothing else on this panel
+   competes for the eye.
+
+   Qualified by `.settings-row` for the SPECIFICITY, not for the nesting: the global
+   reset `.stage button { color: inherit }` is (0,1,1) and would otherwise outrank a
+   lone `.settings-update` (0,1,0) — the label then inherits the ink body colour and
+   goes black-on-black against the ink fill. Invisible text, on a live button.
+   (`.settings-seg button.on` dodges this by accident, being (0,2,1).) */
+.settings-row .settings-update {
+  flex: 0 0 auto;
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--card);
+  font: 600 11.5px/1 var(--ui-font);
+  padding: 9px 14px;
+  border-radius: 9px;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s, transform 0.08s;
+}
+.settings-row .settings-update:hover:not(:disabled) { transform: translateY(-1px); }
+.settings-row .settings-update:active:not(:disabled) { transform: translateY(0); }
+.settings-row .settings-update[data-state="behind"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--card);
+}
+/* Disabled = nothing to do yet (still checking) or already under way. Drain it so
+   "unavailable" is unmistakable rather than a button that merely ignores clicks. */
+.settings-row .settings-update:disabled {
+  cursor: default;
+  opacity: 0.45;
+  border-color: var(--line-strong);
+  background: transparent;
+  color: var(--ink-3);
+  transform: none;
+}
+
 .settings-foot {
   margin-top: 16px;
   font: 400 11px/1.5 var(--mono);

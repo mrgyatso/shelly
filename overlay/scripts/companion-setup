@@ -82,12 +82,76 @@ fi
 #    fetched from the marketplace, NOT carried in the app bundle, so a newer app does
 #    not imply newer plugin code. Without this, re-running the installer left the old
 #    hooks and skills in place forever.
+#
+#    `claude plugin update <plugin>` updates the USER scope. Companion is installed per
+#    PROJECT, so the bare command fails on every machine that has it —
+#
+#        ✘ Plugin "companion" is not installed at scope user
+#
+#    — and the old code caught that and printed "could not update — offline?". It was
+#    never offline. The refresh had simply never worked: `companion setup` claimed to
+#    have run while the plugin sat stale for weeks, which is exactly the silent rot the
+#    in-app Update button exists to end. Ask the manifest where the plugin actually
+#    lives and update it there.
+
+# One line per install: "user", or "project<TAB></abs/path>".
+plugin_scopes() {
+  node -e '
+    const fs = require("fs"), os = require("os"), path = require("path");
+    const f = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
+    let j;
+    try { j = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { process.exit(0); }
+    for (const i of (j.plugins || {})["companion@claude-code-companion"] || []) {
+      if (i.scope === "user") console.log("user");
+      else if (i.projectPath) console.log("project\t" + i.projectPath);
+    }
+  ' 2>/dev/null
+}
+
 if [ -n "$HAVE_CLAUDE" ]; then
   if claude plugin list 2>/dev/null | grep -q "${PLUGIN}"; then
-    if claude plugin update "${PLUGIN}" >/dev/null 2>&1; then
-      say "plugin      ${PLUGIN} (updated)"
+    updated=0
+    failed=0
+    scopes=$(plugin_scopes)
+    if [ -z "$scopes" ]; then
+      # `plugin list` sees it but the manifest does not say where. Fall back to the
+      # CLI's own default rather than skipping the refresh outright.
+      if claude plugin update "${PLUGIN}" >/dev/null 2>&1; then updated=1; else failed=1; fi
     else
+      # Fed by here-doc, not a pipe: in POSIX sh a piped `while` runs in a subshell, and
+      # the counters set inside it would be discarded at the loop's end.
+      while IFS="$(printf '\t')" read -r scope proj; do
+        [ -n "$scope" ] || continue
+        if [ "$scope" = user ]; then
+          if claude plugin update "${PLUGIN}" --scope user >/dev/null 2>&1; then
+            updated=$((updated + 1))
+          else
+            failed=$((failed + 1))
+          fi
+        elif [ -d "$proj" ]; then
+          # --scope project resolves against the CWD, so we have to stand in the project.
+          # Subshell'd so the cd cannot leak into the rest of setup.
+          if (cd "$proj" && claude plugin update "${PLUGIN}" --scope project >/dev/null 2>&1); then
+            updated=$((updated + 1))
+          else
+            failed=$((failed + 1))
+          fi
+        fi
+        # A projectPath that no longer exists is neither updated nor failed — the repo
+        # is gone, so there is nothing left to keep current.
+      done <<EOF
+$scopes
+EOF
+    fi
+
+    if [ "$failed" -gt 0 ] && [ "$updated" -eq 0 ]; then
       warn "plugin      ${PLUGIN} (installed; could not update — offline?)"
+    elif [ "$failed" -gt 0 ]; then
+      say "plugin      ${PLUGIN} (updated in ${updated}; ${failed} could not be reached)"
+    elif [ "$updated" -gt 1 ]; then
+      say "plugin      ${PLUGIN} (updated in ${updated} projects)"
+    else
+      say "plugin      ${PLUGIN} (updated)"
     fi
   else
     claude plugin install "${PLUGIN}" >/dev/null 2>&1 \

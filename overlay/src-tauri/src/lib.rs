@@ -16,6 +16,7 @@ mod registry;
 mod sessions;
 mod trace;
 mod tray;
+mod update;
 mod usage;
 mod windows;
 
@@ -163,7 +164,9 @@ pub fn run() {
             hub::hub_agents,
             hub::hub_post_inbox,
             code_peek::session_files,
-            code_peek::read_touched_file
+            code_peek::read_touched_file,
+            update::update_status,
+            update::run_update
         ])
         .setup(|app| {
             // Regular activation policy: the Board is a normal app now — it gets a

@@ -48,6 +48,18 @@ pub fn projects_dir() -> Option<PathBuf> {
     home().map(|h| h.join(".claude").join("projects"))
 }
 
+/// `~/.claude/plugins/installed_plugins.json` — Claude Code's record of which plugins
+/// are installed, at which version, in which scope. The only place the *installed*
+/// plugin version can be read: the plugin runs from a cached snapshot, so neither the
+/// repo nor the marketplace says what is actually loaded (see `update.rs`).
+pub fn installed_plugins_json() -> Option<PathBuf> {
+    home().map(|h| {
+        h.join(".claude")
+            .join("plugins")
+            .join("installed_plugins.json")
+    })
+}
+
 /// `~/.codex/sessions` — where Codex CLI writes its rollout transcripts
 /// (`YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl`). Honors `CODEX_HOME` the way
 /// Codex itself does; the test override wins over both so sandboxed tests never

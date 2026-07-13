@@ -46,6 +46,7 @@
       "../scripts/companion-hook": "scripts/companion-hook",
       "../scripts/companion-doctor": "scripts/companion-doctor",
       "../scripts/companion-setup": "scripts/companion-setup",
+      "../scripts/companion-update": "scripts/companion-update",
       "../scripts/companion-uninstall": "scripts/companion-uninstall",
       "../scripts/companion-hub": "scripts/companion-hub",
       "../scripts/companion-index.cjs": "scripts/companion-index.cjs",
