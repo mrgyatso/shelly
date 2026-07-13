@@ -1231,29 +1231,57 @@
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
-/* The one action in this cluster, so it always wears the accent — a tinted clay
-   outline at rest, deepening as the meter climbs. */
+/* The one action in this cluster, so it always wears the accent — and it must read
+   as a real, raised, pressable chip, not an outline over the paper. A warm clay fill
+   that sits proud of the toolbar: light top edge catching the light, a soft contact
+   shadow underneath. It lifts on hover and depresses on press. */
 .meter-compact {
   padding: 3px 8px;
-  background: color-mix(in oklab, var(--clay) 9%, transparent);
-  border: 1px solid color-mix(in oklab, var(--clay) 28%, transparent);
+  background: linear-gradient(
+    color-mix(in oklab, var(--clay) 10%, var(--card)),
+    color-mix(in oklab, var(--clay) 20%, var(--card))
+  );
+  border: 1px solid color-mix(in oklab, var(--clay) 38%, transparent);
   border-radius: 6px;
   color: var(--clay-deep);
   font: 550 11px/1.35 var(--ui-font);
   cursor: pointer;
-  transition: background 0.16s, border-color 0.16s, color 0.16s, filter 0.16s;
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.6),
+    0 1px 1.5px oklch(0.265 0.012 55 / 0.14),
+    0 2px 5px oklch(0.265 0.012 55 / 0.09);
+  transition: background 0.16s, border-color 0.16s, color 0.16s,
+    box-shadow 0.16s, transform 0.1s, filter 0.16s;
 }
 .meter-compact:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--clay) 18%, transparent);
-  border-color: color-mix(in oklab, var(--clay) 50%, transparent);
+  background: linear-gradient(
+    color-mix(in oklab, var(--clay) 18%, var(--card)),
+    color-mix(in oklab, var(--clay) 30%, var(--card))
+  );
+  border-color: color-mix(in oklab, var(--clay) 58%, transparent);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.65),
+    0 2px 4px oklch(0.265 0.012 55 / 0.16),
+    0 4px 9px oklch(0.265 0.012 55 / 0.1);
+  transform: translateY(-0.5px);
+}
+/* Pressed: the chip sinks into the toolbar — drop the lift, invert to an inner shadow. */
+.meter-compact:active:not(:disabled) {
+  background: color-mix(in oklab, var(--clay) 24%, var(--card));
+  box-shadow:
+    inset 0 1px 2px oklch(0.265 0.012 55 / 0.2),
+    inset 0 0 0 1px oklch(0.265 0.012 55 / 0.04);
+  transform: translateY(0.5px);
 }
 .meter-compact:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
-/* No PTY to type into — drain the accent rather than dim it, so "unavailable"
-   never reads as "merely quiet". */
+/* No PTY to type into — drain the accent and flatten it so "unavailable" reads as
+   an inert surface, not a raised, pressable one. */
 .meter-compact:disabled {
   filter: grayscale(1);
   opacity: 0.45;
   cursor: default;
+  box-shadow: none;
+  transform: none;
 }
 /* WORKING, and nothing like unavailable. A compaction runs for a minute or more with
    no other outward sign, so the button has to carry the whole signal: it keeps its
@@ -1263,6 +1291,12 @@
   filter: none;
   opacity: 1;
   cursor: progress;
+  /* Stays raised, for the same reason it keeps its accent: the flattened chip above is
+     what "unavailable" looks like, and this is the opposite of unavailable. */
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.6),
+    0 1px 1.5px oklch(0.265 0.012 55 / 0.14),
+    0 2px 5px oklch(0.265 0.012 55 / 0.09);
   animation: compact-breathe 1.6s ease-in-out infinite;
 }
 @keyframes compact-breathe {
@@ -1298,15 +1332,24 @@
 .unit-meter[data-level="warn"] .meter-text { color: var(--ink-2); }
 .unit-meter[data-level="high"] { border-color: color-mix(in oklab, var(--clay) 40%, transparent); }
 .unit-meter[data-level="high"] .meter-text { color: var(--clay-deep); }
-/* At `high` the button stops asking and starts telling: solid clay, paper text. */
+/* At `high` the button stops asking and starts telling: solid clay, paper text —
+   still a raised chip, now a loud one. */
 .unit-meter[data-level="high"] .meter-compact {
-  background: var(--clay);
-  border-color: var(--clay);
+  background: linear-gradient(color-mix(in oklab, white 14%, var(--clay)), var(--clay));
+  border-color: var(--clay-deep);
   color: var(--card);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.28),
+    0 1px 2px oklch(0.265 0.012 55 / 0.2),
+    0 3px 7px oklch(from var(--clay) l c h / 0.32);
 }
 .unit-meter[data-level="high"] .meter-compact:hover:not(:disabled) {
-  background: var(--clay-deep);
+  background: linear-gradient(color-mix(in oklab, white 10%, var(--clay)), var(--clay-deep));
   border-color: var(--clay-deep);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.3),
+    0 2px 4px oklch(0.265 0.012 55 / 0.22),
+    0 5px 11px oklch(from var(--clay) l c h / 0.34);
 }
 /* Stacked surfaces: compact hero over the primary terminal. Fills the unit; the
    terminal flexes to take whatever the hero leaves. */
@@ -1451,6 +1494,8 @@
   background: var(--sunk);
   border: 1px solid var(--line);
   border-radius: 9px;
+  /* A recessed channel, so the active thumb reads as sitting proud of it. */
+  box-shadow: inset 0 1px 2px oklch(0.265 0.012 55 / 0.09);
 }
 .board-unit:not([data-view="session"]) .surface-controls { display: none; }
 .sc-resize { display: flex; align-items: center; gap: 2px; }
@@ -1468,15 +1513,29 @@
   border-radius: 7px;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.14s, color 0.14s;
+  transition: background 0.14s, color 0.14s, box-shadow 0.14s, transform 0.1s;
 }
 .surface-focus svg { width: 14px; height: 14px; display: block; }
-.surface-focus:hover { color: var(--ink); }
+/* Hover an inactive segment → a faint raised chip rises out of the channel. */
+.surface-focus:hover {
+  color: var(--ink);
+  background: var(--card);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.5),
+    0 1px 1.5px oklch(0.265 0.012 55 / 0.1);
+}
+.surface-focus:active { transform: translateY(0.5px); }
+/* The active thumb sits proud of the recessed track: ink fill, top highlight, and a
+   contact shadow that lifts it off the channel floor. */
 .board-unit[data-focus="split"] .surface-focus[data-focus="split"],
 .board-unit[data-focus="artifact"] .surface-focus[data-focus="artifact"],
 .board-unit[data-focus="terminal"] .surface-focus[data-focus="terminal"] {
   background: var(--ink);
   color: var(--card);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.14),
+    0 1px 2px oklch(0.265 0.012 55 / 0.28),
+    0 2px 5px oklch(0.265 0.012 55 / 0.16);
 }
 
 /* Warm restore pill for a tucked surface (artifact OR terminal): shows in place of
