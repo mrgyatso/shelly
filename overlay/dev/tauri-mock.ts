@@ -440,7 +440,6 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
       String(args.sessionId ?? "")
         ? { contextTokens: 742_000, outputTokens: 96_400, model: "claude-opus-4-8", limit: 1_000_000 }
         : null,
-    read_dials: () => ({ mode: "manual", quality: "pretty" }),
     // Agent hub: the connected-agents registry + the reply inbox. Posts are
     // recorded on window.__inboxPosts so scripted verification can assert the
     // remote submit round-trip (and that it never touched a PTY).
@@ -453,7 +452,6 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
         delivery: "woken",
       });
     },
-    set_dial: () => null,
     take_board_nav_target: () => null,
     artifact_in_scope: () => false,
     read_artifact: (args) => {

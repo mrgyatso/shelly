@@ -1482,8 +1482,8 @@
 /* Surface controls — inline in the unit toolbar, right-justified.
    Resize the two surfaces (⬒/⊟/⬓), a live status dot, and ✕ to end the
    session. Toolbar placement prevents overlap with the artifact/terminal pills. */
-/* One quiet segmented control (sunk track, ink-filled active) — matches the
-   Settings dials, so the chrome reads as one system. */
+/* One quiet segmented control: sunk track, ink-filled active. The Settings dials
+   used to wear the same treatment; this is now the only one left. */
 .surface-controls {
   /* The title's `margin-right: auto` takes the slack — a second auto margin here
      would split it and strand the meter mid-toolbar. */
@@ -1888,31 +1888,6 @@
   border-radius: 999px;
   padding: 5px 10px;
 }
-/* Segmented control for a live dial (Render mode, Artifact quality). */
-.settings-seg {
-  flex: 0 0 auto;
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--sunk);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-}
-.settings-seg button {
-  appearance: none;
-  cursor: pointer;
-  border: 0;
-  background: transparent;
-  color: var(--ink-3);
-  font: 600 11.5px/1 var(--ui-font);
-  padding: 6px 11px;
-  border-radius: 7px;
-  transition: background 0.12s, color 0.12s;
-}
-.settings-seg button:hover { color: var(--ink); }
-/* Ink fill, matching the toolbar's resize segments — chrome selection is ink;
-   the accent stays reserved for live/unread signals. */
-.settings-seg button.on { background: var(--ink); color: var(--card); }
 .settings-group + .settings-group { margin-top: 8px; }
 
 /* Version readout: the two halves side by side, because they move separately and
@@ -1949,8 +1924,8 @@
    Qualified by `.settings-row` for the SPECIFICITY, not for the nesting: the global
    reset `.stage button { color: inherit }` is (0,1,1) and would otherwise outrank a
    lone `.settings-update` (0,1,0) — the label then inherits the ink body colour and
-   goes black-on-black against the ink fill. Invisible text, on a live button.
-   (`.settings-seg button.on` dodges this by accident, being (0,2,1).) */
+   goes black-on-black against the ink fill. Invisible text, on a live button. Any new
+   button in the Board needs the same care. */
 .settings-row .settings-update {
   flex: 0 0 auto;
   appearance: none;
