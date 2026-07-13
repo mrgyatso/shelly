@@ -63,6 +63,18 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
             patchelf file xdg-utils jq
 
+          # `gh` is preinstalled on the RUNNER, not in this container — and the
+          # final step uploads with it. Without this the whole job compiles for
+          # half an hour and then dies on `gh: not found`.
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+            -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+          chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+            > /etc/apt/sources.list.d/github-cli.list
+          apt-get update -qq
+          apt-get install -y -qq gh
+          gh --version | head -1
+
       - uses: actions/checkout@v4
         with:
           # workflow_dispatch runs against a tag the maintainer names; a tag push
@@ -99,6 +111,28 @@ jobs:
             exit 1
           fi
           echo "version $conf matches tag $TAG"
+
+      - name: The release must exist before we spend 30 minutes building for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        # Nothing in this repo creates the release — both release workflows only
+        # UPLOAD to one. A tag with no release therefore built for half an hour and
+        # then died on "release not found", which is exactly what v0.7.1 did.
+        #
+        # Create it as a PRERELEASE when it is missing: GitHub's /releases/latest
+        # excludes prereleases, and install.sh resolves the .deb from /releases/latest
+        # — so the new tag stays invisible to installers until the assets are actually
+        # attached and a human promotes it. Publishing a bare release here instead
+        # would point every installer at a version with no .deb to download.
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG already exists"
+          else
+            echo "release $TAG does not exist — creating it as a prerelease"
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" --generate-notes --prerelease
+          fi
 
       - name: Build the frontend + bundles
         working-directory: overlay
