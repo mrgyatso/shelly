@@ -226,4 +226,5 @@ cat > "$OUT" <<HTML
 HTML
 
 # Render it (ignore failure — plaintext above already gave the diagnosis).
+# `companion` detaches now, so this returns whether or not the daemon was up.
 "$SCRIPT_DIR/companion" open "$OUT" >/dev/null 2>&1 || true

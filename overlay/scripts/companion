@@ -54,4 +54,16 @@ if [ -z "$BIN" ]; then
   exit 1
 fi
 
-exec "$BIN" "$@"
+# Detach, never exec. Every surface the binary routes to (board, open, history,
+# live — see launch.rs) is a GUI window; none of them write to stdout, so holding
+# the terminal buys nothing and costs everything:
+#
+#   daemon already up  → this process forwards its argv over the single-instance
+#                        socket and exits immediately. Detaching changes nothing.
+#   daemon not up      → this process *becomes* the daemon. Under `exec` it never
+#                        returns, so the caller hangs until the app quits. That is
+#                        what wedged `companion doctor` on every fresh install, and
+#                        blocked forever in CI where nothing ever quits it.
+#
+# Backgrounding costs us the binary's exit status, which we never surfaced anyway.
+nohup "$BIN" "$@" >/dev/null 2>&1 &
