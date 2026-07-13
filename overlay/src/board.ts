@@ -24,6 +24,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { IS_LINUX } from "./platform";
@@ -2699,6 +2700,15 @@ function wireSettings(): void {
     });
   });
   void syncDials();
+  // The installed app version, so "did the upgrade take?" is answerable from the
+  // panel itself. Reads the running binary's version (tauri.conf.json at build
+  // time), not any file on disk — a stale install shows its stale number.
+  void getVersion()
+    .then((v) => {
+      const el = document.getElementById("settings-version");
+      if (el) el.textContent = "v" + v;
+    })
+    .catch(() => {});
 }
 
 /** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the floating
