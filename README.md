@@ -241,15 +241,16 @@ Companion also runs [OpenAI Codex CLI](https://developers.openai.com/codex) sess
 
 `companion setup` installs it for you. It gives you:
 
-- lifecycle hooks that turn the working agent into the author of these pages — every substantive turn can surface one, with its state and open questions,
+- lifecycle hooks that turn the working agent into the author of these pages — **every** turn surfaces one, with its state and open questions,
 - a `prefer-html` skill that shapes those pages (and ends each one in a decision surface you can answer),
 - slash commands:
-  - `/companion:html` — render a page for the current turn on demand.
-  - `/companion:mode selective|always|manual` — how eagerly pages are generated. **selective** (default) renders when a turn is worth it; **always** renders on every substantive turn; **manual** renders nothing until you ask with `/companion:html`.
+  - `/companion:html` — render a fresh page for the current turn on demand.
   - `/companion:doctor` — a health panel, rendered through the same path it verifies.
   - `/companion:example` — an onboarding page that explains the app.
 
-`/companion:render` is the deprecated alias of `/companion:html`, and `/companion:quality` is a legacy no-op kept as app state — since 0.4.5 the working agent authors every page in full context, so there is no renderer left to tune.
+There is no dial for how eagerly pages are generated, because there is nothing a dial would buy you: **every turn ends with a page.** A quick lookup gets a compact card, a decision gets a full document, and even "we're done" hands you the next move. The one real off switch is *which terminal you're in* — Companion ignores any session it didn't start, so a plain terminal with the plugin installed stays silent (opt in with `companion setup --external-terminals`).
+
+`/companion:render` is the deprecated alias of `/companion:html`.
 
 The watched folder defaults to `~/.claude/companion/artifacts` (override with `COMPANION_ARTIFACTS_DIR`).
 

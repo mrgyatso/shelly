@@ -110,6 +110,19 @@ const blockRes = gate.decide(
 ok(blockRes.block === true, "no artifact this turn → block");
 ok(typeof blockRes.reason === "string" && blockRes.reason.includes("/tmp/arts"), "block reason names the artifacts dir");
 
+// The rule is ABSOLUTE: the gate must not hand the agent a trivial-turn escape. It used to
+// end with "or the turn was trivial (a quick answer, a lookup) — just STOP", which is the
+// exemption we removed. Pin its absence, and pin that the reason demands a next step: an
+// artifact that just recaps and stops is the failure this whole gate exists to prevent.
+ok(!/\btrivial\b/i.test(blockRes.reason), "block reason offers NO trivial-turn escape");
+ok(/absolute/i.test(blockRes.reason), "block reason states the rule is absolute");
+ok(/next (step|move)/i.test(blockRes.reason), "block reason demands a next step, not just a page");
+
+// Same for the content-lint: "it's a look-only pill, just STOP" was the other escape.
+const responderReason = gate.buildResponderReason();
+ok(!/look-only/i.test(responderReason), "responder reason offers NO look-only escape");
+ok(/done/i.test(responderReason), "responder reason covers the finished-work case (still needs a next step)");
+
 // Artifact landed this turn but its file is unreadable (index points at /a/x.html which
 // doesn't exist) → content-lint can't verify → fail open (no block).
 ok(

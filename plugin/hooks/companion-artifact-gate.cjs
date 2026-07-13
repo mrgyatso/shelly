@@ -10,9 +10,15 @@
 //   2. If one did, does it give the user a way to RESPOND in place (a Next-steps ballot,
 //      a Submit, or commentable blocks)? If it has none of those → "add an answerable
 //      surface" — the artifact stranded the user with only the fallback chat bar.
-// It JUDGES NOTHING about substance; both block reasons put that call on the agent, which
-// alone has the conversation and can decline (e.g. a genuine look-only status pill). The
-// user re-judges nothing either — the agent does, in-context.
+//
+// THE RULE IS ABSOLUTE: every turn ends with an artifact, and every artifact ends with a
+// next step. There is no trivial-turn exemption and no look-only exemption. If you are in
+// the app you are here for the artifact — the off switch is which TERMINAL you're in (the
+// external-terminals guard in the sh wrapper), not a mode, and not the agent's judgment
+// call turn by turn. Both block reasons therefore INSTRUCT rather than ask: "author one",
+// "add the responder". The gate still judges nothing about substance — the agent sizes the
+// artifact to the turn (a lookup earns a compact card, not a padded document) — but it no
+// longer gets to decide that a turn earns nothing at all.
 //
 // Fail-OPEN by design. A false block would nag forever and push duplicate/needless
 // artifacts — strictly worse than a missed seatbelt (the proactive path already covers the
@@ -140,13 +146,16 @@ function hasAnswerableSurface(paths) {
 
 function buildReason(artifactsDir) {
   return (
-    "This turn ended without a visual artifact on the Companion Board. " +
-    "If it was substantive — a decision, comparison, plan, analysis, or a status the user will " +
-    "want to see and react to — AUTHOR ONE NOW: write a self-contained .html into " +
+    "This turn ended with no artifact on the Companion Board. THE RULE IS ABSOLUTE: every turn " +
+    "ends with one, with no exemptions. AUTHOR IT NOW: write a self-contained .html into " +
     artifactsDir +
-    " (load the prefer-html skill for the how). Lead with the decision, cut the recap, end on the " +
-    "next move. If you already wrote an artifact this turn, or the turn was trivial (a quick answer, " +
-    "a lookup, a conversational reply), just STOP — write nothing and do not restate your answer."
+    " (load the prefer-html skill for the how). Size it to the turn — a substantive turn earns a " +
+    "full document; a quick answer or a lookup earns a compact card, not a padded one. But EVERY " +
+    "artifact ends by showing the user where they stand and what happens next. Even when the work " +
+    "is finished, say so and hand them the next move — 'this is done; here's what I'd pick up next, " +
+    "or tell me what you want' — as a surface they can answer in place. A page that ends without a " +
+    "next step is the one thing this gate exists to prevent. Only STOP if you already wrote an " +
+    "artifact this turn and it simply hasn't been indexed yet."
   );
 }
 
@@ -159,11 +168,13 @@ function buildResponderReason() {
     "no ✓/✎/✗ next-move items (data-companion-item), no Submit (data-companion-submit), and no " +
     "commentable blocks (data-companion-commentable). That strands the user with only the fallback " +
     "chat bar, so the work can't move forward from the Board — they have to open the terminal to " +
-    "continue. An artifact should ALMOST ALWAYS end with an answerable surface: a short 'Next steps' " +
-    "ballot of concrete moves (✓ do it / ✎ note / ✗ skip), and every question you raised wired as its " +
-    "OWN item — a question posed only as prose is a bug. Add one now (load the prefer-html skill / " +
-    "references/interaction-helper.md for the wiring). If this is genuinely a look-only artifact — a " +
-    "one-line status pill, or a pure celebration with nothing to decide — just STOP; write nothing."
+    "continue. EVERY artifact ends with an answerable surface: a short 'Next steps' ballot of " +
+    "concrete moves (✓ do it / ✎ note / ✗ skip), and every question you raised wired as its OWN " +
+    "item — a question posed only as prose is a bug. This holds even when the work is DONE: say it's " +
+    "done, then give them something to answer ('nothing left on this — here's what I'd pick up next, " +
+    "or tell me where to go'). 'Nothing to decide' is not an exemption; it means the next step is to " +
+    "choose the next piece of work, and that is a decision. Add the surface now (load the " +
+    "prefer-html skill / references/interaction-helper.md for the wiring)."
   );
 }
 
