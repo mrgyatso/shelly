@@ -72,3 +72,27 @@ jobs:
           git commit -qam "claude-code-companion ${version}"
           git push
           echo "tap bumped to ${version}"
+
+      # Everything above proves the edit landed in the LOCAL clone. That is not the
+      # question. The question is whether Homebrew — which reads the tap over the
+      # network, not our working copy — now serves this version. Ask GitHub, not
+      # ourselves.
+      #
+      # This exists because v0.8.0 shipped with the tap silently one version behind
+      # and nobody noticed: the job can exit 0 having pushed nothing (the early
+      # "already at ${version}" path is reachable when the tap was bumped out-of-band),
+      # and a push that fails on a revoked token is the same shape as a job that had
+      # nothing to do. Both look green. So assert the OUTCOME, not the steps.
+      - name: The tap must actually serve this version
+        env:
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+        run: |
+          version="${TAG#v}"
+          live=$(curl -fsSL "https://raw.githubusercontent.com/mrgyatso/homebrew-tap/main/Casks/claude-code-companion.rb" \
+                 | sed -nE 's|^  version "([^"]+)".*|\1|p')
+          echo "tap serves: ${live:-<none>} — expected: ${version}"
+          if [ "$live" != "$version" ]; then
+            echo "::error::the tap serves ${live:-nothing}, not ${version}. Homebrew users are stranded on the old build and 'brew upgrade' is a no-op. The bump did not reach GitHub — check TAP_TOKEN has contents:write on mrgyatso/homebrew-tap."
+            exit 1
+          fi
+          echo "ok — brew upgrade will get ${version}"

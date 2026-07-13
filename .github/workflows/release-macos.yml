@@ -101,3 +101,38 @@ jobs:
         # --clobber so a re-run replaces the asset instead of erroring on a name
         # collision (this workflow is re-runnable against an existing release).
         run: gh release upload "$TAG" out/* --clobber --repo "$GITHUB_REPOSITORY"
+
+      # The prerelease gate above is deliberate, and it is also the easiest step in
+      # the whole pipeline to forget — because forgetting it looks exactly like
+      # success. Every job goes green, the assets are all attached, the tag is on
+      # master, and the release is STILL invisible: /releases/latest skips
+      # prereleases (so install.sh keeps serving the old build), and `released`
+      # never fires (so the cask is never bumped). v0.8.0 sat in exactly that state
+      # until someone went looking.
+      #
+      # A green pipeline that has not shipped anything must say so. It cannot fail
+      # the build — a prerelease is the correct state here — so it shouts instead,
+      # with the one command that finishes the job.
+      - name: Say plainly that the release is not out yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          if [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)" != "true" ]; then
+            echo "$TAG is published — installers can see it."
+            exit 0
+          fi
+          echo "::warning title=$TAG is NOT released yet::The bundles are built and attached, but $TAG is still a PRERELEASE. Nobody can install it: /releases/latest skips prereleases (install.sh serves the previous build) and the Homebrew cask is not bumped until the 'released' event fires. Promote it to actually ship: gh release edit $TAG --prerelease=false --latest"
+          {
+            echo "### ⚠️ $TAG is built but NOT released"
+            echo ""
+            echo "The bundles are attached, but the release is still a **prerelease**, so:"
+            echo "- \`install.sh\` still serves the **previous** version (\`/releases/latest\` skips prereleases)"
+            echo "- the **Homebrew cask is not bumped** (the \`released\` event has not fired)"
+            echo ""
+            echo "One command ships it:"
+            echo ""
+            echo "\`\`\`sh"
+            echo "gh release edit $TAG --prerelease=false --latest"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
