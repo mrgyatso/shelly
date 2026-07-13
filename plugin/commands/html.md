@@ -11,7 +11,7 @@ Render a self-contained HTML artifact that summarises the most recent meaningful
 
 One **unified Submit** collects *both* the block-comments and the per-item decisions into a single pasteable payload (`— Questions / comments —` then `— Decisions —`). Keep the `data-companion-commentable` wrapper OFF the Next-steps page so the two helpers don't collide. Copy the self-contained **unified helper** straight from the `prefer-html` skill ("The default shape" section).
 
-**The only exception is a genuine one-liner** — a status flip with nothing to question and nothing to decide. Then a small **pill card** (~360px) is the correct finished form. Density decides, but default toward the dual shape whenever there's real substance.
+**A light turn drops the dual shape for a compact card** (~360px) — the *finished* form for a status flip or a quick lookup, not a degraded one, so don't pad it into a document. But the card still carries a next step: **nothing ships without a responder.** "Nothing to decide" is never true — choosing the next piece of work is itself the decision. Density picks the shape; it never removes the ballot.
 
 Write the file to `${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/<descriptive-kebab-slug>.html`. Use a slug that reflects content (e.g. `status-recap.html`, `design-comparison.html`) — not `html.html`. Writing the file is what pops the overlay; no other action needed.
 
