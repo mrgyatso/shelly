@@ -251,7 +251,7 @@
               <div class="settings-inner">
                 <header class="settings-head">
                   <h2>Settings <span id="settings-version" class="settings-version" title="Installed Companion version"></span></h2>
-                  <p>Companion preferences. These write the same dial files the plugin reads.</p>
+                  <p>Your version, and one button to move it forward.</p>
                 </header>
                 <!-- Version + update. Companion is two independently-rotting halves —
                      the app (Homebrew cask / .deb) and the Claude Code plugin (a cached
@@ -281,29 +281,13 @@
                     <button type="button" class="settings-update" id="update-btn" disabled>Update</button>
                   </div>
                 </div>
+                <!-- "Render mode" and "Artifact quality" lived here. Both are gone: they
+                     described the background observer and the Sonnet designer, deleted in
+                     0.4.5 — and, worse, NOTHING read the dial files they wrote. No hook
+                     consumes ~/.claude/companion/{mode,quality}; the Stop-hook gate does not
+                     check them. They were two live-looking switches wired to nothing, under a
+                     footer that claimed they were live. -->
                 <div class="settings-group">
-                  <div class="settings-row">
-                    <div class="settings-row-main">
-                      <div class="settings-row-title">Render mode</div>
-                      <div class="settings-row-sub">When the background observer renders artifacts.</div>
-                    </div>
-                    <div class="settings-seg" data-dial="mode">
-                      <button type="button" data-value="manual">Manual</button>
-                      <button type="button" data-value="selective">Selective</button>
-                      <button type="button" data-value="always">Always</button>
-                      <button type="button" data-value="agent">Agent</button>
-                    </div>
-                  </div>
-                  <div class="settings-row">
-                    <div class="settings-row-main">
-                      <div class="settings-row-title">Artifact quality</div>
-                      <div class="settings-row-sub">Fast (Haiku + local template) or pretty (Sonnet director).</div>
-                    </div>
-                    <div class="settings-seg" data-dial="quality">
-                      <button type="button" data-value="fast">Fast</button>
-                      <button type="button" data-value="pretty">Pretty</button>
-                    </div>
-                  </div>
                   <div class="settings-row is-soon">
                     <div class="settings-row-main">
                       <div class="settings-row-title">Artifact retention</div>
@@ -319,7 +303,7 @@
                     <span class="settings-pill">Auto</span>
                   </div>
                 </div>
-                <div class="settings-foot">Mode &amp; quality are live; retention &amp; appearance are previews.</div>
+                <div class="settings-foot">Retention &amp; appearance are previews.</div>
               </div>
             </div>
             <!-- CODE PEEK: lists this session's changed files ("in play"); click

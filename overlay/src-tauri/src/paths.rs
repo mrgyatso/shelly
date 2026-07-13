@@ -1,7 +1,7 @@
 //! One definition of where the Companion's files live.
 //!
-//! `dials`, `registry`, `live` and `hub` each carried their own copy of the same
-//! `companion_dir()` — three of them byte-for-byte — so there was no single answer to
+//! `registry`, `live` and `hub` each carried their own copy of the same
+//! `companion_dir()` — byte-for-byte — so there was no single answer to
 //! "where is the companion home". They all delegate here now.
 //!
 //! **Tests override the home with a thread-local, never `std::env::set_var`.** Mutating

@@ -2579,28 +2579,9 @@ function setUnitView(view: "session" | "history" | "settings"): void {
   if (view !== "session") unitEl.dataset.rail = "menu";
   if (view === "history" && currentUnitKey) renderHistory(currentUnitKey);
   if (view === "settings") {
-    void syncDials();
     // Re-checked on every entry, not once at boot: the release you're behind can land
     // while the app is open, and this daemon stays up for days.
     void syncUpdate();
-  }
-}
-
-/** Highlight the active button in a `.settings-seg` segmented control. */
-function setSeg(dial: string, value: string): void {
-  document.querySelectorAll<HTMLElement>(`.settings-seg[data-dial="${dial}"] button`).forEach((b) => {
-    b.classList.toggle("on", b.dataset.value === value);
-  });
-}
-
-/** Read the dial files (mode + quality) and reflect them in the Settings panel. */
-async function syncDials(): Promise<void> {
-  try {
-    const d = await invoke<{ mode: string; quality: string }>("read_dials");
-    setSeg("mode", d.mode);
-    setSeg("quality", d.quality);
-  } catch (e) {
-    console.error("read_dials failed", e);
   }
 }
 
@@ -2681,28 +2662,11 @@ function wireUpdate(): void {
   });
 }
 
-/** Wire the Settings segmented controls: a click writes the dial file (optimistic,
- *  re-syncs on failure). The plugin observer reads these files per-job, so no restart. */
+/** Show the installed app version in the Settings header, so "did the upgrade take?"
+ *  is answerable from the panel itself. Reads the running binary's version (baked in
+ *  from tauri.conf.json at build time), not any file on disk — a stale install shows
+ *  its stale number, which is the whole point. */
 function wireSettings(): void {
-  document.querySelectorAll<HTMLElement>(".settings-seg").forEach((seg) => {
-    const dial = seg.dataset.dial;
-    seg.addEventListener("click", async (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLElement>("button[data-value]");
-      if (!btn || !dial) return;
-      const value = btn.dataset.value ?? "";
-      setSeg(dial, value);
-      try {
-        await invoke("set_dial", { name: dial, value });
-      } catch (err) {
-        console.error("set_dial failed", err);
-        void syncDials();
-      }
-    });
-  });
-  void syncDials();
-  // The installed app version, so "did the upgrade take?" is answerable from the
-  // panel itself. Reads the running binary's version (tauri.conf.json at build
-  // time), not any file on disk — a stale install shows its stale number.
   void getVersion()
     .then((v) => {
       const el = document.getElementById("settings-version");
@@ -2710,6 +2674,7 @@ function wireSettings(): void {
     })
     .catch(() => {});
 }
+
 
 /** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the floating
  *  surface controls (resize the stacked artifact + terminal, plus end the session). */
