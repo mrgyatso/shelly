@@ -47,12 +47,19 @@ export function projectSlug(project?: string | null): string | null {
   return base || null;
 }
 
+/** True when `dir` IS the user's $HOME — the directory behind the shared Home shelf. The
+ *  path-level rule both the read side (isHomeRooted, on a live source) and the launch side
+ *  (unitKeyForDir, on a spawn dir) answer to, so neither can drift from the other. */
+export function isHomeDir(dir: string | null | undefined, homeDir: string | null): boolean {
+  if (!homeDir) return false;
+  const d = normalizeDir(dir);
+  return d !== null && d === normalizeDir(homeDir);
+}
+
 /** True when this session's recorded root is still the user's $HOME — i.e. it was
  *  launched from ~ and has not yet adopted a project directory of its own. */
 export function isHomeRooted(s: UnitSource, homeDir: string | null): boolean {
-  if (!homeDir) return false;
-  const dir = normalizeDir(s.unit_dir);
-  return dir !== null && dir === normalizeDir(homeDir);
+  return isHomeDir(s.unit_dir, homeDir);
 }
 
 /** A throwaway/scratch directory: the system temp roots, or a folder literally named
@@ -91,6 +98,25 @@ export function sourceProjectKey(s: UnitSource): string {
 export function unitKeyOf(s: UnitSource, homeDir: string | null): string {
   if (isHomeRooted(s, homeDir)) return HOME_UNIT;
   return sourceProjectKey(s);
+}
+
+/**
+ * The unit a session spawned in `dir` will land on — the SAME rule as `unitKeyOf`, but
+ * answerable from the DIRECTORY alone, before the session has a live file to read.
+ *
+ * The Board must place a freshly spawned terminal on a shelf immediately (claude's
+ * first-run trust prompt can hold SessionStart for seconds, and the user has to SEE the
+ * terminal), so the launch path needs this answer early. It used to guess with the raw
+ * basename of the spawn dir — but for $HOME that is the USERNAME, while `unitKeyOf` answers
+ * HOME_UNIT for the very same directory. Two derivations of one fact, in two namespaces:
+ * the launch path's "is this unit already on the roster?" test then compared "gyatso"
+ * against "__home__", never matched, and minted a throwaway `gyatso~N` project that sat in
+ * the rail beside the real Home shelf until the live file landed and re-homed it.
+ * Directory in, unit out — one rule, so the provisional IS the final key.
+ */
+export function unitKeyForDir(dir: string, homeDir: string | null): string {
+  if (isHomeDir(dir, homeDir)) return HOME_UNIT;
+  return projectSlug(normalizeDir(dir)) ?? dir;
 }
 
 /**

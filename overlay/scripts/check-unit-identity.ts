@@ -10,6 +10,7 @@
 import {
   HOME_UNIT,
   unitKeyOf,
+  unitKeyForDir,
   isHomeRooted,
   isEphemeralUnit,
   sourceProjectKey,
@@ -112,6 +113,30 @@ console.log("\n### graduation (what companion-adopt.cjs rewrites, seen from the 
   // unit moves). The unit must not follow the stale stem.
   ok(after.source.startsWith("mrgyatso--"), "stem still carries the old home slug");
   ok(unitKeyOf(after, HOME) !== "mrgyatso", "…but the unit does NOT follow the stem");
+}
+
+console.log("\n### launch-time identity (unitKeyForDir) agrees with read-time (unitKeyOf)");
+{
+  // The bug this pins: the launch path derived a provisional unit from the raw BASENAME of
+  // the spawn dir ("mrgyatso"), while unitKeyOf answers HOME_UNIT for that very directory.
+  // Two namespaces for one fact ⇒ the "is this unit already on the roster?" test could never
+  // match Home ⇒ every ~-launch minted a bogus `mrgyatso~N` project that sat beside Home
+  // until its live file landed and re-homed it. One rule, one namespace, no interim card.
+  ok(unitKeyForDir(HOME, HOME) === HOME_UNIT, "launching in $HOME → the Home shelf, not the username");
+  ok(unitKeyForDir(HOME + "/", HOME) === HOME_UNIT, "…even with a trailing slash");
+  ok(
+    unitKeyForDir(HOME, HOME) === unitKeyOf(src({ source: "mrgyatso--aaaaaaaa", unit_dir: HOME }), HOME),
+    "launch-time key === the key its live source will resolve to (Home)",
+  );
+
+  const repo = HOME + "/snake";
+  ok(unitKeyForDir(repo, HOME) === "snake", "launching in a repo → its project unit");
+  ok(
+    unitKeyForDir(repo, HOME) === unitKeyOf(src({ source: "snake--cccccccc", unit_dir: repo }), HOME),
+    "launch-time key === the key its live source will resolve to (project)",
+  );
+
+  ok(unitKeyForDir(HOME, null) === "mrgyatso", "no homeDir → cannot know it is home; falls back to basename");
 }
 
 console.log("\n### degenerate input");

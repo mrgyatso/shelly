@@ -37,6 +37,7 @@ import {
   projectSlug,
   sourceProjectKey as sourceProjectKeyPure,
   unitKeyOf as unitKeyOfPure,
+  unitKeyForDir as unitKeyForDirPure,
   isEphemeralUnit as isEphemeralUnitPure,
   type UnitSource,
 } from "./unit-identity";
@@ -725,22 +726,22 @@ async function newFolderSession(agent?: string): Promise<void> {
  *  then re-navigates to the real unit when it correlates (pendingNavTab, handled
  *  in pollLive) — but only when the provisional was a throwaway.
  *
- *  Provisional choice (project-units): a repo session belongs to its PROJECT unit
- *  (`unitKeyOf` → project slug). If that unit is ALREADY on the roster, launch the
- *  new session straight into it (provisional = the project key) so it joins the
- *  existing group instantly — no transient `base~N` card that flashes at the
- *  bottom (Idle band) for the ~2-4s correlation window before re-homing. With NO
- *  existing unit (first session), keep a UNIQUE `base~N` so two rapid brand-new
- *  same-repo launches can't collapse onto one card before either has a live file;
- *  reconcileBindings re-homes it to the project key once its live file appears. */
+ *  Provisional choice: the unit is a function of the DIRECTORY (`unitKeyForDir`),
+ *  the same rule `unitKeyOf` will apply once the live file lands — so the key we
+ *  spawn under is normally the key we keep, and the session joins its shelf instantly.
+ *  A throwaway `key~N` is minted for exactly ONE case: the first session of a
+ *  brand-new PROJECT, where a unique key stops two rapid same-repo launches from
+ *  collapsing onto one card before either has a live file (reconcileBindings re-homes
+ *  it on correlation). Home is never that case — it is a SHARED shelf whose sessions
+ *  belong together by design, so a ~-launch goes straight onto it. */
 let provisionalSeq = 0;
 async function launchSessionIn(dir: string, agent?: string): Promise<string | null> {
-  const base = dir.split("/").filter(Boolean).pop() || dir;
-  const existing = allSources.some((s) => unitKeyOf(s) === base);
-  const provisional = existing ? base : `${base}~${++provisionalSeq}`;
+  const key = unitKeyForDir(dir);
+  const throwaway = key !== HOME_UNIT && !allSources.some((s) => unitKeyOf(s) === key);
+  const provisional = throwaway ? `${key}~${++provisionalSeq}` : key;
   try {
     const tabId = await spawnOwnedSession(dir, provisional, undefined, agent);
-    if (!existing) {
+    if (throwaway) {
       // A BRAND-NEW unit (first session of this project): re-nav when the throwaway
       // provisional re-homes, and land terminal-focused — there's no artifact yet, so
       // suppressing the digest just avoids an empty iframe flash.
@@ -1114,6 +1115,13 @@ function unitSourceOf(s: LiveSource): UnitSource {
  *  out; never the agent's label). */
 function unitKeyOf(s: LiveSource): string {
   return unitKeyOfPure(unitSourceOf(s), homeDir);
+}
+
+/** The UNIT a session spawned in `dir` will land on — the same rule as unitKeyOf, answered
+ *  from the directory alone so the launch path can shelve a terminal before its live file
+ *  exists. Same namespace as unitKeyOf by construction: that is the whole point. */
+function unitKeyForDir(dir: string): string {
+  return unitKeyForDirPure(dir, homeDir);
 }
 
 /** An INCIDENTAL unit the roster ignores: rooted in a scratch/temp dir. Cloud never is.
