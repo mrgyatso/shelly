@@ -77,6 +77,11 @@ is_repo=$(printf '%s' "$line" | cut -f4)
 unit_key=$(printf '%s' "$line" | cut -f5)
 root=$(printf '%s' "$line" | cut -f6)
 digest_path="${HOME}/.claude/companion/artifacts/home.${unit_key}.html"
+# The stem slug (live/<slug>--<shortid>.json) — the session's on-disk name. Recorded
+# alongside unit_key because the two DIFFER for $HOME sessions ('gyatso' vs '__home__');
+# artifact source stamps are built from the slug and must match the live stem.
+stem=$(basename "$live_path" .json)
+slug=${stem%--"$shortid"}
 
 # 1a. REGISTER FIRST — write the authoritative identity record BEFORE the
 #     best-effort sidecars below. register() is the source of truth of the
@@ -88,8 +93,8 @@ digest_path="${HOME}/.claude/companion/artifacts/home.${unit_key}.html"
 #     .claude-mem bail so the observer's own worker never self-registers.
 if [ -n "$session_id" ]; then
   node "$CMP_HOOK_DIR/companion-identity.cjs" register \
-    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${COMPANION_SESSION:-}" "$provider" 2>/dev/null
-  trace session register "sid=$shortid" "unit_key=$unit_key" "root=$root" "provider=$provider"
+    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${COMPANION_SESSION:-}" "$provider" "$slug" 2>/dev/null
+  trace session register "sid=$shortid" "unit_key=$unit_key" "slug=$slug" "root=$root" "provider=$provider"
 fi
 trace session start "sid=$shortid" "cwd=$cwd" "live=$live_path" "project=$project" "is_repo=$is_repo" "unit_key=$unit_key" "owned=${COMPANION_SESSION:-}"
 

@@ -75,5 +75,30 @@ execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), art2, liveDir, in
 const idx2 = JSON.parse(fs.readFileSync(indexPath, "utf8"));
 ok(!idx2[art2], "no-SID artifact is left un-indexed (legacy slug-fallback covers it) — no phantom session_id");
 
+// 5. $HOME session → the stamped `source` must be the LIVE STEM, not the unit key.
+// The 2026-07-14 blank-hero bug: slug was recorded = unit_key ('__home__'), so home
+// artifacts stamped source '__home__--<id>' — matching no live session, so the Board
+// disowned the session's own artifact. source must rebuild <cwd-basename>--<shortid>.
+// NOTE: shortid = first 8 chars — must differ from SID's, or livepath's reuse branch
+// matches the repo session's live file and freezes this session onto ITS identity.
+const HSID = "cafe0042-8888-9999-aaaa-bbbbccccdddd";
+execFileSync("sh", [path.join(HOOKS, "companion-session")], {
+  input: JSON.stringify({ cwd: home, session_id: HSID }),
+  env: baseEnv,
+  encoding: "utf8",
+});
+const art3 = path.join(home, ".claude", "companion", "artifacts", "home-brief.html");
+fs.writeFileSync(art3, "<html></html>");
+execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), art3, liveDir, indexPath], {
+  env: { ...baseEnv, SID: HSID },
+  encoding: "utf8",
+});
+const idx3 = JSON.parse(fs.readFileSync(indexPath, "utf8"));
+const hentry = idx3[art3];
+const homeStem = `${path.basename(home).replace(/[^A-Za-z0-9._-]/g, "-")}--${HSID.slice(0, 8)}`;
+ok(!!hentry, "home artifact indexed");
+ok(hentry && hentry.unit_key === "__home__", "home artifact routes to the Home shelf (unit_key)");
+ok(hentry && hentry.source === homeStem, "home artifact source === live stem (NOT '__home__--<id>')");
+
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);
 process.exit(fail ? 1 : 0);

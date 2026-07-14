@@ -87,7 +87,7 @@ console.log("\nCase 1 — repo session:");
   ok(rec && rec.is_repo === true, "is_repo === true");
   ok(rec && rec.session_id === sid, "record keyed by FULL session_id");
   ok(rec && rec.unit_key === path.basename(repo).replace(/[^A-Za-z0-9._-]/g, "-"), "unit_key === repo slug");
-  ok(rec && rec.slug === rec.unit_key, "slug === unit_key");
+  ok(rec && rec.slug === rec.unit_key, "slug === unit_key (repo session: stem slug and unit coincide)");
   ok(rec && rec.project_root === repo, "project_root === gitroot (canonicalized)");
   ok(rec && rec.owned_tab === null, "owned_tab null (not Board-launched)");
   ok(rec && typeof rec.created_ms === "number" && rec.created_ms > 0, "created_ms stamped");
@@ -115,6 +115,25 @@ console.log("\nCase 2 — non-repo session:");
   ok(rec && rec.is_repo === false, "is_repo === false");
   ok(rec && rec.project_root === plain, "project_root === cwd (no gitroot)");
   ok(rec && rec.unit_key === path.basename(plain).replace(/[^A-Za-z0-9._-]/g, "-"), "unit_key === cwd slug");
+}
+
+// ---- Case 2b: $HOME session → slug (stem name) and unit_key ('__home__') SPLIT ----
+// The 2026-07-14 blank-hero bug: slug was recorded = unit_key, so home artifacts were
+// stamped source '__home__--<id>' while the live stem is '<cwd-basename>--<id>' — no
+// live session ever matched its own artifact. The record must carry BOTH names.
+console.log("\nCase 2b — $HOME session: slug is the live stem's name, not the unit key:");
+{
+  const home = mkSandbox("home");
+  const sid = "2b2b2b2b-aaaa-bbbb-cccc-00000000002b";
+  runSession({ home, cwd: home, session_id: sid });
+  const rec = recordOf(home, sid);
+  const stemSlug = path.basename(home).replace(/[^A-Za-z0-9._-]/g, "-");
+  ok(rec !== null, "record written");
+  ok(rec && rec.unit_key === "__home__", "unit_key === '__home__' (the Home shelf)");
+  ok(rec && rec.slug === stemSlug, "slug === cwd basename (the live stem's name)");
+  ok(rec && rec.slug !== rec.unit_key, "slug ≠ unit_key (the split this case exists to pin)");
+  const stem = liveStems(home).find((s) => s.endsWith(`--${sid.slice(0, 8)}.json`)) || "";
+  ok(stem === `${rec.slug}--${sid.slice(0, 8)}.json`, "record slug + shortid rebuilds the live stem exactly");
 }
 
 // ---- Case 3: resumed session (same session_id) → idempotent, same record ----

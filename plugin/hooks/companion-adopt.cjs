@@ -152,7 +152,9 @@ function main(payload) {
   const rec = readJson(recPath);
   if (rec) {
     rec.unit_key = unit;
-    rec.slug = unit;
+    // rec.slug stays FROZEN: it names the live stem (live/<slug>--<shortid>.json),
+    // which adoption does not rename. Rewriting it to the unit would stamp future
+    // artifacts with a source no live session matches (the __home__ hero bug's twin).
     rec.project = unit;
     rec.project_root = root;
     rec.is_repo = true;

@@ -179,6 +179,12 @@ console.log("\nCase 4 — the snake game: git init → graduate:");
   ok(liveOf(home, stem).is_repo === true, "live file is_repo flipped true");
   ok(recordOf(home, sid).unit_key === "snake", "identity record re-keyed to 'snake'");
   ok(recordOf(home, sid).project_root === snake, "identity record root === ~/snake");
+  // slug names the live stem, which adoption does NOT rename — it must stay frozen,
+  // or post-adoption artifacts stamp a source no live session matches.
+  ok(
+    recordOf(home, sid).slug === stem.slice(0, stem.length - short.length - 2),
+    "slug stays FROZEN at the live stem's name through adoption",
+  );
 
   const idx = readJson(cmp(home, "artifact-index.json"), {});
   ok(idx[card].unit_key === "snake", "B+: the pre-adoption artifact followed it to 'snake'");
