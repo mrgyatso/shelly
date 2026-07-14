@@ -115,6 +115,29 @@ export interface HeroCandidate {
   path: string;
   modified_ms: number;
   source?: string | null;
+  session_id?: string | null;
+}
+
+/**
+ * Does this artifact belong to the session whose live stem is `src`?
+ *
+ * The stamped source stem is the primary key and matches by string when healthy. But
+ * the stamp is composed from the identity RECORD's slug, and home sessions split that
+ * from the live stem (record slug `__home__` vs live `gyatso--<id>`) — so equality
+ * alone silently drops a home session's own artifact (blank hero, mis-badged unread,
+ * submit falling back to the clipboard). The artifact's session_id — the identity
+ * BOTH stems are derived from — settles it: every live stem ends with
+ * `--<first 8 of the session_id>`, so the shortid match holds wherever the slug halves
+ * drifted apart, and old index entries heal without a re-stamp.
+ */
+export function artifactMatchesSource(
+  a: { source?: string | null; session_id?: string | null },
+  src: string | null | undefined,
+): boolean {
+  if (!src) return false;
+  if (a.source === src) return true;
+  const sid = a.session_id ?? "";
+  return sid.length >= 8 && src.endsWith(`--${sid.slice(0, 8)}`);
 }
 
 /**
@@ -138,7 +161,7 @@ export function heroArtifactFor<T extends HeroCandidate>(
   hasOwnedTab: boolean,
 ): T | null {
   const scoped = activeSource
-    ? unitArts.filter((a) => a.source === activeSource)
+    ? unitArts.filter((a) => artifactMatchesSource(a, activeSource))
     : hasOwnedTab
       ? []
       : unitArts;

@@ -16,7 +16,7 @@
  *   node --experimental-strip-types scripts/check-sibling-unread.ts
  */
 import { readFileSync } from "node:fs";
-import { heroArtifactFor, type HeroCandidate } from "../src/ingest-logic.ts";
+import { heroArtifactFor, artifactMatchesSource, type HeroCandidate } from "../src/ingest-logic.ts";
 
 let failed = 0;
 function check(name: string, cond: boolean): void {
@@ -67,6 +67,36 @@ check("6. active session with zero artifacts → blank hero", heroArtifactFor(UN
 
 // ---- 7. empty unit -----------------------------------------------------------
 check("7. empty unit → null", heroArtifactFor([], A_SRC, true) === null);
+
+// ---- 9. THE HOME-SLUG SPLIT (2026-07-14): a session's OWN artifact must hero --
+// The index stamps source from the identity record's slug; for a home session that
+// slug is the unit key ('__home__') while the live stem uses the cwd basename
+// ('gyatso--<id>'). Strict string equality dropped the session's own artifact —
+// blank hero right after it was written. The artifact's session_id shortid is the
+// identity both stems derive from, so it must bridge the split.
+const HOME_SID = "39f7edc5-55ca-4823-8a61-e74f73afbdf6";
+const HOME_LIVE_SRC = "gyatso--39f7edc5";
+const HOME_ART = "/art/discord-links-brief.html";
+const HOME_UNIT_ARTS: HeroCandidate[] = [
+  { path: HOME_ART, modified_ms: 1_784_039_390_000, source: "__home__--39f7edc5", session_id: HOME_SID },
+];
+check(
+  "9. home session heroes its OWN artifact despite the '__home__' source stamp",
+  heroArtifactFor(HOME_UNIT_ARTS, HOME_LIVE_SRC, true)?.path === HOME_ART,
+);
+check(
+  "9b. a home SIBLING still never inherits it (shortid mismatch)",
+  heroArtifactFor(HOME_UNIT_ARTS, "gyatso--c54fdb07", true) === null,
+);
+check(
+  "9c. no session_id + mismatched source → still no match (no false positives)",
+  heroArtifactFor([{ path: HOME_ART, modified_ms: 1, source: "__home__--39f7edc5" }], HOME_LIVE_SRC, true) === null,
+);
+check(
+  "9d. matcher: exact source equality still matches without a session_id",
+  artifactMatchesSource({ source: HOME_LIVE_SRC }, HOME_LIVE_SRC),
+);
+check("9e. matcher: null source → no match", !artifactMatchesSource({ session_id: HOME_SID }, null));
 
 // ---- 8. STRUCTURAL: entry must not clear the unit's unread wholesale ---------
 // Cases 1–2 prove a sibling's artifact is never PAINTED. This pins the other half of

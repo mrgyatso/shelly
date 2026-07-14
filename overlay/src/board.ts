@@ -29,7 +29,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { IS_LINUX } from "./platform";
 import { loadArtifactInto } from "./artifact-view";
-import { heroArtifactFor, effectsForRewrites } from "./ingest-logic";
+import { heroArtifactFor, artifactMatchesSource, effectsForRewrites } from "./ingest-logic";
 import {
   HOME_UNIT,
   isScratchDir,
@@ -2395,7 +2395,7 @@ async function renderHero(unitKey: string): Promise<void> {
     // iframe load flash, as before). The band is native DOM, so it adds no flash.
     const flSrc = activeSessionSource(unitKey);
     const flHasArt = flSrc
-      ? (groupArtifactsByUnit().get(unitKey) ?? []).some((a) => a.source === flSrc)
+      ? (groupArtifactsByUnit().get(unitKey) ?? []).some((a) => artifactMatchesSource(a, flSrc))
       : false;
     if (flHasArt) syncSurfaceStrip(false);
     else showBlankHero(BLANK_FIRST, blankWorkingLine(flSrc));
@@ -2446,7 +2446,7 @@ function maybeLightBlankHero(unitKey: string): void {
   if (digestPath !== null) return;
   const src = activeSessionSource(unitKey);
   if (!src) return;
-  if (allArtifacts.some((a) => a.source === src && unitForArtifact(a) === unitKey)) {
+  if (allArtifacts.some((a) => artifactMatchesSource(a, src) && unitForArtifact(a) === unitKey)) {
     void renderHero(unitKey);
   }
 }
@@ -3773,7 +3773,7 @@ function unreadCountForSource(source: string): number {
   const unread = new Set<string>();
   for (const set of unreadByUnit.values()) for (const p of set) unread.add(p);
   let n = 0;
-  for (const a of allArtifacts) if (a.source === source && unread.has(a.path)) n++;
+  for (const a of allArtifacts) if (artifactMatchesSource(a, source) && unread.has(a.path)) n++;
   return n;
 }
 function totalUnread(): number {
@@ -3913,7 +3913,7 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
     if (unit !== viewingUnit) {
       addUnread(unit, a.path);
       branch = "unread:cross-unit";
-    } else if (a.source && a.source !== activeSessionSource(unit)) {
+    } else if (a.source && !artifactMatchesSource(a, activeSessionSource(unit))) {
       // Same unit on screen, but produced by a SIBLING session (not the one whose
       // hero is shown). The hero is per-session, so this isn't its hero to advance —
       // surface it as ambient unread, exactly as a different unit's artifact would be.
@@ -3993,7 +3993,9 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
   const next = newOnes
     .filter(
       (a) =>
-        a.source === awaitingAdvanceSource && a.path !== focusPath && a.path !== digestPath,
+        artifactMatchesSource(a, awaitingAdvanceSource) &&
+        a.path !== focusPath &&
+        a.path !== digestPath,
     )
     .sort((x, y) => y.modified_ms - x.modified_ms)[0];
   if (!next) {
@@ -4025,7 +4027,7 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
   if (
     v.level === "unit" &&
     unitForArtifact(next) === v.unitKey &&
-    next.source === activeSessionSource(v.unitKey)
+    artifactMatchesSource(next, activeSessionSource(v.unitKey))
   ) {
     trace("autoadvance.fire", { corr: next.path, target: "hero", awaiting: awaitingAdvanceSource });
     awaitingAdvanceSource = null;
@@ -4300,7 +4302,7 @@ async function submitIntoPty(tabId: string, text: string): Promise<void> {
 function ownedTabForArtifact(path: string): string | null {
   const art = allArtifacts.find((a) => a.path === path);
   if (!art?.source) return null;
-  const src = allSources.find((s) => s.source === art.source);
+  const src = allSources.find((s) => artifactMatchesSource(art, s.source));
   return src ? parseState(src.json).companion_session ?? null : null;
 }
 
