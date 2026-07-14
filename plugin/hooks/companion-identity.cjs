@@ -9,7 +9,7 @@
 //
 //   CLI (from the sh hooks):
 //     node companion-identity.cjs register <session_id> <unit_key> <is_repo> \
-//          <project_root> <project> [owned_tab]
+//          <project_root> <project> [owned_tab] [provider] [slug]
 //   lib (from node hooks / the observer worker):
 //     const id = require("./companion-identity.cjs");
 //     id.register({ session_id, unit_key, project_root, is_repo, project, owned_tab });
@@ -115,8 +115,13 @@ function appendEvent(evt, opts) {
  * what forked one session into two roster units (a11a020).
  *
  * `rec` carries the identity the caller already derived (no re-derivation here):
- *   { session_id, unit_key, project_root, is_repo, project, owned_tab }
- * `slug` is recorded equal to unit_key (the current scheme: unit = project dir).
+ *   { session_id, unit_key, project_root, slug, is_repo, project, owned_tab }
+ * `slug` is the live stem's slug (the <slug> in live/<slug>--<shortid>.json) — the
+ * name every source-stem comparison on the Board uses. It is NOT the unit_key:
+ * for a $HOME session unit_key is '__home__' while the stem slug is the cwd
+ * basename, and conflating them stamped artifacts with a source no live session
+ * matches (blank hero, 2026-07-14). Callers that predate the split may omit it;
+ * unit_key is then the fallback (identical for repo sessions).
  *
  * Returns { record, created }: created=false means the record already existed.
  */
@@ -138,7 +143,7 @@ function register(rec, opts) {
     session_id: sid,
     unit_key: rec.unit_key || "",
     project_root: rec.project_root || "",
-    slug: rec.unit_key || "",
+    slug: rec.slug || rec.unit_key || "",
     is_repo: !!rec.is_repo,
     project: rec.project || "",
     created_ms: Date.now(),
@@ -235,12 +240,12 @@ module.exports = { register, resolveUnit, readRecord, appendEvent, routeArtifact
 
 // CLI form for the sh hooks (companion-session). Mirrors companion-trace.cjs's
 // require.main pattern. Positional args keep the sh call site simple:
-//   register <session_id> <unit_key> <is_repo> <project_root> <project> [owned_tab] [provider]
+//   register <session_id> <unit_key> <is_repo> <project_root> <project> [owned_tab] [provider] [slug]
 // is_repo is the string "1"/"0" the sh hooks already carry.
 if (require.main === module) {
   const [cmd, ...rest] = process.argv.slice(2);
   if (cmd === "register") {
-    const [session_id, unit_key, is_repo, project_root, project, owned_tab, provider] = rest;
+    const [session_id, unit_key, is_repo, project_root, project, owned_tab, provider, slug] = rest;
     register({
       session_id,
       unit_key,
@@ -249,6 +254,7 @@ if (require.main === module) {
       project,
       owned_tab: owned_tab || null,
       provider: provider || "claude",
+      slug: slug || "",
     });
   } else if (cmd === "resolve") {
     const unit = resolveUnit(rest[0]);

@@ -29,7 +29,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit } from "./submit";
 import { IS_LINUX } from "./platform";
 import { loadArtifactInto } from "./artifact-view";
-import { heroArtifactFor, effectsForRewrites } from "./ingest-logic";
+import { heroArtifactFor, artifactMatchesSource, effectsForRewrites } from "./ingest-logic";
 import {
   HOME_UNIT,
   isScratchDir,
@@ -37,6 +37,7 @@ import {
   projectSlug,
   sourceProjectKey as sourceProjectKeyPure,
   unitKeyOf as unitKeyOfPure,
+  unitKeyForDir as unitKeyForDirPure,
   isEphemeralUnit as isEphemeralUnitPure,
   type UnitSource,
 } from "./unit-identity";
@@ -725,22 +726,22 @@ async function newFolderSession(agent?: string): Promise<void> {
  *  then re-navigates to the real unit when it correlates (pendingNavTab, handled
  *  in pollLive) — but only when the provisional was a throwaway.
  *
- *  Provisional choice (project-units): a repo session belongs to its PROJECT unit
- *  (`unitKeyOf` → project slug). If that unit is ALREADY on the roster, launch the
- *  new session straight into it (provisional = the project key) so it joins the
- *  existing group instantly — no transient `base~N` card that flashes at the
- *  bottom (Idle band) for the ~2-4s correlation window before re-homing. With NO
- *  existing unit (first session), keep a UNIQUE `base~N` so two rapid brand-new
- *  same-repo launches can't collapse onto one card before either has a live file;
- *  reconcileBindings re-homes it to the project key once its live file appears. */
+ *  Provisional choice: the unit is a function of the DIRECTORY (`unitKeyForDir`),
+ *  the same rule `unitKeyOf` will apply once the live file lands — so the key we
+ *  spawn under is normally the key we keep, and the session joins its shelf instantly.
+ *  A throwaway `key~N` is minted for exactly ONE case: the first session of a
+ *  brand-new PROJECT, where a unique key stops two rapid same-repo launches from
+ *  collapsing onto one card before either has a live file (reconcileBindings re-homes
+ *  it on correlation). Home is never that case — it is a SHARED shelf whose sessions
+ *  belong together by design, so a ~-launch goes straight onto it. */
 let provisionalSeq = 0;
 async function launchSessionIn(dir: string, agent?: string): Promise<string | null> {
-  const base = dir.split("/").filter(Boolean).pop() || dir;
-  const existing = allSources.some((s) => unitKeyOf(s) === base);
-  const provisional = existing ? base : `${base}~${++provisionalSeq}`;
+  const key = unitKeyForDir(dir);
+  const throwaway = key !== HOME_UNIT && !allSources.some((s) => unitKeyOf(s) === key);
+  const provisional = throwaway ? `${key}~${++provisionalSeq}` : key;
   try {
     const tabId = await spawnOwnedSession(dir, provisional, undefined, agent);
-    if (!existing) {
+    if (throwaway) {
       // A BRAND-NEW unit (first session of this project): re-nav when the throwaway
       // provisional re-homes, and land terminal-focused — there's no artifact yet, so
       // suppressing the digest just avoids an empty iframe flash.
@@ -1114,6 +1115,13 @@ function unitSourceOf(s: LiveSource): UnitSource {
  *  out; never the agent's label). */
 function unitKeyOf(s: LiveSource): string {
   return unitKeyOfPure(unitSourceOf(s), homeDir);
+}
+
+/** The UNIT a session spawned in `dir` will land on — the same rule as unitKeyOf, answered
+ *  from the directory alone so the launch path can shelve a terminal before its live file
+ *  exists. Same namespace as unitKeyOf by construction: that is the whole point. */
+function unitKeyForDir(dir: string): string {
+  return unitKeyForDirPure(dir, homeDir);
 }
 
 /** An INCIDENTAL unit the roster ignores: rooted in a scratch/temp dir. Cloud never is.
@@ -2387,7 +2395,7 @@ async function renderHero(unitKey: string): Promise<void> {
     // iframe load flash, as before). The band is native DOM, so it adds no flash.
     const flSrc = activeSessionSource(unitKey);
     const flHasArt = flSrc
-      ? (groupArtifactsByUnit().get(unitKey) ?? []).some((a) => a.source === flSrc)
+      ? (groupArtifactsByUnit().get(unitKey) ?? []).some((a) => artifactMatchesSource(a, flSrc))
       : false;
     if (flHasArt) syncSurfaceStrip(false);
     else showBlankHero(BLANK_FIRST, blankWorkingLine(flSrc));
@@ -2438,7 +2446,7 @@ function maybeLightBlankHero(unitKey: string): void {
   if (digestPath !== null) return;
   const src = activeSessionSource(unitKey);
   if (!src) return;
-  if (allArtifacts.some((a) => a.source === src && unitForArtifact(a) === unitKey)) {
+  if (allArtifacts.some((a) => artifactMatchesSource(a, src) && unitForArtifact(a) === unitKey)) {
     void renderHero(unitKey);
   }
 }
@@ -3765,7 +3773,7 @@ function unreadCountForSource(source: string): number {
   const unread = new Set<string>();
   for (const set of unreadByUnit.values()) for (const p of set) unread.add(p);
   let n = 0;
-  for (const a of allArtifacts) if (a.source === source && unread.has(a.path)) n++;
+  for (const a of allArtifacts) if (artifactMatchesSource(a, source) && unread.has(a.path)) n++;
   return n;
 }
 function totalUnread(): number {
@@ -3905,7 +3913,7 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
     if (unit !== viewingUnit) {
       addUnread(unit, a.path);
       branch = "unread:cross-unit";
-    } else if (a.source && a.source !== activeSessionSource(unit)) {
+    } else if (a.source && !artifactMatchesSource(a, activeSessionSource(unit))) {
       // Same unit on screen, but produced by a SIBLING session (not the one whose
       // hero is shown). The hero is per-session, so this isn't its hero to advance —
       // surface it as ambient unread, exactly as a different unit's artifact would be.
@@ -3985,7 +3993,9 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
   const next = newOnes
     .filter(
       (a) =>
-        a.source === awaitingAdvanceSource && a.path !== focusPath && a.path !== digestPath,
+        artifactMatchesSource(a, awaitingAdvanceSource) &&
+        a.path !== focusPath &&
+        a.path !== digestPath,
     )
     .sort((x, y) => y.modified_ms - x.modified_ms)[0];
   if (!next) {
@@ -4017,7 +4027,7 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
   if (
     v.level === "unit" &&
     unitForArtifact(next) === v.unitKey &&
-    next.source === activeSessionSource(v.unitKey)
+    artifactMatchesSource(next, activeSessionSource(v.unitKey))
   ) {
     trace("autoadvance.fire", { corr: next.path, target: "hero", awaiting: awaitingAdvanceSource });
     awaitingAdvanceSource = null;
@@ -4292,7 +4302,7 @@ async function submitIntoPty(tabId: string, text: string): Promise<void> {
 function ownedTabForArtifact(path: string): string | null {
   const art = allArtifacts.find((a) => a.path === path);
   if (!art?.source) return null;
-  const src = allSources.find((s) => s.source === art.source);
+  const src = allSources.find((s) => artifactMatchesSource(art, s.source));
   return src ? parseState(src.json).companion_session ?? null : null;
 }
 

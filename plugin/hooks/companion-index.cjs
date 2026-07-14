@@ -90,8 +90,13 @@ if (!rec) {
       encoding: "utf8",
     }).trim();
     const f = line.split("\t");
+    // Stem slug from the live path (live/<slug>--<shortid>.json) — distinct from
+    // unit_key for $HOME sessions, and the piece source stamps are built from.
+    const stem = path.basename(f[0] || "", ".json");
+    const stemSlug = stem.endsWith(`--${shortid}`) ? stem.slice(0, -(`--${shortid}`.length)) : "";
     identity.register({
       session_id: sessionId,
+      slug: stemSlug,
       unit_key: f[4] || "",
       is_repo: f[3] === "1",
       project_root: f[5] || "",
