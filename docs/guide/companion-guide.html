@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Companion — the guide</title>
+<!-- In-app the overlay serves bundled fonts via asset://; the repo copy falls back to system faces. -->
+<script type="application/json" id="companion-meta">
+{
+  "subject": "Companion first-run guide — draft v1",
+  "summary": "The six-page in-app guide that replaces a docs site: what the Board is, starting a session, where sessions live, answering an artifact, the terminal and layout, shortcuts and troubleshooting. Built from real screenshots of the Board, with mechanics verified against board.ts. Last page is a ballot for Zach to steer it.",
+  "files": ["overlay/src/board.ts", "plugin/commands/example.md", "README.md"],
+  "project": "~/claude-code-companion",
+  "branch": "master",
+  "created": "2026-07-14",
+  "session": "d32320df"
+}
+</script>
+<style>
+  :root {
+    --board: oklch(0.945 0.014 60);
+    --paper: #FBFAF6;
+    --ink: #171A1F;
+    --soft: #39404A;
+    --muted: #646C76;
+    --line: #CDC8BC;
+    --accent: #D98158;
+    --mint: #4DAA7D;
+    --amber: #F2B84B;
+  }
+  * { box-sizing: border-box; }
+  html { scrollbar-width: none; }
+  html::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  html, body {
+    margin: 0; background: var(--board); color: var(--ink);
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  [data-fit-root] {
+    width: 940px; margin: 0 auto; background: var(--board);
+    display: grid; grid-template-columns: 214px 1fr; align-items: start;
+  }
+
+  /* ---- sidebar ---- */
+  .mp-nav { position: sticky; top: 0; align-self: start; padding: 26px 14px 26px 22px; border-right: 1px solid var(--line); }
+  .mp-brand {
+    font: 600 10px/1.2 'JetBrains Mono', ui-monospace, monospace;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px;
+  }
+  .mp-brand-sub { font-size: 11.5px; color: var(--muted); margin-bottom: 18px; line-height: 1.4; }
+  .mp-nav a {
+    display: flex; gap: 9px; padding: 8px 10px; margin: 1px 0; border-radius: 7px;
+    color: var(--muted); text-decoration: none; font-size: 13px; line-height: 1.35;
+    cursor: pointer; transition: background 120ms, color 120ms;
+  }
+  .mp-nav a:hover { background: rgba(23,26,31,.05); color: var(--ink); }
+  .mp-nav a.active { background: var(--ink); color: var(--paper); }
+  .mp-nav a .n { min-width: 1.3em; opacity: .55; font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .mp-nav a.final { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 12px; border-radius: 0 0 7px 7px; color: var(--accent); font-weight: 600; }
+  .mp-nav a.final.active { background: var(--accent); color: #fff; border-top-color: var(--accent); }
+
+  /* ---- pages ---- */
+  /* left padding gives the ambient 💬 icon (left:-36px) room to render */
+  .mp-pages { padding: 28px 32px 34px 58px; min-width: 0; }
+  .mp-pages > section { display: none; }
+  .mp-pages > section.active { display: block; animation: mpIn 180ms ease both; }
+  @keyframes mpIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .kicker {
+    font: 600 10px/1 'JetBrains Mono', ui-monospace, monospace;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px;
+  }
+  h1 {
+    font-family: 'Newsreader', ui-serif, Georgia, serif;
+    font-size: 36px; font-weight: 600; line-height: 1.08; letter-spacing: -.025em; margin: 0 0 10px;
+  }
+  .lede { font-size: 15px; line-height: 1.62; color: var(--soft); margin: 0 0 18px; max-width: 60ch; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  h2 { font-family: 'Newsreader', ui-serif, Georgia, serif; font-size: 20px; font-weight: 600; letter-spacing: -.012em; margin: 22px 0 8px; }
+  p, li { font-size: 14px; line-height: 1.66; color: var(--soft); }
+  p { margin: 0 0 10px; }
+  ul, ol { margin: 0 0 12px; padding-left: 19px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--ink); font-weight: 600; }
+  code {
+    font: 12.5px/1 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    background: rgba(23,26,31,.06); padding: 2px 5px; border-radius: 4px; color: var(--ink);
+  }
+  kbd {
+    font: 600 11.5px/1 'JetBrains Mono', ui-monospace, monospace;
+    background: #fff; border: 1px solid var(--line); border-bottom-width: 2px;
+    padding: 3px 6px; border-radius: 5px; color: var(--ink); white-space: nowrap;
+  }
+
+  figure { margin: 16px 0 18px; }
+  figure img {
+    display: block; width: 100%; height: auto;
+    border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 18px 40px -30px rgba(23,26,31,.6);
+  }
+  figure img.narrow { width: 260px; }
+  figure img.wide-crop { width: 100%; }
+  figcaption { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+  .callouts { list-style: none; padding: 0; margin: 12px 0 4px; }
+  .callouts li {
+    display: flex; gap: 11px; align-items: baseline; margin: 0;
+    padding: 9px 0; border-top: 1px solid var(--line);
+  }
+  .callouts li:last-child { border-bottom: 1px solid var(--line); }
+  .callouts .b {
+    flex: 0 0 auto; width: 19px; height: 19px; border-radius: 50%;
+    background: var(--accent); color: #fff; font: 700 10.5px/19px 'Inter', sans-serif;
+    text-align: center; align-self: flex-start; margin-top: 2px;
+  }
+  .callouts .tx { font-size: 13.5px; line-height: 1.55; color: var(--soft); }
+  .callouts .tx b { color: var(--ink); font-weight: 600; }
+
+  .note {
+    margin: 16px 0; padding: 12px 15px; border-left: 3px solid var(--amber);
+    background: rgba(242,184,75,.1); border-radius: 0 8px 8px 0;
+  }
+  .note p { margin: 0; font-size: 13.5px; color: var(--ink); }
+
+  table { border-collapse: collapse; width: 100%; margin: 12px 0 16px; }
+  th, td { text-align: left; padding: 8px 10px; font-size: 13.5px; border-bottom: 1px solid var(--line); }
+  th { font: 600 10.5px/1 'JetBrains Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  td { color: var(--soft); }
+  td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
+
+  /* ---- decide ---- */
+  .decide-h { font-family: 'Newsreader', ui-serif, Georgia, serif; font-size: 30px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 4px; }
+  .decide-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .item { border-top: 1px solid var(--line); padding: 13px 0 12px; }
+  .item-row { display: flex; gap: 14px; align-items: flex-start; }
+  .item-main { flex: 1; min-width: 0; }
+  .item-title { font-size: 14.5px; font-weight: 600; color: var(--ink); line-height: 1.4; }
+  .item-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
+  .item-actions { display: flex; gap: 5px; flex: 0 0 auto; }
+  .act {
+    width: 42px; height: 42px; border-radius: 9px; cursor: pointer;
+    border: 1px solid rgba(23,26,31,.18); background: #fff; color: var(--muted);
+    font-size: 15px; line-height: 1; transition: all 120ms ease;
+  }
+  .act:hover { border-color: rgba(23,26,31,.4); color: var(--ink); }
+  .item[data-state="approve"] { box-shadow: inset 3px 0 0 var(--mint); }
+  .item[data-state="approve"] .act.do { background: var(--mint); color: #fff; border-color: var(--mint); }
+  .item[data-state="comment"] { box-shadow: inset 3px 0 0 var(--amber); }
+  .item[data-state="comment"] .act.info { background: var(--amber); color: #3a2c0c; border-color: var(--amber); }
+  .item[data-state="reject"] { box-shadow: inset 3px 0 0 var(--muted); opacity: .62; }
+  .item[data-state="reject"] .act.skip { background: var(--muted); color: #fff; border-color: var(--muted); }
+  .item textarea {
+    width: 100%; box-sizing: border-box; margin-top: 9px; min-height: 58px;
+    padding: 9px 11px; border: 1px solid var(--amber); border-radius: 8px;
+    font: 13px/1.5 'Inter', system-ui, sans-serif; background: #fff; color: var(--ink);
+    outline: none; resize: vertical;
+  }
+  .rec {
+    display: inline-block; margin-left: 7px; padding: 2px 7px; border-radius: 5px;
+    background: rgba(77,170,125,.16); color: #2c6a4c;
+    font: 600 10px/1.5 'JetBrains Mono', monospace; letter-spacing: .07em; text-transform: uppercase; vertical-align: 1px;
+  }
+  .bar { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .count { flex: 1; font-size: 12.5px; color: var(--muted); }
+  .doall {
+    padding: 10px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid rgba(23,26,31,.22); background: #fff; color: var(--ink);
+    font: 600 12.5px/1 'Inter', system-ui, sans-serif;
+  }
+  .doall:hover { border-color: var(--ink); }
+  .submit {
+    padding: 11px 18px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+    font: 600 12.5px/1 'Inter', system-ui, sans-serif; transition: all 130ms ease;
+  }
+  .submit.ready { background: var(--accent); border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div data-fit-root>
+
+  <nav class="mp-nav" aria-label="Pages">
+    <div class="mp-brand">Companion</div>
+    <div class="mp-brand-sub">Everything you need, in about four minutes.</div>
+    <a data-mp-link href="#p0" class="active"><span class="n">·</span> What this is</a>
+    <a data-mp-link href="#p1"><span class="n">1</span> Start a session</a>
+    <a data-mp-link href="#p2"><span class="n">2</span> Where sessions live</a>
+    <a data-mp-link href="#p3"><span class="n">3</span> Answer an artifact</a>
+    <a data-mp-link href="#p4"><span class="n">4</span> Terminal &amp; layout</a>
+    <a data-mp-link href="#p5"><span class="n">5</span> Shortcuts &amp; fixes</a>
+    <a data-mp-link href="#p6" class="final"><span class="n">✎</span> Zach: steer this</a>
+  </nav>
+
+  <main class="mp-pages">
+
+    <!-- ===== 0. What this is ===== -->
+    <section id="p0" data-companion-commentable data-mp-page class="active">
+      <div class="kicker">Start here</div>
+      <h1>Your agents report here, and you answer here.</h1>
+      <p class="lede">
+        Companion is a window that sits over your terminal. Your coding agent — Claude Code or Codex — writes each
+        turn as <strong>a page</strong> instead of a wall of scrollback, and this window renders it the moment it's
+        written. You read it, click your answer, and the agent keeps going. <strong>For most turns you never touch
+        the terminal.</strong>
+      </p>
+
+      <figure>
+        <img src="img/02-session-full.png"
+             alt="The Companion Board: project rail on the left, the agent's page in the middle, its live terminal below" />
+        <figcaption>One session, open. This is the whole product — there are only four things on this screen.</figcaption>
+      </figure>
+
+      <ul class="callouts">
+        <li><span class="b">1</span><span class="tx"><b>The rail</b> — every project you have an agent in. Live ones on top, recent ones below.</span></li>
+        <li><span class="b">2</span><span class="tx"><b>The page</b> — what the agent just did, and what it needs from you. Click ✓ / ✎ / ✗ to answer.</span></li>
+        <li><span class="b">3</span><span class="tx"><b>The terminal</b> — the real agent, running. It's right there whenever you want to type at it directly.</span></li>
+        <li><span class="b">4</span><span class="tx"><b>The toolbar</b> — how much of your 5-hour usage and context you've burned, and how the two panels are split.</span></li>
+      </ul>
+
+      <div class="note">
+        <p>That's it. The next five pages are just those four things, one at a time.</p>
+      </div>
+    </section>
+
+    <!-- ===== 1. Start a session ===== -->
+    <section id="p1" data-companion-commentable data-mp-page>
+      <div class="kicker">Page 1 of 5</div>
+      <h1>Start a session</h1>
+      <p class="lede">
+        Sessions run <strong>inside the app</strong>. Hit the <strong>+</strong> in the top-right corner and pick
+        where the agent should work.
+      </p>
+
+      <figure>
+        <img src="img/07-newsession.png"
+             alt="The + button opens a menu with two options: Start at home, and Start in a folder"
+             style="width: 420px;" />
+        <figcaption>The <strong>+</strong> menu. Two ways in.</figcaption>
+      </figure>
+
+      <ul>
+        <li><strong>Start in a folder…</strong> — pick your repo. This is what you want almost every time; the agent
+          opens in that project and the project appears in the rail.</li>
+        <li><strong>Start at home</strong> — an agent in your home directory, for work that isn't tied to a repo.</li>
+      </ul>
+
+      <h2>Why it has to start here</h2>
+      <p>
+        By default Companion only pays attention to terminals <em>it</em> started. If you run <code>claude</code> in
+        your own Terminal or iTerm, that session deliberately stays out of the app — so agents that aren't using
+        Companion don't clutter it. If you'd rather every session get picked up wherever you launch it, run this
+        once:
+      </p>
+      <p><code>companion setup --external-terminals</code></p>
+
+      <h2>Ending one</h2>
+      <p>
+        Each session's terminal has a <strong>✕</strong> in its controls — that ends the session. Closing the
+        Companion window does <em>not</em> kill your agents; they keep running and are still there when you come back.
+      </p>
+      <div class="note">
+        <p><strong>Rename a session</strong> by clicking its title in the toolbar. Useful once you have three agents in one repo.</p>
+      </div>
+    </section>
+
+    <!-- ===== 2. Where sessions live ===== -->
+    <section id="p2" data-companion-commentable data-mp-page>
+      <div class="kicker">Page 2 of 5</div>
+      <h1>Where your sessions live</h1>
+      <p class="lede">
+        The rail on the left is the answer to "where did my agent go?" It holds <strong>projects</strong>, and a
+        project holds <strong>sessions</strong>.
+      </p>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start;">
+        <figure style="margin:16px 0 0;">
+          <img src="img/03-rail.png"
+               alt="The rail: three live projects with dots on top, then a RECENT list below" />
+          <figcaption>Live projects up top — the dot means an agent is working. <strong>Recent</strong> below is everything you've touched lately.</figcaption>
+        </figure>
+        <figure style="margin:16px 0 0;">
+          <img src="img/06-drawer.png"
+               alt="A project expanded to show the individual sessions inside it" />
+          <figcaption>A project with more than one agent shows a <strong>▸</strong>. Click it to open the drawer and pick a session.</figcaption>
+        </figure>
+      </div>
+
+      <h2>The ordering is the point</h2>
+      <p>
+        Projects are sorted by <strong>who needs a decision</strong>, not by when they last spoke. So the top of the
+        rail is always where you should look next. Two agents in the same repo collapse into one card — you don't
+        get two rows for one project.
+      </p>
+
+      <h2>The sidebar is in your way</h2>
+      <p>
+        Fine — collapse it. The toggle sits in the toolbar (it reads <strong>«</strong> to hide, <strong>»</strong>
+        to bring it back), and it remembers your choice across restarts.
+      </p>
+    </section>
+
+    <!-- ===== 3. Answer an artifact ===== -->
+    <section id="p3" data-companion-commentable data-mp-page>
+      <div class="kicker">Page 3 of 5 · the important one</div>
+      <h1>Answer without typing</h1>
+      <p class="lede">
+        The page your agent wrote is not a report you read and then go re-type a reply to. It's a <strong>form you
+        answer in place</strong>. Everything the agent needs from you is a button.
+      </p>
+
+      <h2>The ✓ / ✎ / ✗ ballot</h2>
+      <p>Every page ends with the next moves. For each one:</p>
+      <table>
+        <tr><th>Click</th><th>Means</th></tr>
+        <tr><td>✓</td><td>Do it. Go ahead with this.</td></tr>
+        <tr><td>✎</td><td>Not so fast — opens a box so you can say what to change.</td></tr>
+        <tr><td>✗</td><td>Skip it.</td></tr>
+      </table>
+      <p>
+        Mark as many as you like, then hit <strong>Submit</strong> once. All your answers go back to the agent as a
+        single instruction, and it gets on with it. There's a <strong>✓ Do all</strong> button when you just agree
+        with everything.
+      </p>
+
+      <h2>Talking back to one specific line</h2>
+      <p>
+        You don't have to accept a whole paragraph or nothing. <strong>Hover any paragraph and a 💬 appears in the
+        margin</strong> — click it, type your question about <em>that line</em>, and it rides along with your next
+        Submit, quoted, so the agent knows exactly what you're pointing at.
+      </p>
+      <p>
+        <strong>Or highlight any text</strong> and a small toolbar pops up: <strong>💬 Ask</strong> pulls the quote
+        into your reply, and <strong>✦ New session</strong> spins up a fresh agent on that tangent so it doesn't
+        derail the one you're in.
+      </p>
+
+      <div class="note">
+        <p>
+          <strong>Try it right now, on this page.</strong> Hover this paragraph — see the 💬 in the left margin?
+          That's the whole mechanic. This guide is itself a Companion page, so anything you learn here you're
+          already doing.
+        </p>
+      </div>
+
+      <h2>Where the pages go</h2>
+      <p>
+        They stack up per project — the newest is what you see, and the older ones stay in that project's history.
+        Hit <kbd>⌘8</kbd> to flip back through everything an agent has ever handed you.
+      </p>
+    </section>
+
+    <!-- ===== 4. Terminal & layout ===== -->
+    <section id="p4" data-companion-commentable data-mp-page>
+      <div class="kicker">Page 4 of 5</div>
+      <h1>The terminal, and who gets the space</h1>
+      <p class="lede">
+        The agent's real terminal is always right there under the page. Click into it and type whenever the page
+        isn't enough — a page is for deciding, the terminal is for getting into the weeds.
+      </p>
+
+      <figure>
+        <img src="img/04-terminal.png"
+             alt="The live agent terminal embedded under the artifact" />
+        <figcaption>Not a recording — this is the actual agent. It survives app restarts and picks up where it left off.</figcaption>
+      </figure>
+
+      <h2>Give the page more room, or the terminal more room</h2>
+      <p>Three buttons in the toolbar decide the split. This is the "make the artifact bigger" answer:</p>
+
+      <figure>
+        <img src="img/05-toolbar.png"
+             alt="The unit toolbar: usage meter, context count, Compact button, three layout buttons, and the code drawer toggle" />
+        <figcaption>Left to right: 5-hour usage · context used · <strong>Compact</strong> · the three layout modes · <strong>&lt;/&gt;</strong> code drawer.</figcaption>
+      </figure>
+
+      <table>
+        <tr><th>Button</th><th>What it does</th></tr>
+        <tr><td>⬒</td><td>Page only — the terminal tucks away.</td></tr>
+        <tr><td>⊟</td><td>Split. The default: page on top, terminal below.</td></tr>
+        <tr><td>⬓</td><td>Terminal only — for when you're really in it.</td></tr>
+      </table>
+      <p>
+        A tucked-away panel doesn't vanish; it leaves a small pill on the edge. Click the pill to bring it back to
+        split.
+      </p>
+
+      <h2>The rest of the toolbar</h2>
+      <ul>
+        <li><strong>The usage meter</strong> — how much of your 5-hour window you've spent. Colours up as you approach the limit.</li>
+        <li><strong>The context count</strong> — how full this agent's memory is. When it's getting full, hit
+          <strong>Compact</strong> and the agent summarises itself and carries on.</li>
+        <li><strong>&lt;/&gt;</strong> — opens the code drawer: the actual files this session is touching, in a real editor.</li>
+      </ul>
+    </section>
+
+    <!-- ===== 5. Shortcuts & fixes ===== -->
+    <section id="p5" data-companion-commentable data-mp-page>
+      <div class="kicker">Page 5 of 5</div>
+      <h1>Shortcuts, and what to do when it's quiet</h1>
+
+      <h2>The three you'll actually use</h2>
+      <table>
+        <tr><th></th><th>macOS</th><th>Linux</th></tr>
+        <tr><td>Show / hide the app</td><td><kbd>⌘0</kbd></td><td><kbd>Ctrl+Alt+0</kbd></td></tr>
+        <tr><td>History of past pages</td><td><kbd>⌘8</kbd></td><td><kbd>Ctrl+Alt+8</kbd></td></tr>
+        <tr><td>Free ↔ Terminal mode</td><td><kbd>⌘9</kbd></td><td>—</td></tr>
+      </table>
+      <p>
+        Companion also lives in your menu bar (or system tray). The icon shows how many agents are waiting on you,
+        and the menu carries every shortcut as a clickable item — which is your fallback if a shortcut doesn't
+        register.
+      </p>
+
+      <h2>Bring it forward from anywhere</h2>
+      <p>From any terminal: <code>companion board</code>.</p>
+
+      <h2>Nothing is showing up</h2>
+      <p>Run <code>companion doctor</code>. It renders a health panel right here in the app — if you can see the panel, the whole pipeline works. The usual culprits, in order:</p>
+      <ol>
+        <li>You started the agent in your own terminal instead of from the app. See <strong>page 1</strong> — either start it from the <strong>+</strong>, or turn on <code>companion setup --external-terminals</code>.</li>
+        <li>The plugin didn't update. <code>companion setup</code> re-wires it.</li>
+      </ol>
+
+      <div class="note">
+        <p>Want this guide back later? <code>/companion:help</code> in any session.</p>
+      </div>
+    </section>
+
+    <!-- ===== 6. Zach's ballot ===== -->
+    <section id="p6" data-mp-page>
+      <div class="kicker">Not part of the guide · for you</div>
+      <div class="decide-h">Steer this draft</div>
+      <p class="decide-sub">
+        Six pages, real screenshots, mechanics checked against <code>board.ts</code> rather than guessed. Nothing is
+        wired yet — this is the content for review. Tell me what's wrong and what to do next.
+      </p>
+
+      <div class="item" data-companion-item data-item-label="Wire the guide up: add a /companion:help command and fire it on the empty sessions view (closes issue #30). Do this in a worktree off master">
+        <div class="item-row">
+          <div class="item-main">
+            <div class="item-title">Wire it up — <code>/companion:help</code> + fire on the empty state <span class="rec">Next move</span></div>
+            <div class="item-sub">Closes issue #30. The guide only helps if it shows up uninvited on first run. Worktree off master, PR as usual.</div>
+          </div>
+          <div class="item-actions">
+            <button class="act do" data-action="approve" title="Do it">✓</button>
+            <button class="act info" data-action="comment" title="Note">✎</button>
+            <button class="act skip" data-action="reject" title="Skip">✗</button>
+          </div>
+        </div>
+        <textarea data-comment hidden placeholder="Note…"></textarea>
+      </div>
+
+      <div class="item" data-companion-item data-item-label="The guide is missing something or gets something wrong — tell me what to fix">
+        <div class="item-row">
+          <div class="item-main">
+            <div class="item-title">Something's missing or wrong</div>
+            <div class="item-sub">✎ and list it. You know the app better than the source does — if I described a mechanic wrong, or skipped one your installer would hit, say so.</div>
+          </div>
+          <div class="item-actions">
+            <button class="act do" data-action="approve" title="Do it">✓</button>
+            <button class="act info" data-action="comment" title="What's missing">✎</button>
+            <button class="act skip" data-action="reject" title="Skip">✗</button>
+          </div>
+        </div>
+        <textarea data-comment hidden placeholder="What's wrong or missing…"></textarea>
+      </div>
+
+      <div class="item" data-companion-item data-item-label="Ship the guide as-is content-wise — the tone and depth are right, don't add more">
+        <div class="item-row">
+          <div class="item-main">
+            <div class="item-title">Tone and depth are right — don't pad it</div>
+            <div class="item-sub">You said it isn't that complicated. I kept it to six short pages on purpose. ✓ if that's the right call, ✗ if it needs to go deeper.</div>
+          </div>
+          <div class="item-actions">
+            <button class="act do" data-action="approve" title="Do it">✓</button>
+            <button class="act info" data-action="comment" title="Note">✎</button>
+            <button class="act skip" data-action="reject" title="Skip">✗</button>
+          </div>
+        </div>
+        <textarea data-comment hidden placeholder="Note…"></textarea>
+      </div>
+
+      <div class="item" data-companion-item data-item-label="Draw numbered callout arrows onto the screenshots themselves (SVG overlay) rather than listing the callouts beneath the image">
+        <div class="item-row">
+          <div class="item-main">
+            <div class="item-title">Draw the callout numbers <em>onto</em> the screenshots</div>
+            <div class="item-sub">Right now page 0 lists 1–4 under the image. Overlaying numbered pins on the screenshot itself is stronger — it's the "arrows pointing at the real UI" idea from issue #30, done properly.</div>
+          </div>
+          <div class="item-actions">
+            <button class="act do" data-action="approve" title="Do it">✓</button>
+            <button class="act info" data-action="comment" title="Note">✎</button>
+            <button class="act skip" data-action="reject" title="Skip">✗</button>
+          </div>
+        </div>
+        <textarea data-comment hidden placeholder="Note…"></textarea>
+      </div>
+
+      <div class="item" data-companion-item data-item-label="Also send this guide to the installer who said he needed docs, and report back what still confused him">
+        <div class="item-row">
+          <div class="item-main">
+            <div class="item-title">Send it to your installer and see if it lands</div>
+            <div class="item-sub">He's the test. If he reads this and is unstuck, it's done. If not, his gaps are the v2 spec.</div>
+          </div>
+          <div class="item-actions">
+            <button class="act do" data-action="approve" title="Do it">✓</button>
+            <button class="act info" data-action="comment" title="Note">✎</button>
+            <button class="act skip" data-action="reject" title="Skip">✗</button>
+          </div>
+        </div>
+        <textarea data-comment hidden placeholder="Note…"></textarea>
+      </div>
+
+      <div class="bar">
+        <span class="count" data-count>nothing marked yet</span>
+        <button class="doall" data-doall>✓ Do all</button>
+        <button class="submit" data-companion-submit="Companion guide draft v1">Submit → ⌘V</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  (function () {
+    var links = [].slice.call(document.querySelectorAll("[data-mp-link]"));
+    var pages = [].slice.call(document.querySelectorAll("[data-mp-page]"));
+    function show(id) {
+      var hit = false;
+      pages.forEach(function (p) { var on = p.id === id; p.classList.toggle("active", on); if (on) hit = true; });
+      links.forEach(function (a) { a.classList.toggle("active", a.getAttribute("href") === "#" + id); });
+      if (!hit && pages[0]) { pages[0].classList.add("active"); if (links[0]) links[0].classList.add("active"); }
+    }
+    links.forEach(function (a) {
+      a.addEventListener("click", function (e) { e.preventDefault(); show(a.getAttribute("href").slice(1)); });
+    });
+  })();
+</script>
+
+<script>
+(function () {
+  var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre, [data-companion-block]";
+  var submitBtn = document.querySelector("[data-companion-submit]");
+  var countEl = document.querySelector("[data-count]");
+  var items = [].slice.call(document.querySelectorAll("[data-companion-item]"));
+  var comments = new Map();
+  var open = null;
+
+  var blocks = [];
+  [].slice.call(document.querySelectorAll("[data-companion-commentable]")).forEach(function (root) {
+    [].slice.call(root.querySelectorAll(BLOCK_SELECTOR)).forEach(function (b) {
+      if (b.closest("[data-companion-item]")) return;
+      if (b.parentElement && b.parentElement.closest(BLOCK_SELECTOR)) return;
+      blocks.push(b);
+    });
+  });
+  blocks.forEach(function (b, i) {
+    b.classList.add("companion-commentable");
+    b.dataset.cBlockId = "b" + i;
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "companion-ask-btn";
+    btn.title = "Comment on this block"; btn.textContent = "💬";
+    btn.addEventListener("click", function (e) { e.stopPropagation(); openFor(b); });
+    b.appendChild(btn);
+  });
+  function snippet(b) {
+    var c = b.cloneNode(true); var x = c.querySelector(".companion-ask-btn"); if (x) x.remove();
+    var t = (c.textContent || "").replace(/\s+/g, " ").trim();
+    return t.length > 80 ? t.slice(0, 77) + "…" : t;
+  }
+  function closeOpen() { if (open) { open.remove(); open = null; } }
+  function openFor(b) {
+    closeOpen();
+    var id = b.dataset.cBlockId;
+    var box = document.createElement("div");
+    box.className = "companion-composer";
+    box.innerHTML = '<div class="ref"></div>' +
+      '<textarea placeholder="Your question or comment about this block…"></textarea>' +
+      '<div class="row"><button type="button" class="delete">Discard</button>' +
+      '<div style="display:flex;gap:6px;"><button type="button" class="cancel">Cancel</button>' +
+      '<button type="button" class="save">Save</button></div></div>';
+    box.querySelector(".ref").textContent = snippet(b);
+    b.parentNode.insertBefore(box, b.nextSibling);
+    open = box;
+    var ta = box.querySelector("textarea"); ta.value = comments.get(id) || "";
+    setTimeout(function () { ta.focus(); }, 60);
+    box.querySelector(".save").addEventListener("click", function () {
+      var v = ta.value.trim();
+      if (v) { comments.set(id, v); b.classList.add("has-comment"); renderAnno(b, v); }
+      else { comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); }
+      closeOpen(); refresh();
+    });
+    box.querySelector(".cancel").addEventListener("click", closeOpen);
+    box.querySelector(".delete").addEventListener("click", function () {
+      comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); closeOpen(); refresh();
+    });
+  }
+  function renderAnno(b, t) {
+    removeAnno(b);
+    var note = document.createElement("div");
+    note.className = "companion-annotation"; note.dataset.forBlock = b.dataset.cBlockId;
+    note.textContent = t; note.addEventListener("click", function () { openFor(b); });
+    b.parentNode.insertBefore(note, b.nextSibling);
+  }
+  function removeAnno(b) {
+    var n = b.parentNode.querySelector('.companion-annotation[data-for-block="' + b.dataset.cBlockId + '"]');
+    if (n) n.remove();
+  }
+
+  items.forEach(function (it) { var t = it.querySelector("textarea[data-comment]"); if (t) t.style.display = "none"; });
+  function setState(item, action) {
+    var current = item.getAttribute("data-state");
+    var ta = item.querySelector("textarea[data-comment]");
+    if (current === action) { item.removeAttribute("data-state"); if (ta) ta.style.display = "none"; }
+    else { item.setAttribute("data-state", action); if (ta) ta.style.display = (action === "comment") ? "block" : "none";
+      if (action === "comment" && ta) setTimeout(function () { ta.focus(); }, 0); }
+    refresh();
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-action]");
+    if (btn) { var it = btn.closest("[data-companion-item]"); if (it) setState(it, btn.getAttribute("data-action")); return; }
+    if (e.target.closest("[data-doall]")) {
+      items.forEach(function (it) { it.setAttribute("data-state", "approve");
+        var ta = it.querySelector("textarea[data-comment]"); if (ta) ta.style.display = "none"; });
+      refresh(); return;
+    }
+    var sub = e.target.closest("[data-companion-submit]");
+    if (sub) doSubmit(sub);
+  });
+
+  var commentEl = null;
+  function freeComment() { return commentEl ? commentEl.value.trim() : ""; }
+  function pending() {
+    return comments.size + document.querySelectorAll("[data-companion-item][data-state]").length + (freeComment() ? 1 : 0);
+  }
+  function refresh() {
+    var c = comments.size, d = document.querySelectorAll("[data-companion-item][data-state]").length, fc = freeComment() ? 1 : 0;
+    if (countEl) countEl.textContent = (c || d || fc)
+      ? (d + " decision" + (d !== 1 ? "s" : "") + (c ? (" · " + c + " comment" + (c !== 1 ? "s" : "")) : "") + (fc ? " · note added" : ""))
+      : "nothing marked yet";
+    if (submitBtn) submitBtn.classList.toggle("ready", (c + d + fc) > 0);
+  }
+  function meta() {
+    var el = document.getElementById("companion-meta");
+    if (!el) return [];
+    try { var m = JSON.parse(el.textContent); } catch (e) { return []; }
+    var L = ["[Companion artifact feedback]"];
+    if (m.subject) L.push("Subject: " + m.subject);
+    if (m.summary) L.push("About: " + m.summary);
+    if (m.project) L.push("Project: " + m.project + (m.branch ? " (" + m.branch + ")" : ""));
+    if (m.created) L.push("Created: " + m.created);
+    if (m.files && m.files.length) L.push("Files: " + m.files.join(", "));
+    L.push("");
+    return L;
+  }
+  function build(title) {
+    var lines = meta().concat(["Re: " + title, ""]);
+    var cBlocks = blocks.filter(function (b) { return comments.has(b.dataset.cBlockId); });
+    if (cBlocks.length) {
+      lines.push("— Questions / comments —", "");
+      cBlocks.forEach(function (b) {
+        lines.push("On: " + JSON.stringify(snippet(b)));
+        comments.get(b.dataset.cBlockId).split("\n").forEach(function (l) { lines.push("    " + l); });
+        lines.push("");
+      });
+    }
+    var marked = [].slice.call(document.querySelectorAll("[data-companion-item][data-state]"));
+    if (marked.length) {
+      var verb = { approve: "✓ Do it:", reject: "✗ Skip:", comment: "✎ Note:" };
+      lines.push("— Decisions —", "");
+      marked.forEach(function (it) {
+        var s = it.getAttribute("data-state");
+        lines.push(verb[s] + " " + (it.getAttribute("data-item-label") || "(unlabeled)"));
+        if (s === "comment") { var t = it.querySelector("textarea[data-comment]");
+          if (t && t.value.trim()) t.value.trim().split("\n").forEach(function (l) { lines.push("    " + l); }); }
+      });
+      lines.push("");
+    }
+    var fc = freeComment();
+    if (fc) {
+      lines.push("— Comment —", "");
+      fc.split("\n").forEach(function (l) { lines.push(l); });
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+  function fallbackCopy(text) {
+    try { var ta = document.createElement("textarea"); ta.value = text;
+      ta.style.position = "fixed"; ta.style.top = "-1000px"; document.body.appendChild(ta);
+      ta.focus(); ta.select(); var ok = document.execCommand("copy"); ta.remove(); return ok;
+    } catch (e) { return false; }
+  }
+  function flash(msg) {
+    if (!submitBtn) return;
+    var prev = submitBtn.dataset.label || submitBtn.textContent;
+    submitBtn.dataset.label = prev; submitBtn.textContent = msg;
+    clearTimeout(submitBtn._t); submitBtn._t = setTimeout(function () { submitBtn.textContent = submitBtn.dataset.label; }, 2000);
+  }
+  function doSubmit(sub) {
+    if (pending() === 0) { flash("Mark an item, leave a 💬, or write a comment first"); return; }
+    var text = build(sub.getAttribute("data-companion-submit") || "Review");
+    try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: text }, "*"); } catch (e) {}
+    if (window.parent === window) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(function () { flash("Copied ✓ — ⌘V to paste"); })
+          .catch(function () { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); });
+      } else { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); }
+    } else { flash("Sent to overlay ✓ — ⌘V to paste"); }
+    try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
+  }
+
+  (function () {
+    var CW_RIG =
+      '<g class="cw-rig">' +
+        '<g class="cw-body" fill="#d98a5c">' +
+          '<rect x="3" y="13" width="1" height="2"/><rect x="5" y="13" width="1" height="2"/>' +
+          '<rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>' +
+          '<rect x="2" y="6" width="11" height="7"/>' +
+          '<g class="cw-arm-l"><rect x="0" y="9" width="2" height="2"/></g>' +
+          '<g class="cw-arm-r"><rect x="13" y="9" width="2" height="2"/></g>' +
+        '</g>' +
+        '<g class="cw-eyes"><g class="cw-eyes-b" fill="#2a2018">' +
+          '<rect x="4.5" y="8" width="1" height="2"/><rect x="9.5" y="8" width="1" height="2"/>' +
+        '</g></g>' +
+      '</g>';
+    var CW_BASE =
+      ".cmp-submitted .halo{position:absolute;top:50%;left:50%;width:200px;height:200px;transform:translate(-50%,-64%);background:radial-gradient(circle,rgba(217,138,92,.30) 0%,transparent 62%);filter:blur(6px);animation:cwHalo 4.5s ease-in-out infinite;pointer-events:none}" +
+      "@keyframes cwHalo{0%,100%{opacity:.5;transform:translate(-50%,-64%) scale(1)}50%{opacity:.85;transform:translate(-50%,-64%) scale(1.08)}}" +
+      ".cmp-submitted .cw{width:150px;height:150px;shape-rendering:crispEdges;overflow:visible}" +
+      ".cmp-submitted .cw-shadow{fill:#201b15;opacity:.4}" +
+      ".cmp-submitted .cw-eyes-b{transform-origin:7.5px 9px;animation:cwBlink 4.2s steps(1) infinite}" +
+      "@keyframes cwBlink{0%,45%,55%,100%{transform:scaleY(1)}50%{transform:scaleY(.12)}}" +
+      "@media (prefers-reduced-motion:reduce){.cmp-submitted .cw *,.cmp-submitted .halo{animation:none!important}.cmp-submitted .cw-bit,.cmp-submitted .cw-load,.cmp-submitted .cw-pk{opacity:.6!important}}";
+    var CW_SCENES = [
+      { id:"typing", cap:"Claude’s heads-down in the code",
+        behind:'<g fill="#40c4ff"><rect class="cw-bit" x="-2" y="12" width="1.4" height="1.4"/><rect class="cw-bit b2" x="6" y="11" width="1.4" height="1.4"/><rect class="cw-bit b3" x="13" y="12" width="1.4" height="1.4"/></g>',
+        front:'<g transform="translate(2.5 10.5)"><rect x="-0.5" y="4.6" width="11" height="1" fill="#546e7a"/><rect x="0" y="0" width="10" height="4.8" fill="#78909c"/><rect x="4.5" y="2" width="1" height="1" fill="#fff"/></g>',
+        css:
+          ".cmp-submitted .cw--typing .cw-rig{transform-origin:7.5px 15px;animation:cwJitter .09s steps(2) infinite alternate}" +
+          "@keyframes cwJitter{from{transform:translateY(0)}to{transform:translateY(.5px)}}" +
+          ".cmp-submitted .cw--typing .cw-arm-l{transform-origin:2px 10px;animation:cwTypeL .16s ease-in-out infinite}" +
+          ".cmp-submitted .cw--typing .cw-arm-r{transform-origin:13px 10px;animation:cwTypeR .13s ease-in-out infinite}" +
+          "@keyframes cwTypeL{0%,100%{transform:rotate(58deg)}50%{transform:rotate(90deg)}}" +
+          "@keyframes cwTypeR{0%,100%{transform:rotate(-58deg)}50%{transform:rotate(-90deg)}}" +
+          ".cmp-submitted .cw--typing .cw-bit{opacity:0;animation:cwBit 1s linear infinite}" +
+          ".cmp-submitted .cw--typing .cw-bit.b2{animation-delay:.33s}.cmp-submitted .cw--typing .cw-bit.b3{animation-delay:.66s}" +
+          "@keyframes cwBit{0%{opacity:0;transform:translateY(0) scale(.5)}25%{opacity:.85}100%{opacity:0;transform:translateY(-13px) scale(1.15)}}" },
+      { id:"thinking", cap:"Claude’s turning it over",
+        behind:'<g transform="translate(7 -10)"><g fill="#fff" opacity="0.95"><rect x="2" y="1" width="8" height="6"/><rect x="1" y="2" width="10" height="4"/><rect x="3" y="0" width="6" height="8"/><rect x="2" y="7" width="2" height="2"/></g><g fill="#0082fc"><rect class="cw-load" x="2.5" y="3" width="1.2" height="1.2"/><rect class="cw-load l2" x="5.4" y="3" width="1.2" height="1.2"/><rect class="cw-load l3" x="8.3" y="3" width="1.2" height="1.2"/></g></g>',
+        front:"",
+        css:
+          ".cmp-submitted .cw--thinking .cw-rig{transform-origin:7.5px 15px;animation:cwSway 4s ease-in-out infinite}" +
+          "@keyframes cwSway{0%,100%{transform:rotate(0deg)}25%{transform:rotate(-3deg)}75%{transform:rotate(3deg)}}" +
+          ".cmp-submitted .cw--thinking .cw-load{opacity:.15;animation:cwLoad 2s infinite}" +
+          ".cmp-submitted .cw--thinking .cw-load.l2{animation-delay:.25s}.cmp-submitted .cw--thinking .cw-load.l3{animation-delay:.5s}" +
+          "@keyframes cwLoad{0%,18%{opacity:.15}40%,80%{opacity:1}100%{opacity:.15}}" },
+      { id:"juggling", cap:"Claude’s juggling a few threads",
+        behind:"",
+        front:'<g><rect class="cw-pk" x="-1" y="-1" width="2" height="2" fill="#ff5252"/><rect class="cw-pk p2" x="-1" y="-1" width="2" height="2" fill="#ffc107"/><rect class="cw-pk p3" x="-1" y="-1" width="2" height="2" fill="#4caf50"/></g>',
+        css:
+          ".cmp-submitted .cw--juggling .cw-rig{transform-origin:7.5px 15px;animation:cwRock .6s ease-in-out infinite alternate}" +
+          "@keyframes cwRock{0%{transform:rotate(-5deg)}100%{transform:rotate(5deg)}}" +
+          ".cmp-submitted .cw--juggling .cw-arm-l{transform-origin:1px 10px;animation:cwJugL .6s ease-in-out infinite alternate}" +
+          ".cmp-submitted .cw--juggling .cw-arm-r{transform-origin:14px 10px;animation:cwJugR .6s ease-in-out infinite alternate}" +
+          "@keyframes cwJugL{0%{transform:rotate(60deg)}100%{transform:rotate(10deg)}}" +
+          "@keyframes cwJugR{0%{transform:rotate(-10deg)}100%{transform:rotate(-60deg)}}" +
+          ".cmp-submitted .cw--juggling .cw-pk{animation:cwJuggle 1.2s linear infinite}" +
+          ".cmp-submitted .cw--juggling .cw-pk.p2{animation-delay:-.4s}.cmp-submitted .cw--juggling .cw-pk.p3{animation-delay:-.8s}" +
+          "@keyframes cwJuggle{0%{transform:translate(0,9px) rotate(0deg)}25%{transform:translate(8px,0) rotate(90deg)}50%{transform:translate(15px,9px) rotate(180deg)}75%{transform:translate(8px,4px) rotate(270deg)}100%{transform:translate(0,9px) rotate(360deg)}}" },
+    ];
+    var CW_CSS = CW_BASE + CW_SCENES.map(function (s) { return s.css; }).join("");
+    function cwSceneSVG(scene) {
+      return '<svg class="cw cw--' + scene.id + '" viewBox="-7 -12 30 30" aria-hidden="true">' +
+        '<rect class="cw-shadow" x="3" y="15" width="9" height="1"/>' +
+        scene.behind + CW_RIG + scene.front + '</svg>';
+    }
+    var st = document.createElement("style");
+    st.textContent =
+      "[data-companion-commentable] .companion-commentable{position:relative;border-radius:5px;cursor:text;transition:background 140ms ease,box-shadow 140ms ease}" +
+      ".companion-commentable::before{content:'';position:absolute;top:0;left:-36px;width:36px;height:100%}" +
+      ".companion-commentable:hover{background:rgba(182,120,29,0.07);box-shadow:inset 2px 0 0 #b6781d}" +
+      ".companion-commentable.has-comment{background:rgba(46,125,82,0.05);box-shadow:inset 2px 0 0 #2e7d52}" +
+      ".companion-ask-btn{position:absolute;left:-36px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border:1px solid rgba(26,23,20,0.2);background:#fff;color:#6e655b;border-radius:6px;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:12px;box-shadow:0 4px 10px -6px rgba(26,23,20,0.4)}" +
+      ".companion-commentable:hover > .companion-ask-btn,.companion-commentable.has-comment > .companion-ask-btn{display:inline-flex}" +
+      ".companion-composer{margin:6px 0 10px;padding:10px 11px;background:#fff;border:1px solid #b6781d;border-radius:8px}" +
+      ".companion-composer .ref{font:600 11px/1.4 ui-monospace,Menlo,monospace;color:#6e655b;border-left:2px solid #b6781d;padding:4px 8px;margin-bottom:6px;background:rgba(182,120,29,0.07);border-radius:0 4px 4px 0}" +
+      ".companion-composer textarea{display:block;width:100%;min-height:64px;padding:8px 10px;font:13px/1.5 -apple-system,system-ui,sans-serif;background:#f4f1ec;color:#1a1714;border:1px solid rgba(26,23,20,0.2);border-radius:6px;outline:none;resize:vertical;box-sizing:border-box}" +
+      ".companion-composer .row{display:flex;justify-content:space-between;gap:8px;margin-top:8px}" +
+      ".companion-composer button{font:600 11.5px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:6px;cursor:pointer;border:1px solid rgba(26,23,20,0.2);background:#fff;color:#1a1714}" +
+      ".companion-composer button.save{background:#1a1714;color:#f4f1ec;border-color:#1a1714}" +
+      ".companion-composer button.delete{color:#6e655b;border-color:transparent;background:transparent}" +
+      ".companion-annotation{margin:4px 0 10px;padding:7px 10px;background:rgba(46,125,82,0.08);border-left:2px solid #2e7d52;border-radius:0 6px 6px 0;color:#1a1714;font-size:12.5px;line-height:1.5;cursor:pointer}" +
+      ".companion-annotation::before{content:'💬 '}" +
+      ".cmp-comment{margin:16px 0 0}" +
+      ".cmp-comment textarea{display:block;width:100%;box-sizing:border-box;min-height:54px;resize:vertical;padding:10px 12px;border:1px solid rgba(32,27,21,.22);border-radius:9px;font:13px/1.5 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
+      ".cmp-seltb{position:fixed;z-index:10000;display:flex;align-items:center;gap:2px;padding:4px;border-radius:10px;background:#201b15;box-shadow:0 8px 22px -8px rgba(0,0,0,.5)}" +
+      ".cmp-seltb button{border:0;background:transparent;color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:7px;cursor:pointer;white-space:nowrap}" +
+      ".cmp-seltb .sep{width:1px;height:16px;background:rgba(255,255,255,.18)}" +
+      ".cmp-seltb-done{color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;white-space:nowrap}" +
+      ".cmp-chat{display:flex;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(32,27,21,.14)}" +
+      ".cmp-chat input{flex:1;min-width:0;padding:9px 11px;border:1px solid rgba(32,27,21,.22);border-radius:8px;font:13px/1.4 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
+      ".cmp-chat button{flex:0 0 auto;padding:9px 14px;border-radius:8px;border:1px solid #201b15;background:#201b15;color:#f4f1ec;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
+      ".cmp-submitted{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:radial-gradient(120% 90% at 50% 32%,#fbf8f2 0%,rgba(244,241,236,.97) 70%);backdrop-filter:blur(3px);font-family:-apple-system,system-ui,sans-serif}" +
+      ".cmp-submitted .t{font-size:16px;font-weight:650;color:#201b15;text-align:center}" +
+      ".cmp-submitted .dots{margin-top:9px;text-align:center}" +
+      ".cmp-submitted .dots span{display:inline-block;width:5px;height:5px;border-radius:50%;background:#c06a3a;margin:0 2px;opacity:.3;animation:cmpBlink 1.4s ease-in-out infinite}" +
+      ".cmp-submitted .dots span:nth-child(2){animation-delay:.2s}.cmp-submitted .dots span:nth-child(3){animation-delay:.4s}" +
+      "@keyframes cmpBlink{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}" +
+      ".cmp-submitted .s{font-size:12px;color:#6e655b;margin-top:8px;text-align:center;max-width:300px}" +
+      ".cmp-submitted .b{margin-top:4px;padding:8px 14px;border-radius:8px;border:1px solid rgba(32,27,21,.25);background:#fff;color:#201b15;font:600 12px/1 -apple-system,system-ui,sans-serif;cursor:pointer}" +
+      CW_CSS;
+    document.head.appendChild(st);
+
+    if (submitBtn) {
+      var box = document.createElement("div");
+      box.className = "cmp-comment";
+      box.innerHTML = '<textarea placeholder="Add a comment for the terminal (optional)…" aria-label="Comment"></textarea>';
+      var bar = submitBtn.closest(".bar") || submitBtn.parentElement;
+      bar.parentNode.insertBefore(box, bar);
+      commentEl = box.querySelector("textarea");
+      commentEl.addEventListener("input", refresh);
+    }
+
+    window.__cmpShowSubmitted = function () {
+      if (document.querySelector(".cmp-submitted")) return;
+      var scene = CW_SCENES[Math.floor(Math.random() * CW_SCENES.length)];
+      var ov = document.createElement("div"); ov.className = "cmp-submitted";
+      ov.innerHTML = '<div class="halo"></div>' + cwSceneSVG(scene) +
+        '<div><div class="t">' + scene.cap + '</div>' +
+        '<div class="dots"><span></span><span></span><span></span></div>' +
+        '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
+        '<button class="b" type="button">← View last artifact</button>';
+      ov.querySelector("button").addEventListener("click", function () {
+        try { parent.postMessage({ source: "companion-artifact", kind: "splash-dismissed" }, "*"); } catch (e) {}
+        ov.remove();
+      });
+      document.body.appendChild(ov);
+    };
+    window.addEventListener("message", function (e) {
+      var d = e.data;
+      if (d && d.source === "companion-board" && d.kind === "restore-submitted") {
+        try { window.__cmpShowSubmitted(); } catch (err) {}
+      }
+    });
+  })();
+
+  (function () {
+    var subject = "";
+    try { subject = (JSON.parse(document.getElementById("companion-meta").textContent).subject) || ""; } catch (e) {}
+    var tb = null;
+    function clearTb() { if (tb) { tb.remove(); tb = null; } }
+    function selText() {
+      var s = window.getSelection();
+      if (!s || s.isCollapsed) return "";
+      return (s.toString() || "").replace(/\s+/g, " ").trim();
+    }
+    function flashTb(msg) { if (!tb) return; tb.innerHTML = '<span class="cmp-seltb-done">' + msg + "</span>"; setTimeout(clearTb, 1400); }
+    function askAboutSelection(q) {
+      var target = commentEl || document.querySelector(".cmp-chat input");
+      if (!target) return;
+      var ref = 'On: "' + (q.length > 100 ? q.slice(0, 97) + "…" : q) + '" — ';
+      target.value = (target.value ? target.value + "\n" : "") + ref;
+      target.focus();
+      try { target.setSelectionRange(target.value.length, target.value.length); } catch (e) {}
+      if (target === commentEl) refresh();
+    }
+    function showTb() {
+      var q = selText();
+      if (q.length < 3) { clearTb(); return; }
+      var sel = window.getSelection(), rect;
+      try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch (e) { return; }
+      if (!rect || (!rect.width && !rect.height)) return;
+      clearTb();
+      tb = document.createElement("div");
+      tb.className = "cmp-seltb";
+      tb.innerHTML = '<button type="button" data-sel="ask">💬 Ask</button><span class="sep"></span><button type="button" data-sel="new">✦ New session</button>';
+      document.body.appendChild(tb);
+      var tw = tb.offsetWidth, th = tb.offsetHeight;
+      var left = Math.max(8, Math.min(rect.left + rect.width / 2 - tw / 2, window.innerWidth - tw - 8));
+      var top = rect.top - th - 8;
+      if (top < 6) top = rect.bottom + 8;
+      tb.style.left = left + "px"; tb.style.top = top + "px";
+      tb.querySelector('[data-sel="new"]').addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        try { parent.postMessage({ source: "companion-artifact", kind: "new-session", quote: q, artifact: subject }, "*"); } catch (err) {}
+        flashTb("✦ Starting a session…");
+      });
+      tb.querySelector('[data-sel="ask"]').addEventListener("mousedown", function (e) {
+        e.preventDefault(); askAboutSelection(q); clearTb();
+      });
+    }
+    document.addEventListener("mouseup", function (e) { if (tb && tb.contains(e.target)) return; setTimeout(showTb, 10); });
+    document.addEventListener("selectionchange", function () { if (!selText()) clearTb(); });
+    document.addEventListener("mousedown", function (e) { if (tb && !tb.contains(e.target)) clearTb(); });
+    window.addEventListener("scroll", clearTb, true);
+  })();
+
+  refresh();
+})();
+</script>
+
+<script>
+  (function () {
+    var el = document.querySelector("[data-fit-root]") || document.body;
+    var post = function () {
+      parent.postMessage({ source: "companion-artifact", kind: "size",
+        w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
+    };
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+    addEventListener("load", post); post();
+  })();
+</script>
+</body>
+</html>
