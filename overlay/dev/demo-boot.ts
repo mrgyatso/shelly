@@ -89,3 +89,8 @@ async function primeDemoTerminals(): Promise<void> {
    this import is requested only after installTauriMock() has run. */
 void import("../src/main").then(() => primeDemoTerminals());
 
+/* The guided tour drives the real shell with an animated cursor + explainer
+   popovers. Registered on every demo load (it's small); it only runs when asked
+   — `?tour` on the URL or the demo chrome's "Take the tour" button. */
+void import("./demo-tour");
+
