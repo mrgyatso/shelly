@@ -67,6 +67,17 @@ function artifactHtml(title: string, summary: string, items: [string, string][])
 
 const ARTIFACTS: MockArtifact[] = [
   {
+    path: "/mock/artifacts/shell-slate.html",
+    title: "Curated shell — slate",
+    subject: "shell repaint",
+    summary: "Declares the slate shell; the Board repaints its whole surface to match on open.",
+    modified_ms: now - 1 * MIN,
+    size_bytes: 3_200,
+    project: "~/claude-code-companion",
+    unit_key: "claude-code-companion",
+    source: "claude-code-companion--3f8c1d04",
+  },
+  {
     path: "/mock/artifacts/board-ui-audit.html",
     title: "Board UI audit — gaps vs the desktop bar",
     subject: "UI polish",
@@ -233,6 +244,43 @@ function morningBriefHtml(): string {
         parent.postMessage({ source: "companion-artifact", kind: "submit",
           text: "\\u2713 do: ship agent-hub reply path\\n\\u2717 skip: meta-smells until EOD\\n\\u270e note: prep the demo call at 3:30" }, "*");
       });
+    </script>
+  </body></html>`;
+}
+
+/** A curated-shell artifact: on load it posts BOTH its size and a `kind:"shell"`
+ *  message, so the Board repaints its whole surface to `bg`/`ink` via the
+ *  expanding-circle reveal. Open it in the reader (or as the hero) to watch the
+ *  chrome + backdrop flow to the shell. `bg`/`ink` are a curated pair (slate). */
+function shellDemoHtml(): string {
+  const bg = "#E7ECF1";
+  const ink = "#1B2530";
+  return `<!doctype html><html><head><meta charset="utf-8">
+  <style>html{scrollbar-width:none}html::-webkit-scrollbar{display:none}
+    body{margin:0;background:${bg};color:${ink};
+      font-family:-apple-system,system-ui,sans-serif;}</style></head>
+  <body>
+    <div data-fit-root style="max-width:640px;margin:0 auto;padding:44px 34px;">
+      <div style="font:600 10px/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;
+                  text-transform:uppercase;opacity:.6;">Curated shell — slate</div>
+      <div style="font-family:Georgia,serif;font-size:28px;margin-top:10px;">
+        The whole surface is this color.</div>
+      <p style="font-size:14px;line-height:1.6;opacity:.8;margin:14px 0 0;">
+        This artifact declared <code>${bg}</code>. The Board's stage, board and the
+        chrome around this panel all repainted to match — one continuous surface,
+        revealed with an expanding circle from here.</p>
+    </div>
+    <script>
+      (function () {
+        var post = function () {
+          parent.postMessage({ source: "companion-artifact", kind: "shell",
+            bg: "${bg}", ink: "${ink}" }, "*");
+          var el = document.querySelector("[data-fit-root]") || document.body;
+          parent.postMessage({ source: "companion-artifact", kind: "size",
+            w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
+        };
+        addEventListener("load", post); post();
+      })();
     </script>
   </body></html>`;
 }
@@ -510,6 +558,7 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
         return answered ? demoHtml.split("{{DECISION}}").join(escapeHtml(answered.decision)) : demoHtml;
       }
       if (p.includes("hermes-morning-brief")) return morningBriefHtml();
+      if (p.includes("shell-slate")) return shellDemoHtml();
       if (p.includes("observer-latency")) {
         return artifactHtml(
           "Observer latency — measured, output-bound",

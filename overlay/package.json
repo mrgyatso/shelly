@@ -11,7 +11,7 @@
     "build:demo": "node scripts/gen-demo-html.mjs && vite build --config vite.demo.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --experimental-strip-types scripts/check-ingest-rewrite.ts && node --experimental-strip-types scripts/check-sibling-unread.ts && node --experimental-strip-types scripts/check-compact-state.ts && node --experimental-strip-types scripts/check-unit-identity.ts && node --experimental-strip-types scripts/check-demo-loop.ts && node ../plugin/hooks/__tests__/run.cjs"
+    "test": "node --experimental-strip-types scripts/check-ingest-rewrite.ts && node --experimental-strip-types scripts/check-sibling-unread.ts && node --experimental-strip-types scripts/check-compact-state.ts && node --experimental-strip-types scripts/check-unit-identity.ts && node --experimental-strip-types scripts/check-demo-loop.ts && node --experimental-strip-types scripts/check-shell-repaint.ts && node ../plugin/hooks/__tests__/run.cjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

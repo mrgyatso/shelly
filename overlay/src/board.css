@@ -87,6 +87,57 @@
 .stage[hidden] { display: none; }
 .stage button { font-family: inherit; color: inherit; cursor: pointer; }
 
+/* =========================================================================
+   CURATED SHELL REPAINT (see shell-repaint.ts)
+   When a displayed artifact declares a curated shell color, the Board repaints
+   its whole visible surface to match, so shell + artifact read as one continuous
+   surface. `.shelled` remaps the surface + ink tokens (so every surface abutting
+   the artifact — board, hero, reader, and their chrome — flows to the same color,
+   with ink chosen for contrast on both light and dark shells). `.shell-wash` is
+   the expanding-circle reveal layer; during it the active artifact is lifted above
+   the wash so the new surface appears to spread out from BEHIND the artifact.
+   ========================================================================= */
+.stage.shelled {
+  background: var(--shell-bg);
+  --board: var(--shell-bg);
+  --pane: var(--shell-bg);
+  --card: var(--shell-bg);
+  --sunk: color-mix(in oklab, var(--shell-ink) 6%, var(--shell-bg));
+  --ink: var(--shell-ink);
+  --ink-2: color-mix(in oklab, var(--shell-ink) 78%, var(--shell-bg));
+  --ink-3: color-mix(in oklab, var(--shell-ink) 58%, var(--shell-bg));
+  --ink-4: color-mix(in oklab, var(--shell-ink) 42%, var(--shell-bg));
+  --line: color-mix(in oklab, var(--shell-ink) 12%, transparent);
+  --line-2: color-mix(in oklab, var(--shell-ink) 7%, transparent);
+  --line-strong: color-mix(in oklab, var(--shell-ink) 18%, transparent);
+}
+/* The floating reader chrome hardcodes a near-white pill bg — repaint it to the
+   shell so it holds contrast on any shell (including the dark "ink" shell). */
+.stage.shelled .reader-close,
+.stage.shelled .reader-nav button {
+  background: color-mix(in oklab, var(--shell-ink) 8%, var(--shell-bg));
+  color: var(--shell-ink);
+  border-color: color-mix(in oklab, var(--shell-ink) 22%, transparent);
+}
+
+.shell-wash {
+  position: absolute;
+  inset: 0;
+  z-index: 55;
+  pointer-events: none;
+  will-change: clip-path;
+}
+/* Keep the active artifact visible above the wash while it sweeps the chrome, so
+   the surface reads as spreading from behind the artifact rather than over it. */
+.stage.shell-revealing #unit-digest,
+.stage.shell-revealing #hub-frame { position: relative; z-index: 56; }
+.stage.shell-revealing .reader { z-index: 56; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The reveal is skipped in JS; nothing to soften here, but keep the wash inert. */
+  .shell-wash { display: none; }
+}
+
 /* Keyboard focus — one visible ring language across the whole Board. Mouse
    clicks stay clean (:focus-visible only). Active hairlines below use inset
    box-shadows, never `outline`, so the ring never collides with them. */
