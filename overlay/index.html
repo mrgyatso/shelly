@@ -195,6 +195,9 @@
                 <!-- Code peek: slide out the read-only file viewer for this session. -->
                 <button id="unit-code-toggle" class="surface-code-btn" type="button" title="Peek at the code" aria-label="Peek at the code">&lt;/&gt;</button>
               </div>
+              <!-- Hand off: write a handoff for this session and launch it in a fresh
+                   agent. Sends /companion:handoff into this session's terminal. -->
+              <button id="unit-handoff" class="sess-handoff" type="button" title="Hand off to a fresh agent" aria-label="Hand off to a fresh agent">⇥ Hand off</button>
             </div>
             <!-- Content row: the active view (session / history / settings) on the
                  left, and the code-peek viewer sharing the width on the right when

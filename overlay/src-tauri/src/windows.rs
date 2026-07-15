@@ -22,6 +22,12 @@ use tauri::{
 /// `board:navigate` event (an already-open window). Either path clears it.
 static BOARD_NAV_TARGET: Mutex<Option<String>> = Mutex::new(None);
 
+/// A pending `companion handoff …` request the Board should act on the moment it
+/// opens: spawn a fresh session for the handoff and seed it. Same drain contract
+/// as [`BOARD_NAV_TARGET`] — the frontend takes it on init ([`take_pending_handoff`])
+/// or on the `board:handoff` event, whichever fires first.
+static PENDING_HANDOFF: Mutex<Option<crate::launch::HandoffRequest>> = Mutex::new(None);
+
 /// Initial panel size before the artifact reports its own fit size.
 const PANEL_W: f64 = 460.0;
 const PANEL_H: f64 = 640.0;
@@ -279,6 +285,27 @@ pub fn show_board(app: AppHandle, target: Option<String>) {
 #[tauri::command]
 pub fn take_board_nav_target() -> Option<String> {
     BOARD_NAV_TARGET.lock().ok().and_then(|mut g| g.take())
+}
+
+/// Queue a `companion handoff …` request and bring up the Board to act on it.
+/// Mirrors [`show_board`]: store the request, ping an already-open Board via
+/// `board:handoff`, and open-or-raise the Board (a fresh window drains the stored
+/// request on init instead of hearing the event).
+pub fn queue_handoff(app: &AppHandle, req: crate::launch::HandoffRequest) {
+    if let Ok(mut g) = PENDING_HANDOFF.lock() {
+        *g = Some(req.clone());
+    }
+    if let Some(win) = app.get_webview_window(BOARD_LABEL) {
+        let _ = win.emit("board:handoff", &req);
+    }
+    open_board_window(app);
+}
+
+/// Drain the pending handoff request (returns + clears it). The Board calls this
+/// on init and on the `board:handoff` event; whichever fires first wins.
+#[tauri::command]
+pub fn take_pending_handoff() -> Option<crate::launch::HandoffRequest> {
+    PENDING_HANDOFF.lock().ok().and_then(|mut g| g.take())
 }
 
 /// Toggle the menu-bar popover — the lightweight roster glance summoned from the

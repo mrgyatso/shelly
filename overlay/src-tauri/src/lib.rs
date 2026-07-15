@@ -94,6 +94,7 @@ pub fn run() {
                 // MUST happen on the main thread or AppKit aborts and kills the
                 // primary process. Hop to the main thread first.
                 let handle = app.clone();
+                let cwd = _cwd.clone();
                 let _ = app.run_on_main_thread(move || {
                     guard(|| {
                         // The decision lives in `launch` so it survives this
@@ -101,6 +102,13 @@ pub fn run() {
                         // keep this a one-site match. (`companion history` toggles the
                         // HUD — a keybind-free trigger, useful when ⌘8 is swallowed
                         // e.g. over remote desktop.)
+                        // A forwarded `companion handoff <file> …` queues the request
+                        // and opens the Board (which acts on it); everything else is a
+                        // plain surface open.
+                        if let Some(req) = launch::handoff_for_args(&args, Some(cwd.as_str())) {
+                            windows::queue_handoff(&handle, req);
+                            return;
+                        }
                         match launch::surface_for_args(&args) {
                             launch::Surface::History => windows::open_history_window(&handle),
                             launch::Surface::Live => windows::open_live_window(&handle),
@@ -147,6 +155,7 @@ pub fn run() {
             live::resolve_home_dir,
             windows::show_board,
             windows::take_board_nav_target,
+            windows::take_pending_handoff,
             pty::spawn_pty,
             pty::write_pty,
             pty::resize_pty,
@@ -235,6 +244,12 @@ pub fn run() {
             } else if args.iter().any(|a| a == "board") {
                 let handle = app.handle().clone();
                 guard(move || windows::open_board_window(&handle));
+            } else if let Some(req) = launch::handoff_for_args(&args, cwd.as_deref()) {
+                // First-launch `companion handoff <file> …`: this very process is
+                // becoming the daemon, so queue the request now — the Board drains it
+                // on init via `take_pending_handoff`.
+                let handle = app.handle().clone();
+                guard(move || windows::queue_handoff(&handle, req));
             } else if artifact::parse_open_args(&args, cwd.as_deref()).is_some() {
                 // `companion open <artifact>` brings up the Board (the single
                 // surface), never a standalone window. The always-on board open

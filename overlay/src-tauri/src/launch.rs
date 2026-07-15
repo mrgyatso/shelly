@@ -15,6 +15,70 @@ pub enum Surface {
     Board,
 }
 
+/// A `companion handoff <file> [--dir <dir>] [--agent <claude|codex>]` request:
+/// spawn a fresh Board session in `dir` and drop the handoff at `file` into it.
+/// `dir`/`agent` are optional — the frontend picker fills in whatever is missing
+/// (so a bare `companion handoff <file>` still works and just asks for the rest).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct HandoffRequest {
+    pub file: String,
+    pub dir: Option<String>,
+    pub agent: Option<String>,
+}
+
+/// Parse a `handoff` invocation, or `None` if these args aren't one. The single
+/// positional after the verb is the handoff file (resolved against `cwd` when
+/// relative, mirroring `artifact::parse_open_args`); `--dir`/`--agent` are the
+/// optional target folder and agent CLI. An unrecognised agent is dropped to
+/// `None` so the picker asks rather than spawning the wrong CLI.
+pub fn handoff_for_args(args: &[String], cwd: Option<&str>) -> Option<HandoffRequest> {
+    let start = args.iter().position(|a| a == "handoff")? + 1;
+    let rest = &args[start..];
+
+    let mut file: Option<String> = None;
+    let mut dir: Option<String> = None;
+    let mut agent: Option<String> = None;
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--dir" => {
+                dir = rest.get(i + 1).cloned();
+                i += 2;
+            }
+            "--agent" => {
+                agent = rest.get(i + 1).cloned();
+                i += 2;
+            }
+            other => {
+                if file.is_none() && !other.starts_with("--") {
+                    file = Some(other.to_string());
+                }
+                i += 1;
+            }
+        }
+    }
+
+    let file = file?;
+    let file = if std::path::Path::new(&file).is_absolute() {
+        file
+    } else if let Some(c) = cwd {
+        std::path::Path::new(c)
+            .join(&file)
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        file
+    };
+
+    let agent = match agent.as_deref() {
+        Some("codex") => Some("codex".to_string()),
+        Some("claude") => Some("claude".to_string()),
+        _ => None,
+    };
+
+    Some(HandoffRequest { file, dir, agent })
+}
+
 /// The one surface an invocation asks for.
 // The only non-test caller sits behind `cfg(not(debug_assertions))`, so a plain debug
 // build (`npm run tauri dev`) sees no caller at all. That gate is the whole reason this
@@ -79,5 +143,49 @@ mod tests {
             surface_for_args(&argv(&["live", "history"])),
             Surface::History
         );
+    }
+
+    #[test]
+    fn non_handoff_args_are_not_a_handoff() {
+        assert_eq!(handoff_for_args(&argv(&[]), None), None);
+        assert_eq!(handoff_for_args(&argv(&["board"]), None), None);
+        // `handoff` with no file is not a valid request (nothing to seed).
+        assert_eq!(handoff_for_args(&argv(&["handoff"]), None), None);
+    }
+
+    #[test]
+    fn handoff_parses_file_dir_and_agent() {
+        let req = handoff_for_args(
+            &argv(&["handoff", "/wiki/h.md", "--dir", "/repo", "--agent", "codex"]),
+            None,
+        )
+        .expect("a handoff request");
+        assert_eq!(req.file, "/wiki/h.md");
+        assert_eq!(req.dir.as_deref(), Some("/repo"));
+        assert_eq!(req.agent.as_deref(), Some("codex"));
+    }
+
+    #[test]
+    fn handoff_with_only_a_file_leaves_dir_and_agent_for_the_picker() {
+        let req = handoff_for_args(&argv(&["handoff", "/wiki/h.md"]), None).expect("a request");
+        assert_eq!(req.file, "/wiki/h.md");
+        assert_eq!(req.dir, None);
+        assert_eq!(req.agent, None);
+    }
+
+    #[test]
+    fn handoff_resolves_a_relative_file_against_cwd() {
+        let req = handoff_for_args(&argv(&["handoff", "h.md"]), Some("/tmp/proj")).expect("a request");
+        assert_eq!(req.file, "/tmp/proj/h.md");
+    }
+
+    #[test]
+    fn handoff_drops_an_unknown_agent_so_the_picker_asks() {
+        let req = handoff_for_args(
+            &argv(&["handoff", "/h.md", "--agent", "gpt"]),
+            None,
+        )
+        .expect("a request");
+        assert_eq!(req.agent, None);
     }
 }
