@@ -694,6 +694,26 @@ function codexAvailable(): Promise<boolean> {
   return codexAvailableCache;
 }
 
+/** The agent the new-session menu is set to launch — "claude" (default) or "codex".
+ *  Persisted in localStorage so the Board remembers your LAST pick across restarts,
+ *  and every start path (menu, folder, quote, card) reads it — so the choice is
+ *  honored everywhere, not just the + menu's toggle. */
+const NEW_SESSION_AGENT_KEY = "companion.newSessionAgent";
+function preferredAgent(): string {
+  try {
+    return localStorage.getItem(NEW_SESSION_AGENT_KEY) === "codex" ? "codex" : "claude";
+  } catch {
+    return "claude";
+  }
+}
+function setPreferredAgent(agent: string): void {
+  try {
+    localStorage.setItem(NEW_SESSION_AGENT_KEY, agent === "codex" ? "codex" : "claude");
+  } catch {
+    /* storage disabled (private mode) — fall back to the session default */
+  }
+}
+
 async function newHomeSession(agent?: string): Promise<void> {
   let home: string | null = null;
   try {
@@ -782,7 +802,7 @@ async function startSessionFromQuote(quote: string, artifact?: string): Promise<
     console.error("resolve_home_dir failed", e);
   }
   if (!home) return;
-  const tabId = await launchSessionIn(home);
+  const tabId = await launchSessionIn(home, preferredAgent());
   if (!tabId) return;
   const attribution = artifact ? `Re: ${artifact} — ` : "";
   const seed = `${attribution}"${quote}"\n\n`;
@@ -807,34 +827,58 @@ function toggleNewSessionMenu(anchor: HTMLElement): void {
   menu.className = "newsession-menu";
   menu.setAttribute("role", "menu");
   menu.innerHTML =
+    '<div class="ns-agent" role="group" aria-label="Agent">' +
+    '<button class="ns-seg" role="menuitemradio" data-agent="claude"><span class="ns-seg-ic">✳</span>Claude</button>' +
+    '<button class="ns-seg" role="menuitemradio" data-agent="codex"><span class="ns-seg-ic">◆</span>Codex</button>' +
+    '</div>' +
     '<button class="ns-item" role="menuitem" data-ns="home">' +
     '<span class="ns-ico">⌂</span><span class="ns-tx">Start at home<small>~</small></span></button>' +
     '<button class="ns-item" role="menuitem" data-ns="folder">' +
     '<span class="ns-ico">📁</span><span class="ns-tx">Start in a folder…</span></button>';
-  // Codex entries appear only on machines that actually have the codex CLI —
-  // checked once, then remembered for the session (installs mid-session are rare).
+
+  // The agent the two "Start…" items will launch. Seeded from the remembered pick
+  // and updated live as the toggle is flipped — persisted immediately so it's the
+  // default next time, and read by every other start path (see preferredAgent).
+  let agent = preferredAgent();
+  const segClaude = menu.querySelector('[data-agent="claude"]') as HTMLButtonElement;
+  const segCodex = menu.querySelector('[data-agent="codex"]') as HTMLButtonElement;
+  const paintSeg = (): void => {
+    segClaude.classList.toggle("on", agent === "claude");
+    segCodex.classList.toggle("on", agent === "codex");
+    segClaude.setAttribute("aria-checked", String(agent === "claude"));
+    segCodex.setAttribute("aria-checked", String(agent === "codex"));
+  };
+  // stopPropagation so flipping the toggle doesn't trip the outside-click close.
+  const pick = (a: string) => (e: Event) => {
+    e.stopPropagation();
+    agent = a;
+    setPreferredAgent(agent);
+    paintSeg();
+  };
+  segClaude.addEventListener("click", pick("claude"));
+  // Codex stays visible but inert until we confirm the CLI is installed — so it's
+  // discoverable even before you have it. Enable it (or show an install hint) once
+  // the once-per-session check resolves.
+  segCodex.disabled = true;
+  segCodex.title = "Checking for the codex CLI…";
+  paintSeg();
   void codexAvailable().then((ok) => {
-    if (!ok || !menu.isConnected) return;
-    const codexHome = document.createElement("button");
-    codexHome.className = "ns-item";
-    codexHome.setAttribute("role", "menuitem");
-    codexHome.dataset.ns = "codex-home";
-    codexHome.innerHTML = '<span class="ns-ico">◆</span><span class="ns-tx">Start codex at home<small>~</small></span>';
-    const codexFolder = document.createElement("button");
-    codexFolder.className = "ns-item";
-    codexFolder.setAttribute("role", "menuitem");
-    codexFolder.dataset.ns = "codex-folder";
-    codexFolder.innerHTML = '<span class="ns-ico">◆</span><span class="ns-tx">Start codex in a folder…</span>';
-    menu.append(codexHome, codexFolder);
-    codexHome.addEventListener("click", () => {
-      closeNewSessionMenu();
-      void newHomeSession("codex");
-    });
-    codexFolder.addEventListener("click", () => {
-      closeNewSessionMenu();
-      void newFolderSession("codex");
-    });
+    if (!menu.isConnected) return;
+    if (ok) {
+      segCodex.disabled = false;
+      segCodex.title = "";
+      segCodex.addEventListener("click", pick("codex"));
+    } else {
+      segCodex.classList.add("ns-seg-off");
+      segCodex.title = "Install the codex CLI to use it — npm i -g @openai/codex";
+      if (agent === "codex") {
+        agent = "claude";
+        setPreferredAgent(agent);
+      }
+    }
+    paintSeg();
   });
+
   const r = anchor.getBoundingClientRect();
   menu.style.top = `${Math.round(r.bottom + 7)}px`;
   menu.style.right = `${Math.round(window.innerWidth - r.right)}px`;
@@ -846,11 +890,11 @@ function toggleNewSessionMenu(anchor: HTMLElement): void {
 
   menu.querySelector('[data-ns="home"]')?.addEventListener("click", () => {
     closeNewSessionMenu();
-    void newHomeSession();
+    void newHomeSession(agent);
   });
   menu.querySelector('[data-ns="folder"]')?.addEventListener("click", () => {
     closeNewSessionMenu();
-    void newFolderSession();
+    void newFolderSession(agent);
   });
   // Close on any outside click or Escape (next tick, so this opening click
   // doesn't immediately dismiss it).
@@ -1013,7 +1057,7 @@ function goSessions(): void {
   if (first) { goUnit(first); return; }
   const u = findMostRecentActiveUnit();
   if (u) { goUnit(u); return; }
-  void newHomeSession();
+  void newHomeSession(preferredAgent());
 }
 
 /** Enter the Agent Hub room: scope navigation to connected-agent (non-repo) units and
@@ -1163,7 +1207,7 @@ function buildEmptyUnitState(unitKey: string): EmptyUnitState | null {
   const nowMs = Date.now();
   return {
     name: unitName(unitKey, sources),
-    onStart: dir ? () => void launchSessionIn(dir) : null,
+    onStart: dir ? () => void launchSessionIn(dir, preferredAgent()) : null,
     onResume: resumeId ? () => void resumeSessionInUnit(unitKey, resumeId) : null,
     // A live source with no owned terminal = the session runs in an external
     // terminal — the CTA heading says so instead of "No active session".
@@ -2124,7 +2168,7 @@ function showUnitMenu(e: MouseEvent, unitKey: string, sources: LiveSource[]): vo
   const dir = unitDirOf(unitKey);
   openCtxMenu(e, [
     { label: "Open", fn: () => goUnit(unitKey) },
-    ...(dir ? [{ label: "New session here", fn: () => void launchSessionIn(dir) }] : []),
+    ...(dir ? [{ label: "New session here", fn: () => void launchSessionIn(dir, preferredAgent()) }] : []),
     { label: "Close out", fn: () => void closeUnit(unitKey, sources), danger: true },
   ]);
 }
@@ -2238,7 +2282,7 @@ function showRailSessionMenu(e: MouseEvent, unitKey: string, s: LiveSource): voi
 function showRecentProjectMenu(e: MouseEvent, sessions: RecentSession[]): void {
   const dir = sessions.find((s) => s.cwd)?.cwd;
   if (!dir) return;
-  openCtxMenu(e, [{ label: "New session here", fn: () => void launchSessionIn(dir) }]);
+  openCtxMenu(e, [{ label: "New session here", fn: () => void launchSessionIn(dir, preferredAgent()) }]);
 }
 
 // ---- L2 unit home (hero + history) ------------------------------------------

@@ -28,6 +28,13 @@ export interface DemoProfile {
   artifactHtml: (path: string) => string | null;
   /** Canned terminal replays, keyed by the cwd basename `spawn_pty` receives. */
   transcripts: Record<string, { text: string; delay: number }[]>;
+  /** The artifact that lands only AFTER the visitor answers — the loop closing.
+   *  Its `{{DECISION}}` placeholder is filled with their own compiled answer. */
+  followUp: MockArtifact;
+  /** The session's continuation once the answer lands, given that answer's text. */
+  followUpTty: (decision: string) => { text: string; delay: number }[];
+  /** The unit whose artifact carries the answerable ballot (`followUp`'s unit). */
+  followUpUnit: string;
 }
 
 const now = Date.now();
@@ -376,11 +383,44 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
   const liveSources = idle ? [] : demo ? demo.liveSources : LIVE_SOURCES;
   // The artifact set is a pure function of elapsed time, so a reload replays the
   // whole scenario and the timeline is deterministic for scripted verification.
+  // The demo's round trip. `answered` is set the moment a Companion answer is
+  // pasted into the session (see write_pty); FOLLOWUP_BEAT_MS later the follow-up
+  // artifact starts appearing in list_artifacts, so the Board ingests it exactly
+  // as it would a real one — new artifact, unread pip, auto-advance. Without this
+  // the post-submit splash promises "the next artifact lands here" and none ever
+  // does, and the reader is stranded on it.
+  const FOLLOWUP_BEAT_MS = 2_600;
+  let answered: { at: number; decision: string } | null = null;
+  /** tabId -> unit key (the cwd basename), stamped at spawn_pty. */
+  const tabUnit = new Map<string, string>();
+  /** tabId -> the answer text pasted into it, awaiting the \r that submits it. */
+  const pastedAnswer = new Map<string, string>();
+
+  /** Type a canned transcript into a terminal, honouring each chunk's lead-in pause. */
+  const playChunks = (tabId: string, chunks: { text: string; delay: number }[]): void => {
+    let at = 0;
+    for (const c of chunks) {
+      at += c.delay;
+      setTimeout(() => emit(`pty-output-${tabId}`, c.text), at);
+    }
+  };
+
+  const escapeHtml = (s: string): string =>
+    s.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
+
   const artifactsNow = (): MockArtifact[] => {
     if (idle) return [];
     // The demo never replays the identity-race fixtures: RACE_ORPHAN exists to
     // alarm the rail's warning row, and a red alarm is not a demo.
-    if (demo) return [...demo.artifacts, REMOTE_ARTIFACT];
+    if (demo) {
+      const out = [...demo.artifacts, REMOTE_ARTIFACT];
+      if (answered && Date.now() - answered.at >= FOLLOWUP_BEAT_MS) {
+        // Stamp it as the newest artifact so it sorts to the hero and reads as
+        // "just landed" rather than inheriting the profile's boot timestamp.
+        out.push({ ...demo.followUp, modified_ms: answered.at + FOLLOWUP_BEAT_MS });
+      }
+      return out;
+    }
     const t = Date.now() - now;
     // Same path, newer mtime — an in-place rewrite, not a new artifact.
     const out: MockArtifact[] = ARTIFACTS.map((a) =>
@@ -457,7 +497,11 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
     read_artifact: (args) => {
       const p = String(args.path ?? "");
       const demoHtml = demo?.artifactHtml(p);
-      if (demoHtml) return demoHtml;
+      // The follow-up quotes the visitor's OWN answer back at them, so the agent
+      // is replying to what they actually said rather than to a canned pick.
+      if (demoHtml) {
+        return answered ? demoHtml.split("{{DECISION}}").join(escapeHtml(answered.decision)) : demoHtml;
+      }
       if (p.includes("hermes-morning-brief")) return morningBriefHtml();
       if (p.includes("observer-latency")) {
         return artifactHtml(
@@ -504,17 +548,12 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
       const tabId = String(args.tabId ?? "");
       const cwd = String(args.cwd ?? "");
       const key = cwd.split("/").filter(Boolean).pop() ?? "";
+      tabUnit.set(tabId, key); // so write_pty knows which session an answer landed in
       const chunks = demo.transcripts[key];
       if (!chunks || replayed.has(tabId)) return null;
       replayed.add(tabId);
 
-      const play = (): void => {
-        let at = 0;
-        for (const c of chunks) {
-          at += c.delay;
-          setTimeout(() => emit(`pty-output-${tabId}`, c.text), at);
-        }
-      };
+      const play = (): void => playChunks(tabId, chunks);
 
       // Terminals are spawned for every unit up front, but a unit's mount stays
       // hidden until the visitor opens it. Hold the replay until then, so the
@@ -532,8 +571,15 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
       io.observe(mount);
       return null;
     },
-    // A visitor will type into the terminal. Echo it so the box feels alive, and
-    // on Enter say plainly why nothing happens — this demo has no model behind it.
+    // Two very different things arrive here, and the demo must tell them apart.
+    //
+    //  1. A COMPANION ANSWER. submitIntoPty() sends Ctrl-U, then the compiled
+    //     decisions as a BRACKETED PASTE (\e[200~ … \e[201~), then a delayed \r.
+    //     A human typing can never produce that escape, so it is an exact signal.
+    //     This is the round trip the whole demo exists to show: the session picks
+    //     the answer up, does the work, and writes the follow-up artifact.
+    //  2. A VISITOR TYPING. Echo it so the box feels alive, and on Enter say
+    //     plainly why nothing happens — there is no model behind this terminal.
     write_pty: (args) => {
       // Record every write so scripted checks can assert what the Board typed into a
       // session (the Compact button's `/compact` submit, above all).
@@ -542,7 +588,21 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
       if (!demo) return null;
       const tabId = String(args.tabId ?? "");
       const data = String(args.data ?? "");
+
+      const paste = /\x1b\[200~([\s\S]*?)\x1b\[201~/.exec(data);
+      if (paste && tabUnit.get(tabId) === demo.followUpUnit) {
+        pastedAnswer.set(tabId, paste[1]);
+        return null; // the \r that follows is what fires the continuation
+      }
+
       if (data === "\r") {
+        const decision = pastedAnswer.get(tabId);
+        if (decision !== undefined && !answered) {
+          pastedAnswer.delete(tabId);
+          answered = { at: Date.now(), decision };
+          playChunks(tabId, demo.followUpTty(decision));
+          return null;
+        }
         emit(
           `pty-output-${tabId}`,
           "\r\n\x1b[2m  This is a recorded demo — the terminal isn't wired to a model here.\r\n" +

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>tidepool — your call is in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<script type="application/json" id="companion-meta">
+{
+  "subject": "tidepool — your call is in; the ranking is off unitsSold",
+  "summary": "The follow-up to the velocity audit. Records the decision you just made, takes unitsSold out of the ranking path, and leaves the chosen signal as the plan of record.",
+  "files": ["tidepool/metrics/velocity.py", "tidepool/ranking.py", "docs/adr/0007-ranking-signal.md"],
+  "project": "~/tidepool",
+  "branch": "audit/velocity-differential",
+  "created": "2026-07-08"
+}
+</script>
+<style>
+  :root{
+    --board:oklch(0.945 0.014 60);
+    --paper:#FBFAF6;
+    --ink:#171A1F;
+    --soft:#39404A;
+    --muted:#646C76;
+    --line:#CDC8BC;
+    --accent:#D98158;
+    --accent-deep:#A8552C;
+    --live:#3E9E86;
+    --live-deep:#2C6E5E;
+  }
+  *{box-sizing:border-box}
+  html{scrollbar-width:none}
+  html::-webkit-scrollbar{width:0;height:0;display:none}
+  html,body{margin:0;background:var(--board);color:var(--ink);
+    font-family:'Inter',ui-sans-serif,system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased}
+
+  [data-fit-root]{width:860px;margin:0 auto;padding:30px 34px 34px}
+
+  .kicker{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:10.5px;
+    font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--live-deep);
+    margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--live);
+    box-shadow:0 0 0 3px rgba(62,158,134,.18)}
+  h1{font-family:'Newsreader',ui-serif,Georgia,serif;font-weight:600;
+    font-size:clamp(32px,4.2vw,46px);line-height:1.06;letter-spacing:-.03em;margin:0 0 14px}
+  .lede{font-size:16px;line-height:1.62;color:var(--soft);max-width:62ch;margin:0}
+  hr.rule{height:1px;background:var(--line);border:0;margin:26px 0 24px}
+
+  /* the user's own decision, quoted back */
+  .yourcall{background:var(--paper);border:1px solid var(--line);
+    border-left:3px solid var(--live);border-radius:10px;padding:16px 18px;margin:0 0 26px}
+  .yourcall .yk{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+    letter-spacing:.13em;text-transform:uppercase;color:var(--live-deep);margin-bottom:8px}
+  .yourcall pre{margin:0;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;
+    line-height:1.7;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+
+  .zone{display:grid;grid-template-columns:1fr 300px;gap:28px;align-items:start}
+  @media(max-width:740px){.zone{grid-template-columns:1fr}}
+
+  h2{font-family:'Newsreader',ui-serif,serif;font-weight:600;font-size:23px;
+    letter-spacing:-.015em;margin:0 0 10px}
+  p{font-size:14.5px;line-height:1.68;color:var(--soft);margin:0 0 12px;max-width:60ch}
+  strong{color:var(--ink);font-weight:620}
+  code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;
+    background:rgba(23,26,31,.06);padding:1.5px 5px;border-radius:4px;color:var(--ink)}
+
+  ul.did{list-style:none;padding:0;margin:0}
+  ul.did li{position:relative;padding:9px 0 9px 26px;font-size:14.5px;line-height:1.6;
+    color:var(--soft);border-top:1px solid var(--line)}
+  ul.did li:first-child{border-top:0}
+  ul.did li::before{content:"✓";position:absolute;left:0;top:9px;color:var(--live);
+    font-weight:700;font-size:13px}
+
+  .figbox{background:var(--paper);border:1px solid var(--line);border-radius:12px;
+    padding:16px 16px 12px;position:sticky;top:14px}
+  .cap{font-size:11.5px;line-height:1.5;color:var(--muted);margin-top:10px;
+    padding-top:9px;border-top:1px solid var(--line)}
+
+  /* the teaching close — the point of the whole tour */
+  .loop{margin-top:32px;background:#20242B;color:#E8E4DC;border-radius:14px;
+    padding:24px 26px;box-shadow:0 24px 50px -34px rgba(23,26,31,.75)}
+  .loop .lk{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+  .loop h3{font-family:'Newsreader',ui-serif,serif;font-weight:600;font-size:27px;
+    letter-spacing:-.02em;margin:0 0 10px;color:#FBFAF6}
+  .loop p{color:#B6B1A8;font-size:14.5px;line-height:1.65;margin:0 0 14px;max-width:64ch}
+  .loop p:last-child{margin-bottom:0}
+  .loop em{color:#E8E4DC;font-style:normal;font-weight:600}
+  .steps{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 0}
+  .step{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:7px 13px;
+    font-size:12.5px;color:#E8E4DC}
+  .step .n{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+    color:var(--accent)}
+  .step.now{background:rgba(217,129,88,.18);border-color:var(--accent)}
+</style>
+</head>
+<body>
+<main data-fit-root>
+
+  <div class="kicker"><span class="dot"></span> tidepool · follow-up · just now</div>
+  <h1>Your call is in. The ranking is off <code style="font-size:.62em">unitsSold</code>.</h1>
+  <p class="lede">I picked this up the moment you answered, stopped the velocity path, and recorded
+    what you chose as the plan of record. Here's what changed.</p>
+
+  <div class="yourcall">
+    <div class="yk">what you sent back</div>
+    <pre>{{DECISION}}</pre>
+  </div>
+
+  <hr class="rule">
+
+  <div class="zone">
+    <div>
+      <h2>What I did with it</h2>
+      <ul class="did">
+        <li><strong>Pulled <code>unitsSold</code> out of the ranking path.</strong> Every option you
+          were choosing between agreed on that much — the field is a constant, so nothing derived from
+          it can rank. <code>velocity.py</code> no longer feeds <code>ranking.py</code>.</li>
+        <li><strong>Killed the nightly velocity backfill.</strong> It was recomputing a score from a
+          field that never moves — 40 minutes of compute a night, producing noise.</li>
+        <li><strong>Wrote your decision to <code>docs/adr/0007-ranking-signal.md</code></strong> so the
+          next person who asks “why aren't we ranking on sales?” gets the differential, not a shrug.</li>
+        <li><strong>Left the ranking served by the last known-good ordering</strong> rather than shipping
+          a half-migrated one. Nothing is live on a signal you haven't approved.</li>
+      </ul>
+    </div>
+
+    <aside>
+      <div class="figbox">
+        <svg viewBox="0 0 268 150" width="100%" role="img" aria-label="Over five hours, followerCount moved for 4,620 of 8,281 sellers; unitsSold moved for zero">
+          <text x="0" y="12" font-family="JetBrains Mono,monospace" font-size="9" font-weight="700" letter-spacing="1" fill="#646C76">SELLERS THAT MOVED · 5H</text>
+
+          <text x="0" y="42" font-family="Inter,sans-serif" font-size="11" fill="#39404A">followerCount</text>
+          <rect x="0" y="49" width="268" height="16" rx="4" fill="rgba(23,26,31,.07)"/>
+          <rect x="0" y="49" width="149" height="16" rx="4" fill="#3E9E86"/>
+          <text x="156" y="61" font-family="JetBrains Mono,monospace" font-size="10" font-weight="700" fill="#2C6E5E">4,620</text>
+
+          <text x="0" y="93" font-family="Inter,sans-serif" font-size="11" fill="#39404A">unitsSold</text>
+          <rect x="0" y="100" width="268" height="16" rx="4" fill="rgba(23,26,31,.07)"/>
+          <rect x="0" y="100" width="2" height="16" rx="1" fill="#C2504B"/>
+          <text x="10" y="112" font-family="JetBrains Mono,monospace" font-size="10" font-weight="700" fill="#C2504B">0</text>
+
+          <text x="0" y="140" font-family="Inter,sans-serif" font-size="10" fill="#646C76">of 8,281 sellers in both snapshots</text>
+        </svg>
+        <div class="cap">The differential that settled it. One of these two fields is alive.</div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="loop">
+    <div class="lk">☝ that's the loop</div>
+    <h3>You just steered an agent without touching the terminal.</h3>
+    <p>That's the whole thing. Claude wrote a page, you read it and <em>clicked an answer</em>, the answer
+      went back into its session, and it kept working — and reported back with this page. No scrollback,
+      no copy-paste, no context-switch.</p>
+    <p>In the real app, that loop just keeps going: the next page lands right here, and you answer that
+      one too. Run one agent or ten — each tells you the moment it needs you.</p>
+    <div class="steps">
+      <span class="step"><span class="n">1</span> Claude works</span>
+      <span class="step"><span class="n">2</span> A page lands</span>
+      <span class="step"><span class="n">3</span> You click ✓ / ✎ / ✗</span>
+      <span class="step now"><span class="n">4</span> It keeps going ← you are here</span>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  (function () {
+    var el = document.querySelector("[data-fit-root]") || document.body;
+    var post = function () {
+      parent.postMessage({ source: "companion-artifact", kind: "size",
+        w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
+    };
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+    addEventListener("load", post); post();
+  })();
+</script>
+</body>
+</html>
