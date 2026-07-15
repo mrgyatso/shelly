@@ -52,6 +52,12 @@ import {
   type CompactState,
 } from "./compact-logic";
 import { isNavigateMessage, isNewSessionMessage } from "./resize";
+import {
+  initShellRepaint,
+  isShellMessage,
+  handleShellMessage,
+  noteArtifactShown,
+} from "./shell-repaint";
 import { mountClawd } from "./clawd";
 import { initCodePeek, closeCodePeek } from "./code-peek";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -524,11 +530,16 @@ export async function initBoard(): Promise<void> {
   unitEl = unit;
   digestEl = digest;
   historyEl = history;
+  initShellRepaint(stageEl);
   heroNewEl = document.getElementById("unit-hero-new") as HTMLButtonElement | null;
   // Mirror the focusFrame "restore-submitted" logic: when the hero digest
   // reloads after a unit re-entry, re-show the submitted overlay if the user
   // already answered this artifact and it hasn't been rewritten since.
   digest.addEventListener("load", () => {
+    // A new hero artifact is on screen: arm the shell reset. A curated shell
+    // message (posted right after load) clears it and repaints; a plain artifact
+    // lets it fire, returning the surface to the app shade.
+    noteArtifactShown(digest);
     if (!digestPath) return;
     const stamp = submittedArtifacts.get(digestPath);
     if (stamp === undefined) return;
@@ -3480,6 +3491,9 @@ async function openReader(path: string): Promise<void> {
   // overlay. The frame is reused across jump/back, so one persistent listener
   // covers every reader navigation.
   focusFrame.addEventListener("load", () => {
+    // The reader now shows a (possibly different) artifact — arm the shell reset,
+    // superseded by a curated shell message if this one declares one.
+    noteArtifactShown(focusFrame);
     if (!focusPath || !focusFrame) return;
     const stamp = submittedArtifacts.get(focusPath);
     if (stamp === undefined) return;
@@ -3638,6 +3652,10 @@ function closeFocus(): void {
   readerStalePath = null;
   awaitingAdvanceSource = null;
   readerBackStack.length = 0;
+  // Closing the reader returns the surface to the hero beneath it: arm a reset so
+  // a shell the reader declared doesn't linger over a plain hero. The hero re-fires
+  // its own shell if it has one.
+  noteArtifactShown(digestEl);
   if (pendingIngest.size) {
     const v = currentView();
     const due = v.level === "unit" && pendingIngest.has(v.unitKey) ? v.unitKey : null;
@@ -4175,6 +4193,13 @@ function wireNavigate(): void {
       navigateTo(d.to);
       return;
     }
+    if (isShellMessage(d)) {
+      // A displayed artifact declared a curated shell. Repaint the whole surface
+      // to match, revealing from the artifact that posted it. Strictly validated
+      // (curated-set only) inside handleShellMessage; off-palette is ignored.
+      handleShellMessage(d, shellOriginFrame(e.source as Window | null));
+      return;
+    }
     if (isNewSessionMessage(d)) {
       // Highlight → "✦ New session with this quote". Untrusted artifact text, but
       // lower-risk than submit: it pre-fills (never auto-Enters) a FRESH session, so
@@ -4272,6 +4297,17 @@ function wireNavigate(): void {
       // the in-page splash via restore-submitted; auto-advance clears it on reload.
     }
   });
+}
+
+/** Match a message's source window to the artifact iframe that sent it, so the
+ *  shell reveal can originate from that artifact's on-screen position. Returns
+ *  null (→ viewport-center fallback) for any unrecognized source. */
+function shellOriginFrame(win: Window | null): HTMLIFrameElement | null {
+  const hub = document.getElementById("hub-frame") as HTMLIFrameElement | null;
+  for (const f of [focusFrame, digestEl, hub]) {
+    if (f && f.contentWindow === win) return f;
+  }
+  return null;
 }
 
 /** Send a compiled ✓/✎/✗ reply from a remote artifact back to its owning agent
