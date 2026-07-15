@@ -123,6 +123,14 @@ const responderReason = gate.buildResponderReason();
 ok(!/look-only/i.test(responderReason), "responder reason offers NO look-only escape");
 ok(/done/i.test(responderReason), "responder reason covers the finished-work case (still needs a next step)");
 
+// The reactive path must NEVER tell the agent to load a skill — a "load the skill" remedy once
+// caused a rewrite that destroyed a working bespoke design. Both block reasons are self-sufficient
+// (they spell the mechanical floor / the graft inline) and the responder reason instructs a GRAFT.
+ok(!/skill/i.test(blockRes.reason), "no-artifact block reason never mentions a skill");
+ok(!/skill/i.test(responderReason), "responder block reason never mentions a skill");
+ok(/charset/i.test(blockRes.reason) && /companion-meta/i.test(blockRes.reason), "no-artifact block reason lists the mechanical floor inline");
+ok(/graft/i.test(responderReason), "responder reason instructs a graft onto the existing page");
+
 // Artifact landed this turn but its file is unreadable (index points at /a/x.html which
 // doesn't exist) → content-lint can't verify → fail open (no block).
 ok(
@@ -178,6 +186,47 @@ ok(
   "real commentable markup alongside the helper script → responder",
 );
 
+// ---- hasAnswerableSurface: signal 2 (custom-wired ballot) -----------------
+// Signal 2 admits a working ballot wired under CUSTOM attribute names: BOTH the raw html
+// posts a submit to the Board (kind:"submit") AND the stripped markup has a real <button.
+console.log("### hasAnswerableSurface (custom ballot)");
+// A bespoke ballot that never touches the house markers (data-a="do", id="submit", a
+// clipboard/postMessage submit). This is the exact case that used to FALSE-BLOCK. Must PASS.
+const artCustomBallot = writeFile(
+  "art-custom-ballot.html",
+  '<div data-item data-a="do"><button data-a="do">Ship it</button></div>' +
+    '<button id="submit">Submit</button>' +
+    '<script>document.getElementById("submit").onclick=function(){' +
+    'parent.postMessage({source:"companion-artifact",kind:"submit",text:"ok"},"*");};</script>',
+);
+ok(
+  gate.hasAnswerableSurface([artCustomBallot]).any === true,
+  'custom-wired ballot (markup <button> + kind:"submit" post) → answerable',
+);
+// A pure recap that EMBEDS the unified helper: its script source contains kind:"submit" and
+// the data-companion-submit selectors, but the markup has NO <button (the helper injects its
+// chat bar at runtime) and no house markers. The markup-<button> gate must keep it BLOCKED.
+const artRecapHelper = writeFile(
+  "art-recap-helper.html",
+  "<h1>All shipped</h1><p>Nothing else to do.</p>" +
+    '<script>var s=document.querySelector("[data-companion-submit]");' +
+    'function send(t){parent.postMessage({source:"companion-artifact",kind:"submit",text:t},"*");}</script>',
+);
+ok(
+  gate.hasAnswerableSurface([artRecapHelper]).any === false,
+  'recap embedding the helper (kind:"submit" in script, no markup <button>) → NOT answerable',
+);
+// Buttons in the markup but NO submit wiring anywhere and no house markers — a nav bar, a
+// collapse toggle. Not a responder. Must BLOCK.
+const artButtonsNoSubmit = writeFile(
+  "art-buttons-no-submit.html",
+  "<nav><button>Menu</button><button>Close</button></nav><h1>Recap</h1><p>Done.</p>",
+);
+ok(
+  gate.hasAnswerableSurface([artButtonsNoSubmit]).any === false,
+  "markup buttons but no submit post and no markers → NOT answerable",
+);
+
 // ---- decide: content-lint -------------------------------------------------
 console.log("### decide (content-lint)");
 function idxAt(name, htmlPath) {
@@ -187,6 +236,12 @@ function idxAt(name, htmlPath) {
 ok(
   gate.decide({ transcript_path: transcript, session_id: SID }, { indexPath: idxAt("idx-ok.json", artWithBallot) }).block === false,
   "artifact with an answerable surface → pass",
+);
+// A custom-wired ballot (no house markers, but posts kind:"submit" and has a markup button)
+// → pass through the full decide() path. This is the regression that used to false-block.
+ok(
+  gate.decide({ transcript_path: transcript, session_id: SID }, { indexPath: idxAt("idx-custom.json", artCustomBallot) }).block === false,
+  "custom-wired ballot artifact → pass (no false block)",
 );
 // Artifact with NO responder (bare recap) → block, with the responder reason.
 const bareRes = gate.decide({ transcript_path: transcript, session_id: SID }, { indexPath: idxAt("idx-bare.json", artBare) });

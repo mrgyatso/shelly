@@ -310,11 +310,24 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `next move ("nothing left here; here is what I would pick up next, or tell me where to go"). `+
     `"Nothing to decide" is never true — choosing the next piece of work IS the decision. It holds for a bespoke `+
     `look-at design too: the visual is yours to craft, but the user must still be able to respond in `+
-    `place. EVERY artifact must include the size-reporter script and the companion-meta block (code in `+
-    `the skill) or it renders at the wrong size. Load the prefer-html skill for the how — the interaction `+
-    `helper (commentable blocks + the Decide review form), those required snippets, and the Broadsheet `+
-    `house style. A Stop-hook backstop hands the turn back once if it ends with nothing written, but `+
-    `author it inline.`+wt;
+    `place. EVERY artifact must include the size-reporter script and the companion-meta block or it `+
+    `renders at the wrong size. Load the companion:prefer-html skill for the full template WHEN building `+
+    `a non-trivial artifact (anything beyond a compact pill) — it is the pattern library, carrying the `+
+    `interaction helper (commentable blocks + the Decide review form), those required snippets, and the `+
+    `Broadsheet house style. Pattern menu — pick by content shape: compact pill (quick answer / status `+
+    `flip) · blob canvas (N independent points as floating expandable colored cards; DEFAULT for `+
+    `multi-point turns; the one pattern where multiple palette colors are sanctioned) · paginated wizard `+
+    `(one deep sequence as pages 1..N ending on a decisions page) · sidebar multi-page (3+ peer subjects, `+
+    `jump-anywhere) · two-zone (prose + one explanatory visual) · single scroll (one narrative) · bespoke `+
+    `dashboard (presentation-first). Load companion:prefer-html for the template once you\u0027ve picked. `+
+    `Shell: set html/body background to oklch(0.945 0.014 60) (the app shade) by default. Optionally — `+
+    `occasionally, when the turn earns it — an artifact may repaint the WHOLE surface: declare `+
+    `"shell": {"bg": "…", "ink": "…"} in companion-meta, post {source:\u0027companion-artifact\u0027, `+
+    `kind:\u0027shell\u0027, bg, ink} to parent on load, and use that same bg as the page background. `+
+    `Curated set only (bg/ink): paper #FBFAF6/#171A1F · slate #E7ECF1/#1B2530 · mint #E6F1EA/#16281F · `+
+    `clay #F3E7DF/#2A1C14 · ink #14181D/#E8EDF3. Never any other color; never a partial repaint (the `+
+    `seam is the enemy). A Stop-hook backstop hands the turn back once if it ends with nothing written, `+
+    `but author it inline.`+wt;
   process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:ctx}}));
 '
 exit 0
