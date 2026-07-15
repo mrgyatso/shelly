@@ -437,20 +437,36 @@ pub fn run() {
                     ..
                 } => {
                     // Linux: the Board and History wear a native titlebar, so its ✕
-                    // is the ONLY close affordance (the in-page one is hidden there —
-                    // two sets of window buttons read as broken). That in-page button
-                    // hid the window rather than destroying it, keeping scroll/rail
-                    // state across a re-summon; make the native ✕ do the same, so
-                    // dropping the button costs nothing.
-                    let framed = cfg!(target_os = "linux")
-                        && (label == crate::windows::BOARD_LABEL
-                            || label == crate::windows::HISTORY_LABEL);
-                    if let Some(win) = app_handle.get_webview_window(&label) {
-                        if framed {
-                            api.prevent_close();
-                            let _ = win.hide();
-                        } else {
-                            crate::macos_panel::restore_original_class(&win);
+                    // is the real window close. Each gets the behaviour a desktop app
+                    // is expected to have:
+                    //   Board   — ✕ QUITS the app. Hiding-to-background only made sense
+                    //             while the tray could bring it back, but the Linux tray
+                    //             (libappindicator) is unreliable — hide-on-close just
+                    //             stranded an invisible daemon that still held the
+                    //             single-instance socket, so a freshly-installed build
+                    //             forwarded its args to the stale process and the upgrade
+                    //             appeared to do nothing. Minimize is the "keep it running
+                    //             in the background" affordance now; ✕ means quit, and a
+                    //             quit releases the socket so the next launch is the new
+                    //             binary. exit(0) → ExitRequested { code: Some(0) }, which
+                    //             the handler above lets through (only code: None stays
+                    //             alive); prevent_close() first stops the window-destroy
+                    //             path from racing in a code: None "stay alive" exit.
+                    //   History — a secondary window; its ✕ still just hides it, keeping
+                    //             scroll/rail state across a re-summon.
+                    if cfg!(target_os = "linux") && label == crate::windows::BOARD_LABEL {
+                        api.prevent_close();
+                        app_handle.exit(0);
+                    } else {
+                        let framed =
+                            cfg!(target_os = "linux") && label == crate::windows::HISTORY_LABEL;
+                        if let Some(win) = app_handle.get_webview_window(&label) {
+                            if framed {
+                                api.prevent_close();
+                                let _ = win.hide();
+                            } else {
+                                crate::macos_panel::restore_original_class(&win);
+                            }
                         }
                     }
                 }
