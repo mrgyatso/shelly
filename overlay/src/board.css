@@ -330,6 +330,42 @@
 .ns-tx { display: flex; align-items: baseline; gap: 7px; }
 .ns-tx small { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
 
+/* Agent toggle at the top of the + menu: pick Claude or Codex. The choice is
+   remembered (localStorage) and honored by every start path, not just this menu. */
+.ns-agent {
+  display: flex;
+  gap: 3px;
+  margin: 2px 3px 6px;
+  padding: 3px;
+  background: var(--sunk);
+  border-radius: 9px;
+}
+.ns-seg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--serif);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.13s var(--ease), color 0.13s var(--ease);
+}
+.ns-seg:hover:not(.on):not(:disabled) { color: var(--ink); }
+.ns-seg.on {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 3px -1px rgba(40, 30, 20, 0.35);
+}
+.ns-seg:disabled, .ns-seg.ns-seg-off { opacity: 0.4; cursor: default; }
+.ns-seg-ic { font-size: 11px; opacity: 0.85; }
+
 /* Notifications dropdown — opened from the 🔔; lists units with unread work so a
    click jumps straight to that agent (was a blunt "go to sessions"). */
 .notif-menu {
