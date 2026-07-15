@@ -680,6 +680,11 @@ export async function initBoard(): Promise<void> {
   // already-open Board catches the same target via the `board:navigate` event.
   void listen("board:navigate", () => void applyNavTarget());
   void applyNavTarget();
+
+  // `companion handoff …` queues a request the same way: an already-open Board
+  // hears `board:handoff`; a fresh window drains it on init.
+  void listen<HandoffReq>("board:handoff", (e) => void applyHandoff(e.payload));
+  void applyPendingHandoff();
 }
 
 /** "+ New session" (primary): spawn a Board-owned claude in the home dir
@@ -792,6 +797,182 @@ async function startSessionFromQuote(quote: string, artifact?: string): Promise<
       console.error("seed pre-fill failed", e),
     );
   }, SEED_PREFILL_MS);
+}
+
+// ---- /handoff → a live agent ------------------------------------------------
+// Close the loop from "write a handoff" to "the handoff is running in a fresh
+// agent." A `companion handoff <file> [--dir] [--agent]` invocation (fired by the
+// /companion:handoff command, or the session-card button) queues a request the
+// Rust side hands us here; we spawn a session in the target dir and auto-send a
+// pointer at the handoff so the new agent starts reading immediately.
+
+/** Mirrors `launch::HandoffRequest`. `dir`/`agent` are null when the CLI didn't
+ *  specify them — the picker fills them in. */
+type HandoffReq = { file: string; dir: string | null; agent: string | null };
+
+/** Drain a queued handoff (a fresh Board window sees it on init). An already-open
+ *  Board catches the same request via the `board:handoff` event instead. */
+async function applyPendingHandoff(): Promise<void> {
+  try {
+    const req = await invoke<HandoffReq | null>("take_pending_handoff");
+    if (req) await applyHandoff(req);
+  } catch (e) {
+    console.error("applyPendingHandoff failed", e);
+  }
+}
+
+/** Spawn a Board session in `dir` for the handoff, then auto-send a pointer at
+ *  the file so the agent starts reading on arrival. Unlike startSessionFromQuote
+ *  (which pre-fills an UNTRUSTED highlight and never Enters), the seed here is a
+ *  fixed, command-generated line, so submitIntoPty auto-sends it. */
+async function launchHandoffSession(dir: string, agent: string, file: string): Promise<void> {
+  const tabId = await launchSessionIn(dir, agent);
+  if (!tabId) return;
+  const seed = `Read the handoff at ${file} and pick up the work.`;
+  // Wait for the agent to reach its prompt before pasting + Enter (home/existing
+  // dirs are usually trusted, so no first-run gate). Soft target — see SEED_PREFILL_MS.
+  window.setTimeout(() => {
+    void submitIntoPty(tabId, seed).catch((e) => console.error("handoff seed failed", e));
+  }, SEED_PREFILL_MS);
+}
+
+/** Act on a handoff request: launch straight away when the CLI already chose a
+ *  folder + agent, else ask via the picker (smart default = the request's dir,
+ *  falling back to HOME). */
+async function applyHandoff(req: HandoffReq): Promise<void> {
+  if (req.dir && req.agent) {
+    void launchHandoffSession(req.dir, req.agent, req.file);
+    return;
+  }
+  let home: string | null = null;
+  try {
+    home = await invoke<string | null>("resolve_home_dir");
+  } catch (e) {
+    console.error("resolve_home_dir failed", e);
+  }
+  const picked = await openHandoffPicker(req.dir ?? home);
+  if (!picked) return;
+  void launchHandoffSession(picked.dir, picked.agent, req.file);
+}
+
+/** The handoff picker: a small centred card that collects the target folder and
+ *  agent. `defaultDir` is offered as "★ Start here" (recommended), but a different
+ *  folder is always one click away; the agent toggle only shows Codex when it's
+ *  installed. Resolves the chosen {dir, agent}, or null on cancel. */
+function openHandoffPicker(defaultDir: string | null): Promise<{ dir: string; agent: string } | null> {
+  return new Promise((resolve) => {
+    let dir: string | null = defaultDir;
+    let agent = "claude";
+    let done = false;
+
+    const back = document.createElement("div");
+    back.className = "handoff-backdrop";
+    const card = document.createElement("div");
+    card.className = "handoff-picker";
+    card.innerHTML =
+      '<div class="hp-h">Hand off to a fresh agent</div>' +
+      '<div class="hp-s">Launches a new session and drops the handoff into it.</div>' +
+      '<div class="hp-folders"></div>' +
+      '<div class="hp-agents" hidden></div>' +
+      '<div class="hp-actions">' +
+      '<button class="hp-cancel">Cancel</button>' +
+      '<button class="hp-launch" disabled>Write handoff &amp; launch →</button>' +
+      "</div>";
+    back.append(card);
+    stageEl.append(back);
+
+    const foldersEl = card.querySelector(".hp-folders") as HTMLElement;
+    const agentsEl = card.querySelector(".hp-agents") as HTMLElement;
+    const launchBtn = card.querySelector(".hp-launch") as HTMLButtonElement;
+
+    const renderFolders = (): void => {
+      foldersEl.innerHTML = "";
+      if (dir) {
+        const reco = document.createElement("button");
+        reco.className = "hp-folder reco selected";
+        reco.innerHTML = `<span class="hp-ico">★</span><span class="hp-tx"><b>Start here</b><small>${escapeHtml(dir)}</small></span>`;
+        reco.addEventListener("click", () => {
+          foldersEl.querySelectorAll(".hp-folder").forEach((f) => f.classList.remove("selected"));
+          reco.classList.add("selected");
+          launchBtn.disabled = false;
+        });
+        foldersEl.append(reco);
+      }
+      const other = document.createElement("button");
+      other.className = "hp-folder";
+      other.innerHTML = '<span class="hp-ico">📁</span><span class="hp-tx">Choose a folder or project…</span>';
+      other.addEventListener("click", () => {
+        void pickFolder();
+      });
+      foldersEl.append(other);
+    };
+
+    const pickFolder = async (): Promise<void> => {
+      try {
+        const picked = await openDialog({ directory: true, title: "Hand off — start the new session in…" });
+        if (typeof picked === "string" && picked) {
+          dir = picked;
+          renderFolders();
+          launchBtn.disabled = false;
+        }
+      } catch (e) {
+        console.error("handoff folder picker failed", e);
+      }
+    };
+
+    renderFolders();
+    if (dir) launchBtn.disabled = false;
+
+    // Agent toggle — Codex only when the CLI is installed; default Claude.
+    void codexAvailable().then((ok) => {
+      if (!ok || !card.isConnected) return;
+      agentsEl.hidden = false;
+      const mk = (id: string, label: string): HTMLButtonElement => {
+        const b = document.createElement("button");
+        b.className = "hp-agent" + (id === agent ? " on" : "");
+        b.textContent = label;
+        b.dataset.agent = id;
+        b.addEventListener("click", () => {
+          agent = id;
+          agentsEl.querySelectorAll(".hp-agent").forEach((a) => a.classList.remove("on"));
+          b.classList.add("on");
+        });
+        return b;
+      };
+      agentsEl.append(mk("claude", "Claude"), mk("codex", "Codex"));
+    });
+
+    const finish = (result: { dir: string; agent: string } | null): void => {
+      if (done) return;
+      done = true;
+      document.removeEventListener("keydown", onEsc);
+      back.remove();
+      resolve(result);
+    };
+    const onEsc = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") finish(null);
+    };
+
+    card.querySelector(".hp-cancel")?.addEventListener("click", () => finish(null));
+    launchBtn.addEventListener("click", () => {
+      if (!dir) return;
+      finish({ dir, agent });
+    });
+    back.addEventListener("click", (e) => {
+      if (e.target === back) finish(null);
+    });
+    document.addEventListener("keydown", onEsc);
+  });
+}
+
+/** Send `/companion:handoff` into a live session so its agent writes the handoff
+ *  and fires the launch. Kept deliberately bare — the command defaults the target
+ *  dir to the agent's own cwd and the Board asks where/which-agent via the picker
+ *  (applyHandoff), so this stays a one-line "hand this session off" trigger. */
+async function handoffFromSession(tabId: string): Promise<void> {
+  await submitIntoPty(tabId, "/companion:handoff").catch((e) =>
+    console.error("handoff command failed", e),
+  );
 }
 
 /** The "+ New session" menu: a small popover under the + giving the two ways to
@@ -2226,8 +2407,12 @@ async function closeSession(unitKey: string, s: LiveSource): Promise<void> {
 
 /** Context menu for a session sub-row in the rail: switch to it or close just this session. */
 function showRailSessionMenu(e: MouseEvent, unitKey: string, s: LiveSource): void {
+  const tabId = parseState(s.json).companion_session ?? null;
   openCtxMenu(e, [
     { label: "Switch to", fn: () => switchToSession(unitKey, s) },
+    ...(tabId
+      ? [{ label: "Hand off to a fresh agent", fn: () => void handoffFromSession(tabId) }]
+      : []),
     { label: "Close session", fn: () => void closeSession(unitKey, s), danger: true },
   ]);
 }
@@ -2736,6 +2921,15 @@ function wireUnitChrome(): void {
   compactBtnEl = document.getElementById("unit-compact") as HTMLButtonElement | null;
   compactBtnEl?.addEventListener("click", () => void runCompact());
   window.setInterval(() => void renderUnitMeter(currentUnitKey), METER_POLL_MS);
+
+  // "⇥ Hand off": send /companion:handoff into this session's terminal so its
+  // agent writes a handoff and launches it in a fresh session. Needs a Board-owned
+  // PTY to type into (no-terminal/cloud units hide the button via CSS).
+  document.getElementById("unit-handoff")?.addEventListener("click", () => {
+    if (!currentUnitKey) return;
+    const tabId = ownedTabForUnit(currentUnitKey);
+    if (tabId) void handoffFromSession(tabId);
+  });
 
   // Collapse / expand the left rail to reclaim space, via a SINGLE toolbar toggle: the
   // rail folds away when collapsed, so the control must live outside it (« hides, »
