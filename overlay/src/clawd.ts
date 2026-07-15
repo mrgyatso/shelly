@@ -173,6 +173,39 @@ export const CW_SCENES = [
       ".clawd-stage .cw--happy .cw-sp{opacity:0;animation:cwSpark 1.5s step-end infinite}" +
       ".clawd-stage .cw--happy .cw-sp.sp2{animation-delay:.3s}.clawd-stage .cw--happy .cw-sp.sp3{animation-delay:.6s}.clawd-stage .cw--happy .cw-sp.sp4{animation-delay:.9s}.clawd-stage .cw--happy .cw-sp.sp5{animation-delay:1.2s}" +
       "@keyframes cwSpark{0%{opacity:0}12%{opacity:1}30%{opacity:0}100%{opacity:0}}" },
+
+  // Clawd nestled in a hermit-crab shell, peeking out and waving — because the app
+  // is a "shell" for Claude. The shell is a static pixel coil in `behind`; the crab
+  // (CW_RIG) sits in front of it and the left claw gives a slow friendly wave.
+  { id:"hermit", cap:"Claude’s making himself at home",
+    behind:'<g>' +
+      '<g fill="#d9c9a3">' +
+        '<rect x="10" y="-1" width="6" height="1"/><rect x="8" y="0" width="10" height="1"/>' +
+        '<rect x="7" y="1" width="12" height="1"/><rect x="6" y="2" width="13" height="1"/>' +
+        '<rect x="6" y="3" width="14" height="1"/><rect x="6" y="4" width="14" height="1"/>' +
+        '<rect x="6" y="5" width="13" height="1"/><rect x="6" y="6" width="13" height="1"/>' +
+        '<rect x="7" y="7" width="11" height="1"/><rect x="7" y="8" width="10" height="1"/>' +
+        '<rect x="8" y="9" width="8" height="1"/><rect x="9" y="10" width="6" height="1"/>' +
+        '<rect x="10" y="11" width="4" height="1"/><rect x="11" y="12" width="2" height="1"/>' +
+      '</g>' +
+      '<g fill="#ece0c6">' +
+        '<rect x="10" y="-1" width="3" height="1"/><rect x="8" y="0" width="2" height="1"/>' +
+        '<rect x="7" y="1" width="1" height="1"/><rect x="6" y="2" width="1" height="2"/>' +
+        '<rect x="6" y="4" width="1" height="2"/>' +
+      '</g>' +
+      '<g fill="#c9a875">' +
+        '<rect x="18" y="2" width="1" height="1"/><rect x="17" y="3" width="1" height="1"/>' +
+        '<rect x="17" y="4" width="1" height="1"/><rect x="16" y="5" width="1" height="1"/>' +
+        '<rect x="15" y="6" width="1" height="1"/><rect x="14" y="7" width="1" height="1"/>' +
+        '<rect x="13" y="8" width="1" height="1"/>' +
+      '</g>' +
+      '<rect x="13" y="4" width="3" height="3" fill="#c9a875"/><rect x="14" y="5" width="1" height="1" fill="#b89a6b"/>' +
+    '</g>',
+    front:"",
+    css:
+      ".clawd-stage .cw--hermit .cw-arm-l{transform-origin:2px 10px;animation:cwHermitWave 2.4s ease-in-out infinite}" +
+      "@keyframes cwHermitWave{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-40deg)}}" +
+      ".clawd-stage .cw--hermit .cw-arm-r{transform-origin:14px 10px;transform:rotate(-10deg)}" },
 ];
 
 // Assemble the full stylesheet (base + every scene) once.
