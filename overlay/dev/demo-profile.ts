@@ -19,6 +19,7 @@
    ============================================================================= */
 
 import tidepoolHtml from "../../demo/artifacts/demo-tidepool-velocity.html?raw";
+import tidepoolShippedHtml from "../../demo/artifacts/demo-tidepool-shipped.html?raw";
 import harborHtml from "../../demo/artifacts/demo-harbor-regression.html?raw";
 import northwindHtml from "../../demo/artifacts/demo-northwind-auth.html?raw";
 import type { MockArtifact } from "./tauri-mock";
@@ -36,6 +37,27 @@ const TIDEPOOL: MockArtifact = {
     "Differential over 5 hours: followerCount moved for 4,620 of 8,281 sellers, unitsSold for zero. Every ranking built on velocity is noise.",
   modified_ms: now - 3 * MIN,
   size_bytes: 61_400,
+  project: "~/tidepool",
+  unit_key: "tidepool",
+  source: "tidepool--a4f1c920",
+};
+
+/** The pay-off page: the artifact that lands AFTER the visitor answers tidepool.
+ *
+ *  Not in DEMO_ARTIFACTS — the mock pushes it only once a decision has actually
+ *  been submitted, which is what closes the loop the demo exists to teach. Its
+ *  `{{DECISION}}` placeholder is filled at read time with the visitor's own
+ *  compiled answer, so the agent replies to what THEY said, not to a canned pick.
+ *  Same unit + source as TIDEPOOL, so the Board routes it into that session and
+ *  auto-advance carries the reader to it instead of stranding them on the splash. */
+export const DEMO_FOLLOWUP: MockArtifact = {
+  path: "/demo/artifacts/tidepool-shipped.html",
+  title: "Your call is in — the ranking is off unitsSold",
+  subject: "tidepool — your call is in",
+  summary:
+    "Pulled unitsSold out of the ranking path, killed the nightly velocity backfill, and recorded your decision as the plan of record.",
+  modified_ms: now, // overwritten at push time — it must read as the newest artifact
+  size_bytes: 14_800,
   project: "~/tidepool",
   unit_key: "tidepool",
   source: "tidepool--a4f1c920",
@@ -71,6 +93,7 @@ export const DEMO_ARTIFACTS: MockArtifact[] = [TIDEPOOL, HARBOR, NORTHWIND];
 
 /** Raw HTML for the demo artifacts, inlined at build time (`?raw`). */
 export function demoArtifactHtml(path: string): string | null {
+  if (path.includes("tidepool-shipped")) return tidepoolShippedHtml;
   if (path.includes("tidepool-velocity")) return tidepoolHtml;
   if (path.includes("harbor-regression")) return harborHtml;
   if (path.includes("northwind-auth")) return northwindHtml;
@@ -250,6 +273,37 @@ export const DEMO_TRANSCRIPTS: Record<string, TranscriptChunk[]> = {
   harbor: HARBOR_TTY,
   "northwind-sync": NORTHWIND_TTY,
 };
+
+/** What tidepool's session does once the visitor ANSWERS its artifact.
+ *
+ *  The demo's whole argument is the round trip, and it was previously cut one
+ *  step short: the answer reached the terminal and the session said "not wired to
+ *  a model". Now the paste lands, the agent picks it up, does the work, and writes
+ *  the follow-up artifact — which the mock then serves. The terminal is the SEAM,
+ *  not the payoff; the payoff is the page that lands on the Board.
+ *
+ *  `decision` is the visitor's own compiled answer, echoed so the paste reads as
+ *  theirs. Only its first line is shown — the full text is quoted in the artifact. */
+export function tidepoolFollowUpTty(decision: string): TranscriptChunk[] {
+  const headline = (decision.split("\n").find((l) => /^[✓✗✎]/.test(l.trim())) ?? "your decision").trim();
+  return [
+    { text: `${DIM}[pasted ${decision.split("\n").length} lines from Companion]${OFF}\r\n`, delay: 260 },
+    { text: `${BOLD}>${OFF} ${DIM}${headline}${OFF}\r\n`, delay: 420 },
+    { text: bullet("Got it — that settles the signal question. Taking unitsSold out of\r\n  the ranking path now."), delay: 1100 },
+    { text: bullet("Edit(tidepool/ranking.py)"), delay: 900 },
+    { text: result(`${GREEN}velocity_score no longer feeds rank()${OFF}`), delay: 700 },
+    { text: bullet("Edit(tidepool/metrics/velocity.py)"), delay: 850 },
+    { text: result(`${GREEN}nightly backfill disabled — 40m/night of compute on a constant${OFF}`), delay: 800 },
+    { text: bullet("Write(docs/adr/0007-ranking-signal.md)"), delay: 900 },
+    { text: result("recorded your call + the 5h differential"), delay: 650 },
+    { text: bullet("Write(~/.claude/companion/artifacts/tidepool-shipped.html)"), delay: 950 },
+    { text: result("Wrote 14.8 KB"), delay: 600 },
+    {
+      text: `\r\n${DIM}  The follow-up is on the Board — that's the loop closing.${OFF}\r\n\r\n${DIM}> ${OFF}`,
+      delay: 900,
+    },
+  ];
+}
 
 /** The units whose terminals the demo spawns as Board-owned at boot. A live file
  *  alone can't make a session Board-owned — that binding is in-memory — so
