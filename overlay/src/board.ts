@@ -246,6 +246,13 @@ const METER_POLL_MS = 4000;
  *  compacting; `high` = the next long tool result may not fit. */
 const METER_WARN_PCT = 70;
 const METER_HIGH_PCT = 85;
+/** Poll cadence for the account rate-limit pill. The Rust side caches the API
+ *  response for 5 minutes, so polling faster would only re-read that cache. */
+const RATE_POLL_MS = 5 * 60 * 1000;
+/** 5h-window fill at which the pill stops being ambient. `warn` = pace yourself;
+ *  `high` = the window is nearly spent and the next reset time matters. */
+const RATE_WARN_PCT = 70;
+const RATE_HIGH_PCT = 90;
 /** An instance whose live file hasn't been touched within this window is "stale"
  *  — it drops off the live roster into the reversible Archived toggle. */
 const LIVENESS_MS = 2 * 60 * 60 * 1000;
@@ -441,6 +448,10 @@ let meterBarEl: HTMLElement | null = null;
 let meterFillEl: HTMLElement | null = null;
 let meterTextEl: HTMLElement | null = null;
 let compactBtnEl: HTMLButtonElement | null = null;
+let rateEl: HTMLElement | null = null;
+let rateBarEl: HTMLElement | null = null;
+let rateFillEl: HTMLElement | null = null;
+let rateTextEl: HTMLElement | null = null;
 /** Every session's Compact state, keyed by (unit, session) — sessions compact concurrently,
  *  and a compaction running in one must not be disturbed by a `/compact` typed into another.
  *  The rules live in compact-logic.ts, where a check pins them. */
@@ -2975,6 +2986,15 @@ function wireUnitChrome(): void {
     if (tabId) void handoffFromSession(tabId);
   });
 
+  // Account rate-limit pill: one reading for the whole Board, on its own slow
+  // cadence (the Rust side caches for 5 minutes; the window fills over hours).
+  rateEl = document.getElementById("unit-rate");
+  rateBarEl = document.getElementById("unit-rate-bar");
+  rateFillEl = document.getElementById("unit-rate-fill");
+  rateTextEl = document.getElementById("unit-rate-text");
+  void renderRateLimit();
+  window.setInterval(() => void renderRateLimit(), RATE_POLL_MS);
+
   // Collapse / expand the left rail to reclaim space, via a SINGLE toolbar toggle: the
   // rail folds away when collapsed, so the control must live outside it (« hides, »
   // shows — same spot in both states). Persisted so it survives reloads.
@@ -3038,6 +3058,57 @@ interface SessionUsage {
   /** A compaction has landed and no real turn has followed it, so `contextTokens` is
    *  stale — it measures a request that no longer exists. The meter shows no level. */
   awaitingTurn: boolean;
+}
+
+/** One rolling rate-limit window, as `rate_limit_usage` reports it. */
+interface RateBucket {
+  /** Direct percentage, 0–100. */
+  utilization: number;
+  resetsAt: string | null;
+}
+
+/** What `rate_limit_usage` returns — see rate_limit.rs for source and caching. */
+interface RateLimitUsage {
+  fiveHour: RateBucket | null;
+  sevenDay: RateBucket | null;
+}
+
+/** "resets 1:39 PM" for a same-day instant, "resets Jul 21" for a later one. */
+function fmtReset(iso: string | null): string {
+  if (!iso) return "";
+  const t = new Date(iso);
+  if (isNaN(t.getTime())) return "";
+  const sameDay = t.toDateString() === new Date().toDateString();
+  const text = sameDay
+    ? t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : t.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `resets ${text}`;
+}
+
+/** Repaint the account rate-limit pill. Account state, not unit state: one number
+ *  for the whole Board, painted whenever a reading exists and hidden when none
+ *  ever has (no token, offline since boot). Failures keep the last reading —
+ *  rate_limit.rs serves stale over blank. */
+async function renderRateLimit(): Promise<void> {
+  if (!rateEl || !rateBarEl || !rateFillEl || !rateTextEl) return;
+  const usage = await invoke<RateLimitUsage | null>("rate_limit_usage").catch(() => null);
+  const five = usage?.fiveHour;
+  if (!five) {
+    rateEl.hidden = true;
+    return;
+  }
+  const pct = Math.max(0, Math.min(100, five.utilization));
+  rateEl.hidden = false;
+  rateEl.dataset.level = pct >= RATE_HIGH_PCT ? "high" : pct >= RATE_WARN_PCT ? "warn" : "ok";
+  rateFillEl.style.width = `${pct.toFixed(1)}%`;
+  rateBarEl.setAttribute("aria-valuenow", String(Math.round(pct)));
+  rateTextEl.textContent = `${Math.round(pct)}%`;
+  const lines = [`5-hour window: ${Math.round(pct)}% used ${fmtReset(five.resetsAt)}`.trim()];
+  const seven = usage?.sevenDay;
+  if (seven) {
+    lines.push(`7-day window: ${Math.round(seven.utilization)}% used ${fmtReset(seven.resetsAt)}`.trim());
+  }
+  rateEl.title = `${lines.join("\n")}\nAccount-wide, across every session.`;
 }
 
 /** Token counts read at a glance: `114k`, `1M`. Precision past three significant

@@ -43,6 +43,12 @@ pub fn companion_dir() -> Option<PathBuf> {
     home().map(|h| h.join(".claude").join("companion"))
 }
 
+/// `~/.claude/.credentials.json` — Claude Code's OAuth credentials file, where a
+/// login lands on platforms without a Keychain (macOS keeps it in the Keychain).
+pub fn claude_credentials_json() -> Option<PathBuf> {
+    home().map(|h| h.join(".claude").join(".credentials.json"))
+}
+
 /// `~/.claude/projects` — where Claude Code writes session transcripts.
 pub fn projects_dir() -> Option<PathBuf> {
     home().map(|h| h.join(".claude").join("projects"))

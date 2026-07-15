@@ -183,6 +183,17 @@
                 <span id="unit-meter-text" class="meter-text"></span>
                 <button id="unit-compact" class="meter-compact" type="button">Compact</button>
               </div>
+              <!-- Account rate-limit pill: how much of the subscription's rolling
+                   5-hour window is used, from Anthropic's OAuth usage endpoint.
+                   Account-wide (one number for every session), so it sits apart
+                   from the per-session context meter. Hidden until a reading lands. -->
+              <div id="unit-rate" class="unit-rate" hidden>
+                <span class="rate-label">5h</span>
+                <div id="unit-rate-bar" class="meter-bar" role="progressbar" aria-label="5-hour usage window" aria-valuemin="0" aria-valuemax="100">
+                  <span id="unit-rate-fill" class="meter-fill"></span>
+                </div>
+                <span id="unit-rate-text" class="meter-text"></span>
+              </div>
               <!-- Surface controls: resize only (⬒/⊟/⬓). Lives in the toolbar so it
                    never overlaps the artifact/terminal pills below. -->
               <div id="unit-surface-controls" class="surface-controls">

@@ -11,6 +11,7 @@ mod live;
 mod macos_panel;
 mod paths;
 mod pty;
+mod rate_limit;
 mod registry;
 mod sessions;
 mod trace;
@@ -163,6 +164,7 @@ pub fn run() {
             pty::codex_available,
             sessions::list_recent_sessions,
             usage::session_usage,
+            rate_limit::rate_limit_usage,
             hub::read_live_from_hub,
             hub::hub_config_get,
             hub::hub_config_set,

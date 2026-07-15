@@ -480,6 +480,13 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
       String(args.sessionId ?? "")
         ? { contextTokens: 742_000, outputTokens: 96_400, model: "claude-opus-4-8", limit: 1_000_000 }
         : null,
+    // Account rate-limit pill. The real command calls Anthropic's OAuth usage
+    // endpoint; the harness serves a fixed reading in the `warn` band so the
+    // pill's non-ambient treatment is visible on sight.
+    rate_limit_usage: () => ({
+      fiveHour: { utilization: 72.0, resetsAt: new Date(Date.now() + 90 * 60 * 1000).toISOString() },
+      sevenDay: { utilization: 18.0, resetsAt: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString() },
+    }),
     // Agent hub: the connected-agents registry + the reply inbox. Posts are
     // recorded on window.__inboxPosts so scripted verification can assert the
     // remote submit round-trip (and that it never touched a PTY).

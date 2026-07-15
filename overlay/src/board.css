@@ -1267,6 +1267,39 @@
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
+/* Account rate-limit pill. Same tick-bar system as the context meter (the child
+   .meter-bar/.meter-fill rules read the custom props from whichever pill wraps
+   them) — but visibly its own thing: a "5h" label instead of a Compact button,
+   and a shorter bar, because it reports the whole account, not this session.
+   Seven 6px ticks on the 8px pitch: 6×8+6 = 54px. */
+.unit-rate {
+  --meter-w: 54px;
+  --meter-ramp: linear-gradient(
+    90deg,
+    var(--ok) 0%,
+    var(--ok) 42%,
+    var(--busy) 70%,
+    var(--clay) 88%,
+    var(--clay-deep) 100%
+  );
+  --meter-ticks: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 8px);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px 5px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+}
+.unit-rate[hidden] { display: none; }
+.rate-label {
+  color: var(--ink-3);
+  font: 600 10px/1 var(--ui-font);
+  letter-spacing: 0.02em;
+}
+.unit-rate[data-level="warn"] .meter-text { color: var(--ink-2); }
+.unit-rate[data-level="high"] { border-color: color-mix(in oklab, var(--clay) 40%, transparent); }
+.unit-rate[data-level="high"] .meter-text { color: var(--clay-deep); }
+
 /* The one action in this cluster, so it always wears the accent — and it must read
    as a real, raised, pressable chip, not an outline over the paper. A warm clay fill
    that sits proud of the toolbar: light top edge catching the light, a soft contact
