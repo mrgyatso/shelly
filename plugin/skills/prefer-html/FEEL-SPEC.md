@@ -1,10 +1,21 @@
-# Companion artifact FEEL — the gold standard ("Broadsheet")
+# Companion artifact FEEL — the frame, and Broadsheet as its default look
 
 The design point-of-view every Companion artifact follows. Since 0.4.5 there is **one authoring
 path**: the working agent writes the HTML inline, in full context (no background observer, no
 deterministic renderer). This spec is the **floor** that keeps every artifact reading as one
-product — it is *not* a template the agent fills in. Established in the 2026-06-29/30 feel session
-(3 directions explored and rendered; the user picked Broadsheet).
+product — it is *not* a template the agent fills in. Broadsheet, established in the 2026-06-29/30
+feel session (3 directions explored and rendered; the user picked it), is now the **default
+look** — one pattern's worth of taste — not the only law. `SKILL.md` carries the full pattern
+menu (pill, blob canvas, paginated wizard, sidebar multi-page, two-zone, dashboard); this file
+carries the invariants that hold across all of them.
+
+> **Lock the frame, free the interior (2026-07-15).** The owner chose to demote Broadsheet from
+> law to *default look* and introduce a **pattern menu**: a short absolute set of invariants
+> (below), then a menu of blessed named shapes each with a copy-paste template, then open
+> composition inside whichever shape fits. The trigger: a bespoke, characterful artifact was
+> destroyed when a reactive skill-load forced a full restyle onto its hard aesthetic mandates.
+> The verdict — **lock the frame, free the interior**: the invariants are guardrails, not a
+> costume. See `SKILL.md` §1 (the invariants) and §2–3 (the pattern menu).
 
 ## The one rule
 
@@ -28,12 +39,21 @@ held by a **small set of invariants**, not by a mold. Hold these; invent everyth
 
 **The invariants — what makes a bespoke page still read as *Companion*:**
 
-1. **Dissolve into the board** — `html`/`body` background = the exact board shade `oklch(0.945 0.014 60)`
-   (the opaque-origin iframe can't read parent vars — hardcode it). No outer border/shadow; the
-   board resizes its window to the artifact's reported size, so the artifact *is* the surface.
-2. **One palette, one semantic accent** — board `oklch(0.945 0.014 60)`, paper `#FBFAF6`, ink
-   `#171A1F`, soft `#39404A`, muted `#646C76`, hairline `#CDC8BC`; accent ∈ blue `#3D7EFF`, amber
-   `#F2B84B`, clay `#D98158`, mint `#4DAA7D` (each with a darker ink variant for text).
+1. **Dissolve into the board — one color at a time across the whole surface.** Default:
+   `html`/`body` background = the exact board shade `oklch(0.945 0.014 60)`, ink `#171A1F` (the
+   opaque-origin iframe can't read parent vars — hardcode it). No outer border/shadow; the board
+   resizes its window to the artifact's reported size, so the artifact *is* the surface.
+   **Amended (2026-07-15):** the surface is one color at a time; the app-shade is the default and
+   home; an artifact *may* repaint the **whole** surface to a **curated** color, animated by the
+   Board. The seam was always the real enemy, not color — so a **partial** repaint (dark card on
+   light board) or an **off-palette** page background is still forbidden. Curated shell set
+   (bg / ink): paper `#FBFAF6`/`#171A1F`, slate `#E7ECF1`/`#1B2530`, mint `#E6F1EA`/`#16281F`,
+   clay `#F3E7DF`/`#2A1C14`, ink `#14181D`/`#E8EDF3`. Full repaint contract: `SKILL.md` §5.
+2. **One palette, one semantic accent per page** — board `oklch(0.945 0.014 60)`, paper `#FBFAF6`,
+   ink `#171A1F`, soft `#39404A`, muted `#646C76`, hairline `#CDC8BC`; accent ∈ blue `#3D7EFF`,
+   amber `#F2B84B`, clay `#D98158`, mint `#4DAA7D` (each with a darker ink variant for text). One
+   accent per page is the default discipline; **the blob canvas is the sanctioned multi-color
+   pattern** — each blob takes its own palette color used semantically (`SKILL.md` §3.2).
 3. **The type pairing** — Newsreader = display/headlines; Inter = reading; JetBrains Mono = kickers,
    labels, edition lines, file chips.
 4. **Decision-loudest hierarchy** — the next move is the most-designed thing on the page; everything
@@ -70,11 +90,17 @@ which posts `{source:'companion-artifact',kind:'submit',text}` with clear `✓ D
 - **Canvas** (always-on): a persistent steer rail keeps the moves in reach while the user reads —
   the wheel never leaves the screen. For when the user truly lives in the board.
 
-## Declined for now — the block kit
+## The block kit (declined) vs. the pattern menu (adopted)
 
 A prior direction floated turning Broadsheet into *one configuration of a block library* the model
-composes from. **Declined (2026-07-08):** now that every artifact is authored inline, the agent
-already composes freeform — a formal block kit would add scaffolding that narrows the range and
-risks the "wow" of an agent inventing the right presentation for the moment. The invariants above
-are the guardrail; the ceiling stays open. Revisit only if inline output proves *too* inconsistent
-to read as one product — which the invariants exist to prevent.
+composes from. **Declined (2026-07-08):** a formal block kit would add scaffolding that narrows the
+range and risks the "wow" of an agent inventing the right presentation for the moment.
+
+**The pattern menu (2026-07-15) is not that block kit — and the distinction matters.** The block
+kit was a library of *composable blocks* the model assembles a layout from; it narrows by making
+you build from parts. The pattern menu is a set of a few blessed **whole shapes** (pill, blob
+canvas, paginated wizard, sidebar multi-page, two-zone, dashboard) each with an **open interior** —
+you pick the shape that fits the content, then compose freely inside it. It exists to **harness the
+range, not narrow it**: the agent gets a known-good frame instead of inventing from zero (which
+drifts) *or* filling one mold (which flattens). The invariants above stay the guardrail; the
+ceiling inside each pattern is genuinely open.

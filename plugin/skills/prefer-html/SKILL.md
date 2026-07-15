@@ -1,6 +1,6 @@
 ---
 name: prefer-html
-description: MANDATORY before writing any `.html` artifact into the Companion artifacts dir (`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}` — confirm the live path with `companion doctor`). Every Companion artifact is authored inline by the working agent — this skill is the single source for *how*: the editorial judgment (what to show, what to cut), the unified interaction helper, required DOM markers, size reporter, the Broadsheet house style, and document templates.
+description: The Companion artifact pattern library — invariants + copy-paste templates (pill, blob canvas, paginated wizard, sidebar multi-page, two-zone, dashboard) + the interaction helpers (Decide ballot, ambient comments, copy blocks). MANDATORY to read before building any non-trivial artifact (anything past a compact pill) — load it proactively the moment you pick a pattern. The floor (charset, size reporter, answerable responder, shell shade) is also enforced by the always-on session context + the Stop-hook gate; this skill is the single source for *how* to make an artifact good.
 ---
 
 # Prefer HTML — render what changed in the Companion overlay
@@ -10,27 +10,88 @@ Companion artifact is authored inline by the working agent** — there is no bac
 and no deterministic renderer (both removed in 0.4.5). You write the file yourself, in full
 context; this skill is the single source for *how* to make it good.
 
-## When to author: ALWAYS
+**How this skill is organized — read the layer you need:**
 
-**Every turn ends with an artifact. There is no exemption.** You are not deciding *whether* —
-only *what shape*. If the user is in the app, they are here for the artifact; the off switch is
-which **terminal** they're in (external terminals are skipped entirely, in the sh wrapper), not
-a judgment you make turn by turn.
+1. **The invariants** — the short, absolute frame. Every artifact obeys these. (Loaded for you
+   in the always-on session context too; the Stop-hook gate enforces the mechanical floor.)
+2. **Pick the pattern** — a content-shape selector. Name the shape before you write.
+3. **The pattern menu** — one blessed, copy-paste template per shape.
+4. **The interaction layer** — the Decide ballot, ambient comments, copy blocks, the unified
+   helper. These compose *into* whichever pattern you picked.
+5. **Shell repaint** — the optional whole-surface color capability.
+6. **House style — Broadsheet** — the default *look*. One pattern's worth of taste, not a law.
+7. **Emit / surface / bundled assets / verify** — the plumbing reference.
 
-- **Size it to the turn.** A decision, plan, review or analysis earns a full document. A quick
-  answer or a lookup earns a **compact card** — small is the *correct finished form* for a light
-  turn, not a degraded one. Never pad a thin turn to fill a page.
+**Lock the frame, free the interior.** The invariants in §1 are absolute — they are what keep
+every artifact reading as one product. Everything else — which pattern, how you compose inside
+it, how *this* data wants to look — is yours to invent. The pattern menu is a set of blessed
+*shapes* with open interiors; it exists to harness your range, not narrow it.
+
+---
+
+# 1 · The invariants (the frame — short and absolute)
+
+These hold on every artifact, no exceptions. They are the whole reason a bespoke page still
+reads as *Companion*. If a template below ever seems to conflict with one of these, the
+invariant wins.
+
+### 1.1 Every turn ends with an artifact
+
+**There is no exemption** — you are never deciding *whether*, only *what shape*. If the user is
+in the app, they are here for the artifact; the off switch is which **terminal** they're in
+(external terminals are skipped entirely, in the sh wrapper), not a judgment you make turn by
+turn. A Stop-hook backstop (`companion-artifact-gate`) hands the turn back once if it ends with
+nothing written — but author it inline rather than lean on the reminder.
+
 - **Update** the current artifact (reuse its slug) when the same subject advances; write a
   **fresh slug** when the subject changes.
 - **Even "we're done" is an artifact.** Say the work is finished, then hand over the next move —
-  *"nothing left here; here's what I'd pick up next, or tell me where to go."* Wire it as
-  something they can answer in place. "Nothing to decide" is never true: choosing the next piece
-  of work IS the decision.
+  *"nothing left here; here's what I'd pick up next, or tell me where to go."* "Nothing to
+  decide" is never true: choosing the next piece of work IS the decision.
 
-A Stop-hook backstop (`companion-artifact-gate`) hands the turn back once if it ends with
-nothing written — but author it inline rather than lean on the reminder.
+### 1.2 Size it to the turn
 
-## What to show — and what to cut
+A decision, plan, review or analysis earns a full document. A quick answer or a lookup earns a
+**compact pill** — small is the *correct finished form* for a light turn, not a degraded one.
+Never pad a thin turn to fill a page; never shrink a substantive one to save space. Density
+decides the shape (see §2).
+
+### 1.3 An answerable surface, always
+
+Every artifact — bespoke ones included — ends with a way for the user to respond **in place**,
+so they steer without opening the terminal. At minimum a clickable "what's next →"; usually a
+short Decide ballot of ✓/✎/✗ moves; on an informational page, the ambient 💬. **A question posed
+only as prose is a bug** — wire every question the artifact raises as its own
+`data-companion-item` or an ambient 💬 target, so one click answers it. The lone "Message the
+terminal" chat bar is a freeform fallback, never the way to answer a question the artifact
+itself raised. All responders post the same message to the parent:
+
+```js
+parent.postMessage({ source: "companion-artifact", kind: "submit", text: "…" }, "*");
+```
+
+**Inform AND propel.** The Companion's job is to move the project toward shipping, not to
+recap. So a substantive artifact does two jobs: it informs (findings, status, explanation),
+then it **propels** — it ends by proposing the next move with a recommendation and a reason,
+asks the sharp questions, and never waits for the user to say what's next. If the goal /
+north-star is unclear, **ask for it inside the artifact.** A closing paragraph of prose that
+just stops is the failure this exists to prevent.
+
+### 1.4 The plumbing (mechanical floor — the gate checks these)
+
+Four mechanical things every artifact must carry. They are shape-agnostic and appear in every
+template below:
+
+- **`<meta charset="utf-8">`** in a real `<head>` — not optional (see §7.2 for why: mojibake).
+- **`data-fit-root`** on the main wrapper (definite width, height flows) **+ the size-reporter
+  snippet** at the end of `<body>` — the sandboxed opaque-origin iframe can't be measured from
+  outside, so the artifact self-reports its size (see §7.3).
+- **The `companion-meta` block** in `<head>` — so feedback is self-identifying, even to a later
+  session reopening it (see §7.4).
+- **Write it with the `Write` tool, not `Bash`** — a `PostToolUse(Write|Edit)` hook indexes the
+  artifact to your session; a `Bash`-written file lands unsourced (see §7.1).
+
+### 1.5 Decision-loudest editorial (what to show — and what to cut)
 
 An artifact floats over a live agent so the user can **steer without reading the terminal**.
 That one job decides everything on the page:
@@ -43,315 +104,89 @@ That one job decides everything on the page:
   never front-and-center.
 - **Cut the transcript.** If a block only narrates what already happened and asks nothing of
   the user, it does not belong. An artifact is triage, not a log.
-- **End by proposing the next move** — with a recommendation and a reason, never a closing
-  paragraph that just stops.
 
 If you cannot name what the user *learns* from a block or *does* with it, delete the block.
-This is the editorial floor; the Broadsheet house style below is how it looks.
 
-## The default shape: DRIVE THE WORK FORWARD — inform + propel, every substantive artifact
+### 1.6 The shell shade (amended: whole surface, one color at a time)
 
-**The Companion's job is to move the project toward shipping — solve the problem, build the
-feature, ship the product — not to recap.** On any substantive turn (real work OR real
-discussion) the default artifact does two jobs at once and **always ends by pushing the next
-step**, as a single multi-page document:
+**Default:** set `html, body` background to the exact board shade `oklch(0.945 0.014 60)` and
+ink to `#171A1F`. The opaque-origin iframe can't read the parent's vars, so **hardcode the
+literal.** No outer card border or page-wide drop shadow; the artifact fills the window edge to
+edge — it *is* the surface, with no seam against the board.
 
-1. **Inform.** One or more content pages (findings, status, explanation, comparison),
-   each wrapped in `data-companion-commentable` so the user can hover any block and
-   click 💬 to question *that specific line* without retyping it.
-2. **Propel.** A final **"Next steps" page** — a review form (✓ do it / ✎ note / ✗ skip
-   per item, plus a **Do all** button) that converts the brief into decisions and pushes
-   the work forward. **Every substantive artifact MUST end with one of these — a decision
-   surface, never a closing paragraph of prose.** Propose concrete next moves, recommend the
-   strongest option and *why*, and ask the sharp questions that advance the work. **Never
-   wait for the user to say what is next — propose it, offer ideas.** And **if the goal /
-   north-star is unclear, ASK for it inside the artifact** (a question surface) so the target
-   gets locked and the work keeps moving.
+**Amended (2026-07-15):** the surface is **one color at a time across the whole thing.** The
+app-shade is home and the default. An artifact **may repaint the entire surface** — shell chrome
+and iframe together — to a **curated** color, animated by the Board (see §5 for the contract).
 
-This is the standing format for *steering* artifacts: **informative AND goal-oriented**,
-always handing the user a clear next thing to act on. It governs **shape, not frequency** —
-**When to author** (above) decides whether an artifact is warranted — but once it is, substantive
-work earns this forward-driving surface, **not a thin info block**.
+**The seam is the enemy, not color.** What is *never* allowed: a **partial** repaint (a
+dark card on the light board), or an **off-palette** page background that isn't one of the
+curated shell colors. Either creates the seam this rule exists to kill. If you're not using the
+§5 repaint contract, stay on the app shade. Full stop.
 
-**The combined shape is a DEFAULT, not a cage — but the exception is about VISUAL DESIGN,
-NOT about whether the user can respond.** Reach for the standard combined layout when the user
-needs to **react / decide / steer**: status, plans, reviews, comparisons, options, strategy,
-multi-agent steering. When the content is **presentation-first** — a morning debrief, a
-dashboard, a data visualization, a recap or explainer the user wants to *see beautifully*, a
-celebration, a one-off custom interface — **design a fully bespoke UI**: the layout, structure,
-and feel are yours to craft, and a rigid template on a debrief is worse than a custom one.
-**What "bespoke" does NOT license is shipping an artifact with no way to respond.** **Every**
-artifact — bespoke ones included — ends with an **answerable surface**: at minimum a "what's
-next →" the user can click, and usually a short Next-steps ballot of ✓/✎/✗ moves. The design is
-yours; the responder never disappears. **Ask: does the user need to *act on* this, or *look at*
-it?** Act on → the full combined shape. Look at → bespoke design, but STILL carry a
-forward-driving responder where the next moves live. There is no artifact that legitimately
-carries none: if you think there's nothing to decide, the next step is choosing the next piece
-of work, and that is a decision — put it on the page. (Always keep the required `data-fit-root`
-+ size-reporter snippet and the `companion-meta` block; those are plumbing, not shape.)
+### 1.7 Type pairing (the house default)
 
-**A question posed only as prose is a bug.** If the artifact raises a question — "should we
-X?", "which of A or B?", "is Y actually the goal?" — wire it as its **own** `data-companion-item`
-(✓/✎/✗) or an ambient 💬 target, so the user answers it *in place* with one click. Never leave
-questions as a bulleted list the user can only act on by opening the terminal and retyping. The
-lone "Message the terminal" chat bar is a freeform fallback — never the way to answer a question
-the artifact itself raised.
+The bundled pairing is the default and carries the identity: **Newsreader** = display/headlines,
+**Inter** = reading/body, **JetBrains Mono** = kickers, labels, edition lines, file chips. Load
+the faces via the bundled `fonts.css` (see §7.7) with system fallbacks. A pattern may theme
+*within* this — but reach past the pairing only for a real reason, not a reflex.
 
-> **Heads-up for agents pushing to the hub (e.g. a morning-briefing cron):** the always-on
-> **live pane** is a *fixed* glanceable format (`working` / `where` / `next`) rendered from
-> the `live/*.json` you write — it is NOT a place for a bespoke UI. For a beautiful debrief,
-> write an **artifact** (`artifacts/<slug>.html`, any design you like) — that's the rich
-> surface; the live JSON is just the status strip.
+### 1.8 One semantic accent per page (blob canvas exempted)
 
-**One unified Submit collects both.** The ambient-comments helper and the review-form
-helper would otherwise fight over `data-companion-submit`. Use the **combined helper**
-instead: it gathers block-comments *and* item-decisions into one pasteable payload,
-sectioned as `— Questions / comments —` then `— Decisions —`. Critical wiring rule: put
-`data-companion-commentable` only on the **content** pages, never on the Next-steps page,
-so the two helpers don't double up on the same blocks.
+One artifact, one accent, used with meaning (status/type) — not decoration. Accent ∈ blue
+`#3D7EFF`, amber `#F2B84B`, clay `#D98158`, mint `#4DAA7D` (each with a darker ink variant for
+text). **The one sanctioned exception is the blob canvas** (§3.2), where each blob takes its own
+palette color used semantically — lively, never a clown suite.
 
-The **unified helper lives in `references/interaction-helper.md`** — read that file and copy
-the `<script>` verbatim. It is self-contained (no external files, no machine-specific paths);
-use the ambient-comments CSS and the review-form CSS documented later in this file for styling.
+---
 
-### Buttons must NEVER be dead (non-negotiable)
+# 2 · Pick the pattern (the content-shape selector)
 
-A review surface whose ✓/✎/✗ buttons don't respond is a broken artifact — it strands the
-user with a decision form they can't use. This must never ship. Two hard rules:
+**Pattern choice is deliberate. Name the shape to yourself before you write a line.** Match the
+turn's *content shape* to a blessed pattern, then compose freely inside it (§3), and layer the
+interaction helpers you need (§4) on top.
 
-1. **Always include the unified helper script verbatim** (from `references/interaction-helper.md`)
-   in any artifact that has `[data-action]` buttons. The buttons are inert markup on their own —
-   *the helper is what makes them click*. Don't hand-roll a partial handler; don't drop the helper to
-   "save space"; don't use the ambient-comments-only helper (it has no `[data-action]`
-   handling) on a page that has review buttons.
-2. **Keep every review item reachable.** In a multi-page document, buttons on a
-   `display:none` page can't be clicked until that page is shown — fine, but never leave a
-   Next-steps form on a page with no nav link to it. When in doubt, **put the decision
-   surface on a single, always-visible page** (the safest shape, and what to default to).
+| The turn is… | Pattern | § |
+|---|---|---|
+| a quick answer, a status flip, a small fix | **Compact pill** | 3.1 |
+| **N independent points / findings** (no single thread) | **Blob canvas** ← *default for this* | 3.2 |
+| **one deep sequence** the reader should walk in order | **Paginated wizard** | 3.3 |
+| **3+ peer subjects** the reader will jump between | **Sidebar multi-page** | 3.4 |
+| prose that needs **one explanatory visual** | **Two-zone** | 3.5 |
+| **one narrative argument**, top to bottom | Single scroll (a plain full document) | 3.5 note |
+| **presentation-first** — a debrief, a dashboard, a data viz to *look at* | **Bespoke / dashboard** | 3.6 |
 
-**Pre-ship self-check (run this before writing the file).** Confirm all four, every time:
+**Blob canvas vs. paginated wizard vs. sidebar multi-page** — the three multi-thing shapes, kept
+distinct on purpose:
 
-- [ ] The unified helper `<script>` is present and **unedited** (copy-paste, don't retype).
-- [ ] Every `[data-action]` button sits inside a `[data-companion-item]` ancestor.
-- [ ] Exactly one `[data-companion-submit]` button exists.
-- [ ] No element with `position:fixed`/absolute overlaps the buttons at load (the
-      `.cmp-submitted` overlay is fine — it only appears *after* submit).
+- **Blob canvas** — N *peer points* on one canvas, each a collapsed card you open or skip. Glance
+  order is the reader's; triage motion ("this one doesn't need a long look → next").
+- **Paginated wizard** — one *guided sequence*; page 1→N with Next/Back, ending on the ballot.
+  Use when order matters and you want them to walk it.
+- **Sidebar multi-page** — 3+ *substantial peer subjects* (per-project, per-incident) the reader
+  jumps between from a sidebar. Use when each subject is a page's worth and there's no through-line.
 
-If you can't tick all four, the artifact isn't ready. A dead-button form is worse than no
-artifact at all.
+**Ask two questions:** (1) *How many things?* one → pill/two-zone/scroll; a few peer points →
+blob canvas; a guided sequence → wizard; several deep subjects → sidebar. (2) *Act on it, or look
+at it?* Act → the pattern carries a Decide ballot. Look → bespoke design, but it **still** carries
+a forward-driving responder. The design is yours; the responder never disappears.
 
-### HTML wiring
+---
 
-```html
-<!-- content page(s): commentable -->
-<section data-companion-commentable> … prose, lists, headings … </section>
-<!-- the Next-steps page: review items, NOT commentable -->
-<section>
-  <div class="item" data-companion-item data-item-label="Short label that reads well in the submit message">
-    <div class="item-row">
-      <div class="item-main"><div class="item-title">…</div><div class="item-sub">…</div></div>
-      <div class="item-actions">
-        <button class="act do"   data-action="approve" title="Do it">✓</button>
-        <button class="act info" data-action="comment" title="More info / note">✎</button>
-        <button class="act skip" data-action="reject"  title="Skip">✗</button>
-      </div>
-    </div>
-    <textarea data-comment hidden placeholder="What to clarify, or a note…"></textarea>
-  </div>
-  <!-- submit bar -->
-  <div class="bar">
-    <span class="count" data-count>nothing marked yet</span>
-    <button class="doall" data-doall>✓ Do all</button>
-    <button class="submit" data-companion-submit="Title that prefixes the compiled message">Submit → ⌘V</button>
-  </div>
-</section>
-```
+# 3 · The pattern menu
 
-The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) inside a
-`data-companion-commentable` region. **Content placed in styled `<div>`s — cards, callouts,
-custom rows — is invisible to that tag list and will get no 💬.** Add `data-companion-block`
-to any such container to make it commentable (the helper de-dupes nested matches, so marking
-an outer card won't double-icon its inner text).
+Each pattern below is a self-contained, copy-paste template that already carries the §1.4
+plumbing. Fill it, wire in the §4 helper you need, write it.
 
-### Unified interaction helper → `references/interaction-helper.md`
+## 3.1 · Compact pill
 
-The unified helper (ambient comments + review items → one submit) is a ~540-line self-contained
-`<script>`. It lives in **`references/interaction-helper.md`** alongside this skill, with the HTML
-wiring shape and a pre-ship self-check. **When building any artifact with commentable blocks or a
-Decide ballot, read that file and copy the `<script>` verbatim** — do not retype or trim it. On its
-own the markup is inert; the helper is what makes the buttons click and the 💬 icons appear.
+**When:** a light turn — a bug fix, a small edit, a quick lookup, a status flip. This is the
+*finished* form for a light change, not a degraded document — don't pad it into a page. But it is
+never an inert dead-end: it still names the next move (a recommended action, a one-tap decision,
+or the question that unblocks progress). If you can't find a next move, the next move is "what
+should I pick up?" — ask it, answerably.
 
-The single-purpose ambient-comments and review-form snippets documented later in this file remain
-valid for a pure recap or a pure decision list; the unified helper supersedes them whenever one
-artifact carries both.
-
-The ambient-comments and review-form snippets documented later in this file remain valid
-for **single-purpose** artifacts (a pure recap, or a pure decision list). The unified helper
-above supersedes them whenever a single artifact carries both.
-
-A light turn drops the *dual* shape for a compact card — but the card still carries a next step.
-Nothing ships without a responder.
-
-## The pull verb
-
-The user can run `/companion:html` at any time to ask for an artifact about the current turn.
-`/companion:render` is the deprecated alias and still works for one release. (You never have to
-decide *whether* to author — see **When to author: ALWAYS** above. This verb just lets the user
-ask for a fresh one mid-turn.)
-
-## The form factor: size by density — but ALWAYS drive forward
-
-Pick the artifact's **visual weight** from the content's density — but never let "small"
-become "passive." Every artifact, down to the lightest, carries a next step.
-
-- **Compact card — a light turn, but still propelling.** A glanceable "this is what
-  changed" (title + 1–5 lines) that **still names the next move** — a recommended action, a
-  one-tap decision, or the question that unblocks progress. Right for bug fixes, small edits,
-  a quick lookup, a status flip. This is the *finished* form for a light turn, not a degraded
-  one — so don't pad it into a document. But it is never an inert dead-end: if you can't find
-  a next move, the next move is "what should I pick up?" — ask it, answerably.
-- **Full document — when the content earns it.** Use the room for diagrams, graphs, tables,
-  multi-section plans, code reviews, comparisons, post-mortems — and end it in a decision /
-  Next-steps surface that pushes the work forward.
-- **Multi-page document — when the work splits into several independent subjects.**
-  One self-contained file with a sidebar that navigates between pages: an overview plus
-  one page per subject (per project, per incident, per area). Right when a single scroll
-  would bury distinct topics that each deserve their own space — *"audit my whole wiki
-  for loose ends"*, *"review these five incidents"*. See **Multi-page documents** below
-  for the guardrails and template.
-
-**Principle: don't shrink for shrinking's sake, and don't pad to fill space.** A small
-pill is the *correct, finished* form for a light change — not a degraded document.
-A full document is correct when there's real substance. Density decides — and when the
-substance is several *independent* things, the right shape is multi-page, not a longer
-scroll.
-
-## House style — "Broadsheet"
-
-Companion artifacts are authored inline by the working agent, and every one must feel like **one
-product**. The house style is **Broadsheet**: an editorial page, not a floating UI card. The one
-rule: **make the decision the loudest thing on the page.** (Full spec: `FEEL-SPEC.md`, alongside
-this skill.)
-
-**Strong floor, open ceiling.** There is no template engine — you compose freeform HTML, so the
-feel is held by a few **invariants**, not a mold: dissolve into the board, one palette + one accent,
-the type pairing, decision-loudest hierarchy, and the interaction plumbing (full list in
-`FEEL-SPEC.md`). Hold those; **everything else — layout, composition, how to show *this* data — is
-yours to invent.** When the content invites a better form, break format: a bespoke page that earns
-its shape beats one that just fills the skeleton. That range is the point of authoring inline — the
-invariants are what keep it still reading as Companion.
-
-- **Dissolve into the board.** Set `html, body` background to the exact board shade
-  `oklch(0.945 0.014 60)` (the opaque-origin iframe can't read the parent's vars — hardcode it).
-  No outer card border or page-wide drop shadow; the artifact fills the window edge to edge.
-- **Hierarchy through scale.** One dominant **Newsreader** headline earns its size
-  (clamp ~34–60px, letter-spacing ~-.03em); everything else steps down hard.
-- **Palette** (one semantic accent per artifact): board `oklch(0.945 0.014 60)`, paper `#FBFAF6`,
-  ink `#171A1F`, soft `#39404A`, muted `#646C76`, hairline `#CDC8BC`; accent ∈ blue `#3D7EFF`,
-  amber `#F2B84B`, clay `#D98158`, mint `#4DAA7D`.
-- **Type:** Newsreader = display, Inter = reading, JetBrains Mono = kickers/labels/file chips.
-  Load the bundled faces via `asset://localhost$HOME/.claude/companion/vendor/fonts.css` with
-  system fallbacks. Small-caps mono kickers + hairline rules carry the texture.
-- **The Decide ballot is load-bearing.** When the artifact carries next moves, end on an
-  **elevated** decision panel (accent top-rule, a real "Decide" header, ~42px ✓/✎/✗ targets, a
-  Do-all and a primary dark Commit) — never a footer of tiny buttons. This is where you spend
-  boldness; keep the rest disciplined. The unified helper (`references/interaction-helper.md`) wires it.
-- **Modes:** decision-dominant turn → make the recommendation the headline ("Steer"); a surface
-  the user lives in → keep a persistent steer rail in reach ("Canvas").
-
-## How to emit
-
-Write one **self-contained** `.html` file (inline all CSS/JS, no build step, no external
-deps) into the artifacts dir:
-
-```
-${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/<kebab-slug>.html
-```
-
-Use a descriptive slug (e.g. `auth-fix-heads-up.html`, `migration-plan.html`). Writing the
-file is what pops the overlay — no other action needed.
-
-> **Write it with the `Write` tool — not `Bash` (`cat >`, `cp`, a node/python script).**
-> A `PostToolUse(Write|Edit)` hook auto-stamps `artifact-index.json` so the Board maps the
-> artifact to *this* session's unit. That hook only fires for the `Write`/`Edit` tools — an
-> artifact created via `Bash` is never indexed, so it lands in the Board's UNSOURCED bucket
-> instead of your session (it may still flash up transiently via the live poll, then vanish
-> from the unit's history). If you must template/substitute, build the final HTML string,
-> then emit it through the `Write` tool.
-
-### Required: a full-document head with `<meta charset>`
-
-Every artifact is a **complete HTML document** — open it with a real head, not straight into
-`<div>` or `<script>`:
-
-```html
-<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8" /><title>…</title></head>
-<body>
-  … artifact …
-</body>
-</html>
-```
-
-`<meta charset="utf-8">` is **not optional**. Tiles load over the `asset://` protocol, whose
-response carries no `charset`, so with no meta the WebView falls back to Windows-1252 and every
-`—`, `'`, `"` renders as mojibake (`â€"`, `â€™`). The pill / two-zone templates below already
-open with it — if you hand-assemble an artifact, don't drop it.
-
-### Required in every artifact (so the overlay sizes it)
-
-The overlay loads artifacts in a sandboxed, opaque-origin iframe and **cannot measure
-them** — each artifact must self-report its size. Mark the main wrapper with
-`data-fit-root` (definite width, height flows), give `html, body` a background, hide the
-root scrollbar, and include this snippet at the end of `<body>`:
-
-```html
-<style>
-  html { scrollbar-width: none; }
-  html::-webkit-scrollbar { width: 0; height: 0; display: none; }
-</style>
-<script>
-  (function () {
-    var el = document.querySelector("[data-fit-root]") || document.body;
-    var post = function () {
-      parent.postMessage({ source: "companion-artifact", kind: "size",
-        w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
-    };
-    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
-    addEventListener("load", post); post();
-  })();
-</script>
-```
-
-### Metadata block (so feedback on this artifact is self-identifying)
-
-Add a `companion-meta` block in `<head>`. When the user submits feedback, the helper
-prepends these fields to the pasted message, so the agent — **even in a different,
-later session re-opening this artifact from the history HUD (⌘8)** — knows which
-artifact it is, what it was about, and which files it concerns. The history HUD also
-shows `summary` as the card subtitle. Skip it only for throwaway pills.
-
-```html
-<script type="application/json" id="companion-meta">
-{
-  "subject": "<short subject line>",
-  "summary": "<1–2 sentence plain-English description of what this artifact is about>",
-  "files": ["<repo-relative paths the artifact concerns>"],
-  "project": "<cwd or repo, e.g. ~/claude-code-companion>",
-  "branch": "<git branch>",
-  "created": "<YYYY-MM-DD>"
-}
-</script>
-```
-
-All fields are optional; fill what you know at authoring time. Keep `summary` to one or
-two sentences — it is the highest-leverage field for a cold agent picking up context.
-
-## Pill template (the default — copy, fill, write)
-
-A ~360px self-sizing "what changed" card. Swap the accent color by intent
-(green = done/fixed, amber = heads-up/partial, red = broke/blocked):
+A ~360px self-sizing "what changed" card. Swap the accent color by intent (green = done/fixed,
+amber = heads-up/partial, red = broke/blocked):
 
 ```html
 <!doctype html>
@@ -398,107 +233,563 @@ A ~360px self-sizing "what changed" card. Swap the accent color by intent
 </html>
 ```
 
-For the **full-document** case, build a normal self-contained page (your own layout,
-sections, SVG/diagrams as needed) — just keep `data-fit-root` on the main wrapper with a
-definite width (e.g. 720–960px) and include the size-report snippet above.
+The pill is the one pattern where a `companion-meta` block and a full Decide ballot are optional
+— a one-tap "what's next →" can be a single item. Everything heavier needs both.
 
-## Two-zone layout: use the open right side (don't ship a thin column)
+## 3.2 · Blob canvas — the default for N independent points
 
-The most common waste in a full-document artifact is a single narrow column of prose
-running top-to-bottom while the **entire right half of the Board sits empty**. Don't. When
-a turn has real substance to explain, default to a **two-zone layout**: prose on the left,
-a **genuinely useful visual on the right** — a diagram, chart, figure, or annotated image
-that helps the user *understand the topic and make the decision*.
+**When:** the turn is **N independent points, findings, or answers** with no single narrative
+thread — a multi-point response, a set of review notes, several answers to several questions.
+This is the **default** shape for that content, and it's the one the owner explicitly likes the
+look of. Floating colored cards sit on the shell canvas; each is collapsed to a kicker + title +
+one-line teaser; the reader **clicks to expand** the ones worth a look and glides past the rest.
 
-**The visual must earn its place.** It illustrates what the prose is arguing — a flow
-diagram of the bug, a before/after, a tree of options, a data chart. **Never decorative
-filler** (no stock gradients, abstract blobs, or a logo to "balance" the layout). If you
-can't name what a reader learns from the visual, leave the column out and go single-column.
-
-**Pick the visual medium by what it is:**
-- **Diagrams / flows / relationships / before-after** → hand-author an inline **SVG** (no
-  dependency, crisp, themeable). This covers most cases.
-- **Quantitative data** → **D3** (bundled — see Bundled assets) for charts/graphs.
-- **Rich illustrative figures** a diagram can't capture (a scene, a textured concept image,
-  a realistic mock) → generate one with **gpt image-2**, save it into the artifacts dir
-  (e.g. `~/.claude/companion/artifacts/img/<slug>-<n>.png`), and reference it via the
-  `asset:` protocol (external URLs are blocked in the sandbox):
-  ```html
-  <img src="asset://localhost/Users/gyatso/.claude/companion/artifacts/img/<slug>-1.png"
-       width="360" alt="<what it shows>" />
-  ```
-  Always set an explicit `width`/`height` and a real `alt`. Generate sparingly — one
-  purposeful figure beats three pretty ones.
-
-### Two-zone template (copy, fill, write)
-
-`data-fit-root` stays a block wrapper; the two-zone grid is its own element so the unified
-helper's auto-injected `.cmp-chat` bar (which targets `data-fit-root`) lands full-width
-below. The right column is `position:sticky` so it stays beside the prose as the left
-scrolls. The left column carries `data-companion-commentable`; the visual does not.
+**How it works.** A grid of `.blob` cards on the shell background. Each blob carries an accent
+via the `--a` custom property (from the palette, used **semantically** — by point type or
+status; this is §1.8's sanctioned multi-color exception). Collapsed state = a colored dot, a mono
+**kicker**, a serif **title**, and a one-line **teaser**, with a `+` chevron. Click the head to
+toggle `.open`: the accent top-rule appears, the chevron rotates to `×`, and the detail body
+fades in. A `.wide` blob spans the full row for a headline point. The **Decide ballot** (§4.1)
+sits below the canvas — read the blobs, then mark the moves.
 
 ```html
-<main data-fit-root> <!-- width ~860–900px to actually use the space -->
-  <header>…kicker + h1 + sub…</header>
-  <div class="zone">
-    <div class="col-main" data-companion-commentable>
-      <h2>…</h2><p>…prose that the visual illustrates…</p>
-    </div>
-    <aside class="visual"><!-- sticky card -->
-      <svg viewBox="0 0 320 240" width="100%"> … </svg>
-      <div class="cap">One line on what the figure shows.</div>
-    </aside>
-  </div>
-  <!-- Next-steps decision section spans full width below the zone -->
-</main>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>blob canvas</title>
+<link rel="stylesheet" href="asset://localhost/Users/gyatso/.claude/companion/vendor/fonts.css" />
+<script type="application/json" id="companion-meta">
+{ "subject": "<short subject>", "summary": "<1–2 sentence description>",
+  "files": [], "project": "~/claude-code-companion", "branch": "<branch>", "created": "<YYYY-MM-DD>" }
+</script>
 <style>
-  .zone { display:grid; grid-template-columns:1fr 360px; gap:26px; align-items:start; }
-  .visual { position:sticky; top:16px; }
-  @media (max-width:720px){ .zone{ grid-template-columns:1fr; } } /* graceful narrow fallback */
+  :root{
+    --board:oklch(0.945 0.014 60); --paper:#FBFAF6; --ink:#171A1F; --soft:#39404A;
+    --muted:#646C76; --hair:#CDC8BC;
+    --blue:#3D7EFF; --clay:#D98158; --mint:#4DAA7D; --indigo:#6D5AE6; --amber:#E0A53A;
+    --good:#4DAA7D; --bad:#C0503A;
+    --serif:'Newsreader',ui-serif,Georgia,serif;
+    --sans:'Inter',ui-sans-serif,system-ui,-apple-system,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scrollbar-width:none} html::-webkit-scrollbar{width:0;height:0;display:none}
+  html,body{margin:0;background:var(--board);color:var(--ink);
+    font-family:var(--sans);-webkit-font-smoothing:antialiased;font-size:15px;line-height:1.6}
+  [data-fit-root]{width:900px;max-width:100%;margin:0 auto;padding:34px 40px 46px}
+
+  .masthead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+    border-bottom:2px solid var(--ink);padding-bottom:10px}
+  .brand{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:700}
+  .edition{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--muted)}
+  .kick{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--indigo);font-weight:700;margin:26px 0 0}
+  h1{font-family:var(--serif);font-weight:620;letter-spacing:-.032em;line-height:1.02;
+    font-size:clamp(34px,4.6vw,54px);margin:10px 0 0}
+  h1 em{font-style:italic}
+  .dek{font-size:17px;line-height:1.55;color:var(--soft);margin:16px 0 0;max-width:66ch}
+  .dek b{color:var(--ink);font-weight:640}
+  .hint{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.04em;margin:28px 0 12px;
+    display:flex;align-items:center;gap:8px}
+  .hint::before{content:"▸";color:var(--indigo)}
+
+  /* THE BLOB CANVAS — floating colored cards on the shell */
+  .canvas{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+  .blob{--a:var(--muted);background:var(--paper);border:1px solid var(--hair);border-radius:16px;
+    box-shadow:0 14px 34px -26px rgba(23,26,31,.55);overflow:hidden;transition:box-shadow .16s,transform .16s;
+    cursor:pointer}
+  .blob:hover{transform:translateY(-2px);box-shadow:0 20px 42px -26px rgba(23,26,31,.6)}
+  .blob.wide{grid-column:1 / -1}
+  .blob .rule{height:4px;background:var(--a);opacity:0;transition:opacity .18s}
+  .blob.open .rule{opacity:1}
+  .blob-head{padding:16px 18px;display:flex;gap:13px;align-items:flex-start}
+  .dot{flex:0 0 auto;width:12px;height:12px;border-radius:50%;background:var(--a);margin-top:5px;
+    box-shadow:0 0 0 4px color-mix(in srgb, var(--a) 16%, transparent)}
+  .bh-main{flex:1;min-width:0}
+  .bh-kick{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+    font-weight:700;color:var(--a)}
+  .bh-title{font-family:var(--serif);font-size:19px;font-weight:620;letter-spacing:-.015em;color:var(--ink);
+    margin:3px 0 3px;line-height:1.12}
+  .bh-teaser{font-size:12.5px;color:var(--muted);line-height:1.45}
+  .chev{flex:0 0 auto;font-family:var(--mono);color:var(--a);font-size:16px;font-weight:700;margin-top:2px;
+    transition:transform .2s;width:18px;text-align:center}
+  .blob.open .chev{transform:rotate(45deg)}
+  .blob-body{display:none;padding:0 18px 18px 43px}
+  .blob.open .blob-body{display:block;animation:fade .22s ease both}
+  @keyframes fade{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .blob-body p{margin:0 0 10px;font-size:13.5px;line-height:1.6;color:var(--soft)}
+  .blob-body p:last-child{margin-bottom:0}
+  .blob-body strong{color:var(--ink);font-weight:640}
+  .blob-body code{font-family:var(--mono);font-size:12px;background:#EEE9DF;padding:1px 5px;border-radius:4px;color:var(--ink)}
+  .blob-body .rec{font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--a);font-weight:700;
+    margin-top:6px;display:inline-block;border:1px solid var(--a);border-radius:20px;padding:3px 9px}
+  /* per-blob palette color — used semantically, one meaning per color */
+  .b-blue{--a:var(--blue)} .b-clay{--a:var(--clay)} .b-mint{--a:var(--mint)}
+  .b-indigo{--a:var(--indigo)} .b-amber{--a:var(--amber)}
+
+  /* DECIDE ballot — sits below the canvas */
+  .decide{margin-top:38px;background:var(--paper);border:1px solid var(--hair);border-radius:16px;
+    padding:0 24px 22px;box-shadow:0 20px 50px -34px rgba(0,0,0,.6)}
+  .decide .top{height:4px;background:var(--indigo);border-radius:16px 16px 0 0;margin:0 -24px 0}
+  .decide .dh{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--indigo);font-weight:700;margin-top:20px}
+  .decide h2{font-family:var(--serif);margin:4px 0 2px;font-size:28px;letter-spacing:-.02em}
+  .decide .dsub{font-size:14px;color:var(--muted);margin:0 0 6px;max-width:72ch}
+  .item{border-top:1px solid var(--hair);padding:15px 0}
+  .item-row{display:flex;gap:16px;align-items:flex-start;justify-content:space-between}
+  .item-title{font-size:15.5px;font-weight:650;color:var(--ink);letter-spacing:-.01em}
+  .item-sub{font-size:13px;line-height:1.5;color:var(--muted);margin-top:4px;max-width:64ch}
+  .item-actions{display:flex;gap:7px;flex:0 0 auto}
+  .act{width:42px;height:42px;border-radius:10px;border:1px solid var(--hair);background:#fff;font-size:17px;
+    cursor:pointer;color:var(--muted);transition:all .12s ease;line-height:1}
+  .act:hover{transform:translateY(-1px)}
+  .act.do:hover,[data-state=approve] .act.do{background:var(--good);border-color:var(--good);color:#fff}
+  .act.info:hover,[data-state=comment] .act.info{background:var(--amber);border-color:var(--amber);color:#3a2f10}
+  .act.skip:hover,[data-state=reject] .act.skip{background:var(--bad);border-color:var(--bad);color:#fff}
+  [data-state] .item-title::after{font-family:var(--mono);font-size:10px;font-weight:700;margin-left:10px;letter-spacing:.05em}
+  [data-state=approve] .item-title::after{content:"✓ DO";color:#2f7d54}
+  [data-state=comment] .item-title::after{content:"✎ NOTE";color:#b06a3f}
+  [data-state=reject] .item-title::after{content:"✗ SKIP";color:var(--bad)}
+  .item textarea{width:100%;margin-top:11px;min-height:54px;resize:vertical;padding:10px 12px;
+    border:1px solid var(--hair);border-radius:9px;font:13px/1.5 var(--sans);background:#fff;color:var(--ink);display:none}
+  .bar{display:flex;align-items:center;gap:12px;margin-top:20px;padding-top:16px;border-top:2px solid var(--ink)}
+  .count{font-size:12.5px;color:var(--muted);flex:1;font-family:var(--mono)}
+  .doall{padding:10px 15px;border-radius:9px;border:1px solid var(--hair);background:#fff;color:var(--ink);
+    font:640 12.5px var(--sans);cursor:pointer}
+  .doall:hover{border-color:var(--good);color:#2f7d54}
+  .submit{padding:12px 22px;border-radius:9px;border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+    font:660 13.5px var(--sans);cursor:pointer;opacity:.5;transition:opacity .15s}
+  .submit.ready{opacity:1}
+
+  @media (max-width:720px){ .canvas{grid-template-columns:1fr} }
 </style>
+</head>
+<body>
+<main data-fit-root>
+
+  <div class="masthead">
+    <span class="brand">Companion · <!-- project --></span>
+    <span class="edition"><!-- edition line · date --></span>
+  </div>
+
+  <div class="kick"><!-- one-line kicker --></div>
+  <h1>The <em>headline</em> point.</h1>
+  <p class="dek">One standfirst paragraph that frames the N points below.</p>
+
+  <div class="hint">Click a card to open it. Skip what you don't need.</div>
+
+  <div class="canvas">
+    <!-- duplicate one .blob per point; give each a semantic palette class (.b-blue etc.) -->
+    <div class="blob b-blue" data-blob>
+      <div class="rule"></div>
+      <div class="blob-head">
+        <span class="dot"></span>
+        <div class="bh-main">
+          <div class="bh-kick">Point 1 · label</div>
+          <div class="bh-title">The point, stated as a claim.</div>
+          <div class="bh-teaser">One line the reader sees while collapsed.</div>
+        </div>
+        <span class="chev">+</span>
+      </div>
+      <div class="blob-body">
+        <p>The detail. <strong>Bold the load-bearing bit.</strong> Use <code>code</code> where it helps.</p>
+        <span class="rec">→ the one-line takeaway</span>
+      </div>
+    </div>
+
+    <div class="blob b-amber wide" data-blob>
+      <div class="rule"></div>
+      <div class="blob-head">
+        <span class="dot"></span>
+        <div class="bh-main">
+          <div class="bh-kick">Point N · label</div>
+          <div class="bh-title">A headline point spans the full row.</div>
+          <div class="bh-teaser">Use .wide for the one that deserves width.</div>
+        </div>
+        <span class="chev">+</span>
+      </div>
+      <div class="blob-body">
+        <p>Detail for the wide blob.</p>
+        <span class="rec">→ takeaway</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- DECIDE -->
+  <section class="decide">
+    <div class="top"></div>
+    <div class="dh">Decide · what to do</div>
+    <h2>Where we land</h2>
+    <p class="dsub">One line framing the moves.</p>
+
+    <div class="item" data-companion-item
+      data-item-label="Imperative label — reads well inside the compiled submit message.">
+      <div class="item-row">
+        <div>
+          <div class="item-title">Short move title</div>
+          <div class="item-sub">One line on what it is / why.</div>
+        </div>
+        <div class="item-actions">
+          <button class="act do"   data-action="approve" title="Do it">✓</button>
+          <button class="act info" data-action="comment" title="Note">✎</button>
+          <button class="act skip" data-action="reject"  title="Skip">✗</button>
+        </div>
+      </div>
+      <textarea data-comment placeholder="A note on this move…"></textarea>
+    </div>
+    <!-- one .item per move -->
+
+    <div class="bar">
+      <span class="count" data-count>nothing marked yet</span>
+      <button class="doall" data-doall>✓ Do all</button>
+      <button class="submit" data-companion-submit="Decisions">Submit → ⌘V</button>
+    </div>
+  </section>
+
+</main>
+
+<script>
+/* blob expand/collapse — independent of the ballot */
+(function(){
+  document.querySelectorAll('[data-blob]').forEach(function(b){
+    b.querySelector('.blob-head').addEventListener('click',function(){ b.classList.toggle('open'); });
+  });
+})();
+</script>
+<script>
+/* ballot: per-item state, do-all, submit via postMessage(kind:'submit') */
+(function(){
+  var GLY={approve:"✓",comment:"✎",reject:"✗"};
+  function refresh(){
+    var all=document.querySelectorAll('[data-companion-item]').length;
+    var n=document.querySelectorAll('[data-companion-item][data-state]').length;
+    var c=document.querySelector('[data-count]');
+    if(c) c.textContent = n? (n+' of '+all+' marked') : 'nothing marked yet';
+    var s=document.querySelector('[data-companion-submit]'); if(s) s.classList.toggle('ready', n>0);
+  }
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('[data-action]');
+    if(btn){
+      var item=btn.closest('[data-companion-item]'); if(!item) return;
+      var action=btn.getAttribute('data-action');
+      var cur=item.getAttribute('data-state');
+      var ta=item.querySelector('textarea[data-comment]');
+      if(cur===action){ item.removeAttribute('data-state'); if(ta) ta.style.display='none'; refresh(); return; }
+      item.setAttribute('data-state',action);
+      if(ta) ta.style.display = (action==='comment')?'block':'none';
+      if(action==='comment'&&ta) setTimeout(function(){ta.focus();},0);
+      refresh(); return;
+    }
+    if(e.target.closest('[data-doall]')){
+      document.querySelectorAll('[data-companion-item]').forEach(function(it){
+        if(it.getAttribute('data-state')!=='comment'){
+          it.setAttribute('data-state','approve');
+          var ta=it.querySelector('textarea[data-comment]'); if(ta) ta.style.display='none';
+        }
+      });
+      refresh(); return;
+    }
+    var sb=e.target.closest('[data-companion-submit]');
+    if(sb){
+      var title=sb.getAttribute('data-companion-submit')||'Review';
+      var items=document.querySelectorAll('[data-companion-item][data-state]');
+      if(items.length===0) return;
+      var lines=['Re: '+title,''];
+      items.forEach(function(it){
+        var st=it.getAttribute('data-state');
+        var label=it.getAttribute('data-item-label')||'(unlabeled)';
+        lines.push(GLY[st]+' '+label);
+        if(st==='comment'){ var t=it.querySelector('textarea[data-comment]'); if(t&&t.value.trim()){ t.value.trim().split('\n').forEach(function(l){lines.push('   '+l);}); } }
+      });
+      parent.postMessage({source:'companion-artifact',kind:'submit',text:lines.join('\n')},'*');
+      sb.textContent='Sent ✓';
+    }
+  });
+  refresh();
+})();
+</script>
+<script>
+  (function () {
+    var el = document.querySelector("[data-fit-root]") || document.body;
+    var post = function () { parent.postMessage({ source: "companion-artifact", kind: "size",
+      w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+    addEventListener("load", post); post();
+  })();
+</script>
+</body>
+</html>
 ```
 
-Reach for two-zone on any substantive full-document turn (a triage, a plan, a comparison,
-an explainer). Skip it for pills, pure dashboards (those get a bespoke editorial layout),
-and turns with nothing worth visualizing.
+**Note on the ballot script.** The blob template inlines a compact ballot handler (with a live
+count + Do-all) so it stands alone. When an artifact *also* has ambient-commentable prose, don't
+run two competing handlers — use the **unified helper** (§4.3) instead, which gathers block
+comments *and* item decisions into one submit.
 
-## Multi-page documents (several independent subjects in one file)
+## 3.3 · Paginated wizard — one guided sequence
 
-Some deliverables aren't one topic — they're *many*. *"Audit my whole wiki for loose
-ends"* might surface ten projects, each with its own open threads; *"review these five
-incidents"* is five write-ups. Flattening those into one long scroll buries them. Instead,
-emit a **single self-contained `.html` with internal navigation**: a sidebar lists the
-pages, the content pane shows the active one, an **Overview** page lands first.
+**When:** the content is **one deep sequence** the reader should walk in order — a step-by-step
+plan, a walkthrough, an onboarding flow, a narrative that builds — ending on a decisions /
+questions page. This is distinct from the sidebar multi-page (§3.4), which is jump-anywhere; the
+wizard is **linear**, with Next/Back and a progress indicator, and the **final page is the Decide
+ballot**.
 
-**This is still ONE file.** Multi-page means internal show/hide navigation — *not*
-multiple files. That keeps the self-contained rule intact, opens in a browser, pops as a
-single overlay panel, and sizes through the same size-report snippet (switching pages
-re-fires the `ResizeObserver`, so the panel re-fits to each page).
+Pure DOM show/hide — **no history API**: the sandboxed iframe is opaque-origin, so `pushState`
+throws (same constraint the sidebar template documents). The size-reporter observes
+`data-fit-root`, so switching pages changes its height and **re-fires the report automatically**.
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>wizard</title>
+<link rel="stylesheet" href="asset://localhost/Users/gyatso/.claude/companion/vendor/fonts.css" />
+<script type="application/json" id="companion-meta">
+{ "subject": "<short subject>", "summary": "<1–2 sentence description>",
+  "files": [], "project": "~/claude-code-companion", "branch": "<branch>", "created": "<YYYY-MM-DD>" }
+</script>
+<style>
+  :root{
+    --board:oklch(0.945 0.014 60); --paper:#FBFAF6; --ink:#171A1F; --soft:#39404A;
+    --muted:#646C76; --hair:#CDC8BC; --accent:#6D5AE6; --good:#4DAA7D; --bad:#C0503A; --amber:#E0A53A;
+    --serif:'Newsreader',ui-serif,Georgia,serif;
+    --sans:'Inter',ui-sans-serif,system-ui,-apple-system,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scrollbar-width:none} html::-webkit-scrollbar{width:0;height:0;display:none}
+  html,body{margin:0;background:var(--board);color:var(--ink);
+    font-family:var(--sans);-webkit-font-smoothing:antialiased;font-size:15px;line-height:1.6}
+  [data-fit-root]{width:720px;max-width:100%;margin:0 auto;padding:30px 40px 40px}
+
+  /* progress rail */
+  .wz-top{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    border-bottom:2px solid var(--ink);padding-bottom:12px}
+  .wz-brand{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:700}
+  .wz-count{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--muted)}
+  .wz-progress{height:4px;background:var(--hair);border-radius:3px;margin:14px 0 8px;overflow:hidden}
+  .wz-progress > i{display:block;height:100%;width:0;background:var(--accent);border-radius:3px;
+    transition:width .28s cubic-bezier(.4,0,.2,1)}
+
+  /* pages */
+  .wz-page{display:none}
+  .wz-page.active{display:block;animation:wzIn .2s ease both}
+  @keyframes wzIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .kick{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);font-weight:700;margin:22px 0 0}
+  h1{font-family:var(--serif);font-weight:620;letter-spacing:-.03em;line-height:1.05;
+    font-size:clamp(28px,3.4vw,40px);margin:8px 0 0}
+  p{color:var(--soft);line-height:1.6} strong{color:var(--ink);font-weight:640}
+  code{font-family:var(--mono);font-size:12px;background:#EEE9DF;padding:1px 5px;border-radius:4px}
+
+  /* nav */
+  .wz-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    margin-top:26px;padding-top:16px;border-top:1px solid var(--hair)}
+  .wz-btn{padding:11px 20px;border-radius:9px;border:1px solid var(--hair);background:#fff;color:var(--ink);
+    font:640 13px var(--sans);cursor:pointer;transition:all .12s}
+  .wz-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .wz-btn[disabled]{opacity:.4;cursor:default;pointer-events:none}
+  .wz-btn.next{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .wz-btn.next:hover{color:var(--paper);opacity:.9}
+
+  /* final decide page */
+  .decide .dh{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);font-weight:700}
+  .decide h2{font-family:var(--serif);margin:4px 0 2px;font-size:26px;letter-spacing:-.02em}
+  .decide .dsub{font-size:14px;color:var(--muted);margin:0 0 6px}
+  .item{border-top:1px solid var(--hair);padding:15px 0}
+  .item-row{display:flex;gap:16px;align-items:flex-start;justify-content:space-between}
+  .item-title{font-size:15.5px;font-weight:650;color:var(--ink)}
+  .item-sub{font-size:13px;line-height:1.5;color:var(--muted);margin-top:4px}
+  .item-actions{display:flex;gap:7px;flex:0 0 auto}
+  .act{width:42px;height:42px;border-radius:10px;border:1px solid var(--hair);background:#fff;font-size:17px;
+    cursor:pointer;color:var(--muted);transition:all .12s;line-height:1}
+  .act:hover{transform:translateY(-1px)}
+  .act.do:hover,[data-state=approve] .act.do{background:var(--good);border-color:var(--good);color:#fff}
+  .act.info:hover,[data-state=comment] .act.info{background:var(--amber);border-color:var(--amber);color:#3a2f10}
+  .act.skip:hover,[data-state=reject] .act.skip{background:var(--bad);border-color:var(--bad);color:#fff}
+  [data-state] .item-title::after{font-family:var(--mono);font-size:10px;font-weight:700;margin-left:10px}
+  [data-state=approve] .item-title::after{content:"✓ DO";color:#2f7d54}
+  [data-state=comment] .item-title::after{content:"✎ NOTE";color:#b06a3f}
+  [data-state=reject] .item-title::after{content:"✗ SKIP";color:var(--bad)}
+  .item textarea{width:100%;margin-top:11px;min-height:54px;resize:vertical;padding:10px 12px;
+    border:1px solid var(--hair);border-radius:9px;font:13px/1.5 var(--sans);background:#fff;color:var(--ink);display:none}
+  .submit{padding:12px 22px;border-radius:9px;border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+    font:660 13.5px var(--sans);cursor:pointer;opacity:.5;transition:opacity .15s}
+  .submit.ready{opacity:1}
+  .doall{padding:10px 15px;border-radius:9px;border:1px solid var(--hair);background:#fff;color:var(--ink);
+    font:640 12.5px var(--sans);cursor:pointer}
+</style>
+</head>
+<body>
+<main data-fit-root>
+
+  <div class="wz-top">
+    <span class="wz-brand">Companion · <!-- title --></span>
+    <span class="wz-count"><span data-wz-now>1</span> of <span data-wz-total>3</span></span>
+  </div>
+  <div class="wz-progress"><i data-wz-fill></i></div>
+
+  <!-- one .wz-page per step; the LAST page is the Decide ballot -->
+  <section class="wz-page active" data-wz-page>
+    <div class="kick">Step 1</div>
+    <h1>First step of the sequence.</h1>
+    <p>Walk the reader through it. <strong>One idea per page.</strong></p>
+  </section>
+
+  <section class="wz-page" data-wz-page>
+    <div class="kick">Step 2</div>
+    <h1>It builds on the last.</h1>
+    <p>Order matters here — that's why it's a wizard and not a scroll.</p>
+  </section>
+
+  <section class="wz-page decide" data-wz-page>
+    <div class="dh">Decide</div>
+    <h2>What to do</h2>
+    <p class="dsub">The sequence lands on the moves.</p>
+    <div class="item" data-companion-item data-item-label="Imperative label for the compiled submit message.">
+      <div class="item-row">
+        <div><div class="item-title">Move title</div><div class="item-sub">One line.</div></div>
+        <div class="item-actions">
+          <button class="act do"   data-action="approve" title="Do it">✓</button>
+          <button class="act info" data-action="comment" title="Note">✎</button>
+          <button class="act skip" data-action="reject"  title="Skip">✗</button>
+        </div>
+      </div>
+      <textarea data-comment placeholder="A note…"></textarea>
+    </div>
+  </section>
+
+  <div class="wz-nav">
+    <button class="wz-btn" data-wz-back disabled>← Back</button>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="doall" data-doall style="display:none">✓ Do all</button>
+      <button class="wz-btn next" data-wz-next>Next →</button>
+      <button class="submit" data-companion-submit="Wizard decisions" style="display:none">Submit → ⌘V</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+/* wizard: linear show/hide + progress; no history API (opaque-origin iframe) */
+(function(){
+  var pages=[].slice.call(document.querySelectorAll('[data-wz-page]'));
+  var i=0, last=pages.length-1;
+  var back=document.querySelector('[data-wz-back]'), next=document.querySelector('[data-wz-next]');
+  var submit=document.querySelector('[data-companion-submit]'), doall=document.querySelector('[data-doall]');
+  var fill=document.querySelector('[data-wz-fill]'), now=document.querySelector('[data-wz-now]'),
+      total=document.querySelector('[data-wz-total]');
+  if(total) total.textContent=pages.length;
+  function render(){
+    pages.forEach(function(p,n){ p.classList.toggle('active', n===i); });
+    if(now) now.textContent=i+1;
+    if(fill) fill.style.width=((i+1)/pages.length*100)+'%';
+    back.disabled = i===0;
+    var onLast = i===last;
+    next.style.display  = onLast?'none':'';
+    submit.style.display= onLast?'':'none';
+    doall.style.display = onLast?'':'none';
+  }
+  next.addEventListener('click',function(){ if(i<last){i++;render();} });
+  back.addEventListener('click',function(){ if(i>0){i--;render();} });
+  render();
+})();
+</script>
+<script>
+/* ballot on the final page — same handler as the blob canvas */
+(function(){
+  var GLY={approve:"✓",comment:"✎",reject:"✗"};
+  function ready(){
+    var n=document.querySelectorAll('[data-companion-item][data-state]').length;
+    var s=document.querySelector('[data-companion-submit]'); if(s) s.classList.toggle('ready', n>0);
+  }
+  document.addEventListener('click',function(e){
+    var btn=e.target.closest('[data-action]');
+    if(btn){
+      var item=btn.closest('[data-companion-item]'); if(!item) return;
+      var action=btn.getAttribute('data-action'), cur=item.getAttribute('data-state'), ta=item.querySelector('textarea[data-comment]');
+      if(cur===action){ item.removeAttribute('data-state'); if(ta) ta.style.display='none'; ready(); return; }
+      item.setAttribute('data-state',action);
+      if(ta) ta.style.display=(action==='comment')?'block':'none';
+      if(action==='comment'&&ta) setTimeout(function(){ta.focus();},0);
+      ready(); return;
+    }
+    if(e.target.closest('[data-doall]')){
+      document.querySelectorAll('[data-companion-item]').forEach(function(it){
+        if(it.getAttribute('data-state')!=='comment'){ it.setAttribute('data-state','approve');
+          var ta=it.querySelector('textarea[data-comment]'); if(ta) ta.style.display='none'; }
+      });
+      ready(); return;
+    }
+    var sb=e.target.closest('[data-companion-submit]');
+    if(sb){
+      var title=sb.getAttribute('data-companion-submit')||'Review';
+      var items=document.querySelectorAll('[data-companion-item][data-state]');
+      if(items.length===0) return;
+      var lines=['Re: '+title,''];
+      items.forEach(function(it){
+        var st=it.getAttribute('data-state'), label=it.getAttribute('data-item-label')||'(unlabeled)';
+        lines.push(GLY[st]+' '+label);
+        if(st==='comment'){ var t=it.querySelector('textarea[data-comment]'); if(t&&t.value.trim()){ t.value.trim().split('\n').forEach(function(l){lines.push('   '+l);}); } }
+      });
+      parent.postMessage({source:'companion-artifact',kind:'submit',text:lines.join('\n')},'*');
+      sb.textContent='Sent ✓';
+    }
+  });
+})();
+</script>
+<script>
+  (function () {
+    var el = document.querySelector("[data-fit-root]") || document.body;
+    var post = function () { parent.postMessage({ source: "companion-artifact", kind: "size",
+      w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+    addEventListener("load", post); post();
+  })();
+</script>
+</body>
+</html>
+```
+
+## 3.4 · Sidebar multi-page — several peer subjects, jump anywhere
+
+**When:** the deliverable is **3+ genuinely independent, substantial subjects** that are *peers*
+— per-project, per-incident, per-component — with **no single narrative thread** and the reader
+will want to **jump**, not read top-to-bottom. *"Audit my whole wiki for loose ends"* (one page
+per project), *"review these five incidents"*. Contrast with the **paginated wizard** (§3.3): the
+sidebar is jump-anywhere; the wizard is one guided sequence. If there *is* a through-line, use a
+single scrolling document with headings instead.
+
+**This is still ONE file.** Multi-page means internal show/hide navigation — *not* multiple
+files. That keeps the self-contained rule intact, opens in a browser, pops as a single overlay
+panel, and sizes through the same size-report snippet (switching pages re-fires the
+`ResizeObserver`, so the panel re-fits to each page).
 
 ### When to go multi-page (all three should hold)
 
-1. **≥3 genuinely independent subjects** that are *peers* — per-project, per-incident,
-   per-component — with no single narrative thread running through them. If there *is* a
-   through-line, a single scrolling document with headings reads better.
-2. **Each subject has real substance** — more than a few lines. A two-line subject
-   belongs in the Overview, not on its own page.
+1. **≥3 genuinely independent subjects** that are *peers* — with no single narrative thread. If
+   there *is* a through-line, a single scrolling document with headings reads better.
+2. **Each subject has real substance** — more than a few lines. A two-line subject belongs in the
+   Overview, not on its own page.
 3. **The reader will want to jump**, not read top-to-bottom.
 
 ### Guardrails
 
 - **One file, always.** Internal nav, never N separate files.
-- **Lead with an Overview page** — orient the reader, give the count, one line per
-  subject. It's the landing page (`.active` on load).
-- **Soft cap ~12 pages.** Beyond that, group subjects or summarise the long tail on the
-  Overview — don't emit 30 pages.
-- **At most one submit-driven helper in the whole file.** The interactive review form
-  and ambient comments both fire the single `data-companion-submit` button, so across a
-  multi-page file you still get only *one* of them. Plain multi-page nav uses no submit
-  button, so it composes freely with one helper — e.g. ambient comments layered on the
-  pages. If you do layer ambient comments, bump `.mp-pages { padding-left: 56px }` so the
-  💬 icon clears the sidebar.
+- **Lead with an Overview page** — orient the reader, give the count, one line per subject. It's
+  the landing page (`.active` on load).
+- **Soft cap ~12 pages.** Beyond that, group subjects or summarise the long tail on the Overview
+  — don't emit 30 pages.
+- **At most one submit-driven helper in the whole file.** The interactive review form and ambient
+  comments both fire the single `data-companion-submit` button, so across a multi-page file you
+  still get only *one* of them. Plain multi-page nav uses no submit button, so it composes freely
+  with one helper — e.g. ambient comments layered on the pages. If you do layer ambient comments,
+  bump `.mp-pages { padding-left: 56px }` so the 💬 icon clears the sidebar.
 
-### Multi-page template (copy, fill, write)
+### Sidebar multi-page template (copy, fill, write)
 
 A ~780px file: a sticky sidebar of page links beside a content pane. Pure DOM show/hide
 (no history API — the sandboxed iframe is opaque-origin, so `pushState` would throw).
@@ -596,9 +887,167 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
 </html>
 ```
 
-## Interactive review artifacts (multi-item plans, todos, reviews)
+## 3.5 · Two-zone — prose plus one explanatory visual
 
-When the artifact is a **list of N items the user might want to react to individually** —
+**When:** a substantive full-document turn has real substance to *explain* and one genuinely
+useful visual would help the reader understand it and decide — a triage, a plan, a comparison, an
+explainer. The most common waste in a full-document artifact is a single narrow column of prose
+running top-to-bottom while the **entire right half of the Board sits empty**. Don't. Default to
+a **two-zone layout**: prose on the left, a **useful visual on the right**.
+
+> **Single scroll (a plain full document).** When the turn is *one narrative argument* with no
+> single visual to anchor — a post-mortem, a long explanation — a plain full document is right:
+> your own layout and sections, `data-fit-root` on the main wrapper with a definite width
+> (720–960px), the size-report snippet, and ambient comments (§4.2) so the prose is answerable.
+> Two-zone is the *default when there's a visual*; single scroll when there isn't.
+
+**The visual must earn its place.** It illustrates what the prose is arguing — a flow diagram of
+the bug, a before/after, a tree of options, a data chart. **Never decorative filler** (no stock
+gradients, abstract blobs, or a logo to "balance" the layout). If you can't name what a reader
+learns from the visual, leave the column out and go single-column.
+
+**Pick the visual medium by what it is:**
+- **Diagrams / flows / relationships / before-after** → hand-author an inline **SVG** (no
+  dependency, crisp, themeable). This covers most cases.
+- **Quantitative data** → **D3** (bundled — see §7.7) for charts/graphs.
+- **Rich illustrative figures** a diagram can't capture (a scene, a textured concept image,
+  a realistic mock) → generate one with **gpt image-2**, save it into the artifacts dir
+  (e.g. `~/.claude/companion/artifacts/img/<slug>-<n>.png`), and reference it via the
+  `asset:` protocol (external URLs are blocked in the sandbox):
+  ```html
+  <img src="asset://localhost/Users/gyatso/.claude/companion/artifacts/img/<slug>-1.png"
+       width="360" alt="<what it shows>" />
+  ```
+  Always set an explicit `width`/`height` and a real `alt`. Generate sparingly — one
+  purposeful figure beats three pretty ones.
+
+### Two-zone template (copy, fill, write)
+
+`data-fit-root` stays a block wrapper; the two-zone grid is its own element so the unified
+helper's auto-injected `.cmp-chat` bar (which targets `data-fit-root`) lands full-width
+below. The right column is `position:sticky` so it stays beside the prose as the left
+scrolls. The left column carries `data-companion-commentable`; the visual does not.
+
+```html
+<main data-fit-root> <!-- width ~860–900px to actually use the space -->
+  <header>…kicker + h1 + sub…</header>
+  <div class="zone">
+    <div class="col-main" data-companion-commentable>
+      <h2>…</h2><p>…prose that the visual illustrates…</p>
+    </div>
+    <aside class="visual"><!-- sticky card -->
+      <svg viewBox="0 0 320 240" width="100%"> … </svg>
+      <div class="cap">One line on what the figure shows.</div>
+    </aside>
+  </div>
+  <!-- Next-steps decision section spans full width below the zone -->
+</main>
+<style>
+  .zone { display:grid; grid-template-columns:1fr 360px; gap:26px; align-items:start; }
+  .visual { position:sticky; top:16px; }
+  @media (max-width:720px){ .zone{ grid-template-columns:1fr; } } /* graceful narrow fallback */
+</style>
+```
+
+Reach for two-zone on any substantive full-document turn (a triage, a plan, a comparison,
+an explainer). Skip it for pills, pure dashboards (§3.6), and turns with nothing worth
+visualizing.
+
+## 3.6 · Bespoke dashboard / L0 (`home.html`)
+
+**When:** the content is **presentation-first** — a morning debrief, a dashboard, a data viz, a
+recap or explainer to *look at beautifully*, a celebration, a one-off custom interface. Here the
+layout and feel are yours to craft; a rigid template on a debrief is worse than a bespoke one.
+**But bespoke does NOT license shipping without a responder** — even a dashboard carries a
+forward-driving surface where the next moves live (§1.3). *Ask: act on it, or look at it?* Look →
+bespoke design; act → one of the ballot-carrying patterns above.
+
+The Board (`companion board`) opens to an **L0 hub** that an agent fully authors: write a
+self-contained dashboard to the **reserved slug** `home.html` in the artifacts dir
+(`~/.claude/companion/artifacts/home.html`). The Board loads it **full-bleed** as the L0
+surface — it does NOT auto-pop as a panel (the hook skips it), and you re-see it by opening
+the Board, not via `companion open`. Think of it as a **daily dashboard**: regenerate it for
+whatever the user is actually working on that day — what needs them, what's running, the one
+thing that matters most.
+
+### The top bar is the Board's, themed by you (`companion-bar` block)
+
+The Board renders a persistent top bar across the whole surface. At L0 it is **themed and
+filled by your dashboard** so it matches your design; the **mandatory control cluster**
+(back / full-screen / collapse / close) is always rendered by the Board — you never draw or
+declare those, they can't go missing. You compose the bar's *content + colors* via a JSON
+block in `home.html`'s `<head>`:
+
+```html
+<script type="application/json" id="companion-bar">
+{
+  "bg": "#efe9df", "fg": "#201b15", "accent": "#b0552f",
+  "font": "Newsreader",
+  "left":   [{ "type": "title", "text": "Tuesday triage" }],
+  "center": [{ "type": "clock" }],
+  "right":  [{ "type": "badge", "text": "3 need you", "tone": "accent" }]
+}
+</script>
+```
+
+- **Theme keys:** `bg`, `fg`, `accent` (hex), `font` (`"Newsreader"` | `"Inter"` |
+  `"JetBrains Mono"`). **Set `bg`/`fg` to match your dashboard body** — the bar lives outside
+  your iframe, so it can't inherit your CSS; if you don't pass colors it won't match.
+- **Slots:** `left`, `center`, `right` — arrays of items the Board renders + wires:
+  - `{"type":"title","text":"…"}` — display title (uses `font`)
+  - `{"type":"clock"}` — live HH:MM, Board-updated
+  - `{"type":"badge","text":"…","tone":"accent"|"default"}` — a pill (e.g. a count)
+  - `{"type":"text","text":"…"}` — muted label
+  - `{"type":"link","text":"…","to":"sessions"|"unit:<key>"|"hub"|"artifact:<path>"}` —
+    navigates the Board (`session:<src>` still works as a back-compat alias → its unit)
+- **Rule:** if you set `companion-bar`, **do NOT draw your own header in the body** — the
+  Board's bar is your header. Start the body at the content.
+
+Without a `companion-bar` block the Board shows its native greeting. The theming applies at
+**L0 only**; L1 (sessions) and L2 (one session) use native chrome.
+
+### Navigation from inside the dashboard
+
+Any element can drive the Board by posting a navigate message to the parent — this is how
+the dashboard links to sessions, and how it stays *inside* the Board (no separate windows):
+
+```js
+parent.postMessage({ source: "companion-artifact", kind: "navigate",
+  to: "unit:scalp-defense" }, "*");   // or "sessions" | "hub" | "artifact:<abs-path>"
+```
+
+### Editorial, NOT a grid (read this before you lay it out)
+
+The single most common failure here is defaulting to a **uniform card grid** — N equal tiles,
+equal spacing, no hierarchy. Don't. A dashboard with a point of view reads like an editorial
+front page, not a spreadsheet:
+
+- **Give the one thing that matters most real weight** — large type, a hero block — and let
+  the rest recede. Scale contrast *is* the triage.
+- **Use a list, not cards, for "the rest."** Rows with a thin colored rule carry a roster far
+  better than a wall of identical boxes.
+- **Vary rhythm** — whitespace, asymmetry, a center of gravity. Uniform padding everywhere is
+  the tell of a template.
+- Idle / low-priority items collapse to **chips or a single line**, not full cards.
+
+(This applies to any artifact, but dashboards are where the grid reflex is strongest — see
+the design-quality rules: *default card grids with uniform spacing and no hierarchy* are
+explicitly banned.) Pair this with the bundled fonts (§7.7) — real type is half of looking
+intentional.
+
+---
+
+# 4 · The interaction layer
+
+The responders below compose *into* whichever pattern you picked in §3. Pick by what the artifact
+is: a decision list → the **Decide ballot / review form** (§4.1); an informational page the user
+might question → **ambient comments** (§4.2); an artifact that carries *both* → the **unified
+helper** (§4.3). Copyable handoff content → a **copy block** (§4.4), which coexists with any of
+them.
+
+## 4.1 · The Decide ballot / interactive review form
+
+When the artifact is a **list of N items the user might react to individually** —
 implementation plans, todo lists, code-review checklists, decision sets, comparison
 options — reach for the **interactive review form**. Each item gets inline action
 buttons (approve / comment / reject). The user marks items as they read, optionally
@@ -609,9 +1058,11 @@ review batched.
 
 **Reach for this form** for: implementation plans (3+ steps), prioritised todo lists,
 plan-mode review handoffs, multi-option comparisons where each option needs its own
-verdict, "things I noticed" review checklists. **Skip it** for: pill recaps, single-
-section reports, dashboards, status snapshots without per-item decisions, anything
-where the user is going to respond holistically rather than per-row.
+verdict, "things I noticed" review checklists. **Default to it** whenever an artifact is
+effectively a list of 3+ decisions — the user shouldn't have to ask. But the bar is lower than
+"3+": **almost every substantive artifact ends with at least one answerable next-move item**,
+even a single "ship it?" or a "done — what's next →" on a recap. **Skip it** for: pure recaps
+(use ambient comments), dashboards, status snapshots without per-item decisions.
 
 ### Item HTML shape
 
@@ -633,8 +1084,10 @@ naturally inside the compiled submit message:
 </li>
 ```
 
-`data-item-label` is what goes into the compiled output. The visible item content
-can be richer (sub-text, code spans, links) — only the label string is sent.
+`data-item-label` is what goes into the compiled output — and it's the **only** text that
+reaches the agent, so phrase it as an **imperative** ("Wire the handler…"), never a yes/no
+question. The visible item content can be richer (sub-text, code spans, links) — only the label
+string is sent.
 
 ### Submit button
 
@@ -743,16 +1196,7 @@ Avoid the template-y look. Action buttons should:
 The whole artifact should still pass the [design-quality](../../../README.md) bar —
 this is not a stock todo widget.
 
-### Default to the review form — almost always, not just for long lists
-
-When an artifact is effectively a list of 3+ decisions, **default to the interactive review
-form** — the user shouldn't have to ask for it. But the bar is lower than "3+": **almost every
-substantive artifact ends with at least one answerable next-move item**, even a single "ship
-it?" or a "done — what's next →" on a recap. Single round trip beats ten retyped responses; a
-responder-less artifact forces the user back into the terminal, which is exactly what the Board
-exists to avoid.
-
-## Ambient inline comments (let the user ask about any block)
+## 4.2 · Ambient inline comments (let the user ask about any block)
 
 The review form above asks *"do you approve / reject / comment on these specific
 items?"*. Sometimes the artifact isn't a decision form at all — it's an
@@ -769,13 +1213,16 @@ threshold for "the user wants to ask about one specific paragraph but doesn't wa
 to retype it" — recaps, status briefings, explainers, comparisons-as-prose,
 research summaries, post-mortems. **Don't combine** it with the interactive review
 form in the same artifact — both helpers respond to the same `data-companion-submit`
-button and would write competing payloads to the clipboard. Pick one per artifact.
+button and would write competing payloads to the clipboard. When an artifact needs both,
+use the **unified helper** (§4.3) instead. Otherwise pick one per artifact.
 
 ### Convention
 
 Wrap the readable content in a `<div data-companion-commentable>` and include the
 helper snippet below. The helper auto-discovers `p, li, h2, h3, h4, blockquote, pre`
-elements inside the wrapper and attaches the affordance to each. Add a Submit
+elements inside the wrapper and attaches the affordance to each. **Content placed in
+styled `<div>`s — cards, callouts, custom rows — is invisible to that tag list.** Add
+`data-companion-block` to any such container to make it commentable. Add a Submit
 button anywhere in the page with `data-companion-submit="title"` — the same
 attribute the review form uses (the helper short-circuits when no comments exist,
 so a Submit button can safely live next to other UI):
@@ -1021,7 +1468,88 @@ form, and even a pure recap still ends with an answerable next-move (a "what's n
 The ambient-comment 💬 and the Next-steps ballot are two ways to give the user a voice; at
 least one of them belongs on almost every artifact.
 
-## Copyable handoff blocks (paste-this-elsewhere content)
+## 4.3 · The unified helper (both comments AND decisions in one submit)
+
+When one artifact carries **both** ambient-commentable content **and** a Decide ballot, the two
+single-purpose helpers above would fight over `data-companion-submit`. Use the **combined
+helper** instead: it gathers block-comments *and* item-decisions into one pasteable payload,
+sectioned as `— Questions / comments —` then `— Decisions —`.
+
+**Critical wiring rule:** put `data-companion-commentable` only on the **content** pages/blocks,
+never on the Next-steps ballot, so the two behaviours don't double up on the same blocks.
+
+```html
+<!-- content page(s): commentable -->
+<section data-companion-commentable> … prose, lists, headings … </section>
+<!-- the Next-steps page: review items, NOT commentable -->
+<section>
+  <div class="item" data-companion-item data-item-label="Short label that reads well in the submit message">
+    <div class="item-row">
+      <div class="item-main"><div class="item-title">…</div><div class="item-sub">…</div></div>
+      <div class="item-actions">
+        <button class="act do"   data-action="approve" title="Do it">✓</button>
+        <button class="act info" data-action="comment" title="More info / note">✎</button>
+        <button class="act skip" data-action="reject"  title="Skip">✗</button>
+      </div>
+    </div>
+    <textarea data-comment hidden placeholder="What to clarify, or a note…"></textarea>
+  </div>
+  <!-- submit bar -->
+  <div class="bar">
+    <span class="count" data-count>nothing marked yet</span>
+    <button class="doall" data-doall>✓ Do all</button>
+    <button class="submit" data-companion-submit="Title that prefixes the compiled message">Submit → ⌘V</button>
+  </div>
+</section>
+```
+
+The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) inside a
+`data-companion-commentable` region. **Content placed in styled `<div>`s — cards, callouts,
+custom rows — is invisible to that tag list and will get no 💬.** Add `data-companion-block`
+to any such container to make it commentable (the helper de-dupes nested matches, so marking
+an outer card won't double-icon its inner text).
+
+**The unified helper lives in `references/interaction-helper.md`** — a ~540-line self-contained
+`<script>`. It is self-contained (no external files, no machine-specific paths). **When building
+any artifact with commentable blocks AND a Decide ballot, read that file and copy the `<script>`
+verbatim** — do not retype or trim it. On its own the markup is inert; the helper is what makes
+the buttons click and the 💬 icons appear. Use the ambient-comments CSS (§4.2) and the
+review-form CSS (§4.1) for styling.
+
+The single-purpose ambient-comments and review-form snippets above remain valid for a **pure**
+recap or a **pure** decision list; the unified helper supersedes them whenever one artifact
+carries both.
+
+## 4.4 · Buttons must NEVER be dead (non-negotiable)
+
+A review surface whose ✓/✎/✗ buttons don't respond is a broken artifact — it strands the
+user with a decision form they can't use. This must never ship. Two hard rules:
+
+1. **Always include the matching helper script verbatim** (the review helper §4.1, the ambient
+   helper §4.2, or the unified helper §4.3 from `references/interaction-helper.md`) in any
+   artifact that has `[data-action]` buttons. The buttons are inert markup on their own — *the
+   helper is what makes them click*. Don't hand-roll a partial handler; don't drop the helper to
+   "save space"; don't use the ambient-comments-only helper (it has no `[data-action]`
+   handling) on a page that has review buttons.
+2. **Keep every review item reachable.** In a multi-page document (wizard or sidebar), buttons on
+   a `display:none` page can't be clicked until that page is shown — fine, but never leave a
+   ballot on a page with no nav link to it. When in doubt, **put the decision surface on a
+   single, always-visible page** (the safest shape, and what to default to).
+
+### Pre-ship self-check (run this before writing the file)
+
+Confirm all four, every time:
+
+- [ ] The interaction helper `<script>` is present and **unedited** (copy-paste, don't retype).
+- [ ] Every `[data-action]` button sits inside a `[data-companion-item]` ancestor.
+- [ ] Exactly one `[data-companion-submit]` button exists.
+- [ ] No element with `position:fixed`/absolute overlaps the buttons at load (the
+      `.cmp-submitted` overlay is fine — it only appears *after* submit).
+
+If you can't tick all four, the artifact isn't ready. A dead-button form is worse than no
+artifact at all.
+
+## 4.5 · Copyable handoff blocks (paste-this-elsewhere content)
 
 When an artifact contains content the user is meant to **copy verbatim and paste
 somewhere else** — an integration brief to hand another agent ("paste this to Hermes"),
@@ -1075,7 +1603,201 @@ This is independent of the `data-companion-submit` helper (which routes feedback
 agent) — a Copy button copies to the *system clipboard for the user*, so the two coexist
 freely in one artifact.
 
-## Surfacing or re-showing an artifact
+---
+
+# 5 · Shell repaint (the whole-surface color capability)
+
+**Amends invariant §1.6.** By default the surface is the app shade and stays home. An artifact
+may **repaint the entire Board surface** — shell chrome and the iframe together — to a **curated**
+color, which the Board animates as an expanding-circle reveal so there is never a seam. Use it
+**opt-in and OCCASIONALLY** — a debrief, a celebration, a distinct mode; **never every turn**, or
+navigating between tiles strobes through colors.
+
+### The curated set (bg / ink) — nothing else is honored
+
+| Name | Background | Ink |
+|---|---|---|
+| paper (default) | `#FBFAF6` | `#171A1F` |
+| slate | `#E7ECF1` | `#1B2530` |
+| mint | `#E6F1EA` | `#16281F` |
+| clay | `#F3E7DF` | `#2A1C14` |
+| ink | `#14181D` | `#E8EDF3` |
+
+The app-shade default is `oklch(0.945 0.014 60)` / `#171A1F`; declaring nothing keeps the Board
+on it. The Board **validates against this curated set** — any other color is ignored and the
+surface stays app-shade.
+
+### To repaint, do ALL THREE
+
+1. **Declare it in `companion-meta`** — add a `"shell"` field:
+   ```json
+   "shell": { "bg": "#E7ECF1", "ink": "#1B2530" }
+   ```
+2. **Post it on load** — alongside the size snippet, post a `kind:"shell"` message:
+   ```js
+   parent.postMessage({ source: "companion-artifact", kind: "shell",
+     bg: "#E7ECF1", ink: "#1B2530" }, "*");
+   ```
+3. **Set your own `html, body` background to exactly that bg** (and ink) — so the iframe matches
+   the shell the Board paints around it.
+
+The Board animates a **clip-path circle reveal** across the whole surface, **instant-swaps** under
+`prefers-reduced-motion`, and **skips the animation** when consecutive artifacts declare the same
+color. (The reveal is a Board capability — the artifact just *asks*; the shell *moves*.)
+
+---
+
+# 6 · House style — "Broadsheet", the default look
+
+Broadsheet is the **default look** — one pattern's worth of taste, **not a law**. It was the law
+until 2026-07-15; it is now demoted to "the default costume among several." The invariants in §1
+are the floor and they are absolute; Broadsheet is a *look* you apply on top, and a pattern may
+theme within the invariants. (Full spec: `FEEL-SPEC.md`, alongside this skill.)
+
+**The one rule that carries the look:** make the decision the loudest thing on the page — an
+editorial front page, not a floating UI card. Three failure modes it avoids: floating as a hard
+card with a drop shadow (instead: dissolve into the board, §1.6); hierarchy flattening after the
+headline (instead: scale contrast — one dominant Newsreader headline, everything steps down hard);
+the decision buried in a pale footer of tiny buttons (instead: the elevated Decide ballot).
+
+**Strong floor, open ceiling — honestly.** The floor is §1: the shell, the plumbing,
+always-answerable, decision-loudest, the type pairing, one accent. The **ceiling is genuinely
+open** — which pattern (§2/§3), how you compose inside it, how *this* data wants to look. When the
+content invites a better form, break format; a bespoke page that earns its shape beats one that
+just fills a skeleton. That range is the point of authoring inline — the invariants are what keep
+it still reading as Companion.
+
+### The look, concretely
+
+- **Hierarchy through scale.** One dominant **Newsreader** headline earns its size
+  (clamp ~34–60px, letter-spacing ~-.03em); everything else steps down hard.
+- **Palette** (one semantic accent per artifact, per §1.8): board `oklch(0.945 0.014 60)`, paper
+  `#FBFAF6`, ink `#171A1F`, soft `#39404A`, muted `#646C76`, hairline `#CDC8BC`; accent ∈ blue
+  `#3D7EFF`, amber `#F2B84B`, clay `#D98158`, mint `#4DAA7D` (each with a darker ink variant for
+  text). **The blob canvas (§3.2) is the sanctioned place for multiple palette colors.**
+- **Type:** Newsreader = display, Inter = reading, JetBrains Mono = kickers/labels/file chips.
+  Load the bundled faces via `fonts.css` (§7.7) with system fallbacks. Small-caps mono kickers +
+  hairline rules carry the texture.
+- **The Decide ballot is load-bearing.** When the artifact carries next moves, end on an
+  **elevated** decision panel (accent top-rule, a real "Decide" header, ~42px ✓/✎/✗ targets, a
+  Do-all and a primary dark Commit) — never a footer of tiny buttons. This is where you spend
+  boldness; keep the rest disciplined.
+
+### A suggested skeleton (a starting point, not a mold)
+
+`masthead (project + edition) → kicker → dominant headline → standfirst → working chip → touches
+(files) → visuals → evidence (collapsible) → **Decide ballot**`
+
+Follow it when nothing better suggests itself; depart when the content wants a different shape.
+
+### Two modes of the look
+
+- **Steer** (decision-dominant): the recommendation itself becomes the headline with one
+  confident primary action; context collapses below. For "just tell me the next move" days.
+- **Canvas** (always-on): a persistent steer rail keeps the moves in reach while the user reads —
+  the wheel never leaves the screen. For when the user truly lives in the board.
+
+---
+
+# 7 · Emit, surface, bundled assets, verify
+
+## 7.1 · How to emit
+
+Write one **self-contained** `.html` file (inline all CSS/JS, no build step, no external
+deps) into the artifacts dir:
+
+```
+${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/<kebab-slug>.html
+```
+
+Use a descriptive slug (e.g. `auth-fix-heads-up.html`, `migration-plan.html`). Writing the
+file is what pops the overlay — no other action needed.
+
+> **Write it with the `Write` tool — not `Bash` (`cat >`, `cp`, a node/python script).**
+> A `PostToolUse(Write|Edit)` hook auto-stamps `artifact-index.json` so the Board maps the
+> artifact to *this* session's unit. That hook only fires for the `Write`/`Edit` tools — an
+> artifact created via `Bash` is never indexed, so it lands in the Board's UNSOURCED bucket
+> instead of your session (it may still flash up transiently via the live poll, then vanish
+> from the unit's history). If you must template/substitute, build the final HTML string,
+> then emit it through the `Write` tool.
+
+### The pull verb
+
+The user can run `/companion:html` at any time to ask for an artifact about the current turn.
+`/companion:render` is the deprecated alias and still works for one release. (You never have to
+decide *whether* to author — see §1.1. This verb just lets the user ask for a fresh one mid-turn.)
+
+## 7.2 · Required: a full-document head with `<meta charset>`
+
+Every artifact is a **complete HTML document** — open it with a real head, not straight into
+`<div>` or `<script>`:
+
+```html
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>…</title></head>
+<body>
+  … artifact …
+</body>
+</html>
+```
+
+`<meta charset="utf-8">` is **not optional**. Tiles load over the `asset://` protocol, whose
+response carries no `charset`, so with no meta the WebView falls back to Windows-1252 and every
+`—`, `'`, `"` renders as mojibake (`â€"`, `â€™`). The templates in §3 already open with it — if you
+hand-assemble an artifact, don't drop it.
+
+## 7.3 · Required in every artifact (so the overlay sizes it)
+
+The overlay loads artifacts in a sandboxed, opaque-origin iframe and **cannot measure
+them** — each artifact must self-report its size. Mark the main wrapper with
+`data-fit-root` (definite width, height flows), give `html, body` a background, hide the
+root scrollbar, and include this snippet at the end of `<body>`:
+
+```html
+<style>
+  html { scrollbar-width: none; }
+  html::-webkit-scrollbar { width: 0; height: 0; display: none; }
+</style>
+<script>
+  (function () {
+    var el = document.querySelector("[data-fit-root]") || document.body;
+    var post = function () {
+      parent.postMessage({ source: "companion-artifact", kind: "size",
+        w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
+    };
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+    addEventListener("load", post); post();
+  })();
+</script>
+```
+
+## 7.4 · Metadata block (so feedback on this artifact is self-identifying)
+
+Add a `companion-meta` block in `<head>`. When the user submits feedback, the helper
+prepends these fields to the pasted message, so the agent — **even in a different,
+later session re-opening this artifact from the history HUD (⌘8)** — knows which
+artifact it is, what it was about, and which files it concerns. The history HUD also
+shows `summary` as the card subtitle. Skip it only for throwaway pills.
+
+```html
+<script type="application/json" id="companion-meta">
+{
+  "subject": "<short subject line>",
+  "summary": "<1–2 sentence plain-English description of what this artifact is about>",
+  "files": ["<repo-relative paths the artifact concerns>"],
+  "project": "<cwd or repo, e.g. ~/claude-code-companion>",
+  "branch": "<git branch>",
+  "created": "<YYYY-MM-DD>"
+}
+</script>
+```
+
+All fields are optional; fill what you know at authoring time. Keep `summary` to one or
+two sentences — it is the highest-leverage field for a cold agent picking up context. (Add a
+`"shell"` field only when repainting the surface — see §5.)
+
+## 7.5 · Surfacing or re-showing an artifact
 
 Artifacts surface **only inside the Board shell** — the single Companion surface. Writing a
 new `.html` into the artifacts dir is enough: the Board ingests it as a tile in its session
@@ -1090,7 +1812,7 @@ back up"), don't re-write the file — run **`companion board`** to bring the sh
 > the obsolete pre-Board behavior. Launching an artifact without the shell is exactly what
 > must not happen. Use `companion board`.
 
-## First-run: build an example artifact on request
+## 7.6 · First-run: build an example artifact on request
 
 When someone has just installed Companion and asks to **see what it does** — "show me an
 example artifact", "show me an example", "what does this do", "demo it" — build a real,
@@ -1113,82 +1835,7 @@ Make it look designed (this is onboarding), and keep the required `data-fit-root
 snippet so it sizes correctly. This is also the perfect smoke test: if the page pops in the
 overlay, the whole skill → write → hook → overlay path works end to end.
 
-## The L0 dashboard (`home.html`) + the modular top bar
-
-The Board (`companion board`) opens to an **L0 hub** that an agent fully authors: write a
-self-contained dashboard to the **reserved slug** `home.html` in the artifacts dir
-(`~/.claude/companion/artifacts/home.html`). The Board loads it **full-bleed** as the L0
-surface — it does NOT auto-pop as a panel (the hook skips it), and you re-see it by opening
-the Board, not via `companion open`. Think of it as a **daily dashboard**: regenerate it for
-whatever the user is actually working on that day — what needs them, what's running, the one
-thing that matters most.
-
-### The top bar is the Board's, themed by you (`companion-bar` block)
-
-The Board renders a persistent top bar across the whole surface. At L0 it is **themed and
-filled by your dashboard** so it matches your design; the **mandatory control cluster**
-(back / full-screen / collapse / close) is always rendered by the Board — you never draw or
-declare those, they can't go missing. You compose the bar's *content + colors* via a JSON
-block in `home.html`'s `<head>`:
-
-```html
-<script type="application/json" id="companion-bar">
-{
-  "bg": "#efe9df", "fg": "#201b15", "accent": "#b0552f",
-  "font": "Newsreader",
-  "left":   [{ "type": "title", "text": "Tuesday triage" }],
-  "center": [{ "type": "clock" }],
-  "right":  [{ "type": "badge", "text": "3 need you", "tone": "accent" }]
-}
-</script>
-```
-
-- **Theme keys:** `bg`, `fg`, `accent` (hex), `font` (`"Newsreader"` | `"Inter"` |
-  `"JetBrains Mono"`). **Set `bg`/`fg` to match your dashboard body** — the bar lives outside
-  your iframe, so it can't inherit your CSS; if you don't pass colors it won't match.
-- **Slots:** `left`, `center`, `right` — arrays of items the Board renders + wires:
-  - `{"type":"title","text":"…"}` — display title (uses `font`)
-  - `{"type":"clock"}` — live HH:MM, Board-updated
-  - `{"type":"badge","text":"…","tone":"accent"|"default"}` — a pill (e.g. a count)
-  - `{"type":"text","text":"…"}` — muted label
-  - `{"type":"link","text":"…","to":"sessions"|"unit:<key>"|"hub"|"artifact:<path>"}` —
-    navigates the Board (`session:<src>` still works as a back-compat alias → its unit)
-- **Rule:** if you set `companion-bar`, **do NOT draw your own header in the body** — the
-  Board's bar is your header. Start the body at the content.
-
-Without a `companion-bar` block the Board shows its native greeting. The theming applies at
-**L0 only**; L1 (sessions) and L2 (one session) use native chrome.
-
-### Navigation from inside the dashboard
-
-Any element can drive the Board by posting a navigate message to the parent — this is how
-the dashboard links to sessions, and how it stays *inside* the Board (no separate windows):
-
-```js
-parent.postMessage({ source: "companion-artifact", kind: "navigate",
-  to: "unit:scalp-defense" }, "*");   // or "sessions" | "hub" | "artifact:<abs-path>"
-```
-
-### Editorial, NOT a grid (read this before you lay it out)
-
-The single most common failure here is defaulting to a **uniform card grid** — N equal tiles,
-equal spacing, no hierarchy. Don't. A dashboard with a point of view reads like an editorial
-front page, not a spreadsheet:
-
-- **Give the one thing that matters most real weight** — large type, a hero block — and let
-  the rest recede. Scale contrast *is* the triage.
-- **Use a list, not cards, for "the rest."** Rows with a thin colored rule carry a roster far
-  better than a wall of identical boxes.
-- **Vary rhythm** — whitespace, asymmetry, a center of gravity. Uniform padding everywhere is
-  the tell of a template.
-- Idle / low-priority items collapse to **chips or a single line**, not full cards.
-
-(This applies to any artifact, but dashboards are where the grid reflex is strongest — see
-the design-quality rules: *default card grids with uniform spacing and no hierarchy* are
-explicitly banned.) Pair this with the bundled fonts below — real type is half of looking
-intentional.
-
-## Bundled assets (fonts, D3, GSAP)
+## 7.7 · Bundled assets (fonts, D3, GSAP)
 
 Three libraries are bundled in `~/.claude/companion/vendor/` and accessible via `asset:`.
 Use them instead of CDN links — the artifact sandbox blocks external URLs.
@@ -1291,7 +1938,7 @@ Always load scripts before your inline `<script>` that uses them. Fonts load asy
 </body>
 ```
 
-## Verify it's wired
+## 7.8 · Verify it's wired
 
 Run `/companion:doctor` (or `companion doctor` in a shell) — it renders a health panel in
 the overlay. If you can see the panel, the whole path works.
