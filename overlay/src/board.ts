@@ -58,6 +58,7 @@ import {
   handleShellMessage,
   noteArtifactShown,
 } from "./shell-repaint";
+import { classifyUpdate, type UpdateAttempt } from "./update-stale";
 import { mountClawd } from "./clawd";
 import { initCodePeek, closeCodePeek } from "./code-peek";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -2853,6 +2854,37 @@ type UpdateStatus = {
   behind: boolean;
 };
 
+/** localStorage key holding the pending update attempt (version + click time), read back
+ *  after the app relaunches to detect an upgrade that silently no-op'd (a stale tap). */
+const UPDATE_ATTEMPT_KEY = "companion:updateAttempt";
+
+function readUpdateAttempt(): UpdateAttempt | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(UPDATE_ATTEMPT_KEY) || "null");
+    return v && typeof v.from === "string" && typeof v.at === "number" ? v : null;
+  } catch {
+    return null;
+  }
+}
+function writeUpdateAttempt(from: string): void {
+  try {
+    localStorage.setItem(UPDATE_ATTEMPT_KEY, JSON.stringify({ from, at: Date.now() }));
+  } catch {
+    // A dead localStorage just means no stale-source hint next boot — never block the update.
+  }
+}
+function clearUpdateAttempt(): void {
+  try {
+    localStorage.removeItem(UPDATE_ATTEMPT_KEY);
+  } catch {
+    /* nothing to do */
+  }
+}
+
+/** The app version shown in the panel, captured so the Update click can record what we
+ *  were on before quitting. Set on every `syncUpdate`. */
+let updateAppVersion: string | null = null;
+
 /** Read both versions + the latest release, and paint the Version/Updates rows.
  *
  *  The button runs the same script on every path, because it always has something to
@@ -2876,9 +2908,22 @@ async function syncUpdate(): Promise<void> {
     const s = await invoke<UpdateStatus>("update_status");
     appEl.textContent = s.app;
     pluginEl.textContent = s.plugin ?? "—";
+    updateAppVersion = s.app;
     btn.disabled = false;
 
-    if (s.behind && s.latest) {
+    // Did the last Update click actually move us? If we relaunched on the same version
+    // and are still behind, the tap/repo hadn't published yet — say so, don't re-offer
+    // the same update as if the click never happened.
+    const verdict = classifyUpdate(s, readUpdateAttempt(), Date.now());
+    if (verdict.clearMarker) clearUpdateAttempt();
+
+    if (verdict.stale) {
+      btn.dataset.state = "behind";
+      const source = IS_LINUX ? "the package repository" : "the Homebrew tap";
+      subEl.textContent = s.latest
+        ? `Still on ${s.app} after the last update — ${source} hasn't published ${s.latest} yet. This is a release delay, not your machine; try again shortly.`
+        : `Still on ${s.app} after the last update. Try again shortly.`;
+    } else if (s.behind && s.latest) {
       btn.dataset.state = "behind";
       subEl.textContent = `Version ${s.latest} is available. ${restart}`;
     } else if (s.latest) {
@@ -2908,6 +2953,8 @@ function wireUpdate(): void {
     delete btn.dataset.state;
     btn.textContent = "Updating…";
     if (subEl) subEl.textContent = "Updating both halves. Companion will reopen when it's done.";
+    // Record what we're on now, so the next boot can tell whether the swap actually took.
+    if (updateAppVersion) writeUpdateAttempt(updateAppVersion);
     try {
       await invoke("run_update");
     } catch (e) {
