@@ -160,13 +160,27 @@ export function heroArtifactFor<T extends HeroCandidate>(
   activeSource: string | null,
   hasOwnedTab: boolean,
 ): T | null {
-  const scoped = activeSource
-    ? unitArts.filter((a) => artifactMatchesSource(a, activeSource))
-    : hasOwnedTab
-      ? []
-      : unitArts;
-  return scoped.reduce<T | null>(
+  return scopeToSession(unitArts, activeSource, hasOwnedTab).reduce<T | null>(
     (best, a) => (best === null || a.modified_ms > best.modified_ms ? a : best),
     null,
   );
+}
+
+/**
+ * The scoping half of `heroArtifactFor`, extracted so the artifact DECK (deck-logic.ts)
+ * pages through EXACTLY the set the hero selects from. Two copies of this filter would
+ * be free to drift, and the drift would land precisely on the sibling-session rule above
+ * — a deck that paged onto a sibling's artifact would reintroduce the 2026-07-09
+ * disappearance bug through the back door. One definition, two callers.
+ *
+ * Selection order is NOT decided here: the hero takes the freshest, the deck sorts
+ * chronologically. This answers only "whose artifacts are these".
+ */
+export function scopeToSession<T extends HeroCandidate>(
+  unitArts: readonly T[],
+  activeSource: string | null,
+  hasOwnedTab: boolean,
+): T[] {
+  if (activeSource) return unitArts.filter((a) => artifactMatchesSource(a, activeSource));
+  return hasOwnedTab ? [] : unitArts.slice();
 }
