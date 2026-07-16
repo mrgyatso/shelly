@@ -43,8 +43,15 @@ in the app, they are here for the artifact; the off switch is which **terminal**
 turn. A Stop-hook backstop (`companion-artifact-gate`) hands the turn back once if it ends with
 nothing written — but author it inline rather than lean on the reminder.
 
-- **Update** the current artifact (reuse its slug) when the same subject advances; write a
-  **fresh slug** when the subject changes.
+- **One turn, one artifact — always a fresh slug.** Never rewrite a slug you shipped in an
+  earlier turn, even when the same subject advances: the user may still be reading it, and a
+  rewrite destroys both that revision and any 💬 comments they typed into it (those live only
+  in the iframe DOM, so any reload is total loss). Write a new slug and let it land as its own
+  card in the deck — the previous one stays one flip back. *Within* the turn you are free to
+  overwrite and edit your own artifact as much as you like; that's authoring, and the user
+  hasn't got the terminal back yet.
+- **The exception is a living document** — `home.<unit_key>.html`, the per-project digest, is
+  meant to be rewritten forever and keeps updating in place.
 - **Even "we're done" is an artifact.** Say the work is finished, then hand over the next move —
   *"nothing left here; here's what I'd pick up next, or tell me where to go."* "Nothing to
   decide" is never true: choosing the next piece of work IS the decision.
