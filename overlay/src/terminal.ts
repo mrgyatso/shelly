@@ -13,11 +13,13 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { getCodexApproval } from "./prefs";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
+import { getCodexApproval } from "./prefs";
+import { IS_MAC } from "./platform";
 
 const win = getCurrentWebviewWindow();
 
@@ -88,6 +90,33 @@ export async function createTerminal(
   const fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
   term.open(mount);
+
+  // Copy / paste. Every other keystroke goes straight to the PTY (term.onData),
+  // so a bare Ctrl-C is SIGINT — not copy — and there is otherwise NO way to get
+  // text out of the terminal. Wire the platform's clipboard chords explicitly
+  // through Tauri's clipboard (the overlay's WebKitGTK webview can't be trusted
+  // to expose navigator.clipboard from this context): ⌘C/⌘V on macOS,
+  // Ctrl+Shift+C / Ctrl+Shift+V elsewhere — the standard terminal convention that
+  // deliberately leaves bare Ctrl-C free for SIGINT. Handling the chord (even with
+  // no selection) also stops the modified key from leaking to the PTY as a stray
+  // sequence. `term.paste` respects bracketed-paste mode, unlike a raw write.
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type !== "keydown") return true;
+    const chord = IS_MAC ? e.metaKey && !e.shiftKey : e.ctrlKey && e.shiftKey;
+    if (!chord) return true;
+    if (e.code === "KeyC") {
+      const sel = term.getSelection();
+      if (sel) void writeText(sel).catch(() => {});
+      e.preventDefault();
+      return false;
+    }
+    if (e.code === "KeyV") {
+      void readText().then((t) => { if (t) term.paste(t); }).catch(() => {});
+      e.preventDefault();
+      return false;
+    }
+    return true;
+  });
 
   // GPU renderer. The default DOM renderer repaints terminal rows as DOM nodes
   // on every write/keystroke — on the translucent overlay window that compositing
