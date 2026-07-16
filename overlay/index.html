@@ -225,6 +225,20 @@
                 <span class="hero-new-label">New artifact</span>
                 <span class="hero-new-cue">view ↑</span>
               </button>
+              <!-- Deck nav — the hero is a pageable STACK of this session's artifacts,
+                   not one slot. Flips between cards; the position tells the user how
+                   deep the deck is and where they are in it. Hidden below two cards
+                   (nothing to flip). The flip is always this click: the poll only ever
+                   makes the deck deeper. -->
+              <div id="unit-deck-nav" class="deck-nav" role="group" aria-label="Artifact deck" hidden>
+                <button class="deck-nav-btn" type="button" data-dir="-1" title="Previous artifact" aria-label="Previous artifact">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+                </button>
+                <span class="deck-nav-pos" aria-live="polite"></span>
+                <button class="deck-nav-btn" type="button" data-dir="1" title="Next artifact" aria-label="Next artifact">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+                </button>
+              </div>
               <!-- Artifact restore pill — shown only when the artifact is tucked. -->
               <button id="unit-artifact-pill" class="surface-pill" type="button">
                 <span class="surface-pill-ico">▤</span>
