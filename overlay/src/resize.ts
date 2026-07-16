@@ -1,7 +1,7 @@
 import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
-import { handleSubmit } from "./submit";
+import { handleSubmit, copyToClipboard } from "./submit";
 
 // Fit-to-content sizing. The artifact iframe is opaque-origin (no
 // `allow-same-origin`), so the parent can't read its layout. Instead the
@@ -43,6 +43,29 @@ interface SubmitMessage {
   source: "companion-artifact";
   kind: "submit";
   text: string;
+}
+
+/** A "copy this to the system clipboard" request from an artifact's Copy button.
+ *  The artifact's own `navigator.clipboard` / `execCommand` path is unreliable in
+ *  the sandboxed opaque-origin iframe (WebKitGTK blocks both on Linux), so the
+ *  button bridges here and the overlay — which owns Tauri's clipboard — writes it.
+ *  UNTRUSTED artifact text, but a clipboard write is strictly lower-risk than the
+ *  submit→PTY path (worst case: it clobbers the clipboard). */
+export interface CopyMessage {
+  source: "companion-artifact";
+  kind: "copy";
+  text: string;
+}
+
+/** Type guard for a CopyMessage. Exported so board.ts can wire its own listener. */
+export function isCopyMessage(d: unknown): d is CopyMessage {
+  if (!d || typeof d !== "object") return false;
+  const m = d as Record<string, unknown>;
+  return (
+    m.source === "companion-artifact" &&
+    m.kind === "copy" &&
+    typeof m.text === "string"
+  );
 }
 
 /** A Board navigation request from a full-bleed Hub iframe (or any artifact).
@@ -227,9 +250,10 @@ export function resetFit(): void {
 /**
  * Start listening for messages from the artifact iframe. Call once on boot.
  *
- * Two kinds handled today:
+ * Kinds handled today:
  *   - `size`   — content size report; drives fit-to-content resize
  *   - `submit` — interactive review artifact pasted compiled prose; write to clipboard
+ *   - `copy`   — an artifact Copy button; write its text to the system clipboard
  *
  * Unknown kinds are silently dropped (artifact authors may add their own
  * iframe-internal messaging without us mistaking it for protocol traffic).
@@ -240,6 +264,8 @@ export function initFit(): void {
       void fit({ w: e.data.w, h: e.data.h });
     } else if (isSubmitMessage(e.data)) {
       void handleSubmit(e.data.text);
+    } else if (isCopyMessage(e.data)) {
+      void copyToClipboard(e.data.text);
     }
   });
 }
