@@ -1559,10 +1559,13 @@ surface: a Companion artifact can deliver ready-to-paste handoffs for the user's
 agents/tools, so "onboard this agent" becomes "open the card → Copy → paste."
 
 Mark the copyable element `data-copy` and pair a `data-copy-btn` button with it (same
-container, or point at it with `data-copy-target="#id"`). The artifact runs in a sandboxed
-iframe, so use the helper below — it tries `navigator.clipboard` then falls back to a
-range-select + `execCommand("copy")` (which works for user-initiated copies even in the
-sandbox). Supports multiple blocks per artifact.
+container, or point at it with `data-copy-target="#id"`). The artifact runs in a sandboxed,
+opaque-origin iframe where **both `navigator.clipboard` and `execCommand("copy")` are blocked
+on WebKitGTK (Linux)** — so the helper below **bridges to the Companion overlay**
+(`postMessage({kind:"copy"})`, which the overlay writes through Tauri's clipboard) *and* also
+tries the in-page clipboard so a standalone browser (artifact opened directly, no overlay
+parent) still copies. Whichever path lands, the button confirms. Supports multiple blocks per
+artifact.
 
 ```html
 <div class="copy-block">
@@ -1574,25 +1577,37 @@ sandbox). Supports multiple blocks per artifact.
 ```html
 <script>
 (function () {
+  // Copy `text` to the user's system clipboard from inside the sandboxed iframe.
+  function copy(text) {
+    // 1) Bridge to the Companion overlay — the reliable path on Linux, where the
+    //    iframe's own clipboard APIs are blocked. The overlay writes it via Tauri.
+    //    A no-op (harmless) in a standalone browser with no such parent listener.
+    try { parent.postMessage({ source: "companion-artifact", kind: "copy", text: text }, "*"); } catch (e) {}
+    // 2) Also try the in-page clipboard so a standalone browser still copies.
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(function () { exec(text); });
+    } else { exec(text); }
+  }
+  function exec(text) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", "");
+      ta.style.position = "fixed"; ta.style.top = "-1000px";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+    } catch (e) { /* both paths exhausted; the overlay bridge above still handles the overlay case */ }
+  }
   document.querySelectorAll("[data-copy-btn]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var sel = btn.getAttribute("data-copy-target");
       var target = sel ? document.querySelector(sel)
                        : (btn.closest(".copy-block") || btn.parentElement).querySelector("[data-copy]");
       if (!target) return;
-      var text = target.innerText;
-      var done = function () { var p = btn.dataset.label || btn.textContent; btn.dataset.label = p;
-        btn.textContent = "Copied ✓"; clearTimeout(btn._t);
-        btn._t = setTimeout(function () { btn.textContent = btn.dataset.label; }, 1600); };
-      function fallback() {
-        try { var r = document.createRange(); r.selectNodeContents(target);
-          var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
-          document.execCommand("copy"); s.removeAllRanges(); done();
-        } catch (e) { btn.textContent = "Select + ⌘C"; }
-      }
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done).catch(fallback);
-      } else { fallback(); }
+      copy(target.innerText);
+      var prev = btn.dataset.label || btn.textContent;
+      btn.dataset.label = prev; btn.textContent = "Copied ✓";
+      clearTimeout(btn._t);
+      btn._t = setTimeout(function () { btn.textContent = btn.dataset.label; }, 1600);
     });
   });
 })();

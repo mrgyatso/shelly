@@ -26,7 +26,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { handleSubmit } from "./submit";
+import { handleSubmit, copyToClipboard } from "./submit";
 import { IS_LINUX } from "./platform";
 import { loadArtifactInto } from "./artifact-view";
 import { heroArtifactFor, artifactMatchesSource, effectsForRewrites } from "./ingest-logic";
@@ -51,7 +51,7 @@ import {
   NO_COMPACT,
   type CompactState,
 } from "./compact-logic";
-import { isNavigateMessage, isNewSessionMessage } from "./resize";
+import { isCopyMessage, isNavigateMessage, isNewSessionMessage } from "./resize";
 import {
   initShellRepaint,
   isShellMessage,
@@ -4527,6 +4527,14 @@ function wireNavigate(): void {
     const d = e.data;
     if (isNavigateMessage(d)) {
       navigateTo(d.to);
+      return;
+    }
+    if (isCopyMessage(d)) {
+      // An artifact Copy button couldn't reach the clipboard from inside its
+      // sandboxed iframe (WebKitGTK blocks it on Linux) — write its text through
+      // Tauri's clipboard here. Lower-risk than the submit path: it only touches
+      // the system clipboard, never a PTY.
+      void copyToClipboard(d.text);
       return;
     }
     if (isShellMessage(d)) {
