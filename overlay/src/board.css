@@ -2577,3 +2577,110 @@
 .sess-handoff:hover { color: var(--accent); border-color: oklch(from var(--accent) l c h / 0.5); }
 /* A cloud/connected agent has no Board PTY to type into — hide the trigger. */
 .no-terminal .sess-handoff { display: none; }
+
+/* =========================================================================
+   THE ALWAYS-ON CHAT BAR (chatbar.ts)
+   Permanent shell chrome docked bottom-center of the stage — a claude.ai-style
+   composer that STARTS a task (launch + send) or MESSAGES the running one.
+   Minimized to a pill by default so the artifact + terminal keep the majority
+   of the space. Appended to #board-stage, so it reads the .stage tokens; the
+   stage has no transform, so position:fixed stays viewport-relative.
+   ========================================================================= */
+.chatbar {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 55; /* above board chrome; the reader overlay (z:80+) still covers it */
+  width: min(680px, calc(100% - 52px));
+  display: flex;
+  justify-content: center;
+  pointer-events: none; /* the gutter stays click-through; children re-enable */
+}
+.chatbar > * { pointer-events: auto; }
+
+/* --- minimized: a small pill --- */
+.chatbar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px 9px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--sh-lift);
+  color: var(--ink-2);
+  font: 500 13px/1 var(--ui-font);
+  transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease), color 0.16s var(--ease);
+}
+.chatbar-pill:hover { transform: translateY(-1px); color: var(--ink); }
+.chatbar-pill-mark { color: var(--accent); font-size: 14px; line-height: 1; }
+.chatbar[data-state="open"] .chatbar-pill { display: none; }
+
+/* --- expanded: the composer --- */
+.chatbar-composer {
+  display: none;
+  width: 100%;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 12px 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: var(--sh-lift);
+}
+.chatbar[data-state="open"] .chatbar-composer { display: flex; }
+
+.chatbar-input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  font: 400 15px/1.5 var(--ui-font);
+  padding: 4px 2px 2px;
+  max-height: 168px;
+}
+.chatbar-input::placeholder { color: var(--ink-4); }
+
+.chatbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+}
+.chatbar-ctx {
+  min-width: 0;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chatbar-send {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  transition: opacity 0.15s var(--ease), transform 0.12s var(--ease), background 0.2s var(--ease);
+}
+.chatbar-send svg { width: 16px; height: 16px; }
+.chatbar-send:disabled { opacity: 0.32; cursor: default; }
+.chatbar-send:not(:disabled):hover { transform: translateY(-1px); }
+
+/* --- "Sent ✓" affirmation on the pill after a send --- */
+.chatbar-sent .chatbar-pill { color: var(--ok); border-color: oklch(from var(--ok) l c h / 0.5); }
+.chatbar-sent .chatbar-pill-mark { color: var(--ok); }
+
+@media (prefers-reduced-motion: reduce) {
+  .chatbar-pill,
+  .chatbar-send { transition: none; }
+}

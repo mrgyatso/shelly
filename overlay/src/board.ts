@@ -27,6 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit, copyToClipboard } from "./submit";
+import { initChatBar, syncChatBar, type ChatBarContext } from "./chatbar";
 import { IS_LINUX } from "./platform";
 import { loadArtifactInto } from "./artifact-view";
 import { heroArtifactFor, artifactMatchesSource, effectsForRewrites } from "./ingest-logic";
@@ -616,6 +617,15 @@ export async function initBoard(): Promise<void> {
   wireUpdate();
   wireScrollGating();
 
+  // The always-on chat bar — permanent shell chrome, minimized by default. It
+  // starts a task (launch + send) or messages the running one, both via existing
+  // primitives; the router lives in submitFromShell / chatBarContext.
+  initChatBar({
+    mount: stageEl,
+    onSubmit: (text) => void submitFromShell(text),
+    getContext: chatBarContext,
+  });
+
   setStatus(status, "Loading…");
 
   // Non-destructive retention sweep before listing — archives artifacts older
@@ -841,6 +851,62 @@ async function startSessionFromQuote(quote: string, artifact?: string): Promise<
       console.error("seed pre-fill failed", e),
     );
   }, SEED_PREFILL_MS);
+}
+
+// ---- the always-on chat bar (chatbar.ts) ------------------------------------
+
+/** The chat bar submitted `text` from the Board shell. Route it per Option A
+ *  (decided with the user): if a session is LIVE in the current unit, MESSAGE it;
+ *  otherwise LAUNCH a new task in HOME with the preferred agent and send this as
+ *  its first prompt — the claude.ai "new chat" feel. Clipboard fallback whenever
+ *  there's no reachable PTY. Reuses submitIntoPty's ESC-strip + Ctrl-U-clear +
+ *  delayed-Enter — never forks that trust gate. */
+async function submitFromShell(text: string): Promise<void> {
+  const v = currentView();
+  const liveTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
+  if (liveTab) {
+    void submitIntoPty(liveTab, text).catch((e) => {
+      console.error("chat bar → PTY failed; clipboard fallback", e);
+      void handleSubmit(text);
+    });
+    return;
+  }
+  // No live session in view → begin a task. Spawn in HOME (matching the + menu's
+  // "Start at home"), then send once it reaches its prompt (SEED_PREFILL_MS, as in
+  // startSessionFromQuote) — but WITH a carriage return via submitIntoPty, so the
+  // first message is actually sent, not just pre-filled.
+  let home: string | null = null;
+  try {
+    home = await invoke<string | null>("resolve_home_dir");
+  } catch (e) {
+    console.error("resolve_home_dir failed", e);
+  }
+  if (!home) return void handleSubmit(text);
+  const tabId = await launchSessionIn(home, preferredAgent());
+  if (!tabId) return void handleSubmit(text);
+  window.setTimeout(() => {
+    void submitIntoPty(tabId, text).catch((e) => {
+      console.error("chat bar launch-send failed; clipboard fallback", e);
+      void handleSubmit(text);
+    });
+  }, SEED_PREFILL_MS);
+}
+
+/** Context for the chat bar: its placeholder/pill copy, its default posture, and
+ *  whether a send launches or messages. A send MESSAGES only when the unit in view
+ *  has a Board-OWNED live terminal (submitFromShell uses the same test); a unit the
+ *  Board doesn't own — external or closed — has no PTY to write to, so a send there
+ *  launches a fresh task instead. */
+function chatBarContext(): ChatBarContext {
+  const v = currentView();
+  if (v.level === "unit") {
+    if (ownedTabForUnit(v.unitKey)) {
+      const sources = allSources.filter((s) => unitKeyOf(s) === v.unitKey);
+      return { atHome: false, mode: "message", target: unitName(v.unitKey, sources) };
+    }
+    return { atHome: false, mode: "launch", target: null };
+  }
+  return { atHome: true, mode: "launch", target: null };
 }
 
 // ---- /handoff → a live agent ------------------------------------------------
@@ -1219,6 +1285,7 @@ async function applyNavTarget(): Promise<void> {
 function showLevel(level: BoardView["level"]): void {
   hubEl.toggleAttribute("hidden", level !== "hub");
   unitEl.toggleAttribute("hidden", level !== "unit");
+  syncChatBar(); // keep the chat bar's placeholder + posture tracking the view
 }
 
 /** The unit key of the most recently active project (live first, then closed).
