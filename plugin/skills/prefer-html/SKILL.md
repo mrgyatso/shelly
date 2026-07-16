@@ -79,7 +79,7 @@ just stops is the failure this exists to prevent.
 
 ### 1.4 The plumbing (mechanical floor — the gate checks these)
 
-Four mechanical things every artifact must carry. They are shape-agnostic and appear in every
+Five mechanical things every artifact must carry. They are shape-agnostic and appear in every
 template below:
 
 - **`<meta charset="utf-8">`** in a real `<head>` — not optional (see §7.2 for why: mojibake).
@@ -88,6 +88,15 @@ template below:
   outside, so the artifact self-reports its size (see §7.3).
 - **The `companion-meta` block** in `<head>` — so feedback is self-identifying, even to a later
   session reopening it (see §7.4).
+- **`data-companion-commentable` on the content + the unified helper `<script>` pasted verbatim**
+  from `references/interaction-helper.md`, plus the §4.2 ambient CSS. §1.3 is only true if the 💬
+  actually renders. **The markup alone is inert — the helper is what injects the icons**, so
+  shipping one without the other is the single most common way an artifact arrives with nothing
+  to click (§4.4). Content in styled `<div>`s (cards, blobs, callouts) is invisible to the
+  helper's tag list until you mark it `data-companion-block`.
+  *Two shapes are exempt:* the **compact pill** (§3.1 — a status flip has nothing to annotate)
+  and the **bespoke dashboard / L0 home** (§3.6 — presentation-first and persistent, not a turn
+  artifact; it still carries its own responder per §1.3). Every other shape carries the helper.
 - **Write it with the `Write` tool, not `Bash`** — a `PostToolUse(Write|Edit)` hook indexes the
   artifact to your session; a `Bash`-written file lands unsourced (see §7.1).
 
@@ -252,6 +261,19 @@ toggle `.open`: the accent top-rule appears, the chevron rotates to `×`, and th
 fades in. A `.wide` blob spans the full row for a headline point. The **Decide ballot** (§4.1)
 sits below the canvas — read the blobs, then mark the moves.
 
+**Every blob is 💬-answerable, and that is not optional.** Responding to *one specific point*
+is the whole reason this shape exists — a canvas of N points the reader can only answer as a
+lump is a broken artifact. Two granularities, and they nest cleanly:
+
+| Target | How it's wired | The reader is saying |
+|---|---|---|
+| `.blob-head` | `data-companion-block` (a styled div is invisible to the helper's tag list without it) | "about *this point*…" |
+| each `<p>` in `.blob-body` | auto-discovered by the `p` in `BLOCK_SELECTOR` | "about *this sentence*…" |
+
+The head and the body are siblings, so the helper's nesting guard leaves both live. Wire
+`data-companion-commentable` on `.canvas` — **never** on the ballot below it (§4.3) — and paste
+the unified helper. Markup alone is inert: no helper, no icons, no way to answer (§4.4).
+
 ```html
 <!doctype html>
 <html lang="en">
@@ -328,6 +350,17 @@ sits below the canvas — read the blobs, then mark the moves.
   .b-blue{--a:var(--blue)} .b-clay{--a:var(--clay)} .b-mint{--a:var(--mint)}
   .b-indigo{--a:var(--indigo)} .b-amber{--a:var(--amber)}
 
+  /* 💬 ON A CARD — the ambient-comment CSS (§4.2) positions the icon in the LEFT GUTTER
+     (left:-36px). On a blob that lands outside the card and .blob{overflow:hidden} CLIPS it,
+     so the head must anchor its icon INSIDE, just left of the chevron. Paragraphs in
+     .blob-body sit 43px in and keep the normal gutter icon — no override needed. */
+  .blob-head.companion-commentable{cursor:pointer}
+  .blob-head.companion-commentable::before{display:none}       /* gutter hover-bridge: N/A inside a card */
+  .blob-head > .companion-ask-btn{left:auto;right:44px;top:14px;transform:none}
+  .blob-head.companion-commentable:hover{box-shadow:none;background:rgba(182,120,29,.05)}
+  .blob-head.companion-commentable.has-comment{box-shadow:none;background:rgba(46,125,82,.07)}
+  .blob-body .companion-composer,.blob-body .companion-annotation{margin-left:0}
+
   /* DECIDE ballot — sits below the canvas */
   .decide{margin-top:38px;background:var(--paper);border:1px solid var(--hair);border-radius:16px;
     padding:0 24px 22px;box-shadow:0 20px 50px -34px rgba(0,0,0,.6)}
@@ -379,11 +412,14 @@ sits below the canvas — read the blobs, then mark the moves.
 
   <div class="hint">Click a card to open it. Skip what you don't need.</div>
 
-  <div class="canvas">
+  <!-- data-companion-commentable wraps the CANVAS (never the ballot below it) so every
+       point is 💬-answerable. Each .blob-head carries data-companion-block — a styled div
+       is invisible to the helper's tag list without it. -->
+  <div class="canvas" data-companion-commentable>
     <!-- duplicate one .blob per point; give each a semantic palette class (.b-blue etc.) -->
     <div class="blob b-blue" data-blob>
       <div class="rule"></div>
-      <div class="blob-head">
+      <div class="blob-head" data-companion-block>
         <span class="dot"></span>
         <div class="bh-main">
           <div class="bh-kick">Point 1 · label</div>
@@ -400,7 +436,7 @@ sits below the canvas — read the blobs, then mark the moves.
 
     <div class="blob b-amber wide" data-blob>
       <div class="rule"></div>
-      <div class="blob-head">
+      <div class="blob-head" data-companion-block>
         <span class="dot"></span>
         <div class="bh-main">
           <div class="bh-kick">Point N · label</div>
@@ -457,57 +493,13 @@ sits below the canvas — read the blobs, then mark the moves.
   });
 })();
 </script>
+<!-- THE HELPER — NOT OPTIONAL. This canvas carries BOTH 💬 comments and a Decide ballot,
+     so it needs the UNIFIED helper (§4.3): one submit, sectioned comments + decisions.
+     Copy the <script> from references/interaction-helper.md VERBATIM — do not retype or
+     trim it, and do not substitute a ballot-only script (that is what silently ships a
+     canvas with no 💬 on it). Paste it here, plus the ambient-comment CSS from §4.2. -->
 <script>
-/* ballot: per-item state, do-all, submit via postMessage(kind:'submit') */
-(function(){
-  var GLY={approve:"✓",comment:"✎",reject:"✗"};
-  function refresh(){
-    var all=document.querySelectorAll('[data-companion-item]').length;
-    var n=document.querySelectorAll('[data-companion-item][data-state]').length;
-    var c=document.querySelector('[data-count]');
-    if(c) c.textContent = n? (n+' of '+all+' marked') : 'nothing marked yet';
-    var s=document.querySelector('[data-companion-submit]'); if(s) s.classList.toggle('ready', n>0);
-  }
-  document.addEventListener('click',function(e){
-    var btn=e.target.closest('[data-action]');
-    if(btn){
-      var item=btn.closest('[data-companion-item]'); if(!item) return;
-      var action=btn.getAttribute('data-action');
-      var cur=item.getAttribute('data-state');
-      var ta=item.querySelector('textarea[data-comment]');
-      if(cur===action){ item.removeAttribute('data-state'); if(ta) ta.style.display='none'; refresh(); return; }
-      item.setAttribute('data-state',action);
-      if(ta) ta.style.display = (action==='comment')?'block':'none';
-      if(action==='comment'&&ta) setTimeout(function(){ta.focus();},0);
-      refresh(); return;
-    }
-    if(e.target.closest('[data-doall]')){
-      document.querySelectorAll('[data-companion-item]').forEach(function(it){
-        if(it.getAttribute('data-state')!=='comment'){
-          it.setAttribute('data-state','approve');
-          var ta=it.querySelector('textarea[data-comment]'); if(ta) ta.style.display='none';
-        }
-      });
-      refresh(); return;
-    }
-    var sb=e.target.closest('[data-companion-submit]');
-    if(sb){
-      var title=sb.getAttribute('data-companion-submit')||'Review';
-      var items=document.querySelectorAll('[data-companion-item][data-state]');
-      if(items.length===0) return;
-      var lines=['Re: '+title,''];
-      items.forEach(function(it){
-        var st=it.getAttribute('data-state');
-        var label=it.getAttribute('data-item-label')||'(unlabeled)';
-        lines.push(GLY[st]+' '+label);
-        if(st==='comment'){ var t=it.querySelector('textarea[data-comment]'); if(t&&t.value.trim()){ t.value.trim().split('\n').forEach(function(l){lines.push('   '+l);}); } }
-      });
-      parent.postMessage({source:'companion-artifact',kind:'submit',text:lines.join('\n')},'*');
-      sb.textContent='Sent ✓';
-    }
-  });
-  refresh();
-})();
+  /* … unified helper from references/interaction-helper.md, verbatim … */
 </script>
 <script>
   (function () {
@@ -633,13 +625,14 @@ throws (same constraint the sidebar template documents). The size-reporter obser
   <div class="wz-progress"><i data-wz-fill></i></div>
 
   <!-- one .wz-page per step; the LAST page is the Decide ballot -->
-  <section class="wz-page active" data-wz-page>
+  <!-- CONTENT pages are commentable; the decide page below is NOT (§4.3) -->
+  <section class="wz-page active" data-wz-page data-companion-commentable>
     <div class="kick">Step 1</div>
     <h1>First step of the sequence.</h1>
     <p>Walk the reader through it. <strong>One idea per page.</strong></p>
   </section>
 
-  <section class="wz-page" data-wz-page>
+  <section class="wz-page" data-wz-page data-companion-commentable>
     <div class="kick">Step 2</div>
     <h1>It builds on the last.</h1>
     <p>Order matters here — that's why it's a wizard and not a scroll.</p>
@@ -698,48 +691,12 @@ throws (same constraint the sidebar template documents). The size-reporter obser
   render();
 })();
 </script>
+<!-- THE HELPER — NOT OPTIONAL. Content pages carry 💬 comments and the last page carries the
+     ballot, so this wizard needs the UNIFIED helper (§4.3): one submit, sectioned comments +
+     decisions. Copy the <script> from references/interaction-helper.md VERBATIM — a ballot-only
+     script silently ships a wizard whose pages cannot be answered. Add the §4.2 ambient CSS too. -->
 <script>
-/* ballot on the final page — same handler as the blob canvas */
-(function(){
-  var GLY={approve:"✓",comment:"✎",reject:"✗"};
-  function ready(){
-    var n=document.querySelectorAll('[data-companion-item][data-state]').length;
-    var s=document.querySelector('[data-companion-submit]'); if(s) s.classList.toggle('ready', n>0);
-  }
-  document.addEventListener('click',function(e){
-    var btn=e.target.closest('[data-action]');
-    if(btn){
-      var item=btn.closest('[data-companion-item]'); if(!item) return;
-      var action=btn.getAttribute('data-action'), cur=item.getAttribute('data-state'), ta=item.querySelector('textarea[data-comment]');
-      if(cur===action){ item.removeAttribute('data-state'); if(ta) ta.style.display='none'; ready(); return; }
-      item.setAttribute('data-state',action);
-      if(ta) ta.style.display=(action==='comment')?'block':'none';
-      if(action==='comment'&&ta) setTimeout(function(){ta.focus();},0);
-      ready(); return;
-    }
-    if(e.target.closest('[data-doall]')){
-      document.querySelectorAll('[data-companion-item]').forEach(function(it){
-        if(it.getAttribute('data-state')!=='comment'){ it.setAttribute('data-state','approve');
-          var ta=it.querySelector('textarea[data-comment]'); if(ta) ta.style.display='none'; }
-      });
-      ready(); return;
-    }
-    var sb=e.target.closest('[data-companion-submit]');
-    if(sb){
-      var title=sb.getAttribute('data-companion-submit')||'Review';
-      var items=document.querySelectorAll('[data-companion-item][data-state]');
-      if(items.length===0) return;
-      var lines=['Re: '+title,''];
-      items.forEach(function(it){
-        var st=it.getAttribute('data-state'), label=it.getAttribute('data-item-label')||'(unlabeled)';
-        lines.push(GLY[st]+' '+label);
-        if(st==='comment'){ var t=it.querySelector('textarea[data-comment]'); if(t&&t.value.trim()){ t.value.trim().split('\n').forEach(function(l){lines.push('   '+l);}); } }
-      });
-      parent.postMessage({source:'companion-artifact',kind:'submit',text:lines.join('\n')},'*');
-      sb.textContent='Sent ✓';
-    }
-  });
-})();
+  /* … unified helper from references/interaction-helper.md, verbatim … */
 </script>
 <script>
   (function () {
@@ -783,11 +740,12 @@ panel, and sizes through the same size-report snippet (switching pages re-fires 
   the landing page (`.active` on load).
 - **Soft cap ~12 pages.** Beyond that, group subjects or summarise the long tail on the Overview
   — don't emit 30 pages.
-- **At most one submit-driven helper in the whole file.** The interactive review form and ambient
-  comments both fire the single `data-companion-submit` button, so across a multi-page file you
-  still get only *one* of them. Plain multi-page nav uses no submit button, so it composes freely
-  with one helper — e.g. ambient comments layered on the pages. If you do layer ambient comments,
-  bump `.mp-pages { padding-left: 56px }` so the 💬 icon clears the sidebar.
+- **Every content page is 💬-answerable — that is the floor, not a garnish.** Put
+  `data-companion-commentable` on each `data-mp-page` and paste the unified helper (§4.3); it
+  scans **all** commentable roots, so one helper covers every page. Bump
+  `.mp-pages { padding-left: 56px }` so the 💬 icon clears the sidebar.
+- **One submit button for the whole file.** The unified helper gathers block-comments *and* any
+  ballot items into that single `data-companion-submit` — never wire a second submit per page.
 
 ### Sidebar multi-page template (copy, fill, write)
 
@@ -839,7 +797,7 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
       <!-- one <a> per subject -->
     </nav>
     <main class="mp-pages">
-      <section id="overview" data-mp-page class="active">
+      <section id="overview" data-mp-page class="active" data-companion-commentable>
         <div class="kicker">Overview</div>
         <h1>What this covers</h1>
         <p>One short orienting paragraph + the count.</p>
@@ -848,17 +806,17 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
           <li><strong>Second subject</strong> — one-line summary.</li>
         </ul>
       </section>
-      <section id="p1" data-mp-page>
+      <section id="p1" data-mp-page data-companion-commentable>
         <div class="kicker">Subject 1 of N</div>
         <h1>First subject</h1>
         <p>Real substance for this subject.</p>
       </section>
-      <section id="p2" data-mp-page>
+      <section id="p2" data-mp-page data-companion-commentable>
         <div class="kicker">Subject 2 of N</div>
         <h1>Second subject</h1>
         <p>Real substance for this subject.</p>
       </section>
-      <!-- one <section> per subject -->
+      <!-- one <section> per subject — each one data-companion-commentable -->
     </main>
   </div>
   <script>
@@ -882,6 +840,12 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
       if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
       addEventListener("load", post); post();
     })();
+  </script>
+  <!-- THE HELPER — NOT OPTIONAL. One helper covers every page (it scans all commentable roots).
+       Copy the <script> from references/interaction-helper.md VERBATIM, plus the §4.2 ambient CSS.
+       Without it the pages are marked up but inert: no 💬, nothing to answer (§4.4). -->
+  <script>
+    /* … unified helper from references/interaction-helper.md, verbatim … */
   </script>
 </body>
 </html>
@@ -946,7 +910,15 @@ scrolls. The left column carries `data-companion-commentable`; the visual does n
   .zone { display:grid; grid-template-columns:1fr 360px; gap:26px; align-items:start; }
   .visual { position:sticky; top:16px; }
   @media (max-width:720px){ .zone{ grid-template-columns:1fr; } } /* graceful narrow fallback */
+  /* the 💬 sits at left:-36px — give the prose column room so it isn't clipped */
+  .col-main { padding-left: 40px; }
 </style>
+<!-- THE HELPER — NOT OPTIONAL. data-companion-commentable above is inert markup on its own:
+     it is the helper that injects the 💬 icons. Copy the <script> from
+     references/interaction-helper.md VERBATIM, plus the §4.2 ambient CSS. -->
+<script>
+  /* … unified helper from references/interaction-helper.md, verbatim … */
+</script>
 ```
 
 Reach for two-zone on any substantive full-document turn (a triage, a plan, a comparison,
@@ -1321,8 +1293,11 @@ helper no-ops in that case:
   (function () {
     var root = document.querySelector("[data-companion-commentable]");
     if (!root) return;
-    var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre";
-    var blocks = Array.prototype.slice.call(root.querySelectorAll(BLOCK_SELECTOR));
+    var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre, [data-companion-block]";
+    var blocks = Array.prototype.slice.call(root.querySelectorAll(BLOCK_SELECTOR))
+      .filter(function (b) {   // an outer marked card must not double-icon its inner text
+        return !(b.parentElement && b.parentElement.closest(BLOCK_SELECTOR));
+      });
     var comments = new Map();
     var open = null;
 
