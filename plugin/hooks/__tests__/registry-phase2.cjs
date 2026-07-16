@@ -44,8 +44,9 @@ const indexPath = path.join(home, ".claude", "companion", "artifact-index.json")
 const artifact = path.join(home, ".claude", "companion", "artifacts", "demo.html");
 fs.mkdirSync(path.dirname(artifact), { recursive: true });
 fs.writeFileSync(artifact, "<html></html>");
+const PROMPT_ID = "aaaa1111-bbbb-2222-cccc-333344445555";
 execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), artifact, liveDir, indexPath], {
-  env: { ...baseEnv, SID },
+  env: { ...baseEnv, SID, PROMPT_ID },
   encoding: "utf8",
 });
 ok(fs.existsSync(indexPath), "index stamped");
@@ -54,6 +55,18 @@ const entry = index[artifact];
 ok(!!entry, "index has an entry for the artifact (keyed by abs path)");
 ok(entry && entry.session_id === SID, "index entry carries the FULL session_id");
 ok(entry && entry.unit_key === rec.unit_key, "index entry unit_key matches the record (parity)");
+// The turn stamp the PreToolUse fork hook reads back to tell "still authoring" from
+// "sealed in an earlier turn". Absent PROMPT_ID (older client) it must be null, not
+// undefined/missing — the fork hook treats a falsy value as "fall back to mtime".
+ok(entry && entry.prompt_id === PROMPT_ID, "index entry carries the writing turn's prompt_id");
+const artNoPrompt = path.join(path.dirname(artifact), "no-prompt.html");
+fs.writeFileSync(artNoPrompt, "<html></html>");
+execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), artNoPrompt, liveDir, indexPath], {
+  env: { ...baseEnv, SID },
+  encoding: "utf8",
+});
+const noPromptEntry = JSON.parse(fs.readFileSync(indexPath, "utf8"))[artNoPrompt];
+ok(noPromptEntry && noPromptEntry.prompt_id === null, "no PROMPT_ID in env → entry carries prompt_id:null");
 
 // 3. Round-trip: index.session_id → record → unit_key (what the Rust reader does).
 function resolveUnit(home, sid) {
