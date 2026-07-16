@@ -1261,16 +1261,187 @@
   transition: opacity 0.14s;
 }
 .unit-title:hover .unit-title-edit { opacity: 1; }
+/* THE SESSION CHIP — this session's state on a face you never have to click, and
+   every verb that acts on it one click inside. The toolbar used to give a number you
+   watch constantly and a hand-off you press once the same weight in the same strip;
+   the chip sorts them by kind. State (model · context) stays out; verbs go in.
+
+   NB every button rule below is qualified to at least (0,2,0). `.stage button
+   { color: inherit }` is (0,1,1) and silently beats any single-class colour rule —
+   the button renders, reads healthy to a DOM probe, and is invisible on screen. */
+.unit-chip { position: relative; }
+.unit-chip[hidden] { display: none; }
+.unit-chip .chip-face {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px 5px 7px;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  color: var(--ink-2);
+  font: 500 11.5px/1 var(--ui-font);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+.unit-chip .chip-face:hover { border-color: var(--line-1); background: var(--sunk); }
+.unit-chip .chip-face:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
+/* Running hot is legible from the face — the whole reason the number stays outside. */
+.unit-chip[data-level="high"] .chip-face { border-color: color-mix(in oklab, var(--clay) 40%, transparent); }
+.unit-chip[data-level="high"] .chip-label { color: var(--clay-deep); }
+.chip-label { color: inherit; }
+/* The dial: the context bar's own number as a pie. At 13px a pie still reads where
+   a 6px tick bar would not, so the face gets the shape and the popover keeps the bar. */
+.chip-dial {
+  flex: 0 0 auto;
+  position: relative;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.chip-dial-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(var(--dial-c, var(--ok)) calc(var(--p, 0) * 1%), transparent 0);
+}
+.unit-chip[data-dial="none"] .chip-dial-fill { display: none; }
+.unit-chip[data-level="ok"] { --dial-c: var(--ok); }
+.unit-chip[data-level="warn"] { --dial-c: var(--busy); }
+.unit-chip[data-level="high"] { --dial-c: var(--clay); }
+.chip-caret {
+  width: 11px;
+  height: 11px;
+  color: var(--ink-3);
+  opacity: 0.7;
+  transition: transform 140ms ease;
+}
+.chip-caret svg { width: 100%; height: 100%; display: block; }
+.unit-chip .chip-face[aria-expanded="true"] .chip-caret { transform: rotate(180deg); }
+
+/* The popover. Anchored under the face and right-aligned so it never runs off the
+   toolbar's right edge, where the chip lives. */
+.chip-pop {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 40;
+  width: 258px;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 18px 40px -18px rgba(0, 0, 0, 0.4);
+  animation: chipPopIn 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.chip-pop[hidden] { display: none; }
+@keyframes chipPopIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.chip-sec { padding: 7px 8px 9px; }
+.chip-sec[hidden] { display: none; }
+.chip-sec + .chip-sec { border-top: 1px solid var(--line-2); }
+.chip-sec-h {
+  color: var(--ink-3);
+  font: 600 9px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 7px;
+}
+/* Model rows. The tick column is always there, so the rows don't shuffle sideways
+   when the selection moves. */
+.model-list { display: flex; flex-direction: column; gap: 1px; }
+.model-list .model-opt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 7px;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ink-2);
+  text-align: left;
+  transition: background 110ms ease;
+}
+.model-list .model-opt:hover { background: var(--sunk); }
+.model-list .model-opt:focus-visible { outline: 2px solid var(--clay); outline-offset: -2px; }
+.model-list .model-opt.on { color: var(--ink-1); }
+.model-tick {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--line-1);
+  position: relative;
+}
+.model-list .model-opt.on .model-tick {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.model-list .model-opt.on .model-tick::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.model-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.model-t { font: 550 12.5px/1 var(--ui-font); letter-spacing: -0.01em; }
+.model-list .model-opt.on .model-t { font-weight: 650; }
+.model-s { color: var(--ink-3); font: 400 10.5px/1.25 var(--ui-font); }
+
+/* Hand off. A once-a-session move: it reads as a menu row, not as a button competing
+   with Compact — which is the whole point of it no longer being toolbar chrome. */
+.chip-acts { padding-bottom: 8px; }
+.chip-pop .chip-act {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 7px;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ink-2);
+  text-align: left;
+  transition: background 110ms ease;
+}
+.chip-pop .chip-act:hover { background: var(--sunk); color: var(--ink-1); }
+.chip-pop .chip-act:focus-visible { outline: 2px solid var(--clay); outline-offset: -2px; }
+.chip-act-ico {
+  flex: 0 0 auto;
+  width: 13px;
+  text-align: center;
+  color: var(--ink-3);
+  font: 600 12px/1 var(--mono);
+}
+.chip-pop .chip-act:hover .chip-act-ico { color: var(--accent); }
+.chip-act-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chip-act-t { font: 550 12.5px/1 var(--ui-font); letter-spacing: -0.01em; }
+.chip-act-s { color: var(--ink-3); font: 400 10.5px/1.25 var(--ui-font); }
+
 /* Session usage meter — how full this session's context is. Reads as instrument,
    not alarm: colour is spent on *position*, not on the mere fact of a reading. The
    bar is a row of ticks lit along a green→amber→clay ramp, so a third full is calm
    green and a nearly-full window has already reddened on its own. `Compact` carries
    the accent at all times (it is the one action here), and fills solid once the
-   meter is worth acting on. */
+   meter is worth acting on.
+
+   It lives inside the chip's popover now, so it is a section rather than a pill:
+   the border and the toolbar padding are gone, and the bar can finally be wide
+   enough to read — fifteen ticks instead of ten. */
 .unit-meter {
   /* The ramp is anchored to the bar's full width, never to the fill's — so a tick's
      colour depends on where it sits in the window, not on how full the bar is. */
-  --meter-w: 78px;
+  --meter-w: 118px;
   --meter-ramp: linear-gradient(
     90deg,
     var(--ok) 0%,
@@ -1279,16 +1450,16 @@
     var(--clay) 88%,
     var(--clay-deep) 100%
   );
-  /* Ten 6px ticks on an 8px pitch — the last one lands exactly on --meter-w. */
+  /* Fifteen 6px ticks on an 8px pitch — the last one lands exactly on --meter-w. */
   --meter-ticks: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 8px);
+}
+.unit-meter[hidden] { display: none; }
+.chip-meter-row {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 5px 10px 5px 9px;
-  border: 1px solid var(--line-2);
-  border-radius: 9px;
+  margin-bottom: 8px;
 }
-.unit-meter[hidden] { display: none; }
 .meter-bar {
   position: relative;
   width: var(--meter-w);
@@ -1342,6 +1513,18 @@
   border-radius: 9px;
 }
 .unit-rate[hidden] { display: none; }
+/* In the rail foot it is rail chrome, not a toolbar pill: no border to fence it off
+   from Settings below it, and the row spreads to the rail's width so the reading
+   sits at the right edge like every other value in the sidebar. It moved here
+   because it is ACCOUNT-wide — one number for every session — and sitting in the
+   per-session toolbar implied it was about the session in view. */
+.rail-foot .unit-rate {
+  border: 0;
+  gap: 8px;
+  padding: 5px 8px 7px;
+  margin-bottom: 2px;
+}
+.rail-foot .unit-rate .meter-text { margin-left: auto; }
 .rate-label {
   color: var(--ink-3);
   font: 600 10px/1 var(--ui-font);
@@ -1450,7 +1633,8 @@
    `high` is "the next long tool result may not fit". The fill needs no override —
    by the time it reaches these marks the ramp has already coloured itself. */
 .unit-meter[data-level="warn"] .meter-text { color: var(--ink-2); }
-.unit-meter[data-level="high"] { border-color: color-mix(in oklab, var(--clay) 40%, transparent); }
+/* The pill's `high` border moved to the chip face (.unit-chip[data-level="high"]) —
+   the section in the popover has no border of its own to redden. */
 .unit-meter[data-level="high"] .meter-text { color: var(--clay-deep); }
 /* At `high` the button stops asking and starts telling: solid clay, paper text —
    still a raised chip, now a loud one. */
@@ -2566,17 +2750,9 @@
 }
 .handoff-picker .hp-launch:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* The "⇥ Hand off" button on a live session card. */
-.sess-handoff {
-  flex: 0 0 auto;
-  padding: 4px 9px; border-radius: 7px; cursor: pointer;
-  border: 1px solid var(--line-strong);
-  background: var(--sunk); color: var(--ink-2);
-  font-size: 11px; font-weight: 600; white-space: nowrap;
-}
-.sess-handoff:hover { color: var(--accent); border-color: oklch(from var(--accent) l c h / 0.5); }
-/* A cloud/connected agent has no Board PTY to type into — hide the trigger. */
-.no-terminal .sess-handoff { display: none; }
+/* Hand off now lives in the session chip's popover (see .chip-act). A cloud agent
+   has no Board PTY to type into, so renderSessionChip hides that section — and with
+   nothing else to offer, the chip itself — rather than CSS hiding a live button. */
 
 /* =========================================================================
    THE ALWAYS-ON CHAT BAR (chatbar.ts)

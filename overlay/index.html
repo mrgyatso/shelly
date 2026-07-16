@@ -157,8 +157,20 @@
               <button class="rail-nav" role="menuitem" data-dest="settings"><span class="rail-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h9M17.5 8H20M4 16h2.5M11 16h9"/><circle cx="15" cy="8" r="2.2"/><circle cx="8.5" cy="16" r="2.2"/></svg></span><span>Settings</span></button>
             </div>
             <!-- Bottom-anchored foot: Settings always one click away (same
-                 delegated .rail-nav wiring as the menu face). -->
+                 delegated .rail-nav wiring as the menu face) — and the account
+                 rate pill, which is Board-wide chrome and belongs beside it.
+                 It reports the rolling 5-hour window from Anthropic's OAuth usage
+                 endpoint: ONE number for the whole account, identical in every
+                 session. It sat in the per-session toolbar, which implied it was
+                 about the session in view. Hidden until a reading lands. -->
             <div class="rail-foot">
+              <div id="unit-rate" class="unit-rate" hidden>
+                <span class="rate-label">5h</span>
+                <div id="unit-rate-bar" class="meter-bar" role="progressbar" aria-label="5-hour usage window" aria-valuemin="0" aria-valuemax="100">
+                  <span id="unit-rate-fill" class="meter-fill"></span>
+                </div>
+                <span id="unit-rate-text" class="meter-text"></span>
+              </div>
               <button class="rail-nav" data-dest="settings"><span class="rail-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h9M17.5 8H20M4 16h2.5M11 16h9"/><circle cx="15" cy="8" r="2.2"/><circle cx="8.5" cy="16" r="2.2"/></svg></span><span>Settings</span></button>
             </div>
           </nav>
@@ -172,27 +184,55 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg>
               </button>
               <button id="unit-title" class="unit-title" title="Rename this session"><span class="unit-title-name"></span><span class="unit-title-edit">✎</span></button>
-              <!-- Session usage meter: how full this session's context is, read from
-                   Claude Code's own transcript. Hidden until the session takes its
-                   first assistant turn. Compact is disabled for sessions the Board
-                   doesn't own a terminal for — there's no PTY to send the command to. -->
-              <div id="unit-meter" class="unit-meter" hidden>
-                <div id="unit-meter-bar" class="meter-bar" role="progressbar" aria-label="Context used" aria-valuemin="0" aria-valuemax="100">
-                  <span id="unit-meter-fill" class="meter-fill"></span>
+              <!-- The session chip: what this session IS (model) and how full it is
+                   (context), on a face you can read without clicking — plus every
+                   control that acts on this session, one click inside.
+                   State lives on the face because it's watched; the verbs live in the
+                   popover because they're used occasionally and don't earn the pixels.
+                   Each section paints only where it can act, so the chip never offers
+                   a control that would no-op: Model needs a Claude session whose PTY
+                   the Board owns, Context needs a transcript to read, Hand off needs a
+                   PTY to type into. Nothing to offer at all ⇒ the chip hides. -->
+              <div id="unit-chip" class="unit-chip" hidden>
+                <button id="unit-chip-face" class="chip-face" type="button" aria-haspopup="dialog" aria-expanded="false">
+                  <span class="chip-dial" aria-hidden="true"><span id="unit-chip-dial-fill" class="chip-dial-fill"></span></span>
+                  <span id="unit-chip-label" class="chip-label"></span>
+                  <span class="chip-caret" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></svg>
+                  </span>
+                </button>
+                <div id="unit-chip-pop" class="chip-pop" role="dialog" aria-label="Session controls" hidden>
+                  <!-- Model. Populated from board.ts so the list has one source. -->
+                  <div id="unit-chip-model" class="chip-sec" hidden>
+                    <div class="chip-sec-h">Model</div>
+                    <div id="unit-model-list" class="model-list" role="radiogroup" aria-label="Model"></div>
+                  </div>
+                  <!-- Context: the meter, now on the inside. #unit-meter keeps its id
+                       and its data-level — the fill's colour still keys off it. -->
+                  <div id="unit-meter" class="unit-meter chip-sec" hidden>
+                    <div class="chip-sec-h">Context</div>
+                    <div class="chip-meter-row">
+                      <div id="unit-meter-bar" class="meter-bar" role="progressbar" aria-label="Context used" aria-valuemin="0" aria-valuemax="100">
+                        <span id="unit-meter-fill" class="meter-fill"></span>
+                      </div>
+                      <span id="unit-meter-text" class="meter-text"></span>
+                    </div>
+                    <button id="unit-compact" class="meter-compact" type="button">Compact</button>
+                  </div>
+                  <!-- Hand off: write a handoff for this session and launch it in a
+                       fresh agent (sends /companion:handoff into its terminal). A
+                       once-a-session move — this is the overflow it belongs in, not
+                       permanent toolbar chrome. -->
+                  <div id="unit-chip-acts" class="chip-sec chip-acts" hidden>
+                    <button id="unit-handoff" class="chip-act" type="button">
+                      <span class="chip-act-ico" aria-hidden="true">⇥</span>
+                      <span class="chip-act-main">
+                        <span class="chip-act-t">Hand off</span>
+                        <span class="chip-act-s">Write a handoff and launch it in a fresh agent</span>
+                      </span>
+                    </button>
+                  </div>
                 </div>
-                <span id="unit-meter-text" class="meter-text"></span>
-                <button id="unit-compact" class="meter-compact" type="button">Compact</button>
-              </div>
-              <!-- Account rate-limit pill: how much of the subscription's rolling
-                   5-hour window is used, from Anthropic's OAuth usage endpoint.
-                   Account-wide (one number for every session), so it sits apart
-                   from the per-session context meter. Hidden until a reading lands. -->
-              <div id="unit-rate" class="unit-rate" hidden>
-                <span class="rate-label">5h</span>
-                <div id="unit-rate-bar" class="meter-bar" role="progressbar" aria-label="5-hour usage window" aria-valuemin="0" aria-valuemax="100">
-                  <span id="unit-rate-fill" class="meter-fill"></span>
-                </div>
-                <span id="unit-rate-text" class="meter-text"></span>
               </div>
               <!-- Surface controls: resize only (⬒/⊟/⬓). Lives in the toolbar so it
                    never overlaps the artifact/terminal pills below. -->
@@ -206,9 +246,6 @@
                 <!-- Code peek: slide out the read-only file viewer for this session. -->
                 <button id="unit-code-toggle" class="surface-code-btn" type="button" title="Peek at the code" aria-label="Peek at the code">&lt;/&gt;</button>
               </div>
-              <!-- Hand off: write a handoff for this session and launch it in a fresh
-                   agent. Sends /companion:handoff into this session's terminal. -->
-              <button id="unit-handoff" class="sess-handoff" type="button" title="Hand off to a fresh agent" aria-label="Hand off to a fresh agent">⇥ Hand off</button>
             </div>
             <!-- Content row: the active view (session / history / settings) on the
                  left, and the code-peek viewer sharing the width on the right when
