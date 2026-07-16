@@ -89,12 +89,14 @@ template below:
 - **The `companion-meta` block** in `<head>` — so feedback is self-identifying, even to a later
   session reopening it (see §7.4).
 - **`data-companion-commentable` on the content + the unified helper `<script>` pasted verbatim**
-  from `references/interaction-helper.md`, plus the §4.2 ambient CSS. Anything past a pill has
-  content worth answering, and §1.3 is only true if the 💬 actually renders. **The markup alone
-  is inert — the helper is what injects the icons**, so shipping one without the other is the
-  single most common way an artifact arrives with nothing to click (§4.4). Content in styled
-  `<div>`s (cards, blobs, callouts) is invisible to the helper's tag list until you mark it
-  `data-companion-block`.
+  from `references/interaction-helper.md`, plus the §4.2 ambient CSS. §1.3 is only true if the 💬
+  actually renders. **The markup alone is inert — the helper is what injects the icons**, so
+  shipping one without the other is the single most common way an artifact arrives with nothing
+  to click (§4.4). Content in styled `<div>`s (cards, blobs, callouts) is invisible to the
+  helper's tag list until you mark it `data-companion-block`.
+  *Two shapes are exempt:* the **compact pill** (§3.1 — a status flip has nothing to annotate)
+  and the **bespoke dashboard / L0 home** (§3.6 — presentation-first and persistent, not a turn
+  artifact; it still carries its own responder per §1.3). Every other shape carries the helper.
 - **Write it with the `Write` tool, not `Bash`** — a `PostToolUse(Write|Edit)` hook indexes the
   artifact to your session; a `Bash`-written file lands unsourced (see §7.1).
 
