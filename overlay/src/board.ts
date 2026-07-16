@@ -61,6 +61,7 @@ import {
 import { classifyUpdate, type UpdateAttempt } from "./update-stale";
 import { mountClawd } from "./clawd";
 import { initCodePeek, closeCodePeek } from "./code-peek";
+import { getCodexApproval, setCodexApproval, type CodexApproval } from "./prefs";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   initOwnedTerminals,
@@ -2979,6 +2980,29 @@ function wireSettings(): void {
       if (el) el.textContent = "v" + v;
     })
     .catch(() => {});
+
+  // Codex approvals: a 3-way segmented control (Ask / Auto / Full access), persisted
+  // to localStorage and read at codex spawn time (prefs.ts + terminal.ts). Changing it
+  // affects the next Codex session, not any that are already running.
+  const seg = document.getElementById("codex-approval");
+  if (seg) {
+    const paint = (): void => {
+      const cur = getCodexApproval();
+      seg.querySelectorAll<HTMLButtonElement>(".seg-opt").forEach((b) => {
+        const on = b.dataset.codexApproval === cur;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-checked", String(on));
+      });
+    };
+    seg.addEventListener("click", (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>(".seg-opt");
+      const mode = b?.dataset.codexApproval as CodexApproval | undefined;
+      if (!mode) return;
+      setCodexApproval(mode);
+      paint();
+    });
+    paint();
+  }
 }
 
 

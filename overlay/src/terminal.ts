@@ -13,6 +13,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCodexApproval } from "./prefs";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -217,7 +218,10 @@ export async function createTerminal(
     cols = term.cols;
   }
   try {
-    await invoke("spawn_pty", { tabId, rows, cols, cwd: opts.cwd ?? null, resume: opts.resume ?? null, agent: opts.agent ?? null });
+    // The Codex approval preset is a Board-wide pref, read fresh at spawn and applied
+    // only to codex tabs (null for claude keeps the payload clean and the Rust side a no-op).
+    const codexApproval = (opts.agent ?? null) === "codex" ? getCodexApproval() : null;
+    await invoke("spawn_pty", { tabId, rows, cols, cwd: opts.cwd ?? null, resume: opts.resume ?? null, agent: opts.agent ?? null, codexApproval });
   } catch (e) {
     term.write(`\r\n\x1b[31m${String(e)}\x1b[0m\r\n`);
   }

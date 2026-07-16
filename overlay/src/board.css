@@ -2010,6 +2010,45 @@
 }
 .settings-group + .settings-group { margin-top: 8px; }
 
+/* A settings row whose control is too wide to sit inline (the Codex approval
+   segmented control): stack the description above a full-width control. */
+.settings-row.is-stack { flex-direction: column; align-items: stretch; gap: 12px; }
+
+/* Codex approval: a 3-way segmented control. Same sunk-track + raised-active
+   language as the + menu's agent toggle (.ns-agent/.ns-seg), scaled for a labelled,
+   full-width settings control. */
+.settings-seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--sunk);
+  border-radius: 10px;
+}
+.settings-seg .seg-opt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition: background 0.13s var(--ease), color 0.13s var(--ease);
+}
+.settings-seg .seg-opt:hover:not(.on) { color: var(--ink); }
+.settings-seg .seg-opt.on {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 3px -1px rgba(40, 30, 20, 0.35);
+}
+.settings-seg .seg-t { font: 600 13px/1.2 var(--serif); }
+.settings-seg .seg-s { font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.7; }
+/* Full access is a real footgun — tint it when it's the live choice. */
+.settings-seg .seg-opt[data-codex-approval="full"].on { color: var(--danger, #c0503a); }
+
 /* Version readout: the two halves side by side, because they move separately and
    the whole point of showing them is that either one can be the stale one. */
 .settings-vers {

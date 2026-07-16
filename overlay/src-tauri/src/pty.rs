@@ -229,6 +229,41 @@ fn shell_quote(path: &str) -> String {
     format!("'{}'", path.replace('\'', "'\\''"))
 }
 
+/// The approval/sandbox preset a spawned `codex` session launches with — the three
+/// presets from Codex's own approval picker, chosen once in Settings and remembered.
+/// Only ever applied to the `codex` agent; `Off` (and any non-codex agent) appends
+/// nothing, so Codex keeps its default "ask first" behavior.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum CodexApproval {
+    Off,
+    Auto,
+    Full,
+}
+
+impl CodexApproval {
+    /// Parse the frontend's pref string; anything unrecognized is the safe `Off`.
+    fn from_opt(s: Option<&str>) -> Self {
+        match s {
+            Some("auto") => Self::Auto,
+            Some("full") => Self::Full,
+            _ => Self::Off,
+        }
+    }
+
+    /// Flags appended right after the `codex` binary (leading space so it concatenates
+    /// onto the quoted path). Mirrors Codex's documented presets:
+    ///   Auto → edit & run in the workspace without asking; still prompt to leave the
+    ///          workspace or reach the network (`-a on-request -s workspace-write`).
+    ///   Full → the `--yolo` preset: no sandbox, no prompts.
+    fn flags(self) -> &'static str {
+        match self {
+            Self::Off => "",
+            Self::Auto => " -a on-request -s workspace-write",
+            Self::Full => " --dangerously-bypass-approvals-and-sandbox",
+        }
+    }
+}
+
 /// The `-c` script the spawn shell runs: launch `claude`, then — when it exits
 /// (e.g. the user Ctrl-C's out of it) — `exec` a fresh interactive login shell so
 /// the terminal stays usable instead of dying. The spawn shell itself runs
@@ -236,17 +271,36 @@ fn shell_quote(path: &str) -> String {
 /// foreground process group; Ctrl-C from the tty then reaches `claude` alone and
 /// never tears down the surrounding shell. The `;` (not `&&`) drops to the shell
 /// regardless of how `claude` exited.
-fn claude_then_shell_script(agent_path: &str, shell: &str, resume: Option<&str>, agent: &str) -> String {
+fn claude_then_shell_script(
+    agent_path: &str,
+    shell: &str,
+    resume: Option<&str>,
+    agent: &str,
+    codex_approval: CodexApproval,
+) -> String {
+    // The approval preset only applies to codex; for claude it's always empty so the
+    // claude launch line is unchanged.
+    let codex_flags = if agent == "codex" {
+        codex_approval.flags()
+    } else {
+        ""
+    };
     let launch = match resume {
         // Rejoin a specific prior session by its full id (used when reopening a
         // session that was closed off the Board roster). The resume verb is the
         // one CLI-visible difference between the agents: `claude --resume <id>`
-        // vs `codex resume <id>`.
+        // vs `codex resume <id>`. The codex flags are top-level, so they sit before
+        // the `resume` subcommand.
         Some(id) if agent == "codex" => {
-            format!("{} resume {}", shell_quote(agent_path), shell_quote(id))
+            format!(
+                "{}{} resume {}",
+                shell_quote(agent_path),
+                codex_flags,
+                shell_quote(id)
+            )
         }
         Some(id) => format!("{} --resume {}", shell_quote(agent_path), shell_quote(id)),
-        None => shell_quote(agent_path),
+        None => format!("{}{}", shell_quote(agent_path), codex_flags),
     };
     // Between claude exiting and the drop-to-shell, proactively disable mouse
     // tracking + bracketed paste and restore the cursor/screen buffer. A `claude`
@@ -281,6 +335,7 @@ pub async fn spawn_pty(
     cwd: Option<String>,
     resume: Option<String>,
     agent: Option<String>,
+    codex_approval: Option<String>,
 ) -> Result<(), String> {
     // Which agent CLI this tab embeds. "claude" (default) or "codex" — the
     // provider recorded in the session's registry record at SessionStart, echoed
@@ -289,6 +344,9 @@ pub async fn spawn_pty(
         Some("codex") => "codex",
         _ => "claude",
     };
+    // The approval preset a codex tab launches with (Settings pref, forwarded per
+    // spawn). Ignored for claude.
+    let codex_approval = CodexApproval::from_opt(codex_approval.as_deref());
     let agent_path = find_agent(agent).ok_or_else(|| match agent {
         "codex" => "Codex CLI not found. Install it with: npm install -g @openai/codex".to_string(),
         _ => "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"
@@ -310,7 +368,13 @@ pub async fn spawn_pty(
     cmd.arg("-i");
     cmd.arg("-l");
     cmd.arg("-c");
-    cmd.arg(claude_then_shell_script(&agent_path, &shell, resume.as_deref(), agent));
+    cmd.arg(claude_then_shell_script(
+        &agent_path,
+        &shell,
+        resume.as_deref(),
+        agent,
+        codex_approval,
+    ));
     inject_env(&mut cmd, &tab_id);
     // A resume MUST run in the session's launch dir — the only place a resume
     // can find the transcript. The caller's cwd is the unit's `unit_dir`, which is the
@@ -449,7 +513,13 @@ mod tests {
 
     #[test]
     fn launch_script_runs_claude_then_drops_to_shell() {
-        let s = claude_then_shell_script("/usr/bin/claude", "/bin/zsh", None, "claude");
+        let s = claude_then_shell_script(
+            "/usr/bin/claude",
+            "/bin/zsh",
+            None,
+            "claude",
+            CodexApproval::Off,
+        );
         // claude runs first (quoted), so a path with spaces can't word-split.
         assert!(s.starts_with("'/usr/bin/claude';"), "got: {s}");
         // then exec a fresh interactive login shell — no wrapper left lingering.
@@ -463,7 +533,13 @@ mod tests {
 
     #[test]
     fn launch_script_resumes_a_session_when_given_an_id() {
-        let s = claude_then_shell_script("/usr/bin/claude", "/bin/zsh", Some("sess-42"), "claude");
+        let s = claude_then_shell_script(
+            "/usr/bin/claude",
+            "/bin/zsh",
+            Some("sess-42"),
+            "claude",
+            CodexApproval::Off,
+        );
         // resume the exact prior session, id quoted so it can't word-split.
         assert!(
             s.starts_with("'/usr/bin/claude' --resume 'sess-42';"),
@@ -475,15 +551,99 @@ mod tests {
     #[test]
     fn launch_script_resumes_codex_with_its_own_verb() {
         // Codex spells it `codex resume <id>` (a subcommand, not a flag).
-        let s = claude_then_shell_script("/usr/bin/codex", "/bin/zsh", Some("0199a213-81c0"), "codex");
+        let s = claude_then_shell_script(
+            "/usr/bin/codex",
+            "/bin/zsh",
+            Some("0199a213-81c0"),
+            "codex",
+            CodexApproval::Off,
+        );
         assert!(
             s.starts_with("'/usr/bin/codex' resume '0199a213-81c0';"),
             "got: {s}"
         );
         assert!(s.contains("exec '/bin/zsh' -i -l"), "got: {s}");
         // and a plain codex spawn is just the binary.
-        let plain = claude_then_shell_script("/usr/bin/codex", "/bin/zsh", None, "codex");
+        let plain = claude_then_shell_script(
+            "/usr/bin/codex",
+            "/bin/zsh",
+            None,
+            "codex",
+            CodexApproval::Off,
+        );
         assert!(plain.starts_with("'/usr/bin/codex';"), "got: {plain}");
+    }
+
+    #[test]
+    fn codex_auto_appends_workspace_write_flags() {
+        // "Auto" preset: edits/commands in the workspace without asking. Flags sit
+        // right after the binary, before any subcommand.
+        let fresh = claude_then_shell_script(
+            "/usr/bin/codex",
+            "/bin/zsh",
+            None,
+            "codex",
+            CodexApproval::Auto,
+        );
+        assert!(
+            fresh.starts_with("'/usr/bin/codex' -a on-request -s workspace-write;"),
+            "got: {fresh}"
+        );
+        let resumed = claude_then_shell_script(
+            "/usr/bin/codex",
+            "/bin/zsh",
+            Some("sess-9"),
+            "codex",
+            CodexApproval::Auto,
+        );
+        assert!(
+            resumed
+                .starts_with("'/usr/bin/codex' -a on-request -s workspace-write resume 'sess-9';"),
+            "got: {resumed}"
+        );
+    }
+
+    #[test]
+    fn codex_full_appends_the_yolo_bypass_flag() {
+        let s = claude_then_shell_script(
+            "/usr/bin/codex",
+            "/bin/zsh",
+            None,
+            "codex",
+            CodexApproval::Full,
+        );
+        assert!(
+            s.starts_with("'/usr/bin/codex' --dangerously-bypass-approvals-and-sandbox;"),
+            "got: {s}"
+        );
+    }
+
+    #[test]
+    fn approval_preset_never_leaks_onto_claude() {
+        // Even if a preset is somehow threaded through for a claude tab, the claude
+        // launch line must be untouched — the flags are codex-only.
+        let s = claude_then_shell_script(
+            "/usr/bin/claude",
+            "/bin/zsh",
+            None,
+            "claude",
+            CodexApproval::Full,
+        );
+        assert!(s.starts_with("'/usr/bin/claude';"), "got: {s}");
+        assert!(!s.contains("--dangerously-bypass"), "got: {s}");
+    }
+
+    #[test]
+    fn codex_approval_parses_from_the_pref_string() {
+        assert_eq!(CodexApproval::from_opt(Some("auto")), CodexApproval::Auto);
+        assert_eq!(CodexApproval::from_opt(Some("full")), CodexApproval::Full);
+        assert_eq!(CodexApproval::from_opt(Some("off")), CodexApproval::Off);
+        // unknown / missing → the safe default
+        assert_eq!(
+            CodexApproval::from_opt(Some("nonsense")),
+            CodexApproval::Off
+        );
+        assert_eq!(CodexApproval::from_opt(None), CodexApproval::Off);
     }
 
     #[test]

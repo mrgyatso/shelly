@@ -295,6 +295,23 @@
                     <button type="button" class="settings-update" id="update-btn" disabled>Update</button>
                   </div>
                 </div>
+                <!-- Codex approvals: how a Board-launched `codex` session handles
+                     approvals. Persisted in localStorage (prefs.ts) and read at spawn
+                     time (terminal.ts → spawn_pty). Applies to NEW Codex sessions;
+                     Claude sessions are never affected. -->
+                <div class="settings-group">
+                  <div class="settings-row is-stack">
+                    <div class="settings-row-main">
+                      <div class="settings-row-title">Codex approvals</div>
+                      <div class="settings-row-sub">How new Codex sessions started from the Board handle approvals. Applies to Codex only — Claude is unaffected, and running sessions keep how they started.</div>
+                    </div>
+                    <div class="settings-seg" id="codex-approval" role="radiogroup" aria-label="Codex approval mode">
+                      <button type="button" class="seg-opt" data-codex-approval="off" role="radio" aria-checked="true"><span class="seg-t">Ask</span><span class="seg-s">Codex default</span></button>
+                      <button type="button" class="seg-opt" data-codex-approval="auto" role="radio" aria-checked="false"><span class="seg-t">Auto</span><span class="seg-s">Accept in workspace</span></button>
+                      <button type="button" class="seg-opt" data-codex-approval="full" role="radio" aria-checked="false"><span class="seg-t">Full access</span><span class="seg-s">No prompts · risky</span></button>
+                    </div>
+                  </div>
+                </div>
                 <!-- "Render mode" and "Artifact quality" lived here. Both are gone: they
                      described the background observer and the Sonnet designer, deleted in
                      0.4.5 — and, worse, NOTHING read the dial files they wrote. No hook
