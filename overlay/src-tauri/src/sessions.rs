@@ -11,6 +11,11 @@
 //!
 //! The encoded project-dir name is lossy (`/`, `.` → `-`), so we never decode it; we read
 //! the real `cwd` out of the transcript head instead.
+//!
+//! Reading straight from Claude Code's own store means this list is NOT naturally scoped
+//! to Board-owned sessions the way the Live rail is — so `list_recent_sessions` applies its
+//! own ownership gate (`owned_session_ids`, sourced from `session-ids.json`) before returning,
+//! keeping pre-existing external transcripts out unless `external-terminals` is "on".
 
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -39,6 +44,87 @@ pub struct RecentSession {
 /// `~/.claude/projects` — Claude Code's per-project transcript root.
 fn projects_dir() -> Option<PathBuf> {
     crate::paths::projects_dir()
+}
+
+/// Whether external (non-Board) sessions have been explicitly re-enabled on this
+/// machine — the same override the SessionStart/PostToolUse/Stop hooks honor
+/// (`~/.claude/companion/external-terminals` containing exactly "on"). When set,
+/// the Recent band skips the ownership filter below and shows every transcript,
+/// matching the hooks' own opt-back-in behavior.
+fn external_terminals_enabled() -> bool {
+    let path = match crate::paths::companion_dir() {
+        Some(d) => d.join("external-terminals"),
+        None => return false,
+    };
+    std::fs::read_to_string(&path)
+        .map(|s| s.trim() == "on")
+        .unwrap_or(false)
+}
+
+/// Every session id ever bound to a Board-owned terminal — the VALUES of
+/// `session-ids.json` (live-source stem → full session_id), which the
+/// `companion-session` hook only writes when `COMPANION_SESSION` was present at
+/// SessionStart. A session_id in this set was launched BY the Board at some
+/// point; anything else is external. Mirrors the ownership gate the Live rail
+/// already applies (via `owned-sessions.json`), extended to the Recent band —
+/// which otherwise reads `~/.claude/projects` transcripts directly, with no
+/// ownership check at all.
+fn owned_session_ids() -> std::collections::HashSet<String> {
+    let path = match crate::paths::companion_dir() {
+        Some(d) => d.join("session-ids.json"),
+        None => return std::collections::HashSet::new(),
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<std::collections::HashMap<String, String>>(&s).ok())
+        .map(|m| m.into_values().collect())
+        .unwrap_or_default()
+}
+
+/// `~/.claude/companion/recent-dismissed.json` — session ids the user manually hid
+/// from the Recent band. Separate from `dismissed.json` (live.rs), which is keyed
+/// by live-source STEM, not session id — Recent entries have no stem. A JSON array
+/// of strings.
+fn recent_dismissed_path() -> Option<PathBuf> {
+    crate::paths::companion_dir().map(|d| d.join("recent-dismissed.json"))
+}
+
+/// Read the recent-dismissed session-id set (empty when absent or unreadable).
+fn recent_dismissed_set() -> std::collections::HashSet<String> {
+    let path = match recent_dismissed_path() {
+        Some(p) => p,
+        None => return std::collections::HashSet::new(),
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+        .map(|v| v.into_iter().collect())
+        .unwrap_or_default()
+}
+
+/// Atomically persist the recent-dismissed session-id set (sorted for a stable diff).
+fn write_recent_dismissed(set: &std::collections::HashSet<String>) -> Result<(), String> {
+    let path = recent_dismissed_path().ok_or("no HOME")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let mut v: Vec<&String> = set.iter().collect();
+    v.sort();
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string(&v).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+/// Manually hide a single closed/resumable session off the Recent band — mirrors
+/// `dismiss_session` for the Live rail. Sticky: a dismissed session_id stays hidden
+/// even if its transcript is touched again (e.g. resumed from a bare terminal),
+/// until the sidecar entry is cleared.
+#[tauri::command]
+pub fn dismiss_recent_session(session_id: String) -> Result<(), String> {
+    let mut set = recent_dismissed_set();
+    set.insert(session_id);
+    write_recent_dismissed(&set)
 }
 
 /// The set of session-ids that actually have a transcript on disk (every `<uuid>.jsonl`
@@ -315,7 +401,9 @@ fn codex_head_meta(path: &Path) -> (Option<String>, Option<String>) {
 
 /// Every resumable session across all projects, newest-first, capped. The Board dedupes
 /// the currently-live ones (it knows their session ids) and groups/filters by project.
-/// Returns a `Vec` (never a `Result`) so one unreadable transcript can't sink the list.
+/// Excludes sessions the Board never owned (unless `external-terminals` is "on") and
+/// any the user manually dismissed. Returns a `Vec` (never a `Result`) so one unreadable
+/// transcript can't sink the list.
 #[tauri::command]
 pub fn list_recent_sessions(limit: Option<usize>) -> Vec<RecentSession> {
     let dir = match projects_dir() {
@@ -387,6 +475,14 @@ pub fn list_recent_sessions(limit: Option<usize>) -> Vec<RecentSession> {
     all.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
     all.truncate(cap);
 
+    // Ownership gate: unless the user opted back into external terminals, a
+    // pre-existing transcript the Board never launched (no COMPANION_SESSION at
+    // SessionStart) must not surface in Recent — it would otherwise bypass the
+    // same gate the Live rail already enforces. Plus the user's own manual hides.
+    let show_external = external_terminals_enabled();
+    let owned_ids = owned_session_ids();
+    let dismissed = recent_dismissed_set();
+
     // Read the head of only the capped set to enrich with cwd + title.
     let mut out = Vec::with_capacity(all.len());
     for (mtime, size, path, is_codex) in all {
@@ -401,6 +497,12 @@ pub fn list_recent_sessions(limit: Option<usize>) -> Vec<RecentSession> {
                 None => continue,
             }
         };
+        if dismissed.contains(&session_id) {
+            continue;
+        }
+        if !show_external && !owned_ids.contains(&session_id) {
+            continue;
+        }
         let (cwd, title) = if is_codex {
             codex_head_meta(&path)
         } else {
@@ -520,6 +622,15 @@ mod tests {
         )
         .unwrap();
 
+        // Both sessions are Board-owned (session-ids.json values) — the ownership
+        // gate below only excludes UNOWNED transcripts.
+        std::fs::create_dir_all(home.join(".claude/companion")).unwrap();
+        std::fs::write(
+            home.join(".claude/companion/session-ids.json"),
+            r#"{"alpha--11111111":"11111111-aaaa-bbbb-cccc-000000000001","beta--22222222":"22222222-dddd-eeee-ffff-000000000002"}"#,
+        )
+        .unwrap();
+
         crate::paths::set_home_for_test(&home);
 
         let list = list_recent_sessions(None);
@@ -541,6 +652,83 @@ mod tests {
             cwd_for_codex_session("22222222-dddd-eeee-ffff-000000000002").as_deref(),
             Some("/tmp/beta")
         );
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Build a sandbox home with one transcript and NO `session-ids.json` entry for
+    /// it (the "pre-existing external transcript on a fresh install" scenario) and
+    /// confirm it's excluded by default, shown once `external-terminals` is "on",
+    /// and re-excluded (regardless of the flag) once manually dismissed.
+    #[test]
+    fn unowned_transcript_hidden_unless_external_terminals_on() {
+        let home = std::env::temp_dir().join(format!("cmp-owned-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+
+        let proj = home.join(".claude/projects/-tmp-gamma");
+        std::fs::create_dir_all(&proj).unwrap();
+        let sid = "33333333-aaaa-bbbb-cccc-000000000003";
+        std::fs::write(
+            proj.join(format!("{sid}.jsonl")),
+            concat!(
+                r#"{"type":"user","cwd":"/tmp/gamma","message":{"role":"user","content":"external work"}}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+
+        crate::paths::set_home_for_test(&home);
+
+        // No session-ids.json at all → unowned → hidden by default.
+        assert!(list_recent_sessions(None).is_empty());
+
+        // Opt back into external terminals on this machine → shown.
+        let cmp = home.join(".claude/companion");
+        std::fs::create_dir_all(&cmp).unwrap();
+        std::fs::write(cmp.join("external-terminals"), "on\n").unwrap();
+        let list = list_recent_sessions(None);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].session_id, sid);
+
+        // Manually dismissing it hides it again even with the flag still "on".
+        dismiss_recent_session(sid.to_string()).unwrap();
+        assert!(list_recent_sessions(None).is_empty());
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The companion-session hook only writes `session-ids.json` when the session was
+    /// launched by the Board (`COMPANION_SESSION` present) — so once that stem→id entry
+    /// exists, the transcript surfaces even with no external-terminals opt-in.
+    #[test]
+    fn owned_transcript_shown_by_default() {
+        let home = std::env::temp_dir().join(format!("cmp-owned-shown-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+
+        let proj = home.join(".claude/projects/-tmp-delta");
+        std::fs::create_dir_all(&proj).unwrap();
+        let sid = "44444444-aaaa-bbbb-cccc-000000000004";
+        std::fs::write(
+            proj.join(format!("{sid}.jsonl")),
+            concat!(
+                r#"{"type":"user","cwd":"/tmp/delta","message":{"role":"user","content":"board work"}}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        let cmp = home.join(".claude/companion");
+        std::fs::create_dir_all(&cmp).unwrap();
+        std::fs::write(
+            cmp.join("session-ids.json"),
+            format!(r#"{{"delta--44444444":"{sid}"}}"#),
+        )
+        .unwrap();
+
+        crate::paths::set_home_for_test(&home);
+
+        let list = list_recent_sessions(None);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].session_id, sid);
 
         let _ = std::fs::remove_dir_all(&home);
     }

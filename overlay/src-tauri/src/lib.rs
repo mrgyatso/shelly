@@ -163,6 +163,7 @@ pub fn run() {
             pty::close_pty,
             pty::codex_available,
             sessions::list_recent_sessions,
+            sessions::dismiss_recent_session,
             usage::session_usage,
             rate_limit::rate_limit_usage,
             hub::read_live_from_hub,

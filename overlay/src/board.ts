@@ -2161,7 +2161,7 @@ function buildRecentProjectTab(projectKey: string, sessions: RecentSession[], ex
   return tab;
 }
 
-/** One recent (closed) session sub-row. Click resumes it. */
+/** One recent (closed) session sub-row. Click resumes it; right-click offers to hide it. */
 function buildRecentSessionRow(rs: RecentSession): HTMLElement {
   const row = document.createElement("button");
   row.className = "unit-subtab";
@@ -2183,7 +2183,27 @@ function buildRecentSessionRow(rs: RecentSession): HTMLElement {
   }
 
   row.addEventListener("click", () => void resumeRecentSession(rs));
+  row.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    openCtxMenu(e, [
+      { label: "Resume", fn: () => void resumeRecentSession(rs) },
+      { label: "Hide from Recent", fn: () => void dismissRecentSession(rs), danger: true },
+    ]);
+  });
   return row;
+}
+
+/** Manually hide a single closed/resumable session off the Recent band — mirrors
+ *  `closeSession` for the Live rail. Sticky server-side (`recent-dismissed.json`);
+ *  reflected locally so the row disappears before the next poll. */
+async function dismissRecentSession(rs: RecentSession): Promise<void> {
+  await invoke("dismiss_recent_session", { sessionId: rs.session_id }).catch((e) =>
+    console.error("dismiss_recent_session failed", rs.session_id, e),
+  );
+  allRecent = allRecent.filter((r) => r.session_id !== rs.session_id);
+  rebuildHeartbeats();
+  const v = currentView();
+  if (v.level === "unit") renderUnitRail(v.unitKey);
 }
 
 /** Switch the active project's shown terminal to a specific session, resuming it by
