@@ -122,7 +122,18 @@ const source = `${rec.slug}--${shortid}`;
 // Stamp through the SHARED producer API (registry record decides the unit) and
 // append `artifact.routed` for the Board's event tail.
 const entry = identity.routeArtifact(
-  { artifactPath: key, session_id: sessionId, unit_key: rec.unit_key, shortid, source, indexPath },
+  {
+    artifactPath: key,
+    session_id: sessionId,
+    unit_key: rec.unit_key,
+    shortid,
+    source,
+    indexPath,
+    // The turn this artifact was written under — the key the PreToolUse fork hook reads
+    // back to tell "still authoring" from "sealed in an earlier turn". Empty on an older
+    // client (< 2.1.196, no prompt_id on the payload); the fork hook falls back to mtime.
+    prompt_id: process.env.PROMPT_ID || null,
+  },
   undefined,
 );
 if (entry) {

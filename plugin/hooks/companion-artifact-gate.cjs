@@ -45,6 +45,15 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
+// The turn boundary is SHARED with the PreToolUse fork hook (companion-artifact-fork.cjs)
+// — one derivation, required by both, rather than two copies drifting apart. Co-located;
+// fall back to a null-returning stub if the require ever hiccups, which lands on the gate's
+// EXISTING uncertainty path (turnStart null → known:false → fail open), never a crash.
+let turn = { lastRealUserPromptTs: () => null };
+try {
+  turn = require("./companion-turn.cjs");
+} catch (_) {}
+
 const HOME = os.homedir();
 const ARTIFACTS_DIR =
   process.env.COMPANION_ARTIFACTS_DIR || path.join(HOME, ".claude", "companion", "artifacts");
@@ -57,36 +66,11 @@ function safeId(id) {
 }
 
 // turnStart = epoch-ms timestamp of the last GENUINE user prompt in the transcript.
-// Claude Code records tool_results as type:"user" too, so a real prompt is a user entry
-// whose content is a string, or an array WITHOUT any tool_result block. Returns null if
-// the transcript can't be read or has no such entry (→ caller fails open).
+// Derived by the shared companion-turn.cjs (see its header for the tool_result skip and
+// the transcript-lag caveat); re-exported here so this module's public surface — and its
+// tests — are unchanged by the extraction.
 function lastRealUserPromptTs(transcriptPath) {
-  if (!transcriptPath) return null;
-  let text;
-  try {
-    text = fs.readFileSync(transcriptPath, "utf8");
-  } catch (_) {
-    return null;
-  }
-  let ts = null;
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    let o;
-    try {
-      o = JSON.parse(line);
-    } catch (_) {
-      continue;
-    }
-    if (o.type !== "user" || !o.message) continue;
-    const c = o.message.content;
-    const isReal =
-      typeof c === "string" || (Array.isArray(c) && !c.some((b) => b && b.type === "tool_result"));
-    if (isReal && o.timestamp) {
-      const t = Date.parse(o.timestamp);
-      if (!Number.isNaN(t)) ts = t;
-    }
-  }
-  return ts;
+  return turn.lastRealUserPromptTs(transcriptPath);
 }
 
 // Did THIS session write an .html artifact since turnStart? Reads the Board's artifact
