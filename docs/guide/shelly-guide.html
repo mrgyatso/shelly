@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Companion — the guide</title>
+<title>Shelly — the guide</title>
 <!-- In-app the overlay serves bundled fonts via asset://; the repo copy falls back to system faces. -->
-<script type="application/json" id="companion-meta">
+<script type="application/json" id="shelly-meta">
 {
-  "subject": "Companion first-run guide — draft v1",
+  "subject": "Shelly first-run guide — draft v1",
   "summary": "The six-page in-app guide that replaces a docs site: what the Board is, starting a session, where sessions live, answering an artifact, the terminal and layout, shortcuts and troubleshooting. Built from real screenshots of the Board, with mechanics verified against board.ts. Last page is a ballot for Zach to steer it.",
   "files": ["overlay/src/board.ts", "plugin/commands/example.md", "README.md"],
-  "project": "~/claude-code-companion",
+  "project": "~/shelly",
   "branch": "master",
   "created": "2026-07-14",
   "session": "d32320df"
@@ -179,7 +179,7 @@
 <div data-fit-root>
 
   <nav class="mp-nav" aria-label="Pages">
-    <div class="mp-brand">Companion</div>
+    <div class="mp-brand">Shelly</div>
     <div class="mp-brand-sub">Everything you need, in about four minutes.</div>
     <a data-mp-link href="#p0" class="active"><span class="n">·</span> What this is</a>
     <a data-mp-link href="#p1"><span class="n">1</span> Start a session</a>
@@ -193,11 +193,11 @@
   <main class="mp-pages">
 
     <!-- ===== 0. What this is ===== -->
-    <section id="p0" data-companion-commentable data-mp-page class="active">
+    <section id="p0" data-shelly-commentable data-mp-page class="active">
       <div class="kicker">Start here</div>
       <h1>Your agents report here, and you answer here.</h1>
       <p class="lede">
-        Companion is a window that sits over your terminal. Your coding agent — Claude Code or Codex — writes each
+        Shelly is a window that sits over your terminal. Your coding agent — Claude Code or Codex — writes each
         turn as <strong>a page</strong> instead of a wall of scrollback, and this window renders it the moment it's
         written. You read it, click your answer, and the agent keeps going. <strong>For most turns you never touch
         the terminal.</strong>
@@ -205,7 +205,7 @@
 
       <figure>
         <img src="img/02-session-full.png"
-             alt="The Companion Board: project rail on the left, the agent's page in the middle, its live terminal below" />
+             alt="The Shelly Board: project rail on the left, the agent's page in the middle, its live terminal below" />
         <figcaption>One session, open. This is the whole product — there are only four things on this screen.</figcaption>
       </figure>
 
@@ -222,7 +222,7 @@
     </section>
 
     <!-- ===== 1. Start a session ===== -->
-    <section id="p1" data-companion-commentable data-mp-page>
+    <section id="p1" data-shelly-commentable data-mp-page>
       <div class="kicker">Page 1 of 5</div>
       <h1>Start a session</h1>
       <p class="lede">
@@ -245,17 +245,17 @@
 
       <h2>Why it has to start here</h2>
       <p>
-        By default Companion only pays attention to terminals <em>it</em> started. If you run <code>claude</code> in
+        By default Shelly only pays attention to terminals <em>it</em> started. If you run <code>claude</code> in
         your own Terminal or iTerm, that session deliberately stays out of the app — so agents that aren't using
-        Companion don't clutter it. If you'd rather every session get picked up wherever you launch it, run this
+        Shelly don't clutter it. If you'd rather every session get picked up wherever you launch it, run this
         once:
       </p>
-      <p><code>companion setup --external-terminals</code></p>
+      <p><code>shelly setup --external-terminals</code></p>
 
       <h2>Ending one</h2>
       <p>
         Each session's terminal has a <strong>✕</strong> in its controls — that ends the session. Closing the
-        Companion window does <em>not</em> kill your agents; they keep running and are still there when you come back.
+        Shelly window does <em>not</em> kill your agents; they keep running and are still there when you come back.
       </p>
       <div class="note">
         <p><strong>Rename a session</strong> by clicking its title in the toolbar. Useful once you have three agents in one repo.</p>
@@ -263,7 +263,7 @@
     </section>
 
     <!-- ===== 2. Where sessions live ===== -->
-    <section id="p2" data-companion-commentable data-mp-page>
+    <section id="p2" data-shelly-commentable data-mp-page>
       <div class="kicker">Page 2 of 5</div>
       <h1>Where your sessions live</h1>
       <p class="lede">
@@ -299,7 +299,7 @@
     </section>
 
     <!-- ===== 3. Answer an artifact ===== -->
-    <section id="p3" data-companion-commentable data-mp-page>
+    <section id="p3" data-shelly-commentable data-mp-page>
       <div class="kicker">Page 3 of 5 · the important one</div>
       <h1>Answer without typing</h1>
       <p class="lede">
@@ -336,7 +336,7 @@
       <div class="note">
         <p>
           <strong>Try it right now, on this page.</strong> Hover this paragraph — see the 💬 in the left margin?
-          That's the whole mechanic. This guide is itself a Companion page, so anything you learn here you're
+          That's the whole mechanic. This guide is itself a Shelly page, so anything you learn here you're
           already doing.
         </p>
       </div>
@@ -349,7 +349,7 @@
     </section>
 
     <!-- ===== 4. Terminal & layout ===== -->
-    <section id="p4" data-companion-commentable data-mp-page>
+    <section id="p4" data-shelly-commentable data-mp-page>
       <div class="kicker">Page 4 of 5</div>
       <h1>The terminal, and who gets the space</h1>
       <p class="lede">
@@ -393,7 +393,7 @@
     </section>
 
     <!-- ===== 5. Shortcuts & fixes ===== -->
-    <section id="p5" data-companion-commentable data-mp-page>
+    <section id="p5" data-shelly-commentable data-mp-page>
       <div class="kicker">Page 5 of 5</div>
       <h1>Shortcuts, and what to do when it's quiet</h1>
 
@@ -405,23 +405,23 @@
         <tr><td>Free ↔ Terminal mode</td><td><kbd>⌘9</kbd></td><td>—</td></tr>
       </table>
       <p>
-        Companion also lives in your menu bar (or system tray). The icon shows how many agents are waiting on you,
+        Shelly also lives in your menu bar (or system tray). The icon shows how many agents are waiting on you,
         and the menu carries every shortcut as a clickable item — which is your fallback if a shortcut doesn't
         register.
       </p>
 
       <h2>Bring it forward from anywhere</h2>
-      <p>From any terminal: <code>companion board</code>.</p>
+      <p>From any terminal: <code>shelly board</code>.</p>
 
       <h2>Nothing is showing up</h2>
-      <p>Run <code>companion doctor</code>. It renders a health panel right here in the app — if you can see the panel, the whole pipeline works. The usual culprits, in order:</p>
+      <p>Run <code>shelly doctor</code>. It renders a health panel right here in the app — if you can see the panel, the whole pipeline works. The usual culprits, in order:</p>
       <ol>
-        <li>You started the agent in your own terminal instead of from the app. See <strong>page 1</strong> — either start it from the <strong>+</strong>, or turn on <code>companion setup --external-terminals</code>.</li>
-        <li>The plugin didn't update. <code>companion setup</code> re-wires it.</li>
+        <li>You started the agent in your own terminal instead of from the app. See <strong>page 1</strong> — either start it from the <strong>+</strong>, or turn on <code>shelly setup --external-terminals</code>.</li>
+        <li>The plugin didn't update. <code>shelly setup</code> re-wires it.</li>
       </ol>
 
       <div class="note">
-        <p>Want this guide back later? <code>/companion:help</code> in any session.</p>
+        <p>Want this guide back later? <code>/shelly:help</code> in any session.</p>
       </div>
     </section>
 
@@ -434,10 +434,10 @@
         wired yet — this is the content for review. Tell me what's wrong and what to do next.
       </p>
 
-      <div class="item" data-companion-item data-item-label="Wire the guide up: add a /companion:help command and fire it on the empty sessions view (closes issue #30). Do this in a worktree off master">
+      <div class="item" data-shelly-item data-item-label="Wire the guide up: add a /shelly:help command and fire it on the empty sessions view (closes issue #30). Do this in a worktree off master">
         <div class="item-row">
           <div class="item-main">
-            <div class="item-title">Wire it up — <code>/companion:help</code> + fire on the empty state <span class="rec">Next move</span></div>
+            <div class="item-title">Wire it up — <code>/shelly:help</code> + fire on the empty state <span class="rec">Next move</span></div>
             <div class="item-sub">Closes issue #30. The guide only helps if it shows up uninvited on first run. Worktree off master, PR as usual.</div>
           </div>
           <div class="item-actions">
@@ -449,7 +449,7 @@
         <textarea data-comment hidden placeholder="Note…"></textarea>
       </div>
 
-      <div class="item" data-companion-item data-item-label="The guide is missing something or gets something wrong — tell me what to fix">
+      <div class="item" data-shelly-item data-item-label="The guide is missing something or gets something wrong — tell me what to fix">
         <div class="item-row">
           <div class="item-main">
             <div class="item-title">Something's missing or wrong</div>
@@ -464,7 +464,7 @@
         <textarea data-comment hidden placeholder="What's wrong or missing…"></textarea>
       </div>
 
-      <div class="item" data-companion-item data-item-label="Ship the guide as-is content-wise — the tone and depth are right, don't add more">
+      <div class="item" data-shelly-item data-item-label="Ship the guide as-is content-wise — the tone and depth are right, don't add more">
         <div class="item-row">
           <div class="item-main">
             <div class="item-title">Tone and depth are right — don't pad it</div>
@@ -479,7 +479,7 @@
         <textarea data-comment hidden placeholder="Note…"></textarea>
       </div>
 
-      <div class="item" data-companion-item data-item-label="Draw numbered callout arrows onto the screenshots themselves (SVG overlay) rather than listing the callouts beneath the image">
+      <div class="item" data-shelly-item data-item-label="Draw numbered callout arrows onto the screenshots themselves (SVG overlay) rather than listing the callouts beneath the image">
         <div class="item-row">
           <div class="item-main">
             <div class="item-title">Draw the callout numbers <em>onto</em> the screenshots</div>
@@ -494,7 +494,7 @@
         <textarea data-comment hidden placeholder="Note…"></textarea>
       </div>
 
-      <div class="item" data-companion-item data-item-label="Also send this guide to the installer who said he needed docs, and report back what still confused him">
+      <div class="item" data-shelly-item data-item-label="Also send this guide to the installer who said he needed docs, and report back what still confused him">
         <div class="item-row">
           <div class="item-main">
             <div class="item-title">Send it to your installer and see if it lands</div>
@@ -512,7 +512,7 @@
       <div class="bar">
         <span class="count" data-count>nothing marked yet</span>
         <button class="doall" data-doall>✓ Do all</button>
-        <button class="submit" data-companion-submit="Companion guide draft v1">Submit → ⌘V</button>
+        <button class="submit" data-shelly-submit="Shelly guide draft v1">Submit → ⌘V</button>
       </div>
     </section>
 
@@ -537,32 +537,32 @@
 
 <script>
 (function () {
-  var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre, [data-companion-block]";
-  var submitBtn = document.querySelector("[data-companion-submit]");
+  var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre, [data-shelly-block]";
+  var submitBtn = document.querySelector("[data-shelly-submit]");
   var countEl = document.querySelector("[data-count]");
-  var items = [].slice.call(document.querySelectorAll("[data-companion-item]"));
+  var items = [].slice.call(document.querySelectorAll("[data-shelly-item]"));
   var comments = new Map();
   var open = null;
 
   var blocks = [];
-  [].slice.call(document.querySelectorAll("[data-companion-commentable]")).forEach(function (root) {
+  [].slice.call(document.querySelectorAll("[data-shelly-commentable]")).forEach(function (root) {
     [].slice.call(root.querySelectorAll(BLOCK_SELECTOR)).forEach(function (b) {
-      if (b.closest("[data-companion-item]")) return;
+      if (b.closest("[data-shelly-item]")) return;
       if (b.parentElement && b.parentElement.closest(BLOCK_SELECTOR)) return;
       blocks.push(b);
     });
   });
   blocks.forEach(function (b, i) {
-    b.classList.add("companion-commentable");
+    b.classList.add("shelly-commentable");
     b.dataset.cBlockId = "b" + i;
     var btn = document.createElement("button");
-    btn.type = "button"; btn.className = "companion-ask-btn";
+    btn.type = "button"; btn.className = "shelly-ask-btn";
     btn.title = "Comment on this block"; btn.textContent = "💬";
     btn.addEventListener("click", function (e) { e.stopPropagation(); openFor(b); });
     b.appendChild(btn);
   });
   function snippet(b) {
-    var c = b.cloneNode(true); var x = c.querySelector(".companion-ask-btn"); if (x) x.remove();
+    var c = b.cloneNode(true); var x = c.querySelector(".shelly-ask-btn"); if (x) x.remove();
     var t = (c.textContent || "").replace(/\s+/g, " ").trim();
     return t.length > 80 ? t.slice(0, 77) + "…" : t;
   }
@@ -571,7 +571,7 @@
     closeOpen();
     var id = b.dataset.cBlockId;
     var box = document.createElement("div");
-    box.className = "companion-composer";
+    box.className = "shelly-composer";
     box.innerHTML = '<div class="ref"></div>' +
       '<textarea placeholder="Your question or comment about this block…"></textarea>' +
       '<div class="row"><button type="button" class="delete">Discard</button>' +
@@ -596,12 +596,12 @@
   function renderAnno(b, t) {
     removeAnno(b);
     var note = document.createElement("div");
-    note.className = "companion-annotation"; note.dataset.forBlock = b.dataset.cBlockId;
+    note.className = "shelly-annotation"; note.dataset.forBlock = b.dataset.cBlockId;
     note.textContent = t; note.addEventListener("click", function () { openFor(b); });
     b.parentNode.insertBefore(note, b.nextSibling);
   }
   function removeAnno(b) {
-    var n = b.parentNode.querySelector('.companion-annotation[data-for-block="' + b.dataset.cBlockId + '"]');
+    var n = b.parentNode.querySelector('.shelly-annotation[data-for-block="' + b.dataset.cBlockId + '"]');
     if (n) n.remove();
   }
 
@@ -617,33 +617,33 @@
 
   document.addEventListener("click", function (e) {
     var btn = e.target.closest("[data-action]");
-    if (btn) { var it = btn.closest("[data-companion-item]"); if (it) setState(it, btn.getAttribute("data-action")); return; }
+    if (btn) { var it = btn.closest("[data-shelly-item]"); if (it) setState(it, btn.getAttribute("data-action")); return; }
     if (e.target.closest("[data-doall]")) {
       items.forEach(function (it) { it.setAttribute("data-state", "approve");
         var ta = it.querySelector("textarea[data-comment]"); if (ta) ta.style.display = "none"; });
       refresh(); return;
     }
-    var sub = e.target.closest("[data-companion-submit]");
+    var sub = e.target.closest("[data-shelly-submit]");
     if (sub) doSubmit(sub);
   });
 
   var commentEl = null;
   function freeComment() { return commentEl ? commentEl.value.trim() : ""; }
   function pending() {
-    return comments.size + document.querySelectorAll("[data-companion-item][data-state]").length + (freeComment() ? 1 : 0);
+    return comments.size + document.querySelectorAll("[data-shelly-item][data-state]").length + (freeComment() ? 1 : 0);
   }
   function refresh() {
-    var c = comments.size, d = document.querySelectorAll("[data-companion-item][data-state]").length, fc = freeComment() ? 1 : 0;
+    var c = comments.size, d = document.querySelectorAll("[data-shelly-item][data-state]").length, fc = freeComment() ? 1 : 0;
     if (countEl) countEl.textContent = (c || d || fc)
       ? (d + " decision" + (d !== 1 ? "s" : "") + (c ? (" · " + c + " comment" + (c !== 1 ? "s" : "")) : "") + (fc ? " · note added" : ""))
       : "nothing marked yet";
     if (submitBtn) submitBtn.classList.toggle("ready", (c + d + fc) > 0);
   }
   function meta() {
-    var el = document.getElementById("companion-meta");
+    var el = document.getElementById("shelly-meta");
     if (!el) return [];
     try { var m = JSON.parse(el.textContent); } catch (e) { return []; }
-    var L = ["[Companion artifact feedback]"];
+    var L = ["[Shelly artifact feedback]"];
     if (m.subject) L.push("Subject: " + m.subject);
     if (m.summary) L.push("About: " + m.summary);
     if (m.project) L.push("Project: " + m.project + (m.branch ? " (" + m.branch + ")" : ""));
@@ -663,7 +663,7 @@
         lines.push("");
       });
     }
-    var marked = [].slice.call(document.querySelectorAll("[data-companion-item][data-state]"));
+    var marked = [].slice.call(document.querySelectorAll("[data-shelly-item][data-state]"));
     if (marked.length) {
       var verb = { approve: "✓ Do it:", reject: "✗ Skip:", comment: "✎ Note:" };
       lines.push("— Decisions —", "");
@@ -697,8 +697,8 @@
   }
   function doSubmit(sub) {
     if (pending() === 0) { flash("Mark an item, leave a 💬, or write a comment first"); return; }
-    var text = build(sub.getAttribute("data-companion-submit") || "Review");
-    try { parent.postMessage({ source: "companion-artifact", kind: "submit", text: text }, "*"); } catch (e) {}
+    var text = build(sub.getAttribute("data-shelly-submit") || "Review");
+    try { parent.postMessage({ source: "shelly-artifact", kind: "submit", text: text }, "*"); } catch (e) {}
     if (window.parent === window) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text)
@@ -732,7 +732,7 @@
       "@keyframes cwBlink{0%,45%,55%,100%{transform:scaleY(1)}50%{transform:scaleY(.12)}}" +
       "@media (prefers-reduced-motion:reduce){.cmp-submitted .cw *,.cmp-submitted .halo{animation:none!important}.cmp-submitted .cw-bit,.cmp-submitted .cw-load,.cmp-submitted .cw-pk{opacity:.6!important}}";
     var CW_SCENES = [
-      { id:"typing", cap:"Claude’s heads-down in the code",
+      { id:"typing", cap:"Your agent’s heads-down in the code",
         behind:'<g fill="#40c4ff"><rect class="cw-bit" x="-2" y="12" width="1.4" height="1.4"/><rect class="cw-bit b2" x="6" y="11" width="1.4" height="1.4"/><rect class="cw-bit b3" x="13" y="12" width="1.4" height="1.4"/></g>',
         front:'<g transform="translate(2.5 10.5)"><rect x="-0.5" y="4.6" width="11" height="1" fill="#546e7a"/><rect x="0" y="0" width="10" height="4.8" fill="#78909c"/><rect x="4.5" y="2" width="1" height="1" fill="#fff"/></g>',
         css:
@@ -745,7 +745,7 @@
           ".cmp-submitted .cw--typing .cw-bit{opacity:0;animation:cwBit 1s linear infinite}" +
           ".cmp-submitted .cw--typing .cw-bit.b2{animation-delay:.33s}.cmp-submitted .cw--typing .cw-bit.b3{animation-delay:.66s}" +
           "@keyframes cwBit{0%{opacity:0;transform:translateY(0) scale(.5)}25%{opacity:.85}100%{opacity:0;transform:translateY(-13px) scale(1.15)}}" },
-      { id:"thinking", cap:"Claude’s turning it over",
+      { id:"thinking", cap:"Your agent’s turning it over",
         behind:'<g transform="translate(7 -10)"><g fill="#fff" opacity="0.95"><rect x="2" y="1" width="8" height="6"/><rect x="1" y="2" width="10" height="4"/><rect x="3" y="0" width="6" height="8"/><rect x="2" y="7" width="2" height="2"/></g><g fill="#0082fc"><rect class="cw-load" x="2.5" y="3" width="1.2" height="1.2"/><rect class="cw-load l2" x="5.4" y="3" width="1.2" height="1.2"/><rect class="cw-load l3" x="8.3" y="3" width="1.2" height="1.2"/></g></g>',
         front:"",
         css:
@@ -754,7 +754,7 @@
           ".cmp-submitted .cw--thinking .cw-load{opacity:.15;animation:cwLoad 2s infinite}" +
           ".cmp-submitted .cw--thinking .cw-load.l2{animation-delay:.25s}.cmp-submitted .cw--thinking .cw-load.l3{animation-delay:.5s}" +
           "@keyframes cwLoad{0%,18%{opacity:.15}40%,80%{opacity:1}100%{opacity:.15}}" },
-      { id:"juggling", cap:"Claude’s juggling a few threads",
+      { id:"juggling", cap:"Your agent’s juggling a few threads",
         behind:"",
         front:'<g><rect class="cw-pk" x="-1" y="-1" width="2" height="2" fill="#ff5252"/><rect class="cw-pk p2" x="-1" y="-1" width="2" height="2" fill="#ffc107"/><rect class="cw-pk p3" x="-1" y="-1" width="2" height="2" fill="#4caf50"/></g>',
         css:
@@ -776,21 +776,21 @@
     }
     var st = document.createElement("style");
     st.textContent =
-      "[data-companion-commentable] .companion-commentable{position:relative;border-radius:5px;cursor:text;transition:background 140ms ease,box-shadow 140ms ease}" +
-      ".companion-commentable::before{content:'';position:absolute;top:0;left:-36px;width:36px;height:100%}" +
-      ".companion-commentable:hover{background:rgba(182,120,29,0.07);box-shadow:inset 2px 0 0 #b6781d}" +
-      ".companion-commentable.has-comment{background:rgba(46,125,82,0.05);box-shadow:inset 2px 0 0 #2e7d52}" +
-      ".companion-ask-btn{position:absolute;left:-36px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border:1px solid rgba(26,23,20,0.2);background:#fff;color:#6e655b;border-radius:6px;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:12px;box-shadow:0 4px 10px -6px rgba(26,23,20,0.4)}" +
-      ".companion-commentable:hover > .companion-ask-btn,.companion-commentable.has-comment > .companion-ask-btn{display:inline-flex}" +
-      ".companion-composer{margin:6px 0 10px;padding:10px 11px;background:#fff;border:1px solid #b6781d;border-radius:8px}" +
-      ".companion-composer .ref{font:600 11px/1.4 ui-monospace,Menlo,monospace;color:#6e655b;border-left:2px solid #b6781d;padding:4px 8px;margin-bottom:6px;background:rgba(182,120,29,0.07);border-radius:0 4px 4px 0}" +
-      ".companion-composer textarea{display:block;width:100%;min-height:64px;padding:8px 10px;font:13px/1.5 -apple-system,system-ui,sans-serif;background:#f4f1ec;color:#1a1714;border:1px solid rgba(26,23,20,0.2);border-radius:6px;outline:none;resize:vertical;box-sizing:border-box}" +
-      ".companion-composer .row{display:flex;justify-content:space-between;gap:8px;margin-top:8px}" +
-      ".companion-composer button{font:600 11.5px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:6px;cursor:pointer;border:1px solid rgba(26,23,20,0.2);background:#fff;color:#1a1714}" +
-      ".companion-composer button.save{background:#1a1714;color:#f4f1ec;border-color:#1a1714}" +
-      ".companion-composer button.delete{color:#6e655b;border-color:transparent;background:transparent}" +
-      ".companion-annotation{margin:4px 0 10px;padding:7px 10px;background:rgba(46,125,82,0.08);border-left:2px solid #2e7d52;border-radius:0 6px 6px 0;color:#1a1714;font-size:12.5px;line-height:1.5;cursor:pointer}" +
-      ".companion-annotation::before{content:'💬 '}" +
+      "[data-shelly-commentable] .shelly-commentable{position:relative;border-radius:5px;cursor:text;transition:background 140ms ease,box-shadow 140ms ease}" +
+      ".shelly-commentable::before{content:'';position:absolute;top:0;left:-36px;width:36px;height:100%}" +
+      ".shelly-commentable:hover{background:rgba(182,120,29,0.07);box-shadow:inset 2px 0 0 #b6781d}" +
+      ".shelly-commentable.has-comment{background:rgba(46,125,82,0.05);box-shadow:inset 2px 0 0 #2e7d52}" +
+      ".shelly-ask-btn{position:absolute;left:-36px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border:1px solid rgba(26,23,20,0.2);background:#fff;color:#6e655b;border-radius:6px;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:12px;box-shadow:0 4px 10px -6px rgba(26,23,20,0.4)}" +
+      ".shelly-commentable:hover > .shelly-ask-btn,.shelly-commentable.has-comment > .shelly-ask-btn{display:inline-flex}" +
+      ".shelly-composer{margin:6px 0 10px;padding:10px 11px;background:#fff;border:1px solid #b6781d;border-radius:8px}" +
+      ".shelly-composer .ref{font:600 11px/1.4 ui-monospace,Menlo,monospace;color:#6e655b;border-left:2px solid #b6781d;padding:4px 8px;margin-bottom:6px;background:rgba(182,120,29,0.07);border-radius:0 4px 4px 0}" +
+      ".shelly-composer textarea{display:block;width:100%;min-height:64px;padding:8px 10px;font:13px/1.5 -apple-system,system-ui,sans-serif;background:#f4f1ec;color:#1a1714;border:1px solid rgba(26,23,20,0.2);border-radius:6px;outline:none;resize:vertical;box-sizing:border-box}" +
+      ".shelly-composer .row{display:flex;justify-content:space-between;gap:8px;margin-top:8px}" +
+      ".shelly-composer button{font:600 11.5px/1 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:6px;cursor:pointer;border:1px solid rgba(26,23,20,0.2);background:#fff;color:#1a1714}" +
+      ".shelly-composer button.save{background:#1a1714;color:#f4f1ec;border-color:#1a1714}" +
+      ".shelly-composer button.delete{color:#6e655b;border-color:transparent;background:transparent}" +
+      ".shelly-annotation{margin:4px 0 10px;padding:7px 10px;background:rgba(46,125,82,0.08);border-left:2px solid #2e7d52;border-radius:0 6px 6px 0;color:#1a1714;font-size:12.5px;line-height:1.5;cursor:pointer}" +
+      ".shelly-annotation::before{content:'💬 '}" +
       ".cmp-comment{margin:16px 0 0}" +
       ".cmp-comment textarea{display:block;width:100%;box-sizing:border-box;min-height:54px;resize:vertical;padding:10px 12px;border:1px solid rgba(32,27,21,.22);border-radius:9px;font:13px/1.5 -apple-system,system-ui,sans-serif;background:#fff;color:#201b15;outline:none}" +
       ".cmp-seltb{position:fixed;z-index:10000;display:flex;align-items:center;gap:2px;padding:4px;border-radius:10px;background:#201b15;box-shadow:0 8px 22px -8px rgba(0,0,0,.5)}" +
@@ -831,14 +831,14 @@
         '<div class="s">Your answer went to the terminal — the next artifact lands here.</div></div>' +
         '<button class="b" type="button">← View last artifact</button>';
       ov.querySelector("button").addEventListener("click", function () {
-        try { parent.postMessage({ source: "companion-artifact", kind: "splash-dismissed" }, "*"); } catch (e) {}
+        try { parent.postMessage({ source: "shelly-artifact", kind: "splash-dismissed" }, "*"); } catch (e) {}
         ov.remove();
       });
       document.body.appendChild(ov);
     };
     window.addEventListener("message", function (e) {
       var d = e.data;
-      if (d && d.source === "companion-board" && d.kind === "restore-submitted") {
+      if (d && d.source === "shelly-board" && d.kind === "restore-submitted") {
         try { window.__cmpShowSubmitted(); } catch (err) {}
       }
     });
@@ -846,7 +846,7 @@
 
   (function () {
     var subject = "";
-    try { subject = (JSON.parse(document.getElementById("companion-meta").textContent).subject) || ""; } catch (e) {}
+    try { subject = (JSON.parse(document.getElementById("shelly-meta").textContent).subject) || ""; } catch (e) {}
     var tb = null;
     function clearTb() { if (tb) { tb.remove(); tb = null; } }
     function selText() {
@@ -882,7 +882,7 @@
       tb.style.left = left + "px"; tb.style.top = top + "px";
       tb.querySelector('[data-sel="new"]').addEventListener("mousedown", function (e) {
         e.preventDefault();
-        try { parent.postMessage({ source: "companion-artifact", kind: "new-session", quote: q, artifact: subject }, "*"); } catch (err) {}
+        try { parent.postMessage({ source: "shelly-artifact", kind: "new-session", quote: q, artifact: subject }, "*"); } catch (err) {}
         flashTb("✦ Starting a session…");
       });
       tb.querySelector('[data-sel="ask"]').addEventListener("mousedown", function (e) {
@@ -903,7 +903,7 @@
   (function () {
     var el = document.querySelector("[data-fit-root]") || document.body;
     var post = function () {
-      parent.postMessage({ source: "companion-artifact", kind: "size",
+      parent.postMessage({ source: "shelly-artifact", kind: "size",
         w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
     };
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);

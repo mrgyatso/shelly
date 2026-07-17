@@ -7,7 +7,7 @@
    user will click run underneath, against the demo profile's fixtures.
 
    Start with `?tour` on the demo URL, or programmatically via
-   `window.__companionTour.start()` (also how Playwright drives it).
+   `window.__shellyTour.start()` (also how Playwright drives it).
    ============================================================================= */
 
 interface TourStep {
@@ -328,7 +328,7 @@ class Tour {
 }
 
 /* ---- The script: the first-run guide's TOC, driven live. -------------------
-   Copy mirrors docs/guide/companion-guide.html; every selector is a real shell
+   Copy mirrors docs/guide/shelly-guide.html; every selector is a real shell
    control (see index.html / board.ts). One session per demo unit means the
    multi-session drawer can't be clicked here — the rail step narrates it. */
 
@@ -398,14 +398,14 @@ const STEPS: TourStep[] = [
 
 const tour = new Tour(STEPS);
 declare global {
-  interface Window { __companionTour?: { start: () => void; end: () => void } }
+  interface Window { __shellyTour?: { start: () => void; end: () => void } }
 }
-window.__companionTour = { start: () => tour.start(), end: () => tour.end() };
+window.__shellyTour = { start: () => tour.start(), end: () => tour.end() };
 
 /* The script assumes it begins on the hub (step 1 spotlights a hub door). A
    fresh boot lands there; once the visitor has wandered into a unit, the only
    reliable way back to the scripted state is a reload with ?tour. */
-const TOURED_KEY = "companion-demo-toured";
+const TOURED_KEY = "shelly-demo-toured";
 document.getElementById("demo-tour-btn")?.addEventListener("click", () => {
   const door = document.getElementById("hub-door-sessions");
   if (door && door.getClientRects().length > 0) tour.start();

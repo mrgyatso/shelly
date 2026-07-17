@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// companion-skill-log — PROBE hook: observe when a skill is loaded in a session.
+// shelly-skill-log — PROBE hook: observe when a skill is loaded in a session.
 //
 // The Skill-tool hook contract is UNDOCUMENTED (confirmed via the Claude Code docs,
 // 2026-07-08): it is not documented whether Pre/PostToolUse fires for the Skill tool, nor
 // the exact tool_name / tool_input shape. This hook is a best-effort probe wired on BOTH
 // Pre- and PostToolUse (matcher "Skill"): it appends one JSON line per event to
-//   ~/.claude/companion/skill-loads.log
+//   ~/.shelly/skill-loads.log
 // so the FIRST live skill invocation reveals BOTH whether the hook fires and the payload
 // shape (event, tool_name, tool_input). If the log stays empty after skills are used, then
 // "Skill" is not the matched tool_name (or the tool is not hookable) — switch the matcher to
@@ -38,7 +38,7 @@ process.stdin.on("end", () => {
         session_id: o.session_id || null,
         tool_input: o.tool_input || null,
       }) + "\n";
-    const p = path.join(os.homedir(), ".claude", "companion", "skill-loads.log");
+    const p = path.join(os.homedir(), ".shelly", "skill-loads.log");
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.appendFileSync(p, line);
   } catch (_) {

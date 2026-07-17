@@ -10,7 +10,7 @@
 //!
 //! **Per-session state.** A single shared file would let concurrent Claude
 //! sessions clobber each other's surface. Instead each session writes its own
-//! file under `~/.claude/companion/live/<slug>.json` (slug = the working dir's
+//! file under `~/.shelly/live/<slug>.json` (slug = the working dir's
 //! basename), and [`read_live`] returns the **most-recently-modified** one — so
 //! the pane tracks the session you most recently took a turn in. Each file
 //! carries a `project` label so the pane can say *whose* work it's showing. The
@@ -18,30 +18,30 @@
 
 use std::path::PathBuf;
 
-/// `~/.claude/companion` — the companion runtime dir.
-fn companion_dir() -> Option<PathBuf> {
-    crate::paths::companion_dir()
+/// `~/.shelly` — the shelly runtime dir.
+fn shelly_dir() -> Option<PathBuf> {
+    crate::paths::shelly_dir()
 }
 
-/// `~/.claude/companion/live/` — the per-session state directory.
+/// `~/.shelly/live/` — the per-session state directory.
 fn live_dir() -> Option<PathBuf> {
-    companion_dir().map(|d| d.join("live"))
+    shelly_dir().map(|d| d.join("live"))
 }
 
-/// `~/.claude/companion/live.json` — the legacy single state file (fallback).
+/// `~/.shelly/live.json` — the legacy single state file (fallback).
 fn legacy_live_path() -> Option<PathBuf> {
-    companion_dir().map(|d| d.join("live.json"))
+    shelly_dir().map(|d| d.join("live.json"))
 }
 
 /// Board-written sidecar mapping a live-source stem (`<slug>--<shortid>`) → the
 /// `tabId` of the Board-owned PTY that spawned that session. The SessionStart
-/// hook (`companion-session`) writes it when `COMPANION_SESSION` is in env. The
+/// hook (`shelly-session`) writes it when `SHELLY_SESSION` is in env. The
 /// Board reads it (injected per source by `read_all_live`) to match its embedded
 /// terminal to the live source the spawned `claude` produces. Agent-proof: the
 /// agent never writes this file, so its turn-by-turn live rewrites can't lose the
 /// binding. Re-read every poll so a fresh bind is picked up within ~1 poll.
 fn owned_sessions() -> std::collections::HashMap<String, String> {
-    let path = match companion_dir() {
+    let path = match shelly_dir() {
         Some(d) => d.join("owned-sessions.json"),
         None => return std::collections::HashMap::new(),
     };
@@ -52,11 +52,11 @@ fn owned_sessions() -> std::collections::HashMap<String, String> {
 }
 
 /// Board-owned sidecar mapping a live-source stem → that session's absolute
-/// project root (gitroot or cwd), written by `companion-session` for every
+/// project root (gitroot or cwd), written by `shelly-session` for every
 /// session. The Board reads it (injected per source as `unit_dir`) to resolve a
 /// unit's directory for "+ session in this project". Agent-proof.
 fn session_dirs() -> std::collections::HashMap<String, String> {
-    let path = match companion_dir() {
+    let path = match shelly_dir() {
         Some(d) => d.join("session-dirs.json"),
         None => return std::collections::HashMap::new(),
     };
@@ -66,13 +66,13 @@ fn session_dirs() -> std::collections::HashMap<String, String> {
         .unwrap_or_default()
 }
 
-/// `~/.claude/companion/dismissed.json` — the set of live-source stems
+/// `~/.shelly/dismissed.json` — the set of live-source stems
 /// (`<slug>--<shortid>`) the user has manually closed off the roster. A JSON
 /// array of strings. Honored as a sticky override of mtime-freshness (and the
 /// Board's owned-terminal promotion) so a closed session stays archived even if
 /// it's still being written, until it's restored or its file is pruned.
 fn dismissed_path() -> Option<PathBuf> {
-    companion_dir().map(|d| d.join("dismissed.json"))
+    shelly_dir().map(|d| d.join("dismissed.json"))
 }
 
 /// Read the dismissed-stem set (empty when the file is absent or unreadable).
@@ -102,12 +102,12 @@ fn write_dismissed(set: &std::collections::HashSet<String>) -> Result<(), String
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
-/// `~/.claude/companion/unit-names.json` — user-assigned display names, keyed by
+/// `~/.shelly/unit-names.json` — user-assigned display names, keyed by
 /// `unit_key`. A JSON object `{unit_key: name}`. The Board renders the custom name
 /// over the derived folder/slug label (so several home-folder sessions don't all
 /// read "gyatso"); a blank name removes the override.
 fn unit_names_path() -> Option<PathBuf> {
-    companion_dir().map(|d| d.join("unit-names.json"))
+    shelly_dir().map(|d| d.join("unit-names.json"))
 }
 
 /// Read the unit-name overrides (empty when the file is absent or unreadable).
@@ -167,7 +167,7 @@ pub fn resolve_home_dir() -> Option<String> {
 /// source as `session_id` so a closed Board-launched session can be REJOINED via
 /// `claude --resume <id>`. Agent-proof, like the other sidecars.
 fn session_ids() -> std::collections::HashMap<String, String> {
-    let path = match companion_dir() {
+    let path = match shelly_dir() {
         Some(d) => d.join("session-ids.json"),
         None => return std::collections::HashMap::new(),
     };
@@ -180,7 +180,7 @@ fn session_ids() -> std::collections::HashMap<String, String> {
 /// Whether a live source is a tool-internal "observer" session that must never
 /// reach the Board. claude-mem (and similar) spawn long-lived `claude` processes
 /// under `~/.claude-mem/observer-sessions` to watch other sessions; those run the
-/// companion SessionStart hook too, so they write `live/observer-sessions--*.json`.
+/// shelly SessionStart hook too, so they write `live/observer-sessions--*.json`.
 /// They are NOT user-interactive work — left in, they flood the roster and (worse)
 /// get bound/resumed like a real session. The plugin now early-exits for
 /// `.claude-mem` cwds, but we filter here too so an already-written file (or an
@@ -301,7 +301,7 @@ pub fn read_all_live() -> Vec<LiveSource> {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
-        let companion_session = owned.get(&source).map(|s| s.as_str());
+        let shelly_session = owned.get(&source).map(|s| s.as_str());
         let unit_dir = dirs.get(&source).map(|s| s.as_str());
         let is_dismissed = dismissed.contains(&source);
         let session_id = sids
@@ -326,7 +326,7 @@ pub fn read_all_live() -> Vec<LiveSource> {
             json: inject_fields(
                 &raw,
                 updated_ms,
-                companion_session,
+                shelly_session,
                 unit_dir,
                 is_dismissed,
                 session_id,
@@ -360,14 +360,14 @@ pub fn dismiss_session(source: String) -> Result<(), String> {
     write_dismissed(&set)
 }
 
-/// Inject `updated_ms` (and, for Board-owned sessions, `companion_session`) into
+/// Inject `updated_ms` (and, for Board-owned sessions, `shelly_session`) into
 /// a live-state JSON object, returning the serialized string. A malformed file is
 /// returned verbatim so it still surfaces as the render fallback rather than being
 /// dropped.
 fn inject_fields(
     raw: &str,
     updated_ms: u64,
-    companion_session: Option<&str>,
+    shelly_session: Option<&str>,
     unit_dir: Option<&str>,
     dismissed: bool,
     session_id: Option<&str>,
@@ -378,8 +378,8 @@ fn inject_fields(
         Ok(mut v) => {
             if let Some(obj) = v.as_object_mut() {
                 obj.insert("updated_ms".into(), serde_json::json!(updated_ms));
-                if let Some(cs) = companion_session {
-                    obj.insert("companion_session".into(), serde_json::json!(cs));
+                if let Some(cs) = shelly_session {
+                    obj.insert("shelly_session".into(), serde_json::json!(cs));
                 }
                 if let Some(dir) = unit_dir {
                     obj.insert("unit_dir".into(), serde_json::json!(dir));
@@ -431,7 +431,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn injects_companion_session_and_dir_when_owned() {
+    fn injects_shelly_session_and_dir_when_owned() {
         let out = inject_fields(
             r#"{"working":"x","unit_key":"repo"}"#,
             42,
@@ -443,7 +443,7 @@ mod tests {
             None,
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["companion_session"], "board-3");
+        assert_eq!(v["shelly_session"], "board-3");
         assert_eq!(v["unit_dir"], "/Users/me/repo");
         assert_eq!(v["session_id"], "abc-123-full");
         assert_eq!(v["updated_ms"], 42);
@@ -455,7 +455,7 @@ mod tests {
     fn omits_optional_fields_when_external() {
         let out = inject_fields(r#"{"working":"x"}"#, 7, None, None, false, None, None, None);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert!(v.get("companion_session").is_none());
+        assert!(v.get("shelly_session").is_none());
         assert!(v.get("unit_dir").is_none());
         assert!(v.get("session_id").is_none());
         assert!(v.get("dismissed").is_none());
@@ -648,7 +648,7 @@ mod tests {
         // The session is EXTERNAL (no owned tab, no transcript) — the correction must not
         // depend on the Board having spawned it.
         let tmp = std::env::temp_dir().join(format!("cmp-live-e2e-{}", std::process::id()));
-        let cmp = tmp.join(".claude/companion");
+        let cmp = tmp.join(".shelly");
         let sid = "a7ce6917-2e13-4e7e-9448-19905a93d953";
         std::fs::create_dir_all(cmp.join("live")).unwrap();
         std::fs::create_dir_all(cmp.join("sessions")).unwrap();
@@ -700,8 +700,8 @@ mod tests {
         ));
         // A normal session is untouched.
         assert!(!is_observer_source(
-            "claude-code-companion--96c4bed2",
-            r#"{"working":"x","unit_key":"claude-code-companion--96c4bed2"}"#
+            "shelly--96c4bed2",
+            r#"{"working":"x","unit_key":"shelly--96c4bed2"}"#
         ));
     }
 }

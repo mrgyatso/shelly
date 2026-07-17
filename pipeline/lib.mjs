@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 // Constants
 // ---------------------------------------------------------------------------
 
-export const REPO = "mrgyatso/claude-code-companion";
+export const REPO = "mrgyatso/shelly";
 export const MASTER = "master";
 export const STAGING_BRANCH = "integration/agents";
 
@@ -57,7 +57,7 @@ export const WORKER_PROMPT_PATH = join(PIPELINE_DIR, "worker-prompt.md");
 
 export function mainRepoRoot() {
   const commonDir = git(["rev-parse", "--git-common-dir"]).stdout.trim();
-  // commonDir is e.g. /Users/x/claude-code-companion/.git  (or a bare path)
+  // commonDir is e.g. /Users/x/shelly/.git  (or a bare path)
   return resolve(dirname(commonDir));
 }
 
@@ -74,7 +74,7 @@ export function worktreeParent() {
 }
 
 export function worktreePathFor(num) {
-  return join(worktreeParent(), `companion-${num}`);
+  return join(worktreeParent(), `shelly-${num}`);
 }
 
 // ---------------------------------------------------------------------------

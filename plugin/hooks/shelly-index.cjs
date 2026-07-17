@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// companion-index.js — stamp the Board's artifact routing index.
+// shelly-index.js — stamp the Board's artifact routing index.
 //
-// Usage:  SID=<session_id> [CWD=<session_cwd>] node companion-index.js \
+// Usage:  SID=<session_id> [CWD=<session_cwd>] node shelly-index.js \
 //           <artifact_path> <live_dir> <index_path>
 //
 // WHY this exists: the Board groups an artifact under the session that wrote it.
@@ -14,7 +14,7 @@
 //
 // LATE REGISTRATION: a session with no record (it started before the registry
 // hooks shipped, or its SessionStart failed) is registered on first sight, by
-// the SAME single derivation SessionStart uses (companion-livepath.sh — which
+// the SAME single derivation SessionStart uses (shelly-livepath.sh — which
 // itself reuses a frozen live-file identity when one exists). One derivation,
 // invoked wherever the session is first seen; recorded once; frozen thereafter.
 //
@@ -34,14 +34,14 @@ const { execFileSync } = require("child_process");
 // fall back to identity if it can't load so a require hiccup never sinks the write.
 let charset = { ensureArtifactCharset: (h) => h };
 try {
-  charset = require("./companion-charset.cjs");
+  charset = require("./shelly-charset.cjs");
 } catch (_) {}
 
 // Trace harness (no-op unless enabled). Co-located; require must never sink the
 // index write, so fall back to a noop if it can't be loaded.
 let trace = { emit() {} };
 try {
-  trace = require("./companion-trace.cjs");
+  trace = require("./shelly-trace.cjs");
 } catch (_) {}
 
 // Identity registry. routeArtifact is THE shared stamp (index entry + the always-on
@@ -50,7 +50,7 @@ try {
 // there is no identity to stamp, so bail (fail-loud covers the artifact downstream).
 let identity = null;
 try {
-  identity = require("./companion-identity.cjs");
+  identity = require("./shelly-identity.cjs");
 } catch (_) {}
 
 const [artifactPath, , indexPath] = process.argv.slice(2);
@@ -82,11 +82,11 @@ if (!sessionId || !shortid) {
 
 let rec = identity.readRecord(sessionId);
 if (!rec) {
-  // Late registration (see header). companion-livepath.sh prints
+  // Late registration (see header). shelly-livepath.sh prints
   //   live_path \t project \t shortid \t is_repo \t unit_key \t root
   try {
     const cwd = process.env.CWD || process.cwd();
-    const line = execFileSync("sh", [path.join(__dirname, "companion-livepath.sh"), cwd, sessionId], {
+    const line = execFileSync("sh", [path.join(__dirname, "shelly-livepath.sh"), cwd, sessionId], {
       encoding: "utf8",
     }).trim();
     const f = line.split("\t");
@@ -101,7 +101,7 @@ if (!rec) {
       is_repo: f[3] === "1",
       project_root: f[5] || "",
       project: f[1] || "",
-      owned_tab: process.env.COMPANION_SESSION || null,
+      owned_tab: process.env.SHELLY_SESSION || null,
       provider: process.env.PROVIDER || "claude",
     });
     rec = identity.readRecord(sessionId);

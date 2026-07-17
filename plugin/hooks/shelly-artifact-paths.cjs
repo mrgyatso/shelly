@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// companion-artifact-paths.cjs — pull artifact paths out of a PostToolUse payload.
+// shelly-artifact-paths.cjs — pull artifact paths out of a PostToolUse payload.
 //
 // Claude Code's Write/Edit carry the target as tool_input.file_path. Codex CLI edits
 // files through apply_patch (the path is embedded in the patch text) or a shell tool
@@ -12,7 +12,7 @@
 // The scan is safe to over-match: every consumer re-checks the path against its own
 // case rules (home.html/_*.html skips) and the file's existence before acting on it.
 //
-// Usage: printf '%s' "$payload" | ARTIFACTS_DIR=<dir> node companion-artifact-paths.cjs
+// Usage: printf '%s' "$payload" | ARTIFACTS_DIR=<dir> node shelly-artifact-paths.cjs
 
 function extractPaths(payload, artifactsDir) {
   if (!payload || !artifactsDir) return [];

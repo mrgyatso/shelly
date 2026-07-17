@@ -24,7 +24,7 @@ It's also a shell in the plainer sense. The terminals your agents actually run i
 
 ## Demo
 
-![Shelly rendering a debugging session as a page you read and answer in the app](docs/images/companion-example.png)
+![Shelly rendering a debugging session as a page you read and answer in the app](docs/images/shelly-example.png)
 
 *A real session: Claude tracked down a UI freeze, and Shelly rendered its write-up — root cause, a proof chart, and a one-click decision — as a page you read and answer without touching the terminal.*
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
-# companion-uninstall — undo everything `install.sh` and `companion setup` did.
+# shelly-uninstall — undo everything `install.sh` and `shelly setup` did.
 #
-#   companion uninstall            remove the plugin and the app; keep your artifacts
-#   companion uninstall --purge    also delete ~/.claude/companion (artifacts, history)
+#   shelly uninstall            remove the plugin and the app; keep your artifacts
+#   shelly uninstall --purge    also delete ~/.shelly (artifacts, history)
 #
-# The mirror of `companion setup`: removes the plugin, drops the marketplace, then
+# The mirror of `shelly setup`: removes the plugin, drops the marketplace, then
 # uninstalls the app itself — the Homebrew cask on macOS, the .deb on Ubuntu/Debian,
 # or the symlinks of a from-source install. Safe to re-run; anything already gone is
 # reported and skipped.
@@ -16,9 +16,9 @@
 #       --force  uninstall even when the overlay is hosting this very terminal
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-STATE_DIR="$HOME/.claude/companion"
-MARKETPLACE=claude-code-companion
-PLUGIN=companion@claude-code-companion
+STATE_DIR="$HOME/.shelly"
+MARKETPLACE=shelly
+PLUGIN=shelly@shelly
 
 ASSUME_YES=false
 PURGE=false
@@ -31,7 +31,7 @@ for arg in "$@"; do
     --check)  CHECK_ONLY=true ;;
     --force)  FORCE=true ;;
     -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) printf 'companion uninstall: unknown flag %s\n' "$arg" >&2; exit 2 ;;
+    *) printf 'shelly uninstall: unknown flag %s\n' "$arg" >&2; exit 2 ;;
   esac
 done
 
@@ -43,7 +43,7 @@ fi
 say()  { printf '%s\n' "$*"; }
 ok()   { printf '  %s✓%s %s\n' "$green" "$reset" "$*"; }
 info() { printf '  %s·%s %s\n' "$dim" "$reset" "$*"; }
-die()  { printf '\n%scompanion uninstall: %s%s\n' "$red" "$*" "$reset" >&2; exit 1; }
+die()  { printf '\n%sshelly uninstall: %s%s\n' "$red" "$*" "$reset" >&2; exit 1; }
 
 # Ask on the controlling terminal, not stdin — this may be piped.
 ask() {
@@ -61,10 +61,10 @@ hosted_by_overlay() {
   pid=$$
   i=0
   while [ "$pid" -gt 1 ] && [ "$i" -lt 24 ]; do
-    # Linux truncates `comm` to 15 chars — the process reads as "companion-overl",
-    # never "companion-overlay". Match the short form so this fires on both platforms.
+    # Linux truncates `comm` to 15 chars — the process reads as "shelly-overl",
+    # never "shelly". Match the short form so this fires on both platforms.
     case "$(ps -o comm= -p "$pid" 2>/dev/null)" in
-      *companion-overl*) return 0 ;;
+      *shelly-overl*) return 0 ;;
     esac
     pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
     [ -n "$pid" ] || return 1
@@ -74,25 +74,25 @@ hosted_by_overlay() {
 }
 
 # Every running overlay, hosted or not. `comm` is truncated to 15 chars on Linux
-# ("companion-overl") and not on macOS, so anchor on the short form. Matching comm
+# ("shelly-overl") and not on macOS, so anchor on the short form. Matching comm
 # rather than the cmdline keeps this from ever selecting the uninstaller itself.
 overlay_pids() {
   ps -eo pid=,comm= 2>/dev/null \
-    | awk '$2 ~ /^companion-overl/ { printf "%s ", $1 }' \
+    | awk '$2 ~ /^shelly-overl/ { printf "%s ", $1 }' \
     | sed 's/ *$//'
 }
 
 say ""
-say "${bold}Companion${reset} — removing"
+say "${bold}Shelly${reset} — removing"
 say ""
 
 if hosted_by_overlay && ! $FORCE && ! $CHECK_ONLY; then
-  say "  ${red}This terminal is running inside the Companion app.${reset}"
+  say "  ${red}This terminal is running inside the Shelly app.${reset}"
   say ""
   say "  Uninstalling would kill the overlay — and this shell with it, halfway"
   say "  through. Quit the app first and re-run from a normal terminal:"
   say ""
-  say "      ${bold}pkill companion-overlay${reset}   ${dim}# or Quit from the app${reset}"
+  say "      ${bold}pkill shelly${reset}   ${dim}# or Quit from the app${reset}"
   say ""
   say "  ${dim}Or pass --force if you really mean it.${reset}"
   say ""
@@ -154,8 +154,8 @@ removed_app=false
 
 # Ask dpkg which package owns the installed binary rather than assuming the name —
 # a rename in tauri.conf.json would otherwise make removal silently do nothing.
-deb_pkg=$(dpkg -S /usr/bin/companion-overlay 2>/dev/null | cut -d: -f1)
-[ -n "$deb_pkg" ] || deb_pkg=companion-overlay
+deb_pkg=$(dpkg -S /usr/bin/shelly 2>/dev/null | cut -d: -f1)
+[ -n "$deb_pkg" ] || deb_pkg=shelly
 
 if command -v dpkg >/dev/null 2>&1 && dpkg -s "$deb_pkg" >/dev/null 2>&1; then
   if $CHECK_ONLY; then
@@ -171,45 +171,45 @@ if command -v dpkg >/dev/null 2>&1 && dpkg -s "$deb_pkg" >/dev/null 2>&1; then
 fi
 
 if command -v brew >/dev/null 2>&1 \
-   && brew list --cask claude-code-companion >/dev/null 2>&1; then
+   && brew list --cask shelly >/dev/null 2>&1; then
   if $CHECK_ONLY; then
-    info "would remove cask        claude-code-companion"
+    info "would remove cask        shelly"
   else
     say ""
-    ask "Remove the claude-code-companion cask?" || die "stopped."
-    brew uninstall --cask claude-code-companion >/dev/null 2>&1 \
+    ask "Remove the shelly cask?" || die "stopped."
+    brew uninstall --cask shelly >/dev/null 2>&1 \
       || die "brew could not uninstall the cask."
-    ok "cask        claude-code-companion"
+    ok "cask        shelly"
   fi
   removed_app=true
 fi
 
 # `install.sh` drops this symlink when the .deb's own CLI is not already on PATH.
-if [ -L /usr/local/bin/companion ]; then
+if [ -L /usr/local/bin/shelly ]; then
   if $CHECK_ONLY; then
-    info "would remove symlink     /usr/local/bin/companion"
+    info "would remove symlink     /usr/local/bin/shelly"
   else
-    sudo rm -f /usr/local/bin/companion && ok "symlink     /usr/local/bin/companion"
+    sudo rm -f /usr/local/bin/shelly && ok "symlink     /usr/local/bin/shelly"
   fi
   removed_app=true
 fi
 
-# A from-source install: `companion` symlinked out of a checkout, plus the two
+# A from-source install: `shelly` symlinked out of a checkout, plus the two
 # .desktop entries the Linux port writes into the user's applications dir.
-if [ -L "$HOME/.local/bin/companion" ]; then
-  src=$(readlink -f "$HOME/.local/bin/companion" 2>/dev/null)
+if [ -L "$HOME/.local/bin/shelly" ]; then
+  src=$(readlink -f "$HOME/.local/bin/shelly" 2>/dev/null)
   if $CHECK_ONLY; then
-    info "would remove symlink     ~/.local/bin/companion ${dim}→ ${src}${reset}"
+    info "would remove symlink     ~/.local/bin/shelly ${dim}→ ${src}${reset}"
   else
-    rm -f "$HOME/.local/bin/companion"
-    ok "symlink     ~/.local/bin/companion ${dim}(the checkout at ${src%/overlay/scripts/companion} is left alone)${reset}"
+    rm -f "$HOME/.local/bin/shelly"
+    ok "symlink     ~/.local/bin/shelly ${dim}(the checkout at ${src%/overlay/scripts/shelly} is left alone)${reset}"
   fi
   removed_app=true
 fi
 
 apps_dir="$HOME/.local/share/applications"
 dropped_desktop=false
-for d in companion-overlay companion-overlay-handler; do
+for d in shelly shelly-handler; do
   f="$apps_dir/$d.desktop"
   [ -f "$f" ] || continue
   if $CHECK_ONLY; then
@@ -251,5 +251,5 @@ fi
 say ""
 say "${green}Done.${reset} Reinstall any time:"
 say ""
-say "      ${bold}curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash${reset}"
+say "      ${bold}curl -fsSL https://raw.githubusercontent.com/mrgyatso/shelly/master/install.sh | bash${reset}"
 say ""

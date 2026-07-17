@@ -4,7 +4,7 @@
 //! which steals keyboard focus from whatever the user is typing in (their
 //! terminal). An `NSPanel` with the `.nonactivatingPanel` style mask can be
 //! shown, raised, dragged, scrolled, and clicked WITHOUT activating the app —
-//! exactly the behavior wanted for a ghostly companion overlay.
+//! exactly the behavior wanted for a ghostly shelly overlay.
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -21,14 +21,14 @@ mod imp {
     }
 
     /// The class tao allocated the window with, captured the first time we
-    /// reclass to `CompanionKeyPanel`. tao registers a single window class, so
+    /// reclass to `ShellyKeyPanel`. tao registers a single window class, so
     /// every overlay window shares it — one stored pointer restores any of
     /// them. Stored as `usize` because the class object is a stable
     /// process-global. Used by `restore_original_class` to undo the reclass
     /// before teardown.
     static ORIGINAL_CLASS: OnceLock<usize> = OnceLock::new();
 
-    /// Process-global cache of the registered `CompanionKeyPanel` class.
+    /// Process-global cache of the registered `ShellyKeyPanel` class.
     /// Registered exactly once via `ClassBuilder` (Obj-C will refuse to
     /// register the same class name twice — and `ClassBuilder::new` returns
     /// `None` in that case).
@@ -60,8 +60,8 @@ mod imp {
     fn key_panel_class() -> &'static AnyClass {
         KEY_PANEL_CLASS.get_or_init(|| {
             let superclass: &AnyClass = NSPanel::class();
-            let mut builder = ClassBuilder::new(c"CompanionKeyPanel", superclass)
-                .expect("CompanionKeyPanel class registration failed");
+            let mut builder = ClassBuilder::new(c"ShellyKeyPanel", superclass)
+                .expect("ShellyKeyPanel class registration failed");
             // SAFETY: Both overrides match NSWindow's existing selector
             // encodings exactly: zero args, `BOOL` (= `Bool`) return, with the
             // standard `(self, _cmd)` receiver/selector pair.
@@ -93,14 +93,14 @@ mod imp {
         if ptr.is_null() {
             return;
         }
-        // Reclass to our `CompanionKeyPanel : NSPanel` subclass (NOT plain
+        // Reclass to our `ShellyKeyPanel : NSPanel` subclass (NOT plain
         // NSPanel) so `canBecomeKeyWindow` returns YES — required for the
         // WKWebView → iframe → textarea focus chain to receive keystrokes.
         let cls: *const AnyClass = key_panel_class();
         // SAFETY: `ptr` is the live NSWindow backing this Tauri window. AppKit
         // window mutation must happen on the main thread, where Tauri runs
         // `setup` and window callbacks. We only message the object for the
-        // duration of these synchronous calls. CompanionKeyPanel ⊂ NSPanel ⊂
+        // duration of these synchronous calls. ShellyKeyPanel ⊂ NSPanel ⊂
         // NSWindow, so the reclassed object still responds to every selector
         // used here.
         unsafe {
@@ -121,7 +121,7 @@ mod imp {
             // this app (so the terminal keeps focus).
             //
             // ALSO Resizable: defense in depth. The reclass to
-            // `CompanionKeyPanel` is what actually guarantees
+            // `ShellyKeyPanel` is what actually guarantees
             // `canBecomeKeyWindow == YES`; the Resizable flag is a redundant
             // secondary signal (NSPanel's default returns YES when title-bar
             // OR resize-bar is set), kept in case some AppKit internal also
@@ -135,7 +135,7 @@ mod imp {
             // Become key ONLY when a control actually needs it — so clicking the
             // chrome / scrolling the artifact does NOT pull keyboard focus.
             // Combined with `canBecomeKeyWindow == YES` (from the
-            // `CompanionKeyPanel` subclass), this gives the floating-palette
+            // `ShellyKeyPanel` subclass), this gives the floating-palette
             // pattern: text-field click ⇒ panel becomes key for typing, every
             // other click leaves the terminal key.
             panel.setBecomesKeyOnlyIfNeeded(true);
@@ -163,8 +163,8 @@ mod imp {
 
     /// The Board is the **focal** surface (unlike the ghost panels). Its spatial
     /// keyboard nav (↑↓←→ / Tab / Enter / F) only works if the Board is the key
-    /// window of the *active* app — i.e. clicking it must make Companion frontmost
-    /// and route keystrokes to the Board. We still reclass to `CompanionKeyPanel`
+    /// window of the *active* app — i.e. clicking it must make Shelly frontmost
+    /// and route keystrokes to the Board. We still reclass to `ShellyKeyPanel`
     /// because the window is borderless (a borderless `NSWindow` returns NO for
     /// `canBecomeKeyWindow`). But unlike `make_nonactivating_panel` we do NOT set
     /// the `NonactivatingPanel` mask and we set `becomesKeyOnlyIfNeeded(false)`, so
@@ -177,7 +177,7 @@ mod imp {
         }
         let cls: *const AnyClass = key_panel_class();
         // SAFETY: identical invariants to `make_nonactivating_panel` — `ptr` is the
-        // live NSWindow, this runs on the main thread, and CompanionKeyPanel ⊂
+        // live NSWindow, this runs on the main thread, and ShellyKeyPanel ⊂
         // NSPanel ⊂ NSWindow responds to every selector used here.
         unsafe {
             let old_class = object_setClass(ptr, cls.cast());

@@ -2,24 +2,24 @@
 //!
 //! The single resolution rule of the redesign: an artifact or live source carries a
 //! `session_id`; look up `sessions/<session_id>.json` (written ONCE at SessionStart by
-//! `plugin/hooks/companion-identity.cjs`); read its frozen `unit_key`. No re-derivation
+//! `plugin/hooks/shelly-identity.cjs`); read its frozen `unit_key`. No re-derivation
 //! from a volatile cwd/slug/mtime — the answer was decided before the artifact existed.
 //!
 //! Phase 2 is additive: callers resolve via the registry FIRST and fall back to the old
 //! derivation when there is no record (every pre-registry session). Phase 4 removes the
 //! fallback and makes a miss fail loud.
 //!
-//! This mirrors the read half of `companion-identity.cjs` (same paths, same `safe_id`
+//! This mirrors the read half of `shelly-identity.cjs` (same paths, same `safe_id`
 //! sanitization) so the two languages resolve a given `session_id` identically.
 
 use std::path::PathBuf;
 
-/// `~/.claude/companion` — the companion runtime dir.
-fn companion_dir() -> Option<PathBuf> {
-    crate::paths::companion_dir()
+/// `~/.shelly` — the shelly runtime dir.
+fn shelly_dir() -> Option<PathBuf> {
+    crate::paths::shelly_dir()
 }
 
-/// Filename-safe form of a session_id — identical to `companion-identity.cjs`'s `safeId`
+/// Filename-safe form of a session_id — identical to `shelly-identity.cjs`'s `safeId`
 /// (keep `[A-Za-z0-9._-]`, every other byte → `-`). A UUID is unchanged; this only guards
 /// against a malformed id escaping the sessions dir. Both writer and reader apply it, so
 /// the lookup key always matches the file name.
@@ -42,7 +42,7 @@ fn record_path(session_id: &str) -> Option<PathBuf> {
     if sid.is_empty() {
         return None;
     }
-    companion_dir().map(|d| d.join("sessions").join(format!("{sid}.json")))
+    shelly_dir().map(|d| d.join("sessions").join(format!("{sid}.json")))
 }
 
 /// The raw record JSON for a session, or `None` if unregistered/unreadable.
@@ -128,7 +128,7 @@ mod tests {
     }
 
     fn write_record(home: &std::path::Path, sid: &str, unit: &str) {
-        let dir = home.join(".claude/companion/sessions");
+        let dir = home.join(".shelly/sessions");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join(format!("{sid}.json")),
@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn resolves_provider_and_defaults_to_none_when_absent() {
         let tmp = std::env::temp_dir().join(format!("cmp-reg-prov-{}", std::process::id()));
-        let dir = tmp.join(".claude/companion/sessions");
+        let dir = tmp.join(".shelly/sessions");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("codex-sid.json"),
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn missing_record_returns_none() {
         let tmp = std::env::temp_dir().join(format!("cmp-reg-miss-{}", std::process::id()));
-        std::fs::create_dir_all(tmp.join(".claude/companion")).unwrap();
+        std::fs::create_dir_all(tmp.join(".shelly")).unwrap();
         let got = with_home(&tmp, || resolve_unit("no-such-session-id"));
         assert_eq!(got, None);
         let _ = std::fs::remove_dir_all(&tmp);

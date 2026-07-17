@@ -4,9 +4,9 @@ use tauri::{AppHandle, Manager};
 /// Extract the first artifact path from a forwarded argv vector.
 ///
 /// Handles three invocation shapes:
-/// - `companion open <path>`
+/// - `shelly open <path>`
 /// - a bare `*.html` / `*.htm` arg (Finder / `open <file>`)
-/// - a `companion://open?path=<urlencoded>` deep link
+/// - a `shelly://open?path=<urlencoded>` deep link
 ///
 /// Relative paths resolve against `cwd` (the invoking shell's directory, which
 /// the single-instance plugin forwards), falling back to the process cwd.
@@ -17,7 +17,7 @@ pub fn parse_open_args(args: &[String], cwd: Option<&str>) -> Option<String> {
             if let Some(p) = iter.next() {
                 return normalize(p, cwd);
             }
-        } else if let Some(rest) = arg.strip_prefix("companion://") {
+        } else if let Some(rest) = arg.strip_prefix("shelly://") {
             if let Some(idx) = rest.find("path=") {
                 let decoded = percent_decode(&rest[idx + "path=".len()..]);
                 return normalize(&decoded, cwd);

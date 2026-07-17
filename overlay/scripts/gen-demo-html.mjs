@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The two places a demo visitor should be able to go next. */
-const GITHUB_URL = "https://github.com/mrgyatso/claude-code-companion";
+const GITHUB_URL = "https://github.com/mrgyatso/shelly";
 const PORTFOLIO_URL = "https://aletheia.dev";
 const PORTFOLIO_LABEL = "aletheia.dev";
 
@@ -39,7 +39,7 @@ html = swap(
   "bundle entry",
 );
 
-html = swap(html, "<title>Companion Overlay</title>", "<title>Companion — recorded demo</title>", "title");
+html = swap(html, "<title>Shelly</title>", "<title>Shelly — recorded demo</title>", "title");
 
 // The real window is transparent + rounded; in a browser give the page the same
 // dark letterboxing the stage sits on, so the rounded corners read like the app.
@@ -50,7 +50,7 @@ const FAVICON =
   `<text x='50' y='72' font-size='64' font-family='Georgia,serif' fill='%23fdf7ef' text-anchor='middle'>C</text></svg>`;
 
 const DEMO_HEAD = `
-    <meta name="description" content="Companion turns Claude Code's output into artifacts you can act on. A recorded, clickable demo of the Board." />
+    <meta name="description" content="Shelly turns Claude Code's output into artifacts you can act on. A recorded, clickable demo of the Board." />
     <link rel="icon" href="${FAVICON}" />
     <style>
       html, body { background: #3a3632 !important; }
@@ -119,7 +119,7 @@ html = swap(html, "  </head>", `${DEMO_HEAD}\n  </head>`, "head close");
 
 const DEMO_BODY = `
     <div id="demo-narrow">
-      <b>Companion is a desktop surface.</b>
+      <b>Shelly is a desktop surface.</b>
       <span>This demo needs a wider screen. Open it on a laptop to click through the board.</span>
     </div>
     <div id="demo-badge">

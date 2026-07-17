@@ -267,7 +267,7 @@ fn head_meta(path: &Path) -> (Option<String>, Option<String>) {
 
 /// Pull the first genuine user prompt out of a transcript line, or None. Skips
 /// tool-result continuations and machine wrappers (`<system-reminder>`, command tags,
-/// `[Companion …]` feedback) so the title reads like something the human actually typed.
+/// `[Shelly …]` feedback) so the title reads like something the human actually typed.
 fn extract_user_title(v: &serde_json::Value) -> Option<String> {
     let msg = v.get("message").unwrap_or(v);
     let role = msg
@@ -296,7 +296,7 @@ fn extract_user_title(v: &serde_json::Value) -> Option<String> {
         return None;
     };
     let t = text.trim();
-    if t.is_empty() || t.starts_with('<') || t.starts_with("[Companion") {
+    if t.is_empty() || t.starts_with('<') || t.starts_with("[Shelly") {
         return None;
     }
     Some(t.chars().take(90).collect())
@@ -385,7 +385,7 @@ fn codex_head_meta(path: &Path) -> (Option<String>, Option<String>) {
                             }
                         }
                         let t = out.trim();
-                        if !t.is_empty() && !t.starts_with('<') && !t.starts_with("[Companion") {
+                        if !t.is_empty() && !t.starts_with('<') && !t.starts_with("[Shelly") {
                             title = Some(t.chars().take(90).collect());
                         }
                     }

@@ -16,7 +16,7 @@
  *  named after their USERNAME and collapse every unrelated ~-launched session into it.
  *  Sessions here are told apart by their first-prompt title, not a folder. A session
  *  LEAVES this shelf for good once it establishes a real root (`git init`) — see
- *  plugin/hooks/companion-adopt.cjs. */
+ *  plugin/hooks/shelly-adopt.cjs. */
 export const HOME_UNIT = "__home__";
 
 /** The minimum a live source must expose to be placed on a shelf. */

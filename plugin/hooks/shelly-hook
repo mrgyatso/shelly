@@ -1,30 +1,30 @@
 #!/usr/bin/env sh
-# companion-hook (plugin copy) — Claude Code PostToolUse hook.
+# shelly-hook (plugin copy) — Claude Code PostToolUse hook.
 #
-# Pops the Companion overlay when Claude writes an HTML artifact into the watched
+# Pops the Shelly overlay when Claude writes an HTML artifact into the watched
 # dir. Reads the hook JSON payload on stdin; never blocks the originating write.
 #
-# Unlike the app-bundled copy, this calls the `companion` CLI from PATH (installed
-# with the Companion Overlay app), and no-ops silently if the app isn't installed —
+# Unlike the app-bundled copy, this calls the `shelly` CLI from PATH (installed
+# with the Shelly app), and no-ops silently if the app isn't installed —
 # so the plugin is harmless on a machine without the overlay.
 #
-# Watched dir: $COMPANION_ARTIFACTS_DIR (default: $HOME/.claude/companion/artifacts).
+# Watched dir: $SHELLY_ARTIFACTS_DIR (default: $HOME/.shelly/artifacts).
 
-ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/.claude/companion/artifacts}"
+ARTIFACTS_DIR="${SHELLY_ARTIFACTS_DIR:-$HOME/.shelly/artifacts}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-LIVE_DIR="$HOME/.claude/companion/live"
-INDEX_PATH="$HOME/.claude/companion/artifact-index.json"
+LIVE_DIR="$HOME/.shelly/live"
+INDEX_PATH="$HOME/.shelly/artifact-index.json"
 
-# Trace harness (no-op unless COMPANION_TRACE=1 / the trace.on flag file exists).
+# Trace harness (no-op unless SHELLY_TRACE=1 / the trace.on flag file exists).
 CMP_HOOK_DIR="$SCRIPT_DIR"
-. "$SCRIPT_DIR/companion-trace.sh"
+. "$SCRIPT_DIR/shelly-trace.sh"
 
 payload=$(cat)
 
 # External-terminal handling (default OFF) — do not index artifacts written by a
-# terminal the Board did not spawn (no COMPANION_SESSION). See companion-session
-# for the full note; opt in via ~/.claude/companion/external-terminals = "on".
-if [ -z "$COMPANION_SESSION" ] && [ "$(cat "${HOME}/.claude/companion/external-terminals" 2>/dev/null)" != "on" ]; then
+# terminal the Board did not spawn (no SHELLY_SESSION). See shelly-session
+# for the full note; opt in via ~/.shelly/external-terminals = "on".
+if [ -z "$SHELLY_SESSION" ] && [ "$(cat "${HOME}/.shelly/external-terminals" 2>/dev/null)" != "on" ]; then
   exit 0
 fi
 
@@ -37,8 +37,8 @@ fi
 # whenever every live session is already rooted (the overwhelmingly common case). So this
 # is one readdir on the hot path and spawns node ONLY while a homeless session exists —
 # never for the steady-state "all my sessions are in real repos" case.
-if [ -n "$(ls -A "${HOME}/.claude/companion/homeless" 2>/dev/null)" ]; then
-  printf '%s' "$payload" | node "$SCRIPT_DIR/companion-adopt.cjs" 2>/dev/null
+if [ -n "$(ls -A "${HOME}/.shelly/homeless" 2>/dev/null)" ]; then
+  printf '%s' "$payload" | node "$SCRIPT_DIR/shelly-adopt.cjs" 2>/dev/null
 fi
 
 # Cheap pre-filter: skip the JSON parse for the 99% of writes that aren't artifacts.
@@ -47,7 +47,7 @@ case "$payload" in
   *) exit 0 ;;
 esac
 
-# Every parse below is a node spawn. companion-session already reported a missing node
+# Every parse below is a node spawn. shelly-session already reported a missing node
 # once, at SessionStart; bail quietly rather than printing "command not found" per write.
 command -v node >/dev/null 2>&1 || exit 0
 
@@ -55,21 +55,21 @@ command -v node >/dev/null 2>&1 || exit 0
 # CLI-presence guard, so an artifact write is logged even on a plugin-only machine
 # with no overlay installed. Parse fp/sid here only when tracing is on (a node spawn
 # we otherwise defer past the guard, so the no-overlay path stays cheap).
-if companion_trace_on; then
+if shelly_trace_on; then
   _t_fp=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log((JSON.parse(d).tool_input||{}).file_path||"")}catch(e){}})' 2>/dev/null)
   _t_sid=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})' 2>/dev/null)
   trace hook fire "corr=$_t_fp" "file_path=$_t_fp" "sid=$_t_sid" "artifacts_dir=$ARTIFACTS_DIR" "hookpid=$$"
 fi
 
 # Seam to the app: if the overlay CLI isn't installed, do nothing.
-command -v companion >/dev/null 2>&1 || { trace hook no-companion-cli "corr=${_t_fp:-}"; exit 0; }
+command -v shelly >/dev/null 2>&1 || { trace hook no-shelly-cli "corr=${_t_fp:-}"; exit 0; }
 
 # Pull the artifact path(s) + session_id + cwd out of the payload. Claude's Write/Edit
 # carry the target as tool_input.file_path; Codex's apply_patch/shell tools embed it in
-# patch/command text — companion-artifact-paths.cjs owns that difference and prints one
-# path per line. cwd feeds companion-index's LATE REGISTRATION only (a session with no
+# patch/command text — shelly-artifact-paths.cjs owns that difference and prints one
+# path per line. cwd feeds shelly-index's LATE REGISTRATION only (a session with no
 # registry record); a registered session's identity comes from its frozen record.
-paths=$(printf '%s' "$payload" | ARTIFACTS_DIR="$ARTIFACTS_DIR" node "$SCRIPT_DIR/companion-artifact-paths.cjs" 2>/dev/null)
+paths=$(printf '%s' "$payload" | ARTIFACTS_DIR="$ARTIFACTS_DIR" node "$SCRIPT_DIR/shelly-artifact-paths.cjs" 2>/dev/null)
 SID=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})' 2>/dev/null)
 CWD=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||"")}catch(e){}})' 2>/dev/null)
 # Which CLI produced this session — codex transcripts live under ~/.codex (rollout-*.jsonl),
@@ -99,7 +99,7 @@ printf '%s\n' "$paths" | while IFS= read -r fp; do
       ;;
     "$ARTIFACTS_DIR"/*.html)
       trace hook index-spawn "corr=$fp"
-      SID="$SID" CWD="$CWD" PROVIDER="$PROVIDER" PROMPT_ID="$PROMPT_ID" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
+      SID="$SID" CWD="$CWD" PROVIDER="$PROVIDER" PROMPT_ID="$PROMPT_ID" node "$SCRIPT_DIR/shelly-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
       trace hook index-done "corr=$fp"
       ;;
   esac

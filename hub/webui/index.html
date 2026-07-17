@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Companion Hub</title>
+<title>Shelly Hub</title>
 <style>
   /* ============================================================================
-     Companion Hub — web UI. Mirrors the overlay's "Anthropic-paper" live pane:
+     Shelly Hub — web UI. Mirrors the overlay's "Anthropic-paper" live pane:
      warm ivory paper, literary serif hero, clay #CC785C accent, hairline ticks,
      slow alive pulse, soft cross-fades. Self-contained: no build, no CDN.
      ========================================================================== */
@@ -507,7 +507,7 @@
 <!-- ===================== Connect screen ===================== -->
 <div class="connect-wrap" id="connect">
   <form class="connect-card" id="connect-form" autocomplete="off">
-    <div class="connect-mark"><span class="connect-pulse" aria-hidden="true"></span><span>Companion Hub</span></div>
+    <div class="connect-mark"><span class="connect-pulse" aria-hidden="true"></span><span>Shelly Hub</span></div>
     <h1>Connect to your agent</h1>
     <p class="explainer">Enter the hub access token to view your agent's live state and the artifacts it has published. The token is stored on this device only.</p>
     <label class="field-label" for="token">Access token</label>
@@ -520,7 +520,7 @@
 <!-- ===================== Connected app ===================== -->
 <div class="app" id="app" aria-hidden="true">
   <header class="topbar">
-    <div class="mark"><span class="dot" id="conn-dot" aria-hidden="true"></span><strong>Companion Hub</strong></div>
+    <div class="mark"><span class="dot" id="conn-dot" aria-hidden="true"></span><strong>Shelly Hub</strong></div>
     <div class="conn" id="conn-status"></div>
     <button class="btn-ghost" id="disconnect-btn" type="button">Forget token</button>
   </header>
@@ -557,7 +557,7 @@
   "use strict";
 
   // ---- constants ------------------------------------------------------------
-  var TOKEN_KEY = "companion_hub_token";
+  var TOKEN_KEY = "shelly_hub_token";
   var POLL_MS = 3000;
   var FADE_MS = 180;
 

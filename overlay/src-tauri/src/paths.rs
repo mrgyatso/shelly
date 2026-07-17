@@ -1,8 +1,8 @@
-//! One definition of where the Companion's files live.
+//! One definition of where the Shelly's files live.
 //!
 //! `registry`, `live` and `hub` each carried their own copy of the same
-//! `companion_dir()` — byte-for-byte — so there was no single answer to
-//! "where is the companion home". They all delegate here now.
+//! `shelly_dir()` — byte-for-byte — so there was no single answer to
+//! "where is the shelly home". They all delegate here now.
 //!
 //! **Tests override the home with a thread-local, never `std::env::set_var`.** Mutating
 //! the environment is not thread-safe: a write racing another thread's read of `environ`
@@ -38,9 +38,9 @@ fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-/// `~/.claude/companion` — the companion runtime dir.
-pub fn companion_dir() -> Option<PathBuf> {
-    home().map(|h| h.join(".claude").join("companion"))
+/// `~/.shelly` — the shelly runtime dir.
+pub fn shelly_dir() -> Option<PathBuf> {
+    home().map(|h| h.join(".shelly"))
 }
 
 /// `~/.claude/.credentials.json` — Claude Code's OAuth credentials file, where a
@@ -93,8 +93,8 @@ mod tests {
     fn the_override_redirects_both_dirs() {
         set_home_for_test("/tmp/fake-home");
         assert_eq!(
-            companion_dir().unwrap(),
-            PathBuf::from("/tmp/fake-home/.claude/companion")
+            shelly_dir().unwrap(),
+            PathBuf::from("/tmp/fake-home/.shelly")
         );
         assert_eq!(
             projects_dir().unwrap(),
@@ -107,6 +107,6 @@ mod tests {
         // Runs on its own thread, so the test above cannot have leaked into it.
         // That isolation is the whole reason this is a thread-local and not a static.
         let real = std::env::var("HOME").unwrap();
-        assert!(companion_dir().unwrap().starts_with(&real));
+        assert!(shelly_dir().unwrap().starts_with(&real));
     }
 }

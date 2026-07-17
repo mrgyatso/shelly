@@ -22,19 +22,19 @@ pub struct ArtifactEntry {
     pub path: String,
     /// Parsed `<title>`, falling back to a humanized filename.
     pub title: String,
-    /// Optional `subject` from the artifact's `companion-meta` block.
+    /// Optional `subject` from the artifact's `shelly-meta` block.
     pub subject: Option<String>,
-    /// Optional `summary` from the artifact's `companion-meta` block — shown as
+    /// Optional `summary` from the artifact's `shelly-meta` block — shown as
     /// the card subtitle so artifacts are distinguishable at a glance.
     pub summary: Option<String>,
     /// Last-modified time as epoch milliseconds — drives the date label + sort.
     pub modified_ms: u64,
     pub size_bytes: u64,
-    /// Raw `project` from the `companion-meta` block — the artifact's source
-    /// (often a path like `~/claude-code-companion`). The Board groups artifacts
+    /// Raw `project` from the `shelly-meta` block — the artifact's source
+    /// (often a path like `~/shelly`). The Board groups artifacts
     /// into per-agent panes by matching this against each pane's source slug.
     pub project: Option<String>,
-    /// AUTHORITATIVE unit key, written at create time by the companion-hook (keyed
+    /// AUTHORITATIVE unit key, written at create time by the shelly-hook (keyed
     /// on the writing session's `session_id`, resolved from its live file — not the
     /// volatile cwd). Present ⇒ the Board routes by it directly and `project` is
     /// display-only; absent ⇒ the Board falls back to project-slug matching.
@@ -51,11 +51,11 @@ pub struct ArtifactEntry {
     pub session_id: Option<String>,
 }
 
-/// The subset of the `companion-meta` JSON block the HUD + Board surface. Other
+/// The subset of the `shelly-meta` JSON block the HUD + Board surface. Other
 /// fields (files, branch, created) are for the feedback payload, not the card,
 /// so serde simply ignores them.
 #[derive(serde::Deserialize)]
-struct CompanionMeta {
+struct ShellyMeta {
     subject: Option<String>,
     summary: Option<String>,
     /// The artifact's source — used by the Board to route it to a pane.
@@ -65,19 +65,19 @@ struct CompanionMeta {
 /// Candidate artifact directories, most-authoritative first.
 ///
 /// The daemon is normally launched by a LaunchAgent, which does NOT inherit a
-/// shell `COMPANION_ARTIFACTS_DIR`, so we also probe the well-known default
-/// (`~/.claude/companion/artifacts`) and keep it if it exists — otherwise the
+/// shell `SHELLY_ARTIFACTS_DIR`, so we also probe the well-known default
+/// (`~/.shelly/artifacts`) and keep it if it exists — otherwise the
 /// HUD would be empty on the exact machines that have artifacts.
 pub(crate) fn artifact_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
-    if let Some(env) = std::env::var_os("COMPANION_ARTIFACTS_DIR") {
+    if let Some(env) = std::env::var_os("SHELLY_ARTIFACTS_DIR") {
         dirs.push(PathBuf::from(env));
     }
     if let Some(home) = std::env::var_os("HOME") {
         let home = Path::new(&home);
-        dirs.push(home.join(".claude/companion/artifacts"));
+        dirs.push(home.join(".shelly/artifacts"));
         // Artifacts pulled from a remote hub (offsite agents) land here.
-        dirs.push(home.join(".claude/companion/remote"));
+        dirs.push(home.join(".shelly/remote"));
         dirs.push(home.join("codeviz/public/artifacts"));
     }
     dirs.retain(|d| d.is_dir());
@@ -86,7 +86,7 @@ pub(crate) fn artifact_dirs() -> Vec<PathBuf> {
 }
 
 /// Unit key stamped onto remote/hub-pulled artifacts so they route to first-class
-/// Board units instead of sinking into Unsourced. An artifact whose companion-meta
+/// Board units instead of sinking into Unsourced. An artifact whose shelly-meta
 /// carries a slug-safe `project` (the connected agent's id — e.g. `hermes`) gets a
 /// per-agent unit `__cloud__:<agent>`; anything unattributed gets the bare key.
 /// Kept in sync with the `CLOUD` sentinel in `board.ts`. Assigned here (not in the
@@ -105,10 +105,10 @@ fn is_agent_slug(project: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
-/// The dir hub-pulled artifacts land in (`~/.claude/companion/remote`). An entry
+/// The dir hub-pulled artifacts land in (`~/.shelly/remote`). An entry
 /// under it is a remote artifact with no local index identity.
 fn remote_artifacts_dir() -> Option<PathBuf> {
-    crate::paths::companion_dir().map(|d| d.join("remote"))
+    crate::paths::shelly_dir().map(|d| d.join("remote"))
 }
 
 /// `foo-bar_baz.html` → `Foo Bar Baz`. Used when an artifact has no `<title>`.
@@ -145,12 +145,12 @@ fn extract_title(html: &str) -> Option<String> {
     }
 }
 
-/// Parse the `<script type="application/json" id="companion-meta">…</script>`
+/// Parse the `<script type="application/json" id="shelly-meta">…</script>`
 /// block (if present) for the card subtitle. Returns the deserialized subset, or
 /// `None` if the block is absent or malformed — a bad block never sinks the card.
-fn extract_meta(html: &str) -> Option<CompanionMeta> {
+fn extract_meta(html: &str) -> Option<ShellyMeta> {
     let lower = html.to_ascii_lowercase();
-    let id = lower.find("id=\"companion-meta\"")?;
+    let id = lower.find("id=\"shelly-meta\"")?;
     // The opening <script ...> tag ends at the next '>' after the id attribute.
     let gt = lower[id..].find('>')? + id + 1;
     let close = lower[gt..].find("</script>")? + gt;
@@ -230,7 +230,7 @@ struct IndexEntry {
 }
 
 /// The hook-written routing index: `abs-path → IndexEntry`. Lives next to the live dir at
-/// `~/.claude/companion/artifact-index.json`, shape
+/// `~/.shelly/artifact-index.json`, shape
 /// `{ "<abs-path>.html": { "unit_key", "shortid", "source", "ts", "session_id" }, ... }`.
 /// (Older entries may still be keyed by basename and/or lack `session_id`; `list_artifacts`
 /// falls back to that.) Returns an empty map on any failure — routing then falls back to
@@ -240,7 +240,7 @@ fn load_artifact_index() -> std::collections::HashMap<String, IndexEntry> {
     let Some(home) = std::env::var_os("HOME") else {
         return map;
     };
-    let path = Path::new(&home).join(".claude/companion/artifact-index.json");
+    let path = Path::new(&home).join(".shelly/artifact-index.json");
     let Ok(text) = std::fs::read_to_string(&path) else {
         return map;
     };

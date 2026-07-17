@@ -1,17 +1,17 @@
 //! update.rs — "what am I running, is there a newer one, and update me."
 //!
-//! Companion is **two independently-rotting halves**, and this is the one place that
+//! Shelly is **two independently-rotting halves**, and this is the one place that
 //! knows both:
 //!
 //!   * the **app** — this binary. Installed by the Homebrew cask (macOS) or a `.deb`
 //!     (Linux), and moved forward only by `install.sh`. A newer release never reaches
 //!     an installed machine on its own.
-//!   * the **plugin** — the Claude Code side (hooks, skills, `/companion:*`). Moved by
-//!     `claude plugin update`, which `companion setup` runs. It executes from a *cached
+//!   * the **plugin** — the Claude Code side (hooks, skills, `/shelly:*`). Moved by
+//!     `claude plugin update`, which `shelly setup` runs. It executes from a *cached
 //!     snapshot*, so it can sit stale indefinitely with nothing in the UI saying so.
 //!
 //! An app-only updater would leave the second half rotting, which is the half users
-//! actually feel. So the Update button runs `companion-update`, which does both, on
+//! actually feel. So the Update button runs `shelly-update`, which does both, on
 //! both platforms — the same work `install.sh` already does when you re-run it.
 //!
 //! The status probe reaches GitHub. That MUST NOT happen on a sync command: Tauri runs
@@ -23,12 +23,12 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 const RELEASES_LATEST: &str =
-    "https://api.github.com/repos/mrgyatso/claude-code-companion/releases/latest";
+    "https://api.github.com/repos/mrgyatso/shelly/releases/latest";
 const HTTP_TIMEOUT_SECS: u64 = 8;
 
 /// The plugin as Claude Code records it. One key, many entries — the plugin is
 /// installed per *project*, so a machine legitimately holds several versions at once.
-const PLUGIN_KEY: &str = "companion@claude-code-companion";
+const PLUGIN_KEY: &str = "shelly@shelly";
 
 #[derive(serde::Serialize, Default)]
 pub struct UpdateStatus {
@@ -68,12 +68,12 @@ fn is_older(a: &str, b: &str) -> bool {
     false
 }
 
-/// The newest Companion plugin version Claude Code has installed, across every scope.
+/// The newest Shelly plugin version Claude Code has installed, across every scope.
 ///
 /// The file maps a plugin key to an *array* of installs (one per project scope), which
 /// can disagree — a machine can hold 0.4.4 for one repo and 0.5.0 for another. The
 /// newest is the honest single number to show: it is what a fully-updated machine has,
-/// so anything less means `companion setup` has work to do.
+/// so anything less means `shelly setup` has work to do.
 fn installed_plugin_version() -> Option<String> {
     let raw = std::fs::read_to_string(crate::paths::installed_plugins_json()?).ok()?;
     let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
@@ -100,7 +100,7 @@ fn latest_released_version() -> Option<String> {
     // GitHub rejects a request with no User-Agent outright (403).
     let body = client
         .get(RELEASES_LATEST)
-        .header("User-Agent", "companion-overlay")
+        .header("User-Agent", "shelly")
         .send()
         .ok()?
         .error_for_status()
@@ -139,21 +139,21 @@ pub async fn update_status(app: tauri::AppHandle) -> UpdateStatus {
 ///
 /// Not from `PATH`: a GUI-launched app on macOS inherits launchd's minimal PATH
 /// (`/usr/bin:/bin:/usr/sbin:/sbin`), which does not contain `/usr/local/bin` — so the
-/// `companion` symlink the installer creates is invisible to us. The bundle layout is.
+/// `shelly` symlink the installer creates is invisible to us. The bundle layout is.
 fn scripts_dir() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    // macOS: …/Contents/MacOS/companion-overlay → …/Contents/Resources/scripts
-    // Linux: /usr/bin/companion-overlay        → /usr/lib/companion-overlay/scripts
+    // macOS: …/Contents/MacOS/shelly → …/Contents/Resources/scripts
+    // Linux: /usr/bin/shelly        → /usr/lib/shelly/scripts
     // Dev:   target/{debug,release}/…          → ../../../scripts
     let candidates = [
         dir.join("../Resources/scripts"),
-        PathBuf::from("/usr/lib/companion-overlay/scripts"),
+        PathBuf::from("/usr/lib/shelly/scripts"),
         dir.join("../../../scripts"),
     ];
     candidates
         .iter()
-        .map(|p| p.join("companion-update"))
+        .map(|p| p.join("shelly-update"))
         .find(|p| p.is_file())
         .and_then(|p| p.parent().map(PathBuf::from))
 }
@@ -177,13 +177,13 @@ fn scripts_dir() -> Option<PathBuf> {
 #[tauri::command]
 pub fn run_update(app: tauri::AppHandle) -> Result<(), String> {
     let src = scripts_dir()
-        .map(|d| d.join("companion-update"))
+        .map(|d| d.join("shelly-update"))
         .filter(|p| p.is_file())
-        .ok_or("could not find the bundled companion-update script")?;
+        .ok_or("could not find the bundled shelly-update script")?;
 
     // A fixed name in the temp dir, overwritten each run: the helper is short-lived and
     // a stale copy from a failed attempt should simply be replaced.
-    let dst = std::env::temp_dir().join("companion-update");
+    let dst = std::env::temp_dir().join("shelly-update");
     std::fs::copy(&src, &dst).map_err(|e| format!("could not stage the updater: {e}"))?;
     #[cfg(unix)]
     {
@@ -291,10 +291,10 @@ mod tests {
     fn the_newest_installed_plugin_wins_across_scopes() {
         // Claude Code installs the plugin per project, so several versions coexist on
         // one machine. The newest is what a fully-updated machine has — anything less
-        // means `companion setup` still has work to do. Note 0.10.0 sitting below
+        // means `shelly setup` still has work to do. Note 0.10.0 sitting below
         // 0.4.4: this also pins that the pick is numeric, not lexical.
         let home = home_with_plugins(
-            r#"{"plugins":{"companion@claude-code-companion":[
+            r#"{"plugins":{"shelly@shelly":[
                  {"version":"0.4.4"},{"version":"0.10.0"},{"version":"0.4.9"}]}}"#,
         );
         crate::paths::set_home_for_test(&home);
@@ -307,7 +307,7 @@ mod tests {
         // this machine's real manifest). Rendering that verbatim in Settings would be
         // worse than rendering nothing.
         let home = home_with_plugins(
-            r#"{"plugins":{"companion@claude-code-companion":[{"version":"unknown"}]}}"#,
+            r#"{"plugins":{"shelly@shelly":[{"version":"unknown"}]}}"#,
         );
         crate::paths::set_home_for_test(&home);
         assert_eq!(installed_plugin_version(), None);
@@ -322,10 +322,10 @@ mod tests {
 
     #[test]
     fn a_path_with_a_space_survives_the_shell() {
-        // "/Applications/Companion Overlay.app/…" — the common case, not an edge case.
+        // "/Applications/Shelly.app/…" — the common case, not an edge case.
         assert_eq!(
-            shell_quote("/Applications/Companion Overlay.app/x"),
-            "'/Applications/Companion Overlay.app/x'"
+            shell_quote("/Applications/Shelly.app/x"),
+            "'/Applications/Shelly.app/x'"
         );
     }
 }

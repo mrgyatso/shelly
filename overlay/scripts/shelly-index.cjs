@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// companion-index.js — stamp the Board's artifact routing index.
+// shelly-index.js — stamp the Board's artifact routing index.
 //
-// Usage:  SID=<session_id> node companion-index.js <artifact_path> <live_dir> <index_path>
+// Usage:  SID=<session_id> node shelly-index.js <artifact_path> <live_dir> <index_path>
 //
 // WHY this exists: the Board groups an artifact under the session that wrote it.
 // The only identity that is STABLE across a session is its session_id — the cwd
@@ -13,7 +13,7 @@
 //
 // Index shape: { "<abs-path>.html": { unit_key, shortid, source, ts }, ... }
 // Keyed by the ABSOLUTE artifact path (not basename) so two artifacts that share
-// a filename across scan dirs — e.g. ~/.claude/companion/artifacts vs
+// a filename across scan dirs — e.g. ~/.shelly/artifacts vs
 // ~/codeviz/public/artifacts — can't collide and mis-route. The Rust reader
 // (history.rs list_artifacts) looks up by full path, falling back to basename
 // for entries written by older hooks. Use a LEXICAL resolve (not realpath): the
@@ -28,7 +28,7 @@ const path = require("path");
 // index write, so fall back to a noop if it can't be loaded.
 let trace = { emit() {} };
 try {
-  trace = require("./companion-trace.cjs");
+  trace = require("./shelly-trace.cjs");
 } catch (_) {}
 
 const [artifactPath, liveDir, indexPath] = process.argv.slice(2);

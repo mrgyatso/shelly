@@ -1,13 +1,13 @@
 {
-  "name": "claude-code-companion",
-  "description": "The Companion overlay plugin: the working agent authors self-contained HTML artifacts inline, in full context, when a turn earns one; a Stop-hook backstop surfaces one if a substantive turn ends with nothing written. Bespoke HTML tools and health checks included.",
+  "name": "shelly",
+  "description": "The Shelly plugin: Shelly is the shell your coding agents — Claude or Codex — work inside. The working agent authors self-contained HTML artifacts inline, in full context, when a turn earns one; a Stop-hook backstop surfaces one if a substantive turn ends with nothing written. Bespoke HTML tools and health checks included.",
   "owner": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso"
   },
   "plugins": [
     {
-      "name": "companion",
+      "name": "shelly",
       "source": "./plugin",
       "description": "The working agent authors self-contained HTML artifacts inline when a turn earns one; a Stop-hook backstop reminds it once if a substantive turn ends with nothing written."
     }

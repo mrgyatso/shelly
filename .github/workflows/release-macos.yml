@@ -7,7 +7,7 @@ name: Release (macOS bundle)
 # same tag push that builds the Linux bundles now builds the Mac one.
 #
 # The Homebrew cask (mrgyatso/homebrew-tap) downloads this asset by name —
-# `Companion.Overlay_<version>_universal.dmg` — so after a release, bump the
+# `Shelly_<version>_universal.dmg` — so after a release, bump the
 # cask's `version` and `sha256` to match.
 #
 # Fires on a version tag, or on demand against an existing tag/release.

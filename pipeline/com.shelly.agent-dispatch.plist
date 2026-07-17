@@ -11,23 +11,23 @@
       After the scripts are promoted to master they live at:
          /Users/gyatso/claude-code-companion/pipeline/dispatch.mjs
       Until then, point at the worktree checkout, e.g.:
-         /Users/gyatso/companion-pipeline/pipeline/dispatch.mjs
+         /Users/gyatso/claude-code-companion-pipeline/pipeline/dispatch.mjs
    2. Confirm `node` and `claude` resolve in the launchd PATH (see EnvironmentVariables).
    3. Do a first REAL dispatch by hand once (see pipeline/README.md "first real run")
       to confirm the headless worker isn't gated on a permission prompt.
 
   Enable:
-    cp pipeline/com.companion.agent-dispatch.plist ~/Library/LaunchAgents/
-    launchctl load  ~/Library/LaunchAgents/com.companion.agent-dispatch.plist
+    cp pipeline/com.shelly.agent-dispatch.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.shelly.agent-dispatch.plist
 
   Disable:
-    launchctl unload ~/Library/LaunchAgents/com.companion.agent-dispatch.plist
-    rm ~/Library/LaunchAgents/com.companion.agent-dispatch.plist
+    launchctl unload ~/Library/LaunchAgents/com.shelly.agent-dispatch.plist
+    rm ~/Library/LaunchAgents/com.shelly.agent-dispatch.plist
 -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.companion.agent-dispatch</string>
+  <string>com.shelly.agent-dispatch</string>
 
   <key>ProgramArguments</key>
   <array>

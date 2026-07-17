@@ -1,19 +1,19 @@
 #!/usr/bin/env node
-// companion-trace.cjs — the ONE NDJSON appender for the Companion trace harness.
+// shelly-trace.cjs — the ONE NDJSON appender for the Shelly trace harness.
 //
 // Every layer that runs as Node (this CLI, called by the shell hooks; and
-// companion-index.cjs, which `require()`s it) writes through here so there is a
+// shelly-index.cjs, which `require()`s it) writes through here so there is a
 // single envelope, a single clock (epoch ms), and a single file to `jq`.
 //
-//   CLI:   node companion-trace.cjs <layer> <evt> [k=v ...]
-//   lib:   require("./companion-trace").emit(layer, evt, { k: v, ... })
+//   CLI:   node shelly-trace.cjs <layer> <evt> [k=v ...]
+//   lib:   require("./shelly-trace").emit(layer, evt, { k: v, ... })
 //
-// Output: one line per event into ~/.claude/companion/logs/trace.ndjson
+// Output: one line per event into ~/.shelly/logs/trace.ndjson
 //   {"ts_ms":1782651008241,"pid":1234,"layer":"hook","evt":"fire","corr":"…","…":"…"}
 // `corr` (by convention the artifact's ABSOLUTE path) is the join key across layers.
 //
-// GATING: off unless `COMPANION_TRACE=1` in the env OR the flag file
-// ~/.claude/companion/logs/trace.on exists. The flag file is the primary switch —
+// GATING: off unless `SHELLY_TRACE=1` in the env OR the flag file
+// ~/.shelly/logs/trace.on exists. The flag file is the primary switch —
 // the overlay daemon is launched by a LaunchAgent that does NOT inherit a shell
 // env, so a flag file is the one condition all layers (shell, node, Rust, webview)
 // can check identically regardless of how they were started. `touch` it to turn the
@@ -27,12 +27,12 @@ const path = require("path");
 const os = require("os");
 
 const HOME = process.env.HOME || os.homedir();
-const LOG_DIR = path.join(HOME, ".claude/companion/logs");
+const LOG_DIR = path.join(HOME, ".shelly/logs");
 const FLAG = path.join(LOG_DIR, "trace.on");
 const LOG_FILE = path.join(LOG_DIR, "trace.ndjson");
 
 function enabled() {
-  if (process.env.COMPANION_TRACE === "1") return true;
+  if (process.env.SHELLY_TRACE === "1") return true;
   try {
     fs.accessSync(FLAG);
     return true;

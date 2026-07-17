@@ -1,7 +1,7 @@
 //! Hub configuration, resolved from the environment at startup.
 //!
-//! Everything has a sensible default so `companion-hub` runs with zero flags:
-//! it serves `~/.claude/companion/` (the same dir the agent already writes) on
+//! Everything has a sensible default so `shelly-hub` runs with zero flags:
+//! it serves `~/.shelly/` (the same dir the agent already writes) on
 //! port 8787, generating + persisting a token on first run.
 
 use std::io;
@@ -21,7 +21,7 @@ pub struct Config {
     /// Shared bearer token required on every `/api/*` request (except health).
     pub token: String,
     /// Address to bind. Default `0.0.0.0` (all interfaces). Set
-    /// `COMPANION_HUB_BIND` to a specific IP — e.g. your Tailscale IP — so the
+    /// `SHELLY_HUB_BIND` to a specific IP — e.g. your Tailscale IP — so the
     /// hub is reachable only over that interface (the tailnet), not the LAN.
     pub bind: String,
     /// TCP port to bind.
@@ -51,11 +51,11 @@ fn default_webui_dir() -> PathBuf {
 
 impl Config {
     pub fn load() -> io::Result<Self> {
-        let data_dir = std::env::var_os("COMPANION_HUB_DATA_DIR")
+        let data_dir = std::env::var_os("SHELLY_HUB_DATA_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|| home().join(".claude").join("companion"));
+            .unwrap_or_else(|| home().join(".shelly"));
 
-        let artifacts_dir = std::env::var_os("COMPANION_ARTIFACTS_DIR")
+        let artifacts_dir = std::env::var_os("SHELLY_ARTIFACTS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| data_dir.join("artifacts"));
         let live_dir = data_dir.join("live");
@@ -63,18 +63,18 @@ impl Config {
         let agents_dir = data_dir.join("agents");
         let inbox_dir = data_dir.join("inbox");
 
-        let port = std::env::var("COMPANION_HUB_PORT")
+        let port = std::env::var("SHELLY_HUB_PORT")
             .ok()
             .and_then(|p| p.trim().parse().ok())
             .unwrap_or(8787);
 
-        let bind = std::env::var("COMPANION_HUB_BIND")
+        let bind = std::env::var("SHELLY_HUB_BIND")
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "0.0.0.0".to_string());
 
-        let webui_dir = std::env::var_os("COMPANION_HUB_WEBUI_DIR")
+        let webui_dir = std::env::var_os("SHELLY_HUB_WEBUI_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(default_webui_dir);
 
@@ -98,7 +98,7 @@ impl Config {
 /// else generate one, persist it `0600`, and return it. The caller prints the
 /// pairing string.
 fn load_or_create_token(data_dir: &Path) -> io::Result<String> {
-    if let Ok(t) = std::env::var("COMPANION_HUB_TOKEN") {
+    if let Ok(t) = std::env::var("SHELLY_HUB_TOKEN") {
         let t = t.trim().to_string();
         if !t.is_empty() {
             return Ok(t);

@@ -1,4 +1,4 @@
-// The Board — Companion's home surface.
+// The Board — Shelly's home surface.
 //
 // A dark letterboxing STAGE holds a warm "Anthropic paper" BOARD surface that
 // drills through three levels:
@@ -17,7 +17,7 @@
 //
 // Real-data path (unchanged): read_all_live() → one source per live session;
 // list_artifacts() → real artifacts, routed to a unit by their
-// companion-meta.project basename. The bento grid, span-resize, drag-reorder,
+// shelly-meta.project basename. The bento grid, span-resize, drag-reorder,
 // and per-tile live-iframe LRU of the prior Board are GONE — a pile of scaled
 // previews was the wrong frame; the job is to digest the current work, with
 // history a quiet layer behind it.
@@ -61,7 +61,7 @@ import {
   noteArtifactShown,
 } from "./shell-repaint";
 import { classifyUpdate, type UpdateAttempt } from "./update-stale";
-import { mountClawd } from "./clawd";
+import { mountCrab } from "./crab";
 import { initCodePeek, closeCodePeek } from "./code-peek";
 import {
   getCodexApproval,
@@ -97,9 +97,9 @@ interface ArtifactEntry {
   summary?: string | null;
   modified_ms: number;
   size_bytes: number;
-  /** Raw companion-meta.project (often a path like `~/foo`); matched by basename. */
+  /** Raw shelly-meta.project (often a path like `~/foo`); matched by basename. */
   project?: string | null;
-  /** AUTHORITATIVE unit key, written at create time by the companion-hook from the
+  /** AUTHORITATIVE unit key, written at create time by the shelly-hook from the
    *  writing session's live file (keyed on session_id, not the volatile cwd). When
    *  present it routes the artifact directly; project is then display-only. */
   unit_key?: string | null;
@@ -144,7 +144,7 @@ interface LiveState {
   project?: string;
   /** File mtime, injected by read_all_live — drives liveness (LIVENESS_MS). */
   updated_ms?: number;
-  /** Emitted by the companion-livepath hook: true when the session is in a git
+  /** Emitted by the shelly-livepath hook: true when the session is in a git
    *  repo. Absent for pre-hook sessions → derived heuristically. */
   is_repo?: boolean;
   /** Emitted by the hook: the AUTHORITATIVE unit key (slug for a repo,
@@ -153,7 +153,7 @@ interface LiveState {
   /** Injected by read_all_live from owned-sessions.json: the tabId of the
    *  Board-owned PTY that spawned this session (absent for external sessions).
    *  Lets the Board bind its embedded terminal to this live source. */
-  companion_session?: string;
+  shelly_session?: string;
   /** Injected by read_all_live from session-dirs.json: this session's absolute
    *  project root, so "+ session in this project" knows where to spawn. */
   unit_dir?: string;
@@ -250,7 +250,7 @@ async function pollHubAgents(): Promise<void> {
     renderHubFallback();
 }
 /** Sentinel "unit" for the idle home — the rail (live + Recent) with NO project
- *  selected and a clawd splash, shown at startup when nothing substantive is live.
+ *  selected and a crab splash, shown at startup when nothing substantive is live.
  *  Never a real source/artifact key, so it highlights no tab and owns no terminal. */
 const IDLE = "__idle__";
 /** Poll cadence for live-state — matches live.ts's calm cadence. */
@@ -363,7 +363,7 @@ let boardSubmittedCleanup: (() => void) | null = null;
 
 // ---- live artifact ingestion + unread ---------------------------------------
 // The poll loop re-reads list_artifacts(); a new artifact is routed to its
-// source (matched by companion-meta.project basename), and — if its UNIT isn't
+// source (matched by shelly-meta.project basename), and — if its UNIT isn't
 // the one on screen — flagged UNREAD on its source (summed onto the unit card).
 
 /** Every artifact path we've ever seen — seeded at init so existing files aren't "new". */
@@ -375,7 +375,7 @@ const unreadByUnit = new Map<string, Set<string>>();
 let lastArtifactSig = "";
 
 // ---- Phase 3: event-log tail ------------------------------------------------
-// The Board tails ~/.claude/companion/events.ndjson incrementally (poll_events, by byte
+// The Board tails ~/.shelly/events.ndjson incrementally (poll_events, by byte
 // offset) so it learns an artifact's authoritative routing from the `artifact.routed`
 // event — ideally before list_artifacts reflects the index stamp, which is what removes
 // the fallback-then-reroute. ADDITIVE: when no event has arrived for a path, routing falls
@@ -515,7 +515,7 @@ let homeDir: string | null = null;
  *  stray trailing separator. Returns null for a null/empty input. */
 // ---- trace harness ----------------------------------------------------------
 // Routes Board-side events to the SAME on-disk NDJSON the shell + Rust layers write
-// (~/.claude/companion/logs/trace.ndjson), so one artifact write yields one joined,
+// (~/.shelly/logs/trace.ndjson), so one artifact write yields one joined,
 // time-sorted timeline. The webview can't append to a file and its console goes
 // nowhere readable when the Board is occluded, so it ships a pre-built line to the
 // `trace_event` Rust command. Gated locally off a one-time `trace_enabled` fetch, so
@@ -581,7 +581,7 @@ export async function initBoard(): Promise<void> {
     const art = allArtifacts.find((a) => a.path === digestPath);
     if (art && art.modified_ms !== stamp) return; // rewritten → form re-arms
     digest.contentWindow?.postMessage(
-      { source: "companion-board", kind: "restore-submitted" },
+      { source: "shelly-board", kind: "restore-submitted" },
       "*",
     );
   });
@@ -737,7 +737,7 @@ export async function initBoard(): Promise<void> {
   void listen("board:navigate", () => void applyNavTarget());
   void applyNavTarget();
 
-  // `companion handoff …` queues a request the same way: an already-open Board
+  // `shelly handoff …` queues a request the same way: an already-open Board
   // hears `board:handoff`; a fresh window drains it on init.
   void listen<HandoffReq>("board:handoff", (e) => void applyHandoff(e.payload));
   void applyPendingHandoff();
@@ -759,7 +759,7 @@ function codexAvailable(): Promise<boolean> {
  *  Persisted in localStorage so the Board remembers your LAST pick across restarts,
  *  and every start path (menu, folder, quote, card) reads it — so the choice is
  *  honored everywhere, not just the + menu's toggle. */
-const NEW_SESSION_AGENT_KEY = "companion.newSessionAgent";
+const NEW_SESSION_AGENT_KEY = "shelly.newSessionAgent";
 function preferredAgent(): string {
   try {
     return localStorage.getItem(NEW_SESSION_AGENT_KEY) === "codex" ? "codex" : "claude";
@@ -982,8 +982,8 @@ function pickModelFromComposer(alias: string): void {
 
 // ---- /handoff → a live agent ------------------------------------------------
 // Close the loop from "write a handoff" to "the handoff is running in a fresh
-// agent." A `companion handoff <file> [--dir] [--agent]` invocation (fired by the
-// /companion:handoff command, or the session-card button) queues a request the
+// agent." A `shelly handoff <file> [--dir] [--agent]` invocation (fired by the
+// /shelly:handoff command, or the session-card button) queues a request the
 // Rust side hands us here; we spawn a session in the target dir and auto-send a
 // pointer at the handoff so the new agent starts reading immediately.
 
@@ -1146,12 +1146,12 @@ function openHandoffPicker(defaultDir: string | null): Promise<{ dir: string; ag
   });
 }
 
-/** Send `/companion:handoff` into a live session so its agent writes the handoff
+/** Send `/shelly:handoff` into a live session so its agent writes the handoff
  *  and fires the launch. Kept deliberately bare — the command defaults the target
  *  dir to the agent's own cwd and the Board asks where/which-agent via the picker
  *  (applyHandoff), so this stays a one-line "hand this session off" trigger. */
 async function handoffFromSession(tabId: string): Promise<void> {
-  await submitIntoPty(tabId, "/companion:handoff").catch((e) =>
+  await submitIntoPty(tabId, "/shelly:handoff").catch((e) =>
     console.error("handoff command failed", e),
   );
 }
@@ -1466,8 +1466,8 @@ async function renderHub(): Promise<void> {
 function renderHubFallback(): void {
   const fallback = document.getElementById("hub-fallback");
   const hello = document.getElementById("hub-hello");
-  const clawd = document.getElementById("hub-clawd");
-  if (clawd) mountClawd(clawd); // a fresh pixel-art clawd pose greets each idle landing
+  const crab = document.getElementById("hub-crab");
+  if (crab) mountCrab(crab); // a fresh pixel-art crab pose greets each idle landing
   if (hello) hello.innerHTML = greetingHtml();
   // Live counts behind each door, split by room kind.
   const { order } = computeRoster(Date.now());
@@ -1658,7 +1658,7 @@ function activeSessionSource(unitKey: string): string | null {
     // A terminal IS bound this run: scope the hero to ITS session. A fresh session with
     // no live source yet ⇒ null ⇒ blank hero, never a sibling's artifact (the original
     // per-session-scoping intent — see renderHero).
-    const src = allSources.find((s) => parseState(s.json).companion_session === tab);
+    const src = allSources.find((s) => parseState(s.json).shelly_session === tab);
     return src ? src.source : null;
   }
   // No owned terminal in THIS overlay instance — e.g. after an overlay restart, when the
@@ -1823,7 +1823,7 @@ interface Roster {
 
 /** localStorage key holding the user's manual unit order (array of unit_keys).
  *  Board-local persistence, like the rail-collapse flag — survives relaunch. */
-const ORDER_KEY = "companion:sessionOrder";
+const ORDER_KEY = "shelly:sessionOrder";
 
 function loadOrder(): string[] {
   try {
@@ -2038,7 +2038,7 @@ function renderUnitRail(activeUnitKey: string | null): void {
         visible = entries.slice(0, SESSION_DRAWER_COLLAPSED_ROWS);
         hidden = entries.length - visible.length;
         const shownIdx = shownTab === null ? -1 : entries.findIndex(
-          (e) => e.kind === "live" && (parseState(e.s.json).companion_session ?? null) === shownTab,
+          (e) => e.kind === "live" && (parseState(e.s.json).shelly_session ?? null) === shownTab,
         );
         if (shownIdx >= SESSION_DRAWER_COLLAPSED_ROWS) visible = [...visible.slice(0, -1), entries[shownIdx]];
       }
@@ -2146,7 +2146,7 @@ function sessionLabel(s: LiveSource): string {
  *  the one currently shown. Click switches/resumes it (see switchToSession). */
 function buildRailSessionRow(unitKey: string, s: LiveSource, shownTab: string | null): HTMLElement {
   const st = parseState(s.json);
-  const tabId = st.companion_session ?? null;
+  const tabId = st.shelly_session ?? null;
   const active = tabId !== null && tabId === shownTab;
   const row = document.createElement("button");
   row.className = "unit-subtab" + (active ? " active" : "");
@@ -2201,7 +2201,7 @@ function pickSession(unitKey: string, s: LiveSource): void {
     return;
   }
   const st = parseState(s.json);
-  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null, st.provider).then(() => {
+  void showSessionInUnit(unitKey, st.shelly_session ?? null, st.session_id ?? null, st.provider).then(() => {
     goUnit(unitKey); // enterUnit collapses the chooser on a fresh entry…
     expandedActiveProject = unitKey; // …so re-open it after landing and repaint the rail
     renderUnitRail(unitKey);
@@ -2349,7 +2349,7 @@ async function dismissRecentSession(rs: RecentSession): Promise<void> {
  *  leave the hero/state visible — never a duplicate spawn. */
 function switchToSession(unitKey: string, s: LiveSource): void {
   const st = parseState(s.json);
-  void showSessionInUnit(unitKey, st.companion_session ?? null, st.session_id ?? null, st.provider).then(() => {
+  void showSessionInUnit(unitKey, st.shelly_session ?? null, st.session_id ?? null, st.provider).then(() => {
     if (currentUnitKey === unitKey) {
       renderUnitRail(unitKey);
       // The hero follows the now-active session. A click is the ONLY sanctioned
@@ -2621,7 +2621,7 @@ async function closeUnit(unitKey: string, sources: LiveSource[]): Promise<void> 
  *  source, and navigates back if this was the unit's last live session. */
 async function closeSession(unitKey: string, s: LiveSource): Promise<void> {
   const st = parseState(s.json);
-  const tabId = st.companion_session;
+  const tabId = st.shelly_session;
   if (tabId) closeOwnedTerminal(tabId);
   await invoke("dismiss_session", { source: s.source }).catch((e) =>
     console.error("dismiss_session failed", s.source, e),
@@ -2640,7 +2640,7 @@ async function closeSession(unitKey: string, s: LiveSource): Promise<void> {
 
 /** Context menu for a session sub-row in the rail: switch to it or close just this session. */
 function showRailSessionMenu(e: MouseEvent, unitKey: string, s: LiveSource): void {
-  const tabId = parseState(s.json).companion_session ?? null;
+  const tabId = parseState(s.json).shelly_session ?? null;
   openCtxMenu(e, [
     { label: "Switch to", fn: () => switchToSession(unitKey, s) },
     ...(tabId
@@ -2734,7 +2734,7 @@ function providerForResumeId(resumeId: string): string | undefined {
 }
 
 /** The resumable Claude session id for a unit, or null. Present only for sessions
- *  the Board launched (session-ids.json is hook-guarded on COMPANION_SESSION), so
+ *  the Board launched (session-ids.json is hook-guarded on SHELLY_SESSION), so
  *  this cleanly gates resume-on-entry: Board-launched ⇒ resume; external ⇒ never. */
 function resumableSessionFor(unitKey: string): string | null {
   // Project-units: a unit can hold several sessions — consider the MOST-RECENT one for
@@ -2809,7 +2809,7 @@ async function renderHero(unitKey: string): Promise<void> {
     digestPath = null;
     applyBar(null);
     digestEl.setAttribute("hidden", "");
-    // A fresh session with no artifact of its own → show the waiting clawd band; a
+    // A fresh session with no artifact of its own → show the waiting crab band; a
     // resumed session that already has artifacts lands on its terminal (skip the digest
     // iframe load flash, as before). The band is native DOM, so it adds no flash.
     const flSrc = activeSessionSource(unitKey);
@@ -3119,7 +3119,7 @@ type UpdateStatus = {
 
 /** localStorage key holding the pending update attempt (version + click time), read back
  *  after the app relaunches to detect an upgrade that silently no-op'd (a stale tap). */
-const UPDATE_ATTEMPT_KEY = "companion:updateAttempt";
+const UPDATE_ATTEMPT_KEY = "shelly:updateAttempt";
 
 function readUpdateAttempt(): UpdateAttempt | null {
   try {
@@ -3164,8 +3164,8 @@ async function syncUpdate(): Promise<void> {
   // Say so up front — a password dialog that appears after the app has vanished is a
   // fright if it wasn't advertised.
   const restart = IS_LINUX
-    ? "Companion will close, ask for your password, and reopen."
-    : "Companion will close and reopen.";
+    ? "Shelly will close, ask for your password, and reopen."
+    : "Shelly will close and reopen.";
 
   try {
     const s = await invoke<UpdateStatus>("update_status");
@@ -3205,7 +3205,7 @@ async function syncUpdate(): Promise<void> {
   }
 }
 
-/** Wire the Update button. It hands off to the detached `companion-update` helper and
+/** Wire the Update button. It hands off to the detached `shelly-update` helper and
  *  the app then quits itself — the helper is blocked on our PID and cannot replace a
  *  bundle that is still running. So this is the last thing the UI does. */
 function wireUpdate(): void {
@@ -3215,7 +3215,7 @@ function wireUpdate(): void {
     btn.disabled = true;
     delete btn.dataset.state;
     btn.textContent = "Updating…";
-    if (subEl) subEl.textContent = "Updating both halves. Companion will reopen when it's done.";
+    if (subEl) subEl.textContent = "Updating both halves. Shelly will reopen when it's done.";
     // Record what we're on now, so the next boot can tell whether the swap actually took.
     if (updateAppVersion) writeUpdateAttempt(updateAppVersion);
     try {
@@ -3335,7 +3335,7 @@ function wireUnitChrome(): void {
   wireChipPopover();
   window.setInterval(() => void renderSessionChip(currentUnitKey), METER_POLL_MS);
 
-  // "⇥ Hand off": send /companion:handoff into this session's terminal so its
+  // "⇥ Hand off": send /shelly:handoff into this session's terminal so its
   // agent writes a handoff and launches it in a fresh session. Needs a Board-owned
   // PTY to type into — renderSessionChip hides the section when there isn't one.
   document.getElementById("unit-handoff")?.addEventListener("click", () => {
@@ -3373,7 +3373,7 @@ function wireUnitChrome(): void {
     paintRailToggle(c);
     homeRatePill(c);
     try {
-      localStorage.setItem("companion:railCollapsed", c ? "1" : "0");
+      localStorage.setItem("shelly:railCollapsed", c ? "1" : "0");
     } catch {
       /* non-fatal */
     }
@@ -3381,7 +3381,7 @@ function wireUnitChrome(): void {
   };
   railToggle?.addEventListener("click", () => setRailCollapsed(unitEl?.dataset.railCollapsed !== "1"));
   try {
-    const collapsed = localStorage.getItem("companion:railCollapsed") === "1";
+    const collapsed = localStorage.getItem("shelly:railCollapsed") === "1";
     if (unitEl) {
       if (collapsed) unitEl.dataset.railCollapsed = "1";
       else delete unitEl.dataset.railCollapsed;
@@ -3848,10 +3848,10 @@ function syncSurfaceStrip(hasHero: boolean): void {
   setFocus(hasHero ? "split" : "terminal");
 }
 
-/** Copy for the waiting-clawd band — a session waiting for its FIRST artifact
+/** Copy for the waiting-crab band — a session waiting for its FIRST artifact
  *  (terminal below). */
 const BLANK_FIRST = {
-  title: "Clawd's on it.",
+  title: "Crab's on it.",
   sub: "Your first artifact will land right here — the terminal's below while it works.",
 };
 /** A connected agent that's registered but hasn't published an artifact yet — no
@@ -3861,7 +3861,7 @@ const BLANK_AGENT = {
   sub: "This agent's first artifact will land right here.",
 };
 
-/** A session with no artifact yet: seat a fresh pixel-art clawd in the hero slot (the
+/** A session with no artifact yet: seat a fresh pixel-art crab in the hero slot (the
  *  splash, for the FIRST artifact) with the terminal below — instead of a blank void.
  *  Native DOM (no iframe), so there's no load flash. Cleared by syncSurfaceStrip(true)
  *  the moment a real artifact lands, and by leaveUnit on exit. The idle home reuses it
@@ -3874,8 +3874,8 @@ function showBlankHero(copy: { title: string; sub: string } = BLANK_FIRST, worki
     unitEl.classList.remove("no-hero");
     unitEl.classList.add("blank-hero");
   }
-  const blank = document.getElementById("unit-blank-clawd");
-  if (blank) mountClawd(blank);
+  const blank = document.getElementById("unit-blank-crab");
+  if (blank) mountCrab(blank);
   const t = document.querySelector("#unit-blank .blank-t");
   const s = document.querySelector("#unit-blank .blank-s");
   if (t) t.textContent = copy.title;
@@ -4108,7 +4108,7 @@ function greetingHtml(): string {
 }
 
 // ---- agent-composed bar (L0 hub + L2 digest) --------------------------------
-// home.html (and home.<unit>.html) may carry a `companion-bar` JSON block that
+// home.html (and home.<unit>.html) may carry a `shelly-bar` JSON block that
 // themes the top bar and fills its left/center/right slots. The mandatory
 // control cluster always renders — agents compose CONTENT, never the controls.
 
@@ -4134,7 +4134,7 @@ const FONT_STACK: Record<string, string> = {
   "JetBrains Mono": "'JetBrains Mono', ui-monospace, monospace",
 };
 
-/** Read an artifact's `companion-bar` spec (or null on any failure). */
+/** Read an artifact's `shelly-bar` spec (or null on any failure). */
 async function barSpecFor(path: string): Promise<BarSpec | null> {
   try {
     return parseBarSpec(await invoke<string>("read_artifact", { path }));
@@ -4144,7 +4144,7 @@ async function barSpecFor(path: string): Promise<BarSpec | null> {
 }
 
 function parseBarSpec(html: string): BarSpec | null {
-  const m = html.match(/<script[^>]*id=["']companion-bar["'][^>]*>([\s\S]*?)<\/script>/i);
+  const m = html.match(/<script[^>]*id=["']shelly-bar["'][^>]*>([\s\S]*?)<\/script>/i);
   if (!m) return null;
   try {
     return JSON.parse(m[1].trim()) as BarSpec;
@@ -4302,7 +4302,7 @@ async function openReader(path: string): Promise<void> {
     const art = allArtifacts.find((a) => a.path === focusPath);
     if (art && art.modified_ms !== stamp) return; // rewritten since → re-armed
     focusFrame.contentWindow?.postMessage(
-      { source: "companion-board", kind: "restore-submitted" },
+      { source: "shelly-board", kind: "restore-submitted" },
       "*",
     );
   });
@@ -4487,10 +4487,10 @@ async function pollLive(): Promise<void> {
   renderGreeting(freshCount(), liveSourceCount());
 
   // Correlate Board-owned terminals to the live sources their spawned claude
-  // produced: companion_session (a tabId, injected by read_all_live) → unit_key.
+  // produced: shelly_session (a tabId, injected by read_all_live) → unit_key.
   // TIE-BREAK: a single tabId can be claimed by MORE THAN ONE slug in
   // owned-sessions.json — e.g. a 2nd claude started in the same PTY inherits the
-  // same COMPANION_SESSION, and the first never pruned its entry (no SessionEnd).
+  // same SHELLY_SESSION, and the first never pruned its entry (no SessionEnd).
   // Plain last-writer-wins would bind the terminal to whichever source iterated
   // last (often the stale one), splitting the live session from its artifacts.
   // Instead bind each tabId to its FRESHEST source (max updated_ms), so a stale
@@ -4498,7 +4498,7 @@ async function pollLive(): Promise<void> {
   const sessionToUnit = new Map<string, string>();
   const sessionFreshness = new Map<string, number>();
   for (const s of sources) {
-    const cs = parseState(s.json).companion_session;
+    const cs = parseState(s.json).shelly_session;
     if (!cs) continue;
     const u = sourceUpdatedMs(s);
     const prior = sessionFreshness.get(cs);
@@ -4802,7 +4802,7 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
     // flag a missing source for non-cloud units, plus anything landing in UNSOURCED.
     if (unit === UNSOURCED || (!a.source && !isCloudUnit(unit))) {
       if (unit === UNSOURCED) unroutedPaths.add(a.path);
-      console.warn("[companion] artifact routed without a firm identity", {
+      console.warn("[shelly] artifact routed without a firm identity", {
         path: a.path, unit, source: a.source ?? "", from: reRoutedSet.has(a.path) ? "reroute" : "new", branch,
       });
       trace("ingest.unrouted", { corr: a.path, unit, source: a.source ?? "", branch });
@@ -4963,7 +4963,7 @@ function postUnreadToHub(): void {
   const counts: Record<string, number> = {};
   for (const [unit, set] of unreadByUnit) counts[unit] = set.size;
   frame.contentWindow.postMessage(
-    { source: "companion", kind: "unread", total: totalUnread(), counts },
+    { source: "shelly", kind: "unread", total: totalUnread(), counts },
     "*",
   );
 }
@@ -5028,7 +5028,7 @@ function wireNavigate(): void {
       void startSessionFromQuote(d.quote, d.artifact);
       return;
     }
-    if (d && d.source === "companion-artifact" && d.kind === "splash-dismissed") {
+    if (d && d.source === "shelly-artifact" && d.kind === "splash-dismissed") {
       // The user clicked "View last artifact" on the waiting splash — they're back on
       // the prior artifact, not waiting. Disarm auto-advance so the NEXT artifact
       // surfaces as a click-to-view pill instead of yanking them off what they're
@@ -5039,7 +5039,7 @@ function wireNavigate(): void {
     }
     if (
       d &&
-      d.source === "companion-artifact" &&
+      d.source === "shelly-artifact" &&
       d.kind === "submit" &&
       typeof d.text === "string"
     ) {
@@ -5100,7 +5100,7 @@ function wireNavigate(): void {
       const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
       const tabId = (focusPath ? ownedTabForArtifact(focusPath) : null) ?? unitTab;
       if (tabId) {
-        const tag = focusPath ? `\n\n— Companion artifact: ${focusPath} —` : "";
+        const tag = focusPath ? `\n\n— Shelly artifact: ${focusPath} —` : "";
         void submitIntoPty(tabId, `${d.text}${tag}`).catch((e) => {
           console.error("submit into PTY failed; clipboard fallback", e);
           void handleSubmit(d.text, focusPath ?? undefined);
@@ -5150,7 +5150,7 @@ async function submitToAgent(agent: string, text: string, art: ArtifactEntry): P
     } catch {
       /* non-JSON response; outcome unknown but the POST succeeded */
     }
-    console.info(`[companion] reply → agent '${agent}' (${delivery || "sent"})`);
+    console.info(`[shelly] reply → agent '${agent}' (${delivery || "sent"})`);
   } catch (e) {
     console.error("hub inbox submit failed; clipboard fallback", e);
     void handleSubmit(text, art.path);
@@ -5197,12 +5197,12 @@ async function submitIntoPty(tabId: string, text: string): Promise<void> {
 
 /** The Board-owned PTY tabId that produced `path`, or null when the artifact came
  *  from an external session. Resolves artifact → its source slug → that live
- *  source's companion_session (the owning tabId). */
+ *  source's shelly_session (the owning tabId). */
 function ownedTabForArtifact(path: string): string | null {
   const art = allArtifacts.find((a) => a.path === path);
   if (!art?.source) return null;
   const src = allSources.find((s) => artifactMatchesSource(art, s.source));
-  return src ? parseState(src.json).companion_session ?? null : null;
+  return src ? parseState(src.json).shelly_session ?? null : null;
 }
 
 /** Validate an artifact path is in scope, then open it in the reader (drilling

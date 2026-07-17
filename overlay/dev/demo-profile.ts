@@ -121,7 +121,7 @@ export const DEMO_LIVE_SOURCES = [
       project: "tidepool",
       is_repo: true,
       unit_key: "tidepool",
-      companion_session: "demo-tidepool",
+      shelly_session: "demo-tidepool",
       session_id: "a4f1c920-1d3e-4a77-9c02-6b1f4e8d5a31",
       unit_dir: "/Users/dev/tidepool",
       updated_ms: now - 3 * MIN,
@@ -143,7 +143,7 @@ export const DEMO_LIVE_SOURCES = [
       project: "harbor",
       is_repo: true,
       unit_key: "harbor",
-      companion_session: "demo-harbor",
+      shelly_session: "demo-harbor",
       session_id: "7c2be431-88a5-4f10-b6d9-2e07c5a91b64",
       unit_dir: "/Users/dev/harbor",
       updated_ms: now - 26 * MIN,
@@ -165,7 +165,7 @@ export const DEMO_LIVE_SOURCES = [
       project: "northwind-sync",
       is_repo: true,
       unit_key: "northwind-sync",
-      companion_session: "demo-northwind",
+      shelly_session: "demo-northwind",
       session_id: "0b93de57-6c41-4e29-8a15-93f2d0c7e4b8",
       unit_dir: "/Users/dev/northwind-sync",
       updated_ms: now - 71 * MIN,
@@ -185,7 +185,7 @@ export interface TranscriptChunk {
 
 const DIM = "\x1b[2m";
 const OFF = "\x1b[0m";
-const CLAY = "\x1b[38;5;173m"; // the Companion's terracotta
+const CLAY = "\x1b[38;5;173m"; // the Shelly's terracotta
 const GREEN = "\x1b[38;5;71m";
 const RED = "\x1b[38;5;167m";
 const BOLD = "\x1b[1m";
@@ -212,7 +212,7 @@ const TIDEPOOL_TTY: TranscriptChunk[] = [
     text: `\r\n${CLAY}●${OFF} There it is. followerCount moves, unitsSold never does — upstream\r\n  returns it frozen. Velocity has been a constant the whole time.\r\n`,
     delay: 1300,
   },
-  { text: bullet("Write(~/.claude/companion/artifacts/tidepool-velocity.html)"), delay: 1000 },
+  { text: bullet("Write(~/.shelly/artifacts/tidepool-velocity.html)"), delay: 1000 },
   { text: result("Wrote 61.4 KB"), delay: 600 },
   {
     text: `\r\n  Every ranking built on velocity is noise. Three ways out are on the\r\n  board — ${GREEN}pick one and I'll wire it${OFF}.\r\n\r\n`,
@@ -236,7 +236,7 @@ const HARBOR_TTY: TranscriptChunk[] = [
     text: `\r\n${CLAY}●${OFF} Found it. 0042 rebuilt the index as (tenant_id, status), but every hot\r\n  query filters (status, run_after) and never touches tenant_id. Postgres\r\n  dropped the index and went sequential over 4.2M rows.\r\n`,
     delay: 1400,
   },
-  { text: bullet("Write(~/.claude/companion/artifacts/harbor-regression.html)"), delay: 1000 },
+  { text: bullet("Write(~/.shelly/artifacts/harbor-regression.html)"), delay: 1000 },
   { text: result("Wrote 63.2 KB"), delay: 600 },
   {
     text: `\r\n  Fix is a partial index on (status, run_after) WHERE status='pending' —\r\n  about ${GREEN}40× smaller${OFF} and safe to build CONCURRENTLY. It's on the board.\r\n\r\n`,
@@ -258,7 +258,7 @@ const NORTHWIND_TTY: TranscriptChunk[] = [
     text: `\r\n${CLAY}●${OFF} Start nowhere until this is settled. The credential shape isn't a\r\n  detail you can defer — it reaches the tenant store, the sync worker,\r\n  and every integration module you're about to write.\r\n`,
     delay: 1400,
   },
-  { text: bullet("Write(~/.claude/companion/artifacts/northwind-auth.html)"), delay: 1000 },
+  { text: bullet("Write(~/.shelly/artifacts/northwind-auth.html)"), delay: 1000 },
   { text: result("Wrote 58.9 KB"), delay: 600 },
   {
     text: `\r\n  Delegated consent vs per-tenant app registration, with the blast radius\r\n  of each. I'd take per-tenant — ${GREEN}decide on the board and I'll scaffold it${OFF}.\r\n\r\n`,
@@ -287,7 +287,7 @@ export const DEMO_TRANSCRIPTS: Record<string, TranscriptChunk[]> = {
 export function tidepoolFollowUpTty(decision: string): TranscriptChunk[] {
   const headline = (decision.split("\n").find((l) => /^[✓✗✎]/.test(l.trim())) ?? "your decision").trim();
   return [
-    { text: `${DIM}[pasted ${decision.split("\n").length} lines from Companion]${OFF}\r\n`, delay: 260 },
+    { text: `${DIM}[pasted ${decision.split("\n").length} lines from Shelly]${OFF}\r\n`, delay: 260 },
     { text: `${BOLD}>${OFF} ${DIM}${headline}${OFF}\r\n`, delay: 420 },
     { text: bullet("Got it — that settles the signal question. Taking unitsSold out of\r\n  the ranking path now."), delay: 1100 },
     { text: bullet("Edit(tidepool/ranking.py)"), delay: 900 },
@@ -296,7 +296,7 @@ export function tidepoolFollowUpTty(decision: string): TranscriptChunk[] {
     { text: result(`${GREEN}nightly backfill disabled — 40m/night of compute on a constant${OFF}`), delay: 800 },
     { text: bullet("Write(docs/adr/0007-ranking-signal.md)"), delay: 900 },
     { text: result("recorded your call + the 5h differential"), delay: 650 },
-    { text: bullet("Write(~/.claude/companion/artifacts/tidepool-shipped.html)"), delay: 950 },
+    { text: bullet("Write(~/.shelly/artifacts/tidepool-shipped.html)"), delay: 950 },
     { text: result("Wrote 14.8 KB"), delay: 600 },
     {
       text: `\r\n${DIM}  The follow-up is on the Board — that's the loop closing.${OFF}\r\n\r\n${DIM}> ${OFF}`,
@@ -318,12 +318,12 @@ export const DEMO_UNITS: { unitKey: string; cwd: string }[] = [
 /** Point a unit's live source at the terminal the Board just spawned for it.
  *
  *  The hero scopes to the ACTIVE SESSION, not the unit: it finds the live source
- *  whose `companion_session` equals the shown tabId, and shows a blank "Clawd's on
+ *  whose `shelly_session` equals the shown tabId, and shows a blank "Crab's on
  *  it" splash when there is none. Real sessions get that field stamped by the
  *  SessionStart hook; the demo stamps it here, after the spawn hands back a tabId.
  *  Mutates in place — the mock hands `read_all_live` this same array every poll. */
 export function bindDemoSession(unitKey: string, tabId: string): void {
   const src = DEMO_LIVE_SOURCES.find((s) => JSON.parse(s.json).unit_key === unitKey);
   if (!src) return;
-  src.json = JSON.stringify({ ...JSON.parse(src.json), companion_session: tabId });
+  src.json = JSON.stringify({ ...JSON.parse(src.json), shelly_session: tabId });
 }

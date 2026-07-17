@@ -1,11 +1,11 @@
 ---
 name: dashboard
-description: Compose the Companion Board's L0 Hub dashboard — the agent-authored "home" surface the user lands on. Write a single self-contained HTML file to exactly `${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/home.html`; the Board hosts it full-bleed and routes its navigate buttons into the three-level drill-down (Hub → Sessions → one session). Use when the user runs `/companion:dashboard`, asks to design / compose / refresh their Companion home screen or hub, or wants a glanceable triage view across their running agents. The hub is a TRIAGE-FIRST glance (who needs you, a briefing line, one button per live source) — not a one-off report. It is the reserved `home.html` slug; do NOT load `prefer-html` for it (different shape: full-bleed, no window size-reporter, no Next-steps page).
+description: Compose the Shelly Board's L0 Hub dashboard — the agent-authored "home" surface the user lands on. Write a single self-contained HTML file to exactly `${SHELLY_ARTIFACTS_DIR:-~/.shelly/artifacts}/home.html`; the Board hosts it full-bleed and routes its navigate buttons into the three-level drill-down (Hub → Sessions → one session). Use when the user runs `/shelly:dashboard`, asks to design / compose / refresh their Shelly home screen or hub, or wants a glanceable triage view across their running agents. The hub is a TRIAGE-FIRST glance (who needs you, a briefing line, one button per live source) — not a one-off report. It is the reserved `home.html` slug; do NOT load `prefer-html` for it (different shape: full-bleed, no window size-reporter, no Next-steps page).
 ---
 
-# Companion Dashboard — author the Board's L0 Hub (`home.html`)
+# Shelly Dashboard — author the Board's L0 Hub (`home.html`)
 
-The Companion Board is a 3-level drill-down:
+The Shelly Board is a 3-level drill-down:
 
 ```
 L0  Hub          ← THIS skill authors it (home.html). Full-bleed, agent-composed.
@@ -13,7 +13,7 @@ L0  Hub          ← THIS skill authors it (home.html). Full-bleed, agent-compos
               └▸ L2  one session's artifacts (the bento board)
 ```
 
-The Hub is the **first thing the user sees** when they open the Board (`companion
+The Hub is the **first thing the user sees** when they open the Board (`shelly
 board`). When no `home.html` exists, the Board shows a plain native fallback. This
 skill replaces that fallback with a glanceable, **triage-first** dashboard you compose.
 
@@ -22,10 +22,10 @@ skill replaces that fallback with a glanceable, **triage-first** dashboard you c
 Write exactly one file to:
 
 ```
-${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/home.html
+${SHELLY_ARTIFACTS_DIR:-~/.shelly/artifacts}/home.html
 ```
 
-Confirm the live dir with `companion doctor` (the "artifacts dir" line). The file
+Confirm the live dir with `shelly doctor` (the "artifacts dir" line). The file
 **must** sit in the artifacts dir — that's the only path in the overlay's `asset:`
 scope, which is what lets the Hub's navigate buttons' inline JS actually run. The
 reserved `home.html` name is special-cased: it never shows as a Board tile, never
@@ -50,12 +50,12 @@ real surface the user lives in), but don't bury the triage under decoration.
 ### Reading the running agents
 
 The live sources are the per-session JSON files under
-`~/.claude/companion/live/<slug>.json` (each: `working`, `where`, `next[]`, `project`).
+`~/.shelly/live/<slug>.json` (each: `working`, `where`, `next[]`, `project`).
 List them and read the ones you want to surface:
 
 ```bash
-ls ~/.claude/companion/live/ 2>/dev/null
-cat ~/.claude/companion/live/<slug>.json 2>/dev/null
+ls ~/.shelly/live/ 2>/dev/null
+cat ~/.shelly/live/<slug>.json 2>/dev/null
 ```
 
 The `<slug>` (the filename without `.json`) is the **session id** you target in a
@@ -65,9 +65,9 @@ one to flag first; `todo` / `in-progress` is busy; `done` / `ok` is calm.
 ## The navigate-button convention
 
 The Board listens for navigation requests from the Hub iframe. A button opts in with a
-`data-companion-navigate` attribute whose value is the destination:
+`data-shelly-navigate` attribute whose value is the destination:
 
-| `data-companion-navigate` value | Goes to |
+| `data-shelly-navigate` value | Goes to |
 | --- | --- |
 | `sessions` | L1 — the Sessions picker (all agents) |
 | `session:<slug>` | L2 — that one agent's artifacts |
@@ -75,21 +75,21 @@ The Board listens for navigation requests from the Hub iframe. A button opts in 
 | `hub` | back to L0 (rarely needed from the Hub itself) |
 
 ```html
-<button data-companion-navigate="sessions">All sessions →</button>
-<button data-companion-navigate="session:claude-code-companion">Resume Companion →</button>
+<button data-shelly-navigate="sessions">All sessions →</button>
+<button data-shelly-navigate="session:shelly">Resume Shelly →</button>
 ```
 
 Drop this **tiny helper once**, before `</body>`. It delegates clicks from any element
-carrying `data-companion-navigate` and posts the message the Board validates:
+carrying `data-shelly-navigate` and posts the message the Board validates:
 
 ```html
 <script>
   (function () {
     document.addEventListener("click", function (e) {
-      var el = e.target.closest ? e.target.closest("[data-companion-navigate]") : null;
+      var el = e.target.closest ? e.target.closest("[data-shelly-navigate]") : null;
       if (!el) return;
-      var to = el.getAttribute("data-companion-navigate");
-      if (to) parent.postMessage({ source: "companion-artifact", kind: "navigate", to: to }, "*");
+      var to = el.getAttribute("data-shelly-navigate");
+      if (to) parent.postMessage({ source: "shelly-artifact", kind: "navigate", to: to }, "*");
     });
   })();
 </script>
@@ -109,25 +109,25 @@ no harm but is pointless — the Hub is never measured.
 
 - **No** `data-fit-root` / size-reporter. Style `html, body { margin:0; height:100%; }`
   and let your layout fill the viewport.
-- **No** Next-steps / review form, **no** `data-companion-commentable` blocks — those
+- **No** Next-steps / review form, **no** `data-shelly-commentable` blocks — those
   are for steering artifacts (`prefer-html`), not the home surface.
-- `companion-meta` is optional here (the Hub isn't a history entry).
+- `shelly-meta` is optional here (the Hub isn't a history entry).
 - Self-contained: inline all CSS/JS, no external requests (the iframe is sandboxed
   `allow-scripts` with no same-origin, so storage/fetch won't work — only postMessage,
   which the helper uses).
 
-## A clawd mascot (encouraged)
+## A crab mascot (encouraged)
 
-Give the Hub a little life: a pixel-art **clawd** companion (the same character that
+Give the Hub a little life: a pixel-art **crab** shelly (the same character that
 greets the post-submit waiting splash). A ready-to-paste, self-contained block lives next
-to this skill at **`clawd-snippet.html`** (in this skill's directory) — **read that file and
-paste its whole contents into `home.html`**. It defines `<div id="clawd-mascot">` plus an
+to this skill at **`crab-snippet.html`** (in this skill's directory) — **read that file and
+paste its whole contents into `home.html`**. It defines `<div id="crab-mascot">` plus an
 inline script that animates a random pose on load (typing · thinking · conducting); no
 external requests, so it's safe in the sandboxed full-bleed iframe.
 
-- Place the `<div id="clawd-mascot">` where it fits your composition — beside the greeting,
+- Place the `<div id="crab-mascot">` where it fits your composition — beside the greeting,
   a quiet corner, or as a hero flourish. Size it via the div's `width`/`height`.
-- It's a flourish, not the point — keep the **triage-first** content primary; clawd accents
+- It's a flourish, not the point — keep the **triage-first** content primary; crab accents
   it. Skip it if the layout is already dense.
 - Motion is transform/opacity only and honors `prefers-reduced-motion`.
 
@@ -151,23 +151,23 @@ external requests, so it's safe in the sandboxed full-bleed iframe.
   </style>
 </head>
 <body>
-  <!-- Optional clawd mascot: paste clawd-snippet.html's block here (or anywhere),
-       then position #clawd-mascot to taste. See "A clawd mascot" above. -->
-  <div id="clawd-mascot" class="clawd-stage" style="width:120px;height:120px"></div>
+  <!-- Optional crab mascot: paste crab-snippet.html's block here (or anywhere),
+       then position #crab-mascot to taste. See "A crab mascot" above. -->
+  <div id="crab-mascot" class="crab-stage" style="width:120px;height:120px"></div>
   <h1>Good morning. <em>2 agents need you.</em></h1>
-  <div class="brief">helpdesk-companion is BLOCKED on the demo recording · everything else nominal.</div>
+  <div class="brief">helpdesk-shelly is BLOCKED on the demo recording · everything else nominal.</div>
   <div class="row">
-    <button data-companion-navigate="session:helpdesk-companion" class="primary">helpdesk-companion →</button>
-    <button data-companion-navigate="session:claude-code-companion">claude-code-companion →</button>
-    <button data-companion-navigate="sessions">All sessions →</button>
+    <button data-shelly-navigate="session:helpdesk-shelly" class="primary">helpdesk-shelly →</button>
+    <button data-shelly-navigate="session:shelly">shelly →</button>
+    <button data-shelly-navigate="sessions">All sessions →</button>
   </div>
   <script>
     (function () {
       document.addEventListener("click", function (e) {
-        var el = e.target.closest ? e.target.closest("[data-companion-navigate]") : null;
+        var el = e.target.closest ? e.target.closest("[data-shelly-navigate]") : null;
         if (!el) return;
-        var to = el.getAttribute("data-companion-navigate");
-        if (to) parent.postMessage({ source: "companion-artifact", kind: "navigate", to: to }, "*");
+        var to = el.getAttribute("data-shelly-navigate");
+        if (to) parent.postMessage({ source: "shelly-artifact", kind: "navigate", to: to }, "*");
       });
     })();
   </script>
@@ -177,6 +177,6 @@ external requests, so it's safe in the sandboxed full-bleed iframe.
 
 ## After writing
 
-Tell the user it's live and how to see it: open the Board with `companion board` (or, if
+Tell the user it's live and how to see it: open the Board with `shelly board` (or, if
 already open, leave & re-enter L0 — the Hub re-resolves on each entry, not live). The
 buttons drill straight into the picker / a session.

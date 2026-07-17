@@ -67,11 +67,11 @@ console.log("\n### ink fallback — message ink is never trusted");
 
 console.log("\n### message type guard");
 {
-  ok(isShellMessage({ source: "companion-artifact", kind: "shell", bg: "#E7ECF1" }), "well-formed shell message accepted");
-  ok(isShellMessage({ source: "companion-artifact", kind: "shell", bg: "#E7ECF1", ink: "#1B2530" }), "ink is optional");
-  ok(!isShellMessage({ source: "companion-artifact", kind: "size", w: 1, h: 1 }), "a size message is not a shell message");
+  ok(isShellMessage({ source: "shelly-artifact", kind: "shell", bg: "#E7ECF1" }), "well-formed shell message accepted");
+  ok(isShellMessage({ source: "shelly-artifact", kind: "shell", bg: "#E7ECF1", ink: "#1B2530" }), "ink is optional");
+  ok(!isShellMessage({ source: "shelly-artifact", kind: "size", w: 1, h: 1 }), "a size message is not a shell message");
   ok(!isShellMessage({ source: "evil", kind: "shell", bg: "#E7ECF1" }), "wrong source rejected");
-  ok(!isShellMessage({ source: "companion-artifact", kind: "shell" }), "missing bg rejected");
+  ok(!isShellMessage({ source: "shelly-artifact", kind: "shell" }), "missing bg rejected");
   ok(!isShellMessage(null), "null rejected");
   ok(!isShellMessage("shell"), "string rejected");
 }

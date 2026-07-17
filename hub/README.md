@@ -1,8 +1,8 @@
-# Companion Hub — connect your agents
+# Shelly Hub — connect your agents
 
 A small self-hosted HTTP server that lets **remote autonomous agents** (Hermes
 crons, OpenClaw-style gateways, bare scripts — anything that can write a file or
-POST JSON) surface their work on the Companion Board and **receive your replies
+POST JSON) surface their work on the Shelly Board and **receive your replies
 back**. Self-hosted by design: no accounts, no central service, one shared
 bearer token. Run it wherever your agents live (a VPS, a home server) and point
 the overlay at it.
@@ -16,18 +16,18 @@ you reply on the Board ──► overlay POSTs ──► hub inbox ──► age
 
 ```sh
 cargo build --release
-COMPANION_HUB_BIND=<tailscale-ip> ./target/release/companion-hub
+SHELLY_HUB_BIND=<tailscale-ip> ./target/release/shelly-hub
 ```
 
-First run generates + persists a token (`~/.claude/companion/hub-token`, 0600)
-and prints the pairing line. On the Mac: `companion hub set <url> <token>`
-(or write `~/.claude/companion/hub.json`). Binding a tailnet IP is the intended
+First run generates + persists a token (`~/.shelly/hub-token`, 0600)
+and prints the pairing line. On the Mac: `shelly hub set <url> <token>`
+(or write `~/.shelly/hub.json`). Binding a tailnet IP is the intended
 security posture — the hub retries the bind for ~5 minutes so it survives
 racing tailscale0 at boot.
 
-Env knobs: `COMPANION_HUB_BIND`, `COMPANION_HUB_PORT` (8787),
-`COMPANION_HUB_TOKEN`, `COMPANION_HUB_DATA_DIR` (`~/.claude/companion`),
-`COMPANION_HUB_WEBUI_DIR`.
+Env knobs: `SHELLY_HUB_BIND`, `SHELLY_HUB_PORT` (8787),
+`SHELLY_HUB_TOKEN`, `SHELLY_HUB_DATA_DIR` (`~/.shelly`),
+`SHELLY_HUB_WEBUI_DIR`.
 
 ## The agent contract
 
@@ -35,18 +35,18 @@ An agent's **id** is one slug used in three places — that's the whole identity
 scheme (no second derivation):
 
 1. its live file: `live/<id>.json`
-2. its artifacts' metadata: `companion-meta.project == "<id>"`
+2. its artifacts' metadata: `shelly-meta.project == "<id>"`
 3. its registry card: `agents/<id>.json`
 
 ### 1. Publish work
 
-Write the same Companion surfaces a local agent writes, under the hub's data
-dir (`~/.claude/companion/` on the hub machine):
+Write the same Shelly surfaces a local agent writes, under the hub's data
+dir (`~/.shelly/` on the hub machine):
 
 - **Live state** — `live/<id>.json`:
   `{"working":"…","where":["…"],"next":[{"title":"…","sub":"…","kind":"todo|decision|blocked"}],"project":"<id>"}`
 - **Artifacts** — `artifacts/<slug>.html`, self-contained, with a
-  `companion-meta` block in `<head>` carrying `"project":"<id>"` and one
+  `shelly-meta` block in `<head>` carrying `"project":"<id>"` and one
   `data-fit-root` wrapper with a definite width (see the prefer-html skill for
   the size-reporter snippet).
 
@@ -61,7 +61,7 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -H "content-type: application/json
     "name": "Hermes", "emoji": "🪽",
     "tagline": "Morning briefs, task triage",
     "capabilities": ["morning-brief"],
-    "wake": ["/home/me/.claude/companion/bin/hermes-wake.sh"]
+    "wake": ["/home/me/.shelly/bin/hermes-wake.sh"]
   }'
 ```
 

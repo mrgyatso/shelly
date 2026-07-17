@@ -1,15 +1,15 @@
-//! Companion trace harness (Rust side) — the formal replacement for the ad-hoc
+//! Shelly trace harness (Rust side) — the formal replacement for the ad-hoc
 //! `diag.log` that lived in `artifact_watch.rs`.
 //!
 //! One append-only NDJSON event log shared by every layer of the artifact
-//! pipeline: `~/.claude/companion/logs/trace.ndjson`. Each line is one event with
+//! pipeline: `~/.shelly/logs/trace.ndjson`. Each line is one event with
 //! a common envelope (`ts_ms`, `layer`, `evt`, plus string fields); the artifact's
 //! absolute path travels as `corr` so the whole pipeline joins on one key. The
-//! shell hooks and `companion-index.cjs` append to the SAME file through
-//! `plugin/hooks/companion-trace.cjs`, so one artifact write yields one timeline.
+//! shell hooks and `shelly-index.cjs` append to the SAME file through
+//! `plugin/hooks/shelly-trace.cjs`, so one artifact write yields one timeline.
 //!
-//! GATING: off unless `COMPANION_TRACE=1` in the env OR the flag file
-//! `~/.claude/companion/logs/trace.on` exists. The flag file is the primary switch
+//! GATING: off unless `SHELLY_TRACE=1` in the env OR the flag file
+//! `~/.shelly/logs/trace.on` exists. The flag file is the primary switch
 //! because the overlay is normally launched by a LaunchAgent that does NOT inherit
 //! a shell env — a flag file is the one condition every layer (shell, node, Rust,
 //! webview) can check identically. `touch` it to turn the harness on; `rm` to turn
@@ -30,13 +30,13 @@ fn home() -> Option<PathBuf> {
 }
 
 fn log_dir() -> Option<PathBuf> {
-    home().map(|h| h.join(".claude/companion/logs"))
+    home().map(|h| h.join(".shelly/logs"))
 }
 
 /// True when the trace harness is switched on (env flag or flag file). Cheap
 /// enough to call per event / per poll (one env read + at most one stat).
 pub fn enabled() -> bool {
-    if std::env::var("COMPANION_TRACE").ok().as_deref() == Some("1") {
+    if std::env::var("SHELLY_TRACE").ok().as_deref() == Some("1") {
         return true;
     }
     log_dir()

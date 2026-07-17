@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Phase 3 hook-layer verification — SANDBOXED. companion-index.cjs must, on a successful
+// Phase 3 hook-layer verification — SANDBOXED. shelly-index.cjs must, on a successful
 // stamp, append an `artifact.routed` event carrying path + session_id + the registry unit.
 
 const fs = require("fs");
@@ -13,38 +13,38 @@ let pass = 0, fail = 0;
 function ok(c, m) { if (c) { pass++; console.log("  ✓ " + m); } else { fail++; console.log("  ✗ FAIL: " + m); } }
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "cmp-p3-"));
-fs.mkdirSync(path.join(home, ".claude", "companion", "logs"), { recursive: true });
+fs.mkdirSync(path.join(home, ".shelly", "logs"), { recursive: true });
 // Hermetic: track external terminals in the sandbox, and don't inherit the developer
-// shell's COMPANION_SESSION — without these the hook bails as an untracked terminal
-// on CI (no Companion app) while silently passing on a dev machine.
-fs.writeFileSync(path.join(home, ".claude", "companion", "external-terminals"), "on");
-const baseEnv = { ...process.env, HOME: home, COMPANION_TRACE: "1" };
-delete baseEnv.COMPANION_SESSION;
+// shell's SHELLY_SESSION — without these the hook bails as an untracked terminal
+// on CI (no Shelly app) while silently passing on a dev machine.
+fs.writeFileSync(path.join(home, ".shelly", "external-terminals"), "on");
+const baseEnv = { ...process.env, HOME: home, SHELLY_TRACE: "1" };
+delete baseEnv.SHELLY_SESSION;
 const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cmp-p3-repo-")));
 execFileSync("git", ["init", "-q"], { cwd: repo });
 const SID = "feed1234-aaaa-bbbb-cccc-eventroute0001";
 
 // Register the session (writes the record + a session.registered event).
-execFileSync("sh", [path.join(HOOKS, "companion-session")], {
+execFileSync("sh", [path.join(HOOKS, "shelly-session")], {
   input: JSON.stringify({ cwd: repo, session_id: SID }),
   env: baseEnv,
   encoding: "utf8",
 });
-const rec = JSON.parse(fs.readFileSync(path.join(home, ".claude/companion/sessions", SID + ".json"), "utf8"));
+const rec = JSON.parse(fs.readFileSync(path.join(home, ".shelly/sessions", SID + ".json"), "utf8"));
 
 // Stamp the index for an artifact this session wrote.
-const liveDir = path.join(home, ".claude/companion/live");
-const indexPath = path.join(home, ".claude/companion/artifact-index.json");
-const artifact = path.join(home, ".claude/companion/artifacts", "p3.html");
+const liveDir = path.join(home, ".shelly/live");
+const indexPath = path.join(home, ".shelly/artifact-index.json");
+const artifact = path.join(home, ".shelly/artifacts", "p3.html");
 fs.mkdirSync(path.dirname(artifact), { recursive: true });
 fs.writeFileSync(artifact, "<html></html>");
-execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), artifact, liveDir, indexPath], {
+execFileSync("node", [path.join(HOOKS, "shelly-index.cjs"), artifact, liveDir, indexPath], {
   env: { ...baseEnv, SID },
   encoding: "utf8",
 });
 
 function events(home) {
-  const p = path.join(home, ".claude/companion/events.ndjson");
+  const p = path.join(home, ".shelly/events.ndjson");
   return fs.existsSync(p) ? fs.readFileSync(p, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
 }
 const evs = events(home);
@@ -56,9 +56,9 @@ ok(routed[0] && routed[0].unit_key === rec.unit_key, "event unit_key === the reg
 ok(evs.some((e) => e.evt === "session.registered" && e.session_id === SID), "session.registered still present (Phase 1)");
 
 // A no-SID (pre-registry) write stamps nothing → appends NO artifact.routed.
-const art2 = path.join(home, ".claude/companion/artifacts", "legacy.html");
+const art2 = path.join(home, ".shelly/artifacts", "legacy.html");
 fs.writeFileSync(art2, "<html></html>");
-execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), art2, liveDir, indexPath], {
+execFileSync("node", [path.join(HOOKS, "shelly-index.cjs"), art2, liveDir, indexPath], {
   env: { ...baseEnv, SID: "" },
   encoding: "utf8",
 });

@@ -3,14 +3,14 @@
 // artifact to its session through routeArtifact: the frozen registry record wins over a
 // stale enqueue-time unit_key, an unregistered session falls back, and no identity yields
 // no stamp. (Formerly "Phase 5 observer integration"; the observer is gone, but routeArtifact
-// remains the ONE canonical stamp — companion-index.cjs uses it on every inline write.)
+// remains the ONE canonical stamp — shelly-index.cjs uses it on every inline write.)
 
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
 const HOOKS = path.join(__dirname, "..");
-const identity = require(path.join(HOOKS, "companion-identity.cjs"));
+const identity = require(path.join(HOOKS, "shelly-identity.cjs"));
 
 let pass = 0,
   fail = 0;
@@ -26,17 +26,17 @@ function ok(cond, msg) {
 
 function mkSandbox(tag) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `cmp-p5-${tag}-`));
-  fs.mkdirSync(path.join(home, ".claude", "companion", "logs"), { recursive: true });
-  fs.writeFileSync(path.join(home, ".claude", "companion", "external-terminals"), "on");
+  fs.mkdirSync(path.join(home, ".shelly", "logs"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".shelly", "external-terminals"), "on");
   return home;
 }
 function events(home) {
-  const p = path.join(home, ".claude", "companion", "events.ndjson");
+  const p = path.join(home, ".shelly", "events.ndjson");
   if (!fs.existsSync(p)) return [];
   return fs.readFileSync(p, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
 function indexOf(home) {
-  const p = path.join(home, ".claude", "companion", "artifact-index.json");
+  const p = path.join(home, ".shelly", "artifact-index.json");
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : {};
 }
 

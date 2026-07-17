@@ -41,7 +41,7 @@ function check(name: string, cond: boolean): void {
 }
 
 const T0 = 1_783_612_485_400; // any fixed clock; the logic only ever reads differences
-const UNIT = "claude-code-companion";
+const UNIT = "shelly";
 const SESS = "ef654874-aaaa-bbbb-cccc-000000000000";
 const TAB = "tab-1";
 

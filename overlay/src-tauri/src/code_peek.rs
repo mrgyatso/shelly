@@ -62,15 +62,15 @@ fn cache() -> &'static Mutex<HashMap<String, Scan>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Companion's own bookkeeping, which the agent rewrites every single turn: the
+/// Shelly's own bookkeeping, which the agent rewrites every single turn: the
 /// live status JSON, the artifacts it renders into the Board, and its per-project
 /// memory. All are surfaced elsewhere in the UI; listing them here would bury the
 /// two or three source files the user actually wants to see.
-fn is_companion_bookkeeping(path: &str) -> bool {
+fn is_shelly_bookkeeping(path: &str) -> bool {
     let under = |dir: Option<PathBuf>| {
         dir.is_some_and(|d| path.starts_with(&format!("{}/", d.display())))
     };
-    under(crate::paths::companion_dir()) || under(crate::paths::projects_dir())
+    under(crate::paths::shelly_dir()) || under(crate::paths::projects_dir())
 }
 
 /// Fold one transcript line into a running scan, recording every path the assistant
@@ -110,7 +110,7 @@ fn fold_line(line: &str, scan: &mut Scan) {
             Some(p) if p.starts_with('/') => p,
             _ => continue, // a relative path can't be resolved after the fact
         };
-        if is_companion_bookkeeping(fp) {
+        if is_shelly_bookkeeping(fp) {
             continue;
         }
         // Re-touch = most recent. Drop the older mention so `paths` stays a set
@@ -458,10 +458,10 @@ mod tests {
     }
 
     #[test]
-    fn skips_companion_bookkeeping() {
+    fn skips_shelly_bookkeeping() {
         let home = std::env::var("HOME").unwrap();
         let scan = scan_of(&[
-            write_line("Write", &format!("{home}/.claude/companion/live/x--1.json")),
+            write_line("Write", &format!("{home}/.shelly/live/x--1.json")),
             write_line("Write", &format!("{home}/.claude/projects/-p/memory/m.md")),
             write_line("Write", "/repo/real.rs"),
         ]);

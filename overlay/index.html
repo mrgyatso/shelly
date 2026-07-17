@@ -14,7 +14,7 @@
     />
     <link rel="stylesheet" href="/src/styles.css" />
     <link rel="stylesheet" href="/src/board.css" />
-    <title>Companion Overlay</title>
+    <title>Shelly</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
@@ -58,7 +58,7 @@
       </footer>
     </div>
 
-    <!-- The Board (companion board). Hidden by default; board.ts reveals it only
+    <!-- The Board (shelly board). Hidden by default; board.ts reveals it only
          on the board_main window. A dark letterboxing STAGE holds a warm paper
          BOARD surface: a serif greeting, minimal floating controls, and a
          horizontal masonry of per-agent panes (each a bento of real artifact
@@ -72,7 +72,7 @@
             <div id="board-sub" class="sub"></div>
           </div>
           <!-- Agent-composed bar (L0 only). Rendered from home.html's
-               `companion-bar` JSON block: themes colors + fills left/center/right
+               `shelly-bar` JSON block: themes colors + fills left/center/right
                slots. The mandatory control cluster below always renders. -->
           <div id="board-bar-custom" class="bar-custom" hidden>
             <div class="bar-zone bar-left"></div>
@@ -109,7 +109,7 @@
         <div id="board-hub" class="board-hub" hidden>
           <iframe id="hub-frame" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer" hidden></iframe>
           <div id="hub-fallback" class="hub-fallback" hidden>
-            <div id="hub-clawd" class="hub-clawd" aria-hidden="true"></div>
+            <div id="hub-crab" class="hub-crab" aria-hidden="true"></div>
             <div class="hub-hello" id="hub-hello"></div>
             <!-- Two-door home: Sessions (coding) | Agent Hub (connected agents). -->
             <div class="hub-doors">
@@ -283,17 +283,17 @@
               </button>
               <iframe id="unit-digest" class="hub-frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
               <!-- Blank-hero band: a session with no artifact yet shows a pixel-art
-                   clawd here (the splash, for the FIRST artifact) instead of a void —
+                   crab here (the splash, for the FIRST artifact) instead of a void —
                    it sits in the hero slot above the terminal. board.ts toggles
-                   .blank-hero on the unit and mounts a fresh clawd into #unit-blank-clawd. -->
+                   .blank-hero on the unit and mounts a fresh crab into #unit-blank-crab. -->
               <div id="unit-blank" class="unit-blank" aria-hidden="true">
                 <!-- Corner-pinned live "working" line: the active session's current
                      `working` field, so the splash says what we're on at a glance.
                      Empty (and hidden) on the idle home / a not-yet-live session. -->
                 <div class="blank-working"></div>
-                <div id="unit-blank-clawd" class="blank-clawd"></div>
+                <div id="unit-blank-crab" class="blank-crab"></div>
                 <div class="blank-copy">
-                  <div class="blank-t">Clawd's on it.</div>
+                  <div class="blank-t">Crab's on it.</div>
                   <div class="blank-s">Your first artifact will land right here — the terminal's below while it works.</div>
                 </div>
               </div>
@@ -310,14 +310,14 @@
             </div>
             <!-- HISTORY view: the unit's past artifacts as a readable list (was a drawer). -->
             <div id="unit-history" class="unit-history"></div>
-            <!-- SETTINGS view: Companion preferences. Placeholder rows for now. -->
+            <!-- SETTINGS view: Shelly preferences. Placeholder rows for now. -->
             <div id="unit-settings" class="unit-settings">
               <div class="settings-inner">
                 <header class="settings-head">
-                  <h2>Settings <span id="settings-version" class="settings-version" title="Installed Companion version"></span></h2>
+                  <h2>Settings <span id="settings-version" class="settings-version" title="Installed Shelly version"></span></h2>
                   <p>Your version, and one button to move it forward.</p>
                 </header>
-                <!-- Version + update. Companion is two independently-rotting halves —
+                <!-- Version + update. Shelly is two independently-rotting halves —
                      the app (Homebrew cask / .deb) and the Claude Code plugin (a cached
                      snapshot, moved by `claude plugin update`). One button moves both. -->
                 <div class="settings-group">
@@ -365,7 +365,7 @@
                 <!-- "Render mode" and "Artifact quality" lived here. Both are gone: they
                      described the background observer and the Sonnet designer, deleted in
                      0.4.5 — and, worse, NOTHING read the dial files they wrote. No hook
-                     consumes ~/.claude/companion/{mode,quality}; the Stop-hook gate does not
+                     consumes ~/.shelly/{mode,quality}; the Stop-hook gate does not
                      check them. They were two live-looking switches wired to nothing, under a
                      footer that claimed they were live. -->
                 <div class="settings-group">

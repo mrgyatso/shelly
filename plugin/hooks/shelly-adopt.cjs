@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// companion-adopt.cjs — a homeless session GRADUATES onto its own project shelf.
+// shelly-adopt.cjs — a homeless session GRADUATES onto its own project shelf.
 //
-//   Usage:  <hook payload on stdin> | node companion-adopt.cjs
+//   Usage:  <hook payload on stdin> | node shelly-adopt.cjs
 //
 // THE PROBLEM. A session launched from $HOME (the Board's "+ New session") has no
 // project of its own, so it lands on the shared Home shelf. But identity is FROZEN at
@@ -45,14 +45,14 @@ const path = require("path");
 const os = require("os");
 
 const HOME = process.env.HOME || os.homedir();
-const CMP = path.join(HOME, ".claude", "companion");
+const CMP = path.join(HOME, ".shelly");
 const HOMELESS_DIR = path.join(CMP, "homeless");
 const LIVE_DIR = path.join(CMP, "live");
 const INDEX_PATH = path.join(CMP, "artifact-index.json");
 
 let trace = { emit() {} };
 try {
-  trace = require("./companion-trace.cjs");
+  trace = require("./shelly-trace.cjs");
 } catch (_) {}
 
 function readJson(p) {
@@ -110,7 +110,7 @@ function main(payload) {
   const fp = String((payload.tool_input || {}).file_path || "");
   if (!fp || !path.isAbsolute(fp)) return;
 
-  // Companion's own plumbing (artifacts, memory, settings) is not project work — an
+  // Shelly's own plumbing (artifacts, memory, settings) is not project work — an
   // agent writing an artifact from a home session has not thereby started a project.
   if (fp.startsWith(path.join(HOME, ".claude") + path.sep)) return;
 

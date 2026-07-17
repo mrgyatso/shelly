@@ -1,17 +1,17 @@
 //! Remote-hub client: pull live-state + artifacts from a user-configured hub so
 //! offsite agents (e.g. Hermes on a VPS) can drive this overlay.
 //!
-//! The hub ([`companion-hub`](../../hub)) serves the same on-disk layout the
+//! The hub ([`shelly-hub`](../../hub)) serves the same on-disk layout the
 //! overlay reads locally. Here we GET it over HTTP with a bearer token and feed
 //! it into the *existing* pipeline: pulled live-state flows to the live pane
 //! (the frontend calls [`read_live_from_hub`] alongside the local read), and
-//! pulled artifacts are written into `~/.claude/companion/remote/` — which the
+//! pulled artifacts are written into `~/.shelly/remote/` — which the
 //! native artifact watcher already scans — so they surface through the normal
 //! Board ingest path. We nudge it on each new pull with a `board:artifacts-changed`
 //! emit (no standalone window — artifacts live only inside the Board shell).
 //!
-//! Config lives at `~/.claude/companion/hub.json` and is re-read every loop, so
-//! `companion hub set …` takes effect without restarting the daemon. Nothing
+//! Config lives at `~/.shelly/hub.json` and is re-read every loop, so
+//! `shelly hub set …` takes effect without restarting the daemon. Nothing
 //! here can panic the daemon: every failure degrades to "skip this tick".
 
 use std::collections::HashSet;
@@ -45,14 +45,14 @@ fn default_interval() -> u64 {
     DEFAULT_INTERVAL_MS
 }
 
-fn companion_dir() -> Option<PathBuf> {
-    crate::paths::companion_dir()
+fn shelly_dir() -> Option<PathBuf> {
+    crate::paths::shelly_dir()
 }
 fn config_path() -> Option<PathBuf> {
-    companion_dir().map(|d| d.join("hub.json"))
+    shelly_dir().map(|d| d.join("hub.json"))
 }
 fn remote_dir() -> Option<PathBuf> {
-    companion_dir().map(|d| d.join("remote"))
+    shelly_dir().map(|d| d.join("remote"))
 }
 
 /// Trim a trailing slash so `{base}/api/live` is always well-formed.

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# companion-livepath.sh — shared derivation of a Companion per-INSTANCE live path.
+# shelly-livepath.sh — shared derivation of a Shelly per-INSTANCE live path.
 #
-# Usage:  companion-livepath.sh <cwd> <session_id>
+# Usage:  shelly-livepath.sh <cwd> <session_id>
 # Output: one TAB-separated line:
 #   <live_path>\t<project>\t<shortid>\t<is_repo>\t<unit_key>\t<root>
 #
@@ -26,13 +26,13 @@
 
 cwd="${1:-$(pwd)}"
 session_id="$2"
-live_dir="${HOME}/.claude/companion/live"
+live_dir="${HOME}/.shelly/live"
 
 # Trace harness (no-op unless enabled). $0 is this script when run as a subprocess,
 # so its dirname is the hooks dir. trace() only ever touches the log FILE — never
 # stdout — so the TAB-separated identity line this script prints stays clean.
 CMP_HOOK_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)
-. "$CMP_HOOK_DIR/companion-trace.sh"
+. "$CMP_HOOK_DIR/shelly-trace.sh"
 
 shortid=$(printf '%.8s' "$session_id" | tr -c 'A-Za-z0-9' '-')
 [ -n "$shortid" ] || shortid="nosessid"
@@ -70,7 +70,7 @@ if [ -n "$existing" ]; then
   # current cwd would silently UN-adopt on the next compact/resume and drop the session
   # back into Home. So prefer the root already recorded for this stem in
   # session-dirs.json; only derive from cwd when there is no record yet.
-  root=$(STEM="$stem" DIRS="${HOME}/.claude/companion/session-dirs.json" node -e '
+  root=$(STEM="$stem" DIRS="${HOME}/.shelly/session-dirs.json" node -e '
     try{var m=JSON.parse(require("fs").readFileSync(process.env.DIRS,"utf8"))||{};
     process.stdout.write(m[process.env.STEM]||"");}catch(e){}' 2>/dev/null)
   if [ -z "$root" ]; then
@@ -92,7 +92,7 @@ else
   # by slug names a "project" after the user's USERNAME and collapses every unrelated
   # ~-launched session into it. Home-rooted sessions share one reserved HOME unit
   # instead (the Board's HOME_UNIT / "Home" shelf), which they GRADUATE out of the
-  # moment they establish a real root — see companion-adopt.cjs. The slug still names
+  # moment they establish a real root — see shelly-adopt.cjs. The slug still names
   # the live FILE (identity is frozen per session), only the unit changes.
   unit_key="$slug"
   [ "$root" = "$HOME" ] && unit_key="__home__"

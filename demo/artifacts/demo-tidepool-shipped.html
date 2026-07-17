@@ -6,7 +6,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
-<script type="application/json" id="companion-meta">
+<script type="application/json" id="shelly-meta">
 {
   "subject": "tidepool — your call is in; the ranking is off unitsSold",
   "summary": "The follow-up to the velocity audit. Records the decision you just made, takes unitsSold out of the ranking path, and leaves the chosen signal as the plan of record.",
@@ -172,7 +172,7 @@
   (function () {
     var el = document.querySelector("[data-fit-root]") || document.body;
     var post = function () {
-      parent.postMessage({ source: "companion-artifact", kind: "size",
+      parent.postMessage({ source: "shelly-artifact", kind: "size",
         w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
     };
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);

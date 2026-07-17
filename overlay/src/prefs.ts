@@ -1,7 +1,7 @@
 /** Board-level preferences that aren't tied to a single session — persisted in
  *  localStorage, the same way the new-session agent pick is (see board.ts).
  *
- *  Codex approval preset: how a Companion-spawned `codex` session launches.
+ *  Codex approval preset: how a Shelly-spawned `codex` session launches.
  *    "off"  → Codex's default — asks before edits/commands.
  *    "auto" → edits & runs in the workspace without asking
  *             (`-a on-request -s workspace-write`); still prompts for network / outside.
@@ -12,7 +12,7 @@
 
 export type CodexApproval = "off" | "auto" | "full";
 
-const CODEX_APPROVAL_KEY = "companion.codexApproval";
+const CODEX_APPROVAL_KEY = "shelly.codexApproval";
 
 export function getCodexApproval(): CodexApproval {
   try {

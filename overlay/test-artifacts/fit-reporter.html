@@ -1,12 +1,12 @@
 <!--
-  Companion overlay fit-reporter snippet.
+  Shelly overlay fit-reporter snippet.
 
   Paste this <script> into any artifact that should size the overlay window to
   its content. It measures the element marked `data-fit-root` (falling back to
   <body>) and posts the size up to the host window, which clamps + animates the
   window to fit. Re-fires on layout changes via ResizeObserver.
 
-  Contract: postMessage({ source: "companion-artifact", kind: "size", w, h }).
+  Contract: postMessage({ source: "shelly-artifact", kind: "size", w, h }).
 -->
 <script>
   (function () {
@@ -14,7 +14,7 @@
     var post = function () {
       parent.postMessage(
         {
-          source: "companion-artifact",
+          source: "shelly-artifact",
           kind: "size",
           w: Math.ceil(el.scrollWidth),
           h: Math.ceil(el.scrollHeight),

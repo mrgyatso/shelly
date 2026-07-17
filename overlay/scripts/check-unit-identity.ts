@@ -98,7 +98,7 @@ console.log("\n### a unit is keyed by its DIRECTORY, never the agent's label");
   ok(sourceProjectKey(src({ source: "bare" })) === "bare", "a stem with no -- → itself");
 }
 
-console.log("\n### graduation (what companion-adopt.cjs rewrites, seen from the Board)");
+console.log("\n### graduation (what shelly-adopt.cjs rewrites, seen from the Board)");
 {
   // Before: rooted at $HOME → Home shelf. After adoption the hook re-points unit_dir at
   // the new repo, and that ALONE is what moves the card — the Board re-derives from it.

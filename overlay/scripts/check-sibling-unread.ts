@@ -2,7 +2,7 @@
  * Regression check pinned to the sibling-session disappearance bug (2026-07-09).
  *
  * THE REPORT: two Claude sessions run in one repo. They share a `unit_key` by design
- * (`companion-livepath.sh`: unit_key = git-root basename). Session B wrote an artifact
+ * (`shelly-livepath.sh`: unit_key = git-root basename). Session B wrote an artifact
  * 19 minutes AFTER session A's; the user never saw B's. `enterUnit` called
  * `clearUnread(unitKey)` — wiping the whole unit's unread, including B's artifact,
  * which the hero (scoped to A) had never painted. Badge zeroed, artifact buried.
@@ -24,9 +24,9 @@ function check(name: string, cond: boolean): void {
   if (!cond) failed++;
 }
 
-// The exact 2026-07-09 timeline, in one unit (`claude-code-companion`).
-const A_SRC = "claude-code-companion--c6f77d0e";
-const B_SRC = "claude-code-companion--ef654874";
+// The exact 2026-07-09 timeline, in one unit (`shelly`).
+const A_SRC = "shelly--c6f77d0e";
+const B_SRC = "shelly--ef654874";
 const A_ART = "/art/mtx-observer-product-boundary.html"; // 11:35:59
 const B_ART = "/art/usage-meter-found.html"; //             11:54:45 — NEWER
 const UNIT: HeroCandidate[] = [

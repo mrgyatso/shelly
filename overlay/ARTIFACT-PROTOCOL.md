@@ -1,4 +1,4 @@
-# Companion Artifact Protocol — Spec
+# Shelly Artifact Protocol — Spec
 
 **Status:** proposal for owner review. Nothing here is built yet.
 **Decision being formalized:** separate the *contract* (a 2-message protocol) from the
@@ -33,11 +33,11 @@ overlay parent. The overlay's single listener is `initFit()` in
 
 | Direction | `kind` | Payload | When fired | Host action |
 |---|---|---|---|---|
-| artifact → host | `"size"` | `{ source:"companion-artifact", kind:"size", w:number, h:number }` | On `load` and on every `ResizeObserver` callback of `[data-fit-root]` (SKILL.md:367-378). **Mandatory** — the iframe is sandboxed `allow-scripts` *without* `allow-same-origin`, so it is opaque-origin and the parent **cannot measure it** (resize.ts:6-10). | `fit()` clamps to monitor work area and animates the window (resize.ts:157-175). |
-| artifact → host | `"submit"` | `{ source:"companion-artifact", kind:"submit", text:string }` | On the user's Submit / "Do all" click, after the helper compiles comments + decisions into prose. | `handleSubmit(text)` appends the artifact's own file path and writes to the system clipboard, then shows a toast (submit.ts:11-25). |
+| artifact → host | `"size"` | `{ source:"shelly-artifact", kind:"size", w:number, h:number }` | On `load` and on every `ResizeObserver` callback of `[data-fit-root]` (SKILL.md:367-378). **Mandatory** — the iframe is sandboxed `allow-scripts` *without* `allow-same-origin`, so it is opaque-origin and the parent **cannot measure it** (resize.ts:6-10). | `fit()` clamps to monitor work area and animates the window (resize.ts:157-175). |
+| artifact → host | `"submit"` | `{ source:"shelly-artifact", kind:"submit", text:string }` | On the user's Submit / "Do all" click, after the helper compiles comments + decisions into prose. | `handleSubmit(text)` appends the artifact's own file path and writes to the system clipboard, then shows a toast (submit.ts:11-25). |
 
 **Validation, not origin.** Messages are matched by structural type-guards
-(`isFitMessage` resize.ts:53-62, `isSubmitMessage` :64-72): `source === "companion-artifact"`
+(`isFitMessage` resize.ts:53-62, `isSubmitMessage` :64-72): `source === "shelly-artifact"`
 plus the right `kind` and field types. There is **deliberately no `e.origin` check** — a
 sandboxed iframe has an opaque (`"null"`) origin, so an origin check is impossible and
 unnecessary (the iframe can only reach *its* parent).
@@ -61,10 +61,10 @@ mechanism for that case.
 The artifact uses the standard DOM markers and **ships no helper JS at all**:
 
 - `data-fit-root` — the sized wrapper
-- `data-companion-commentable` / `data-companion-block` — ambient-comment regions
-- `data-companion-item` + `data-item-label` — review rows
-- `data-companion-submit` — the submit button
-- `companion-meta` — the metadata block (subject/summary/files/project/branch/created)
+- `data-shelly-commentable` / `data-shelly-block` — ambient-comment regions
+- `data-shelly-item` + `data-item-label` — review rows
+- `data-shelly-submit` — the submit button
+- `shelly-meta` — the metadata block (subject/summary/files/project/branch/created)
 
 The **host injects the one canonical helper** (the unified script currently at
 SKILL.md:111-285, plus the size-reporter at SKILL.md:367-378). Because there is exactly one
@@ -73,7 +73,7 @@ SKILL.md template for Tier 1 collapses to *markers + content* — no `<script>` 
 
 ### Tier 2 — bespoke (opt-out)
 
-The artifact sets `data-companion-custom` on `<html>` (or `<body>`) and ships **its own JS**,
+The artifact sets `data-shelly-custom` on `<html>` (or `<body>`) and ships **its own JS**,
 building any UI it wants — a dashboard, a data viz, a custom editor. The host injects **only
 the universal size-reporter** (so the window still fits). The single requirement to talk back
 to the overlay is to **speak the 2 messages** of §1 — i.e. `postMessage` a `size` and
@@ -113,10 +113,10 @@ Conclusion: the naive "splice in `read_artifact`" is wrong on both counts. Two r
 
 #### Option A (recommended) — custom URI-scheme handler that *both* branches route through
 
-Register a custom async URI scheme (e.g. `companion-artifact://`) on the Tauri builder. The
+Register a custom async URI scheme (e.g. `shelly-artifact://`) on the Tauri builder. The
 builder chain lives in `overlay/src-tauri/src/lib.rs:65` (`tauri::Builder::default()`,
 running through `.run(` at lib.rs:291); add
-`.register_asynchronous_uri_scheme_protocol("companion-artifact", …)` to that chain. The
+`.register_asynchronous_uri_scheme_protocol("shelly-artifact", …)` to that chain. The
 handler:
 
 1. resolves the artifact path from the request URL,
@@ -128,15 +128,15 @@ handler:
    this is the response's own CSP, independent of the overlay window's `script-src 'self'`.
 
 The frontend change lands in `main.ts:62-72`: replace the `convertFileSrc(path)` /
-`srcdoc` fork with a single `frame.src = "companion-artifact://localhost/?path=" +
+`srcdoc` fork with a single `frame.src = "shelly-artifact://localhost/?path=" +
 encodeURIComponent(path) + "&_=" + Date.now()`. This **collapses the asset:/srcdoc fork into
 one hook** *and* fixes the "srcdoc can't run JS" problem, because the artifact now loads as a
 real document served by our scheme with its own CSP — not via `about:srcdoc`.
 
 **Parent-window CSP wiring (do not miss):** the overlay window's `frame-src` must permit the
 new scheme or the iframe loads as a blank panel. tauri.conf.json:17 currently has
-`frame-src 'self' asset: http://asset.localhost`; add `companion-artifact:` (and/or
-`http://companion-artifact.localhost`, depending on how Tauri normalizes the custom scheme on
+`frame-src 'self' asset: http://asset.localhost`; add `shelly-artifact:` (and/or
+`http://shelly-artifact.localhost`, depending on how Tauri normalizes the custom scheme on
 this platform) to it.
 
 - **Pros:** one chokepoint for *all* artifacts (in-scope and out-of-scope); fixes the dead
@@ -189,7 +189,7 @@ GET  /api/return?artifact=<slug>      → newest return(s) for that slug, or {}
 ### Storage
 
 Add `returns_dir` to `Config` (`hub/src/config.rs`), default `data_dir.join("returns")`
-(i.e. `~/.claude/companion/returns/`). Persist each POST as a JSON file keyed by
+(i.e. `~/.shelly/returns/`). Persist each POST as a JSON file keyed by
 `<slug>__<epoch_ms>.json` (reuse `safe_slug` from data.rs:45-57 to keep slugs filesystem-safe
 — same guard already used for artifacts). `GET /api/return` reads them newest-first (mirror
 `newest_json` data.rs:71-87).
@@ -234,20 +234,20 @@ across lines. Match on a regex, not a literal:
 
 ```
 inject the full Tier-1 submit helper  ⇔  the bytes match NEITHER:
-    - /data-companion-custom/                  (Tier-2 opt-out marker)
+    - /data-shelly-custom/                  (Tier-2 opt-out marker)
     - /kind\s*:\s*["']submit["']/              (an inlined helper already posts submit)
 ```
 
-**`data-companion-submit` MUST NOT influence the skip decision.** Tier-1 new artifacts
+**`data-shelly-submit` MUST NOT influence the skip decision.** Tier-1 new artifacts
 legitimately carry the submit *button marker* with no helper *code*; keying on the marker
 would wrongly skip them and leave their buttons dead. Only helper-code presence
-(`kind:"submit"` regex) and the explicit `data-companion-custom` opt-out gate injection.
+(`kind:"submit"` regex) and the explicit `data-shelly-custom` opt-out gate injection.
 
 - **Legacy artifacts:** every submit-capable one matches `/kind\s*:\s*["']submit["']/` →
   matches the skip condition → **full helper not injected** → no double submit. ✔
 - **New Tier-1 artifacts:** carry the button marker but **no** helper code (no `kind:"submit"`
-  regex hit) and no `data-companion-custom` → helper **is** injected.
-- **Tier-2 artifacts:** carry `data-companion-custom` → full helper skipped; only the
+  regex hit) and no `data-shelly-custom` → helper **is** injected.
+- **Tier-2 artifacts:** carry `data-shelly-custom` → full helper skipped; only the
   size-reporter is injected (§2), itself guarded the same way (skip if `/kind\s*:\s*["']size["']/`
   already present).
 
@@ -255,7 +255,7 @@ would wrongly skip them and leave their buttons dead. Only helper-code presence
 on-disk corpus:
 
 ```
-grep -rlE 'kind\s*:\s*["'\'']submit["'\'']' ~/.claude/companion/artifacts/ | wc -l
+grep -rlE 'kind\s*:\s*["'\'']submit["'\'']' ~/.shelly/artifacts/ | wc -l
 ```
 
 Empirically (run 2026-06-10 against the live artifacts dir, 24 files): the
@@ -274,9 +274,9 @@ prevent. The regex is load-bearing; do not regress it to a substring.
 
 ### Double-injection across the two hooks (the §3↔§5 bridge)
 
-Hub-pulled artifacts are written to `~/.claude/companion/remote/` (hub.rs:209) and **then
+Hub-pulled artifacts are written to `~/.shelly/remote/` (hub.rs:209) and **then
 opened via the local path** (hub.rs:218 → `open_artifact_window`). `remote/` is under
-`$HOME/.claude/companion/**` → **in asset scope** → it hits the **local** injection (§3a)
+`$HOME/.shelly/**` → **in asset scope** → it hits the **local** injection (§3a)
 *after* already having been injected by the **hub** (§3b). This is precisely *why* the splice
 is idempotent: the local pass scans bytes that already contain `kind:"submit"` (just injected
 by the hub) and **skips**. The idempotency rule is not an afterthought — it is the mechanism
@@ -294,7 +294,7 @@ that makes the two-hook design safe.
 2. **Standalone-browser artifacts lose injected interactivity.** When a Tier-1 artifact is
    opened directly in a browser (not via the overlay or hub), nothing injects the helper — so
    its buttons are dead *there*. Today's inline helper "just works" in a browser. Decide:
-   accept this (Companion artifacts are overlay-first), or keep a minimal inline fallback for
+   accept this (Shelly artifacts are overlay-first), or keep a minimal inline fallback for
    Tier-1, or have the SKILL emit the helper only when the author marks "must work standalone."
 
 3. **Response CSP for the injected scheme (Option A).** What exactly should the artifact

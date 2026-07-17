@@ -33,14 +33,14 @@ interface Size {
 }
 
 interface FitMessage {
-  source: "companion-artifact";
+  source: "shelly-artifact";
   kind: "size";
   w: number;
   h: number;
 }
 
 interface SubmitMessage {
-  source: "companion-artifact";
+  source: "shelly-artifact";
   kind: "submit";
   text: string;
 }
@@ -52,7 +52,7 @@ interface SubmitMessage {
  *  UNTRUSTED artifact text, but a clipboard write is strictly lower-risk than the
  *  submit→PTY path (worst case: it clobbers the clipboard). */
 export interface CopyMessage {
-  source: "companion-artifact";
+  source: "shelly-artifact";
   kind: "copy";
   text: string;
 }
@@ -62,7 +62,7 @@ export function isCopyMessage(d: unknown): d is CopyMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
   return (
-    m.source === "companion-artifact" &&
+    m.source === "shelly-artifact" &&
     m.kind === "copy" &&
     typeof m.text === "string"
   );
@@ -72,7 +72,7 @@ export function isCopyMessage(d: unknown): d is CopyMessage {
  *  `to` is one of: "hub", "sessions", `session:<slug>`, `artifact:<path>`.
  *  Treated as UNTRUSTED by the board.ts listener (validated before acting). */
 export interface NavigateMessage {
-  source: "companion-artifact";
+  source: "shelly-artifact";
   kind: "navigate";
   to: string;
 }
@@ -82,7 +82,7 @@ export interface NavigateMessage {
 export function isNavigateMessage(d: unknown): d is NavigateMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
-  return m.source === "companion-artifact" && m.kind === "navigate" && typeof m.to === "string";
+  return m.source === "shelly-artifact" && m.kind === "navigate" && typeof m.to === "string";
 }
 
 /** "Start a new session with this quote": the user highlighted text in an artifact
@@ -91,7 +91,7 @@ export function isNavigateMessage(d: unknown): d is NavigateMessage {
  *  UNTRUSTED (artifact-controlled) — the board.ts listener ESC-strips `quote` before
  *  it touches the PTY and never auto-sends it (pre-fill only). */
 export interface NewSessionMessage {
-  source: "companion-artifact";
+  source: "shelly-artifact";
   kind: "new-session";
   quote: string;
   artifact?: string;
@@ -102,7 +102,7 @@ export function isNewSessionMessage(d: unknown): d is NewSessionMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
   return (
-    m.source === "companion-artifact" &&
+    m.source === "shelly-artifact" &&
     m.kind === "new-session" &&
     typeof m.quote === "string"
   );
@@ -117,7 +117,7 @@ function isFitMessage(d: unknown): d is FitMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
   return (
-    m.source === "companion-artifact" &&
+    m.source === "shelly-artifact" &&
     m.kind === "size" &&
     typeof m.w === "number" &&
     typeof m.h === "number"
@@ -128,7 +128,7 @@ function isSubmitMessage(d: unknown): d is SubmitMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
   return (
-    m.source === "companion-artifact" &&
+    m.source === "shelly-artifact" &&
     m.kind === "submit" &&
     typeof m.text === "string"
   );

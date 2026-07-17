@@ -1,4 +1,4 @@
-//! Menu-bar status item — the native, always-present anchor for Companion.
+//! Menu-bar status item — the native, always-present anchor for Shelly.
 //!
 //! Shows a menu-bar icon plus a glanceable "needs you" count (the number of live
 //! agents whose next step is a decision/blocker). Left-click opens the Board;
@@ -17,7 +17,7 @@ use tauri::{
     AppHandle,
 };
 
-const TRAY_ID: &str = "companion-main";
+const TRAY_ID: &str = "shelly-main";
 /// A source counts as live while its state file was touched this recently.
 const LIVENESS_MS: u64 = 30 * 60 * 1000;
 /// How often the menu-bar count refreshes.
@@ -32,7 +32,7 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open_board", "Open Board", true, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle_panels", "Show / Hide Panels", true, None::<&str>)?;
     let history = MenuItem::with_id(app, "open_history", "History", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Companion", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Shelly", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&open, &toggle, &history, &sep, &quit])?;
 
@@ -40,7 +40,7 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         // Left-click is our shortcut to the Board; the menu is right-click only.
         .show_menu_on_left_click(false)
-        .tooltip("Companion")
+        .tooltip("Shelly")
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open_board" => crate::windows::open_board_window(app),
             "toggle_panels" => crate::windows::toggle_all(app),

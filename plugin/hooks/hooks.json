@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/companion-skill-log"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/shelly-skill-log"
           }
         ]
       },
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/companion-hook"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/shelly-hook"
           }
         ]
       },
@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/companion-skill-log"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/shelly-skill-log"
           }
         ]
       }
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/companion-artifact-gate"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/shelly-artifact-gate"
           }
         ]
       }
@@ -55,7 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/companion-session"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/shelly-session"
           }
         ]
       }
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/companion-session-end"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/shelly-session-end"
           }
         ]
       }

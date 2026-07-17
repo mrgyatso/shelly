@@ -1,18 +1,18 @@
 #!/bin/bash
 #
-# Companion bootstrap — one command, from a factory-fresh machine to a wired install.
+# Shelly bootstrap — one command, from a factory-fresh machine to a wired install.
 # Supports macOS (Homebrew cask) and Ubuntu/Debian (.deb from GitHub Releases).
 #
-#   curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/mrgyatso/shelly/master/install.sh | bash
 #
-# Checks for Node 18+, Claude Code and the Companion app (plus Homebrew on
-# macOS); offers to install whatever is missing; then hands off to `companion
+# Checks for Node 18+, Claude Code and the Shelly app (plus Homebrew on
+# macOS); offers to install whatever is missing; then hands off to `shelly
 # setup`, which wires the plugin.
 #
 # Safe to re-run, and re-running is how you upgrade: steps already done are
 # skipped, but an app behind the latest release is offered an update (there is no
 # auto-updater — this script is the only thing that moves an installed app
-# forward), and `companion setup` refreshes the plugin.
+# forward), and `shelly setup` refreshes the plugin.
 #
 # Flags:  -y, --yes    assume yes (required when there is no terminal to ask on)
 #             --check  report what is missing and exit, changing nothing
@@ -57,19 +57,19 @@ case "$OS" in
     command -v apt-get >/dev/null 2>&1 \
       || die "Linux support targets Ubuntu/Debian (.deb) — no apt-get found on this machine."
     ;;
-  *) die "Companion supports macOS and Ubuntu/Debian Linux." ;;
+  *) die "Shelly supports macOS and Ubuntu/Debian Linux." ;;
 esac
 
 # Every apt call goes through here, because under `curl … | bash` this script IS
 # bash's stdin — and a package's postinst (debconf, a dpkg trigger) will read
 # from stdin if you let it, swallowing the rest of the script. Bash then hits an
-# early EOF and exits 0 mid-install: the app lands, `companion setup` never runs,
+# early EOF and exits 0 mid-install: the app lands, `shelly setup` never runs,
 # and nothing reports a failure. Feeding apt /dev/null is what keeps the script
 # intact all the way to the end.
 apt_get() { sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" </dev/null; }
 
 say ""
-say "${bold}Companion${reset} — checking what this machine needs"
+say "${bold}Shelly${reset} — checking what this machine needs"
 say ""
 
 # --- Homebrew (macOS only) ------------------------------------------------------
@@ -157,10 +157,10 @@ if [ "$OS" != Darwin ]; then
 fi
 
 # --- Agent CLIs (Claude Code / Codex) -------------------------------------------
-# Companion needs AT LEAST ONE agent CLI and uses whichever you have — having one
+# Shelly needs AT LEAST ONE agent CLI and uses whichever you have — having one
 # never triggers a pitch for the other. Only a machine with neither gets asked
 # which to install (--yes takes the default, Claude Code). A Codex installed later
-# unlocks by itself: the app wires it on its next launch, and `companion setup`
+# unlocks by itself: the app wires it on its next launch, and `shelly setup`
 # picks it up too.
 claude_path() { command -v claude 2>/dev/null || { [ -x "$HOME/.local/bin/claude" ] && printf '%s\n' "$HOME/.local/bin/claude"; }; }
 codex_path()  { command -v codex  2>/dev/null || { [ -x "$HOME/.local/bin/codex" ] && printf '%s\n' "$HOME/.local/bin/codex"; }; }
@@ -196,7 +196,7 @@ choose_agent() {
   $ASSUME_YES && { printf 'claude'; return 0; }
   [ -r /dev/tty ] || die "no terminal to prompt on. Re-run with --yes to accept the default (Claude Code)."
   local reply
-  printf '  %s?%s Which agent CLI should Companion set up? [1] Claude Code (default) · [2] Codex · [3] both: ' \
+  printf '  %s?%s Which agent CLI should Shelly set up? [1] Claude Code (default) · [2] Codex · [3] both: ' \
     "$bold" "$reset" > /dev/tty
   read -r reply < /dev/tty
   case "$reply" in
@@ -216,7 +216,7 @@ if [ -n "$(codex_path)" ]; then
   ok "Codex           $(command -v codex)"
 fi
 if [ -z "$(claude_path)" ] && [ -z "$(codex_path)" ]; then
-  info "No agent CLI found — Companion needs Claude Code or Codex (or both)"
+  info "No agent CLI found — Shelly needs Claude Code or Codex (or both)"
   if ! $CHECK_ONLY; then
     case "$(choose_agent)" in
       claude) install_claude ;;
@@ -234,7 +234,7 @@ fi
 latest_deb_url() {
   local arch
   arch=$(dpkg --print-architecture)
-  curl -fsSL https://api.github.com/repos/mrgyatso/claude-code-companion/releases/latest \
+  curl -fsSL https://api.github.com/repos/mrgyatso/shelly/releases/latest \
     | grep -o "\"browser_download_url\": *\"[^\"]*_${arch}\.deb\"" \
     | head -1 | sed 's/.*"\(https[^"]*\)"/\1/'
 }
@@ -242,14 +242,14 @@ latest_deb_url() {
 # The version the latest release advertises, with the tag's leading v stripped so
 # it can be compared against what dpkg reports.
 latest_version() {
-  curl -fsSL https://api.github.com/repos/mrgyatso/claude-code-companion/releases/latest \
+  curl -fsSL https://api.github.com/repos/mrgyatso/shelly/releases/latest \
     | grep -o '"tag_name": *"[^"]*"' | head -1 \
     | sed 's/.*"\([^"]*\)"$/\1/; s/^v//'
 }
 
 install_deb() {
   local deb_tmp
-  deb_tmp=$(mktemp -t companion-overlay-XXXXXX.deb)
+  deb_tmp=$(mktemp -t shelly-XXXXXX.deb)
   curl -fsSL -o "$deb_tmp" "$1"
   # mktemp gives 0600, which the `_apt` user cannot read — apt then warns
   # ("Download is performed unsandboxed as root ... Permission denied") and
@@ -260,16 +260,16 @@ install_deb() {
   rm -f "$deb_tmp"
 }
 
-# `companion` on PATH proves the app was installed once. It says nothing about
+# `shelly` on PATH proves the app was installed once. It says nothing about
 # WHICH version — and the app is fetched from a release asset, so a newer release
 # never reaches an existing machine on its own. Without this check, anyone who ran
 # the installer once stayed on that original build forever, however many times
-# they re-ran it. (`companion setup` had the same bug with the plugin.)
+# they re-ran it. (`shelly setup` had the same bug with the plugin.)
 refresh_app() {
   if [ "$OS" = Darwin ]; then
     $CHECK_ONLY && return 0
     # Homebrew knows what is current; `upgrade` is a no-op when the cask already is.
-    if brew upgrade --cask mrgyatso/tap/claude-code-companion >/dev/null 2>&1; then
+    if brew upgrade --cask mrgyatso/tap/shelly >/dev/null 2>&1; then
       ok "  the app is up to date"
     else
       info "  could not reach Homebrew to check for a newer app — carrying on"
@@ -278,7 +278,7 @@ refresh_app() {
   fi
 
   local installed latest url
-  installed=$(dpkg-query -W -f='${Version}' companion-overlay 2>/dev/null || true)
+  installed=$(dpkg-query -W -f='${Version}' shelly 2>/dev/null || true)
   if [ -z "$installed" ]; then
     # An AppImage or a source build is not dpkg-managed. There is no version to
     # read, and dropping a .deb on top would leave the machine with two apps.
@@ -311,30 +311,30 @@ refresh_app() {
   fi
   ask "Upgrade the app from $installed to $latest? It will ask for your password." || return 0
   install_deb "$url"
-  ok "Companion app upgraded to $latest"
+  ok "Shelly app upgraded to $latest"
 }
 
-# Linux: the .deb ships the CLI scripts as bundle resources; link `companion`
+# Linux: the .deb ships the CLI scripts as bundle resources; link `shelly`
 # onto PATH from wherever the package put them (the exact libdir depends on the
 # bundler version, so probe the known layouts).
 link_linux_cli() {
   local s
-  for s in "/usr/lib/companion-overlay/scripts/companion" \
-           "/usr/lib/Companion Overlay/scripts/companion" \
-           "/usr/lib/companion-overlay/resources/scripts/companion"; do
+  for s in "/usr/lib/shelly/scripts/shelly" \
+           "/usr/lib/Shelly/scripts/shelly" \
+           "/usr/lib/shelly/resources/scripts/shelly"; do
     if [ -x "$s" ]; then
-      sudo ln -sf "$s" /usr/local/bin/companion
+      sudo ln -sf "$s" /usr/local/bin/shelly
       return 0
     fi
   done
   return 1
 }
 
-if command -v companion >/dev/null 2>&1; then
-  ok "Companion app   $(command -v companion)"
+if command -v shelly >/dev/null 2>&1; then
+  ok "Shelly app   $(command -v shelly)"
   refresh_app
 elif [ "$OS" = Darwin ]; then
-  info "The Companion app is missing"
+  info "The Shelly app is missing"
   $CHECK_ONLY || ask "Install it via Homebrew?" || die "The app is required."
   if ! $CHECK_ONLY; then
     # Homebrew 6 refuses to load a cask from a non-official tap until it is
@@ -342,27 +342,27 @@ elif [ "$OS" = Darwin ]; then
     if brew trust --help >/dev/null 2>&1; then
       brew trust mrgyatso/tap
     fi
-    brew install --cask mrgyatso/tap/claude-code-companion
-    command -v companion >/dev/null 2>&1 || die "Cask installed but 'companion' is not on PATH."
-    ok "Companion app installed"
+    brew install --cask mrgyatso/tap/shelly
+    command -v shelly >/dev/null 2>&1 || die "Cask installed but 'shelly' is not on PATH."
+    ok "Shelly app installed"
   fi
 else
-  info "The Companion app is missing"
+  info "The Shelly app is missing"
   deb_url=$(latest_deb_url || true)
   if [ -z "$deb_url" ]; then
     NO_LINUX_ASSET=true
     info "  ...and the latest release has no $(dpkg --print-architecture) .deb to install"
   fi
   $CHECK_ONLY || [ -n "$deb_url" ] \
-    || die "no $(dpkg --print-architecture) .deb in the latest release — the Linux bundles have not shipped yet. Grab an AppImage or build from source: https://github.com/mrgyatso/claude-code-companion/releases/latest"
+    || die "no $(dpkg --print-architecture) .deb in the latest release — the Linux bundles have not shipped yet. Grab an AppImage or build from source: https://github.com/mrgyatso/shelly/releases/latest"
   $CHECK_ONLY || ask "Download the latest .deb from GitHub Releases and install it? It will ask for your password." \
     || die "The app is required."
   if ! $CHECK_ONLY; then
     install_deb "$deb_url"
-    command -v companion >/dev/null 2>&1 || link_linux_cli \
-      || die "Package installed but the 'companion' CLI was not found in it."
-    command -v companion >/dev/null 2>&1 || export PATH="/usr/local/bin:$PATH"
-    ok "Companion app installed"
+    command -v shelly >/dev/null 2>&1 || link_linux_cli \
+      || die "Package installed but the 'shelly' CLI was not found in it."
+    command -v shelly >/dev/null 2>&1 || export PATH="/usr/local/bin:$PATH"
+    ok "Shelly app installed"
   fi
 fi
 
@@ -373,7 +373,7 @@ if $CHECK_ONLY; then
     say "$(dpkg --print-architecture) .deb, so the installer has nothing to download. Use the AppImage"
     say "from the Releases page, or build from source:"
     say ""
-    say "      https://github.com/mrgyatso/claude-code-companion/releases/latest"
+    say "      https://github.com/mrgyatso/shelly/releases/latest"
     say ""
     exit 1
   fi
@@ -387,17 +387,17 @@ if $CHECK_ONLY; then
 fi
 
 # --- Wire it up ---------------------------------------------------------------
-# `companion setup` adds the plugin marketplace, installs the plugin, creates the
-# watched folder and runs `companion doctor`. It is the only thing that touches
+# `shelly setup` adds the plugin marketplace, installs the plugin, creates the
+# watched folder and runs `shelly doctor`. It is the only thing that touches
 # Claude Code's config, and it skips whatever it has already done.
 say ""
 say "${bold}Wiring the plugin${reset}"
 say ""
-if companion setup; then
+if shelly setup; then
   say ""
   say "${green}Done.${reset} Open the app whenever you like:"
   say ""
-  say "      ${bold}companion board${reset}      ${dim}# or launch Companion Overlay from your apps${reset}"
+  say "      ${bold}shelly board${reset}      ${dim}# or launch Shelly from your apps${reset}"
   say ""
   say "  It also surfaces on its own: start a ${bold}claude${reset} session in any repo and the"
   say "  Board comes forward the moment the agent writes its first page."
@@ -406,7 +406,7 @@ else
   # signed in, so its plugin commands have nothing to act on. Nothing here can
   # automate a browser login, so hand the user the one manual step and stop.
   say ""
-  say "${bold}Almost there.${reset} ${dim}companion setup${reset} could not finish."
+  say "${bold}Almost there.${reset} ${dim}shelly setup${reset} could not finish."
   say ""
   say "  If you have not signed in to your agent CLI yet, do that now:"
   say ""

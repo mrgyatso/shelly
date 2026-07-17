@@ -73,9 +73,9 @@ const ARTIFACTS: MockArtifact[] = [
     summary: "Declares the slate shell; the Board repaints its whole surface to match on open.",
     modified_ms: now - 1 * MIN,
     size_bytes: 3_200,
-    project: "~/claude-code-companion",
-    unit_key: "claude-code-companion",
-    source: "claude-code-companion--3f8c1d04",
+    project: "~/shelly",
+    unit_key: "shelly",
+    source: "shelly--3f8c1d04",
   },
   {
     path: "/mock/artifacts/board-ui-audit.html",
@@ -84,9 +84,9 @@ const ARTIFACTS: MockArtifact[] = [
     summary: "Hierarchy, chrome density and state gaps named against Claude Desktop / Codex.",
     modified_ms: now - 6 * MIN,
     size_bytes: 14_200,
-    project: "~/claude-code-companion",
-    unit_key: "claude-code-companion",
-    source: "claude-code-companion--3f8c1d04",
+    project: "~/shelly",
+    unit_key: "shelly",
+    source: "shelly--3f8c1d04",
   },
   {
     path: "/mock/artifacts/observer-latency.html",
@@ -95,9 +95,9 @@ const ARTIFACTS: MockArtifact[] = [
     summary: "142.5s director call is slow-not-hung; visuals field dominates output tokens.",
     modified_ms: now - 95 * MIN,
     size_bytes: 11_800,
-    project: "~/claude-code-companion",
-    unit_key: "claude-code-companion",
-    source: "claude-code-companion--3f8c1d04",
+    project: "~/shelly",
+    unit_key: "shelly",
+    source: "shelly--3f8c1d04",
   },
 ];
 
@@ -113,7 +113,7 @@ const REWRITE_AT_MS = 10_000;
 /** One more artifact lands ~6s after boot — exercises the live-ingest path
  *  (unread bell + "New artifact" pill) so those states can be screenshotted.
  *  Routed to unit 1 so lantern stays artifact-less (its blank hero
- *  "Clawd's on it" composition needs a unit with no artifacts). */
+ *  "Crab's on it" composition needs a unit with no artifacts). */
 const LATE_ARTIFACT: MockArtifact = {
   path: "/mock/artifacts/harness-live-ingest.html",
   title: "Harness — live ingest check",
@@ -121,9 +121,9 @@ const LATE_ARTIFACT: MockArtifact = {
   summary: "This artifact arrived after boot to light the unread affordances.",
   modified_ms: now + 6_000,
   size_bytes: 9_000,
-  project: "~/claude-code-companion",
-  unit_key: "claude-code-companion",
-  source: "claude-code-companion--3f8c1d04",
+  project: "~/shelly",
+  unit_key: "shelly",
+  source: "shelly--3f8c1d04",
 };
 
 // ---- Identity-race scenarios (Phase 4 verification) --------------------------
@@ -146,14 +146,14 @@ const RACE_RESOLVED_BARE: MockArtifact = {
   size_bytes: 7_000,
   // project deliberately set: the OLD slug-fallback would have routed this
   // immediately (and the race made that a coin flip). Strict routing must ignore it.
-  project: "~/claude-code-companion",
+  project: "~/shelly",
   unit_key: null,
   source: null,
 };
 const RACE_RESOLVED_STAMPED: MockArtifact = {
   ...RACE_RESOLVED_BARE,
-  unit_key: "claude-code-companion",
-  source: "claude-code-companion--3f8c1d04",
+  unit_key: "shelly",
+  source: "shelly--3f8c1d04",
   ...({ session_id: RACE_SID } as object),
 };
 const RACE_ORPHAN: MockArtifact = {
@@ -216,7 +216,7 @@ const REMOTE_ARTIFACT: MockArtifact = {
 };
 
 /** The remote morning brief: review controls whose Submit fires the standard
- *  companion-artifact postMessage — the Board must route it to hub_post_inbox. */
+ *  shelly-artifact postMessage — the Board must route it to hub_post_inbox. */
 function morningBriefHtml(): string {
   return `<!doctype html><html><head><meta charset="utf-8">
   <style>html{scrollbar-width:none}html::-webkit-scrollbar{display:none}</style></head>
@@ -241,7 +241,7 @@ function morningBriefHtml(): string {
     </div>
     <script>
       document.getElementById("brief-submit").addEventListener("click", () => {
-        parent.postMessage({ source: "companion-artifact", kind: "submit",
+        parent.postMessage({ source: "shelly-artifact", kind: "submit",
           text: "\\u2713 do: ship agent-hub reply path\\n\\u2717 skip: meta-smells until EOD\\n\\u270e note: prep the demo call at 3:30" }, "*");
       });
     </script>
@@ -273,10 +273,10 @@ function shellDemoHtml(): string {
     <script>
       (function () {
         var post = function () {
-          parent.postMessage({ source: "companion-artifact", kind: "shell",
+          parent.postMessage({ source: "shelly-artifact", kind: "shell",
             bg: "${bg}", ink: "${ink}" }, "*");
           var el = document.querySelector("[data-fit-root]") || document.body;
-          parent.postMessage({ source: "companion-artifact", kind: "size",
+          parent.postMessage({ source: "shelly-artifact", kind: "size",
             w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
         };
         addEventListener("load", post); post();
@@ -287,7 +287,7 @@ function shellDemoHtml(): string {
 
 const LIVE_SOURCES = [
   {
-    source: "claude-code-companion--3f8c1d04",
+    source: "shelly--3f8c1d04",
     json: JSON.stringify({
       working: "Polishing the Board chrome — hierarchy, rail, states",
       where: [
@@ -299,12 +299,12 @@ const LIVE_SOURCES = [
         { title: "Approve the top-bar restructure", sub: "greeting lockup + machined controls", kind: "decision" },
         { title: "Rail bottom anchor", sub: "settings row pinned like Codex", kind: "todo" },
       ],
-      project: "claude-code-companion",
+      project: "shelly",
       is_repo: true,
-      unit_key: "claude-code-companion",
-      companion_session: "tab-mock-1",
+      unit_key: "shelly",
+      shelly_session: "tab-mock-1",
       session_id: "3f8c1d04-7b62-4e51-9a3d-1c5e802b6af7",
-      unit_dir: "/Users/dev/claude-code-companion",
+      unit_dir: "/Users/dev/shelly",
       updated_ms: now - 2 * MIN,
     }),
   },
@@ -426,12 +426,12 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
   let cbId = 1;
   const demo = opts.demo ?? null;
   // ?idle=1 boots the Board with nothing live and nothing recent-fresh — the
-  // idle-home hero (clawd splash, no project selected) for screenshots.
+  // idle-home hero (crab splash, no project selected) for screenshots.
   const idle = new URLSearchParams(location.search).has("idle");
   const liveSources = idle ? [] : demo ? demo.liveSources : LIVE_SOURCES;
   // The artifact set is a pure function of elapsed time, so a reload replays the
   // whole scenario and the timeline is deterministic for scripted verification.
-  // The demo's round trip. `answered` is set the moment a Companion answer is
+  // The demo's round trip. `answered` is set the moment a Shelly answer is
   // pasted into the session (see write_pty); FOLLOWUP_BEAT_MS later the follow-up
   // artifact starts appearing in list_artifacts, so the Board ingests it exactly
   // as it would a real one — new artifact, unread pip, auto-advance. Without this
@@ -509,7 +509,7 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
                 evt: "artifact.routed",
                 path: RACE_RESOLVED_BARE.path,
                 session_id: RACE_SID,
-                unit_key: "claude-code-companion",
+                unit_key: "shelly",
                 ts_ms: now + RACE_STAMP_MS,
               },
             ];
@@ -517,7 +517,7 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
     },
     read_unit_names: () => ({}),
     resolve_home_dir: () => "/Users/dev",
-    // No agent-authored home.html in the harness → the native L0 fallback (clawd +
+    // No agent-authored home.html in the harness → the native L0 fallback (crab +
     // the two home doors) renders, which is exactly what the door tests need.
     resolve_home: () => null,
     list_recent_sessions: () => RECENT_SESSIONS,
@@ -629,7 +629,7 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
     },
     // Two very different things arrive here, and the demo must tell them apart.
     //
-    //  1. A COMPANION ANSWER. submitIntoPty() sends Ctrl-U, then the compiled
+    //  1. A SHELLY ANSWER. submitIntoPty() sends Ctrl-U, then the compiled
     //     decisions as a BRACKETED PASTE (\e[200~ … \e[201~), then a delayed \r.
     //     A human typing can never produce that escape, so it is an exact signal.
     //     This is the round trip the whole demo exists to show: the session picks

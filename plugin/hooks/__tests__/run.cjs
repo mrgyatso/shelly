@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Run all identity-registry hook-integration suites; exit non-zero if any fails.
-// These exercise the REAL shell+node hook path (companion-session, companion-index.cjs,
-// companion-identity.cjs) under a sandboxed throwaway HOME — the deterministic slice of the
+// These exercise the REAL shell+node hook path (shelly-session, shelly-index.cjs,
+// shelly-identity.cjs) under a sandboxed throwaway HOME — the deterministic slice of the
 // §8 matrix the live merge-and-test session leans on (see DECISIONS-identity-registry.md).
 //
 //   node plugin/hooks/__tests__/run.cjs

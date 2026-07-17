@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// companion-identity.cjs — the ONE shared identity registry for Companion.
+// shelly-identity.cjs — the ONE shared identity registry for Shelly.
 //
 // THE WHOLE POINT: identity is REGISTERED ONCE, then REFERENCED — never re-derived
 // on read by every consumer. Every identity bug this project has hit (the surfacing
@@ -8,16 +8,16 @@
 // session_id, removes that entire class by construction.
 //
 //   CLI (from the sh hooks):
-//     node companion-identity.cjs register <session_id> <unit_key> <is_repo> \
+//     node shelly-identity.cjs register <session_id> <unit_key> <is_repo> \
 //          <project_root> <project> [owned_tab] [provider] [slug]
 //   lib (from node hooks / the observer worker):
-//     const id = require("./companion-identity.cjs");
+//     const id = require("./shelly-identity.cjs");
 //     id.register({ session_id, unit_key, project_root, is_repo, project, owned_tab });
 //     id.resolveUnit(session_id);   // -> unit_key | null
 //     id.readRecord(session_id);    // -> record  | null
 //     id.appendEvent({ evt: "...", ... });
 //
-// FILES (under ~/.claude/companion/, HOME-overridable for sandboxed tests):
+// FILES (under ~/.shelly/, HOME-overridable for sandboxed tests):
 //   sessions/<session_id>.json  — the authoritative, immutable session record:
 //     { session_id, unit_key, project_root, slug, is_repo, project, created_ms, owned_tab }
 //     Written ONCE at SessionStart; resume/compact (same session_id) find it and
@@ -31,8 +31,8 @@
 // file via git (its branch rebases onto master at Phase 5) and `require()`s it by the
 // same relative path from its own CLAUDE_PLUGIN_ROOT — never a second forked copy.
 //
-// IDENTITY IS NOT RE-DERIVED HERE. The caller (companion-session, via
-// companion-livepath.sh) already derived unit_key/is_repo/project ONCE; register()
+// IDENTITY IS NOT RE-DERIVED HERE. The caller (shelly-session, via
+// shelly-livepath.sh) already derived unit_key/is_repo/project ONCE; register()
 // only RECORDS what it is handed. Re-deriving would reintroduce the two-derivations
 // disease. resolveUnit() is then a pure lookup.
 
@@ -44,20 +44,20 @@ const os = require("os");
 // events.ndjson). Never let a missing trace lib sink a registry write.
 let trace = { emit() {} };
 try {
-  trace = require("./companion-trace.cjs");
+  trace = require("./shelly-trace.cjs");
 } catch (_) {}
 
 function homeDir(opts) {
   return (opts && opts.home) || process.env.HOME || os.homedir();
 }
-function companionDir(opts) {
-  return path.join(homeDir(opts), ".claude", "companion");
+function shellyDir(opts) {
+  return path.join(homeDir(opts), ".shelly");
 }
 function sessionsDir(opts) {
-  return path.join(companionDir(opts), "sessions");
+  return path.join(shellyDir(opts), "sessions");
 }
 function eventsPath(opts) {
-  return path.join(companionDir(opts), "events.ndjson");
+  return path.join(shellyDir(opts), "events.ndjson");
 }
 
 // session_id is a UUID, already filename-safe; sanitize defensively so a malformed
@@ -100,7 +100,7 @@ function resolveUnit(session_id, opts) {
 function appendEvent(evt, opts) {
   const rec = Object.assign({ ts_ms: Date.now() }, evt);
   try {
-    fs.mkdirSync(companionDir(opts), { recursive: true });
+    fs.mkdirSync(shellyDir(opts), { recursive: true });
     fs.appendFileSync(eventsPath(opts), JSON.stringify(rec) + "\n");
   } catch (_) {
     // The event log must never throw into a hook's critical path.
@@ -224,7 +224,7 @@ function routeArtifact(args, opts) {
     // back to mtime. The Rust reader picks index fields by name, so this is additive.
     prompt_id: args.prompt_id || null,
   };
-  const indexPath = args.indexPath || path.join(companionDir(opts), "artifact-index.json");
+  const indexPath = args.indexPath || path.join(shellyDir(opts), "artifact-index.json");
   try {
     let index = {};
     try {
@@ -245,7 +245,7 @@ function routeArtifact(args, opts) {
 
 module.exports = { register, resolveUnit, readRecord, appendEvent, routeArtifact, recordPath, sessionsDir, eventsPath };
 
-// CLI form for the sh hooks (companion-session). Mirrors companion-trace.cjs's
+// CLI form for the sh hooks (shelly-session). Mirrors shelly-trace.cjs's
 // require.main pattern. Positional args keep the sh call site simple:
 //   register <session_id> <unit_key> <is_repo> <project_root> <project> [owned_tab] [provider] [slug]
 // is_repo is the string "1"/"0" the sh hooks already carry.

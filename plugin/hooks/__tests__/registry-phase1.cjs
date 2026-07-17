@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Phase 1 verification — SANDBOXED. Every probe runs under a throwaway HOME so it
-// never touches the live session's ~/.claude/companion state or trace.ndjson.
-// Exercises the REAL companion-session hook end-to-end (it calls companion-livepath.sh
-// + companion-identity.cjs) for the deterministic slice of the §8 matrix.
+// never touches the live session's ~/.shelly state or trace.ndjson.
+// Exercises the REAL shelly-session hook end-to-end (it calls shelly-livepath.sh
+// + shelly-identity.cjs) for the deterministic slice of the §8 matrix.
 
 const fs = require("fs");
 const os = require("os");
@@ -12,7 +12,7 @@ const { execFileSync } = require("child_process");
 // Repo-relative so the suite runs from any checkout (this worktree OR the main checkout
 // after merge) — the hooks dir is the parent of this __tests__ dir.
 const HOOKS = path.join(__dirname, "..");
-const SESSION_HOOK = path.join(HOOKS, "companion-session");
+const SESSION_HOOK = path.join(HOOKS, "shelly-session");
 
 let pass = 0,
   fail = 0;
@@ -29,30 +29,30 @@ function ok(cond, msg) {
 // Fresh sandbox HOME per run; returns the home path.
 function mkSandbox(tag) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `cmp-id-${tag}-`));
-  fs.mkdirSync(path.join(home, ".claude", "companion", "logs"), { recursive: true });
+  fs.mkdirSync(path.join(home, ".shelly", "logs"), { recursive: true });
   // Opt the sandbox machine into external terminals: most cases here simulate
-  // sessions the Board did NOT spawn, and without this flag companion-session
+  // sessions the Board did NOT spawn, and without this flag shelly-session
   // exits at the external-terminal gate before registering anything (031e588).
-  fs.writeFileSync(path.join(home, ".claude", "companion", "external-terminals"), "on");
+  fs.writeFileSync(path.join(home, ".shelly", "external-terminals"), "on");
   return home;
 }
 
-// Run companion-session with a given cwd/session_id/owned_tab under sandbox HOME.
+// Run shelly-session with a given cwd/session_id/owned_tab under sandbox HOME.
 function runSession({ home, cwd, session_id, owned_tab }) {
-  const env = { ...process.env, HOME: home, COMPANION_TRACE: "1" };
-  if (owned_tab) env.COMPANION_SESSION = owned_tab;
-  else delete env.COMPANION_SESSION;
+  const env = { ...process.env, HOME: home, SHELLY_TRACE: "1" };
+  if (owned_tab) env.SHELLY_SESSION = owned_tab;
+  else delete env.SHELLY_SESSION;
   const payload = JSON.stringify({ cwd, session_id });
   const out = execFileSync("sh", [SESSION_HOOK], { input: payload, env, encoding: "utf8" });
   return out;
 }
 
 function recordOf(home, session_id) {
-  const p = path.join(home, ".claude", "companion", "sessions", session_id + ".json");
+  const p = path.join(home, ".shelly", "sessions", session_id + ".json");
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
 }
 function events(home) {
-  const p = path.join(home, ".claude", "companion", "events.ndjson");
+  const p = path.join(home, ".shelly", "events.ndjson");
   if (!fs.existsSync(p)) return [];
   return fs
     .readFileSync(p, "utf8")
@@ -62,15 +62,15 @@ function events(home) {
     .map((l) => JSON.parse(l));
 }
 function liveStems(home) {
-  const d = path.join(home, ".claude", "companion", "live");
+  const d = path.join(home, ".shelly", "live");
   return fs.existsSync(d) ? fs.readdirSync(d).filter((f) => f.endsWith(".json")) : [];
 }
 function sessionDirs(home) {
-  const p = path.join(home, ".claude", "companion", "session-dirs.json");
+  const p = path.join(home, ".shelly", "session-dirs.json");
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : {};
 }
 function ownedSessions(home) {
-  const p = path.join(home, ".claude", "companion", "owned-sessions.json");
+  const p = path.join(home, ".shelly", "owned-sessions.json");
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : {};
 }
 
@@ -173,11 +173,11 @@ console.log("\nCase 4 — two sessions in one repo:");
   ok(a && b, "two distinct records exist");
   ok(a && b && a.session_id !== b.session_id, "distinct session_ids");
   ok(a && b && a.unit_key === b.unit_key, "SAME unit_key (one repo = one unit, no fork)");
-  const dir = path.join(home, ".claude", "companion", "sessions");
+  const dir = path.join(home, ".shelly", "sessions");
   ok(fs.readdirSync(dir).filter((f) => f.endsWith(".json")).length === 2, "exactly two record files");
 }
 
-// ---- Case 5: Board-launched session (COMPANION_SESSION set) → owned_tab in record ----
+// ---- Case 5: Board-launched session (SHELLY_SESSION set) → owned_tab in record ----
 console.log("\nCase 5 — Board-launched (owned tab):");
 {
   const home = mkSandbox("owned");
@@ -196,7 +196,7 @@ console.log("\nCase 6 — missing session_id → graceful skip:");
   const home = mkSandbox("nosid");
   const plain = fs.mkdtempSync(path.join(os.tmpdir(), "cmp-nosid-"));
   runSession({ home, cwd: plain, session_id: "" });
-  const dir = path.join(home, ".claude", "companion", "sessions");
+  const dir = path.join(home, ".shelly", "sessions");
   const n = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(".json")).length : 0;
   ok(n === 0, "no record written when session_id is empty");
   ok(liveStems(home).length === 1, "old live stub still written (old path unaffected)");
@@ -206,7 +206,7 @@ console.log("\nCase 6 — missing session_id → graceful skip:");
 console.log("\nCase 7 — external terminal with flag off → silent:");
 {
   const home = mkSandbox("gated");
-  fs.rmSync(path.join(home, ".claude", "companion", "external-terminals"));
+  fs.rmSync(path.join(home, ".shelly", "external-terminals"));
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "cmp-gated-"));
   execFileSync("git", ["init", "-q"], { cwd: repo });
   const sid = "77777777-aaaa-bbbb-cccc-000000000007";
