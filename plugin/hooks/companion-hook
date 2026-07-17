@@ -75,6 +75,11 @@ CWD=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c
 # Which CLI produced this session — codex transcripts live under ~/.codex (rollout-*.jsonl),
 # Claude's under ~/.claude/projects. Feeds late registration's provider field only.
 PROVIDER=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const t=JSON.parse(d).transcript_path||"";console.log(/\/\.codex\/|\/rollout-[^/]*\.jsonl$/.test(t)?"codex":"claude")}catch(e){console.log("claude")}})' 2>/dev/null)
+# Which user prompt this write happened under. Stamped onto the index entry so the
+# PreToolUse fork hook can tell a same-turn overwrite (still authoring — allowed) from a
+# rewrite of an artifact sealed in an earlier turn (forked). Empty on Claude Code < 2.1.196
+# and on Codex, which carry no prompt_id — the fork hook then falls back to mtime.
+PROMPT_ID=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).prompt_id||"")}catch(e){}})' 2>/dev/null)
 
 # Push-pop disabled: artifacts no longer spawn their own OS window. The Board is
 # the single surface — it ingests artifacts as tiles inside their session via the
@@ -94,7 +99,7 @@ printf '%s\n' "$paths" | while IFS= read -r fp; do
       ;;
     "$ARTIFACTS_DIR"/*.html)
       trace hook index-spawn "corr=$fp"
-      SID="$SID" CWD="$CWD" PROVIDER="$PROVIDER" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
+      SID="$SID" CWD="$CWD" PROVIDER="$PROVIDER" PROMPT_ID="$PROMPT_ID" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
       trace hook index-done "corr=$fp"
       ;;
   esac

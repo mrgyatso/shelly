@@ -31,6 +31,7 @@ import { initChatBar, syncChatBar, type ChatBarContext } from "./chatbar";
 import { IS_LINUX } from "./platform";
 import { loadArtifactInto } from "./artifact-view";
 import { heroArtifactFor, artifactMatchesSource, effectsForRewrites } from "./ingest-logic";
+import { buildDeck, deckPosition, flipTarget, type FlipDir } from "./deck-logic";
 import {
   HOME_UNIT,
   isScratchDir,
@@ -446,6 +447,12 @@ let digestPath: string | null = null; // tracks what's currently loaded in diges
 /** Newest unseen artifact for the on-screen unit while its hero stays sticky. */
 let heroPendingPath: string | null = null;
 let heroNewEl: HTMLButtonElement | null = null;
+/** The deck's prev/next/position chrome. The deck itself is DERIVED (deckForUnit) from
+ *  allArtifacts + the active session — there is deliberately no retained deck array and
+ *  no current-index: `digestPath` alone says which card is read. State that duplicated
+ *  either could disagree with the frame, and a stale index would re-point at a different
+ *  document the instant the deck's contents changed. */
+let deckNavEl: HTMLElement | null = null;
 let historyEl: HTMLElement;
 let railEl: HTMLElement | null = null;
 let railSessionsEl: HTMLElement | null = null;
@@ -554,6 +561,7 @@ export async function initBoard(): Promise<void> {
   historyEl = history;
   initShellRepaint(stageEl);
   heroNewEl = document.getElementById("unit-hero-new") as HTMLButtonElement | null;
+  deckNavEl = document.getElementById("unit-deck-nav");
   // Mirror the focusFrame "restore-submitted" logic: when the hero digest
   // reloads after a unit re-entry, re-show the submitted overlay if the user
   // already answered this artifact and it hasn't been rewritten since.
@@ -2718,6 +2726,7 @@ function leaveUnit(): void {
   }
   historyEl?.replaceChildren();
   digestEl?.setAttribute("hidden", "");
+  deckNavEl?.setAttribute("hidden", ""); // no unit on screen ⇒ no deck to page
   digestPath = null;
   applyBar(null);
   focusPath = null;
@@ -2773,6 +2782,9 @@ async function renderHero(unitKey: string): Promise<void> {
     // sibling session's artifact keeps its unread until its own session is picked
     // (switchToSession → renderHero) or it is opened in the reader.
     markArtifactRead(latest.path);
+    // Entry lands on the deck's TOP card (heroArtifactFor and the deck share a scope, so
+    // "the freshest" IS the top) — the nav says how much is stacked behind it.
+    renderDeckNav(unitKey);
     await loadArtifactInto(latest.path, digestEl).catch((e) =>
       console.error("hero artifact load failed", e),
     );
@@ -2786,6 +2798,7 @@ async function renderHero(unitKey: string): Promise<void> {
     // and maybeLightBlankHero (which guards on digestPath === null) would never fire.
     // A connected agent has no terminal below, so its blank copy can't promise one.
     showBlankHero(isCloudUnit(unitKey) ? BLANK_AGENT : BLANK_FIRST, blankWorkingLine(src));
+    renderDeckNav(unitKey); // no card loaded ⇒ no position ⇒ the nav hides itself
   }
 }
 
@@ -2804,6 +2817,92 @@ function maybeLightBlankHero(unitKey: string): void {
   if (allArtifacts.some((a) => artifactMatchesSource(a, src) && unitForArtifact(a) === unitKey)) {
     void renderHero(unitKey);
   }
+}
+
+// ---- The artifact DECK ------------------------------------------------------
+// The hero is a pageable STACK of the active session's artifacts, not one slot. The
+// deck is derived on read (never retained) from the same scope the hero selects
+// through, so it cannot drift onto a sibling session's artifact — see deck-logic.ts.
+
+/** This unit's deck: the active session's cards, oldest first. */
+function deckForUnit(unitKey: string): ArtifactEntry[] {
+  return buildDeck(
+    groupArtifactsByUnit().get(unitKey) ?? [],
+    activeSessionSource(unitKey),
+    ownedTabForUnit(unitKey) !== null,
+  );
+}
+
+/** How long a flip takes. Matches the `deck-flip-*` keyframes — the incoming card is
+ *  loaded at the START of the flip, so the motion covers the iframe's own paint rather
+ *  than queueing behind it. */
+const DECK_FLIP_MS = 260;
+
+/** Paint the deck's chrome for what is CURRENTLY loaded — position, and whether each
+ *  chevron has anywhere to go. Text and disabled-state only: this is called from the
+ *  poll's ingest path, so it must never touch `digestEl`. A deck that just got deeper
+ *  repaints as "2 of 5" → "2 of 6" (the total grows, the read card does not move), which
+ *  is the whole legibility win; the flip stays the user's click. Hidden below two cards,
+ *  since a one-card deck has nothing to page. */
+function renderDeckNav(unitKey: string): void {
+  if (!deckNavEl) return;
+  const deck = deckForUnit(unitKey);
+  const pos = deckPosition(deck, digestPath);
+  // No position ⇒ the loaded artifact isn't a card of this deck (blank hero, or a
+  // session switch mid-flight). Hide rather than guess a number.
+  if (!pos || pos.total < 2) {
+    deckNavEl.setAttribute("hidden", "");
+    return;
+  }
+  deckNavEl.removeAttribute("hidden");
+  const posEl = deckNavEl.querySelector(".deck-nav-pos");
+  if (posEl) posEl.textContent = `${pos.index + 1} of ${pos.total}`;
+  for (const btn of deckNavEl.querySelectorAll<HTMLButtonElement>(".deck-nav-btn")) {
+    const dir = Number(btn.dataset.dir) as FlipDir;
+    btn.disabled = flipTarget(deck, digestPath, dir) === null;
+  }
+}
+
+/** USER-INITIATED flip to the adjacent card. One of the two sanctioned hero reloads
+ *  (with `viewHeroPending`) — both are clicks, never the poll, so a flip can't wipe a
+ *  comment the user was mid-typing: they chose to move on. The motion is the message.
+ *  The incoming card loads immediately; `data-flip` drives the transform/opacity
+ *  keyframes over it, so the user sees a DIFFERENT DOCUMENT arrive rather than the same
+ *  rectangle silently repainting ("you can't even tell that it updates"). */
+async function flipDeck(dir: FlipDir): Promise<void> {
+  const view = currentView();
+  if (view.level !== "unit") return;
+  const target = flipTarget(deckForUnit(view.unitKey), digestPath, dir);
+  if (!target) return; // at an end of the deck; the chevron is disabled anyway
+  // The card being flipped TO is the one the user asked for, so any pill offering that
+  // same path is now moot. A pill offering a DIFFERENT path stays: still unseen.
+  if (heroPendingPath === target.path) hideHeroNewPill();
+  digestEl.removeAttribute("hidden");
+  syncSurfaceStrip(true);
+  applyBar(null);
+  digestPath = target.path;
+  markArtifactRead(target.path);
+  renderDeckNav(view.unitKey); // position + chevron ends update with the motion, not after
+  playFlip(dir);
+  await loadArtifactInto(target.path, digestEl).catch((e) =>
+    console.error("deck flip load failed", target.path, e),
+  );
+  updateGlobalUnread();
+}
+
+/** Run the flip keyframes over the hero. Motion only — the caller owns the load; the
+ *  card is already on its way in, so the animation covers the paint instead of delaying
+ *  it. Shared with the advance pill (`viewHeroPending`), which is a flip toward the
+ *  newer end by another name: one deck, one motion vocabulary. `prefers-reduced-motion`
+ *  is honoured in CSS (the keyframes collapse to a plain opacity settle), so this stays
+ *  a single code path. */
+function playFlip(dir: FlipDir): void {
+  // Re-trigger the keyframes even on a rapid second flip in the SAME direction: the
+  // attribute must actually change value for the animation to restart.
+  digestEl.removeAttribute("data-flip");
+  void digestEl.offsetWidth; // reflow — commits the removal so the re-add restarts it
+  digestEl.setAttribute("data-flip", dir === 1 ? "next" : "prev");
+  window.setTimeout(() => digestEl.removeAttribute("data-flip"), DECK_FLIP_MS);
 }
 
 /** Reveal the "→ view" pill over the sticky hero. `path` is the artifact the pill
@@ -2831,12 +2930,18 @@ function hideHeroNewPill(): void {
 async function viewHeroPending(): Promise<void> {
   const path = heroPendingPath;
   hideHeroNewPill();
-  if (!path || currentView().level !== "unit") return;
+  const v = currentView();
+  if (!path || v.level !== "unit") return;
   digestEl.removeAttribute("hidden");
   syncSurfaceStrip(true);
   applyBar(null);
   digestPath = path;
   markArtifactRead(path);
+  // The advance IS a flip toward the newer end of the deck — same motion as a chevron,
+  // so "a different document is now in front of you" reads identically however the user
+  // got here. Nav first, so the position lands with the motion rather than after it.
+  renderDeckNav(v.unitKey);
+  playFlip(1);
   await loadArtifactInto(path, digestEl).catch((e) =>
     console.error("hero advance load failed", path, e),
   );
@@ -3140,6 +3245,13 @@ function wireUnitChrome(): void {
   document.getElementById("unit-artifact-pill")?.addEventListener("click", () => setFocus("split"));
   document.getElementById("unit-terminal-pill")?.addEventListener("click", () => setFocus("split"));
   heroNewEl?.addEventListener("click", () => void viewHeroPending());
+  // Delegated, so the chevrons carry their direction in the DOM rather than in two
+  // near-identical handlers. `flipTarget` returns null at the deck's ends, so a click on
+  // a disabled chevron is a no-op even if one slips through.
+  deckNavEl?.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".deck-nav-btn");
+    if (btn) void flipDeck(Number(btn.dataset.dir) as FlipDir);
+  });
 
   // The in-session title doubles as a rename affordance — rename without leaving
   // the unit. onSaved re-renders the title in place (startRename refreshes the
@@ -4760,6 +4872,9 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
     hideHeroNewPill();
     digestPath = next.path;
     markArtifactRead(next.path);
+    // The user's own submit asked for this card, so it flips like any other advance.
+    renderDeckNav(v.unitKey);
+    playFlip(1);
     void loadArtifactInto(next.path, digestEl).catch((e) =>
       console.error("hero auto-advance failed", next.path, e),
     );
@@ -4791,6 +4906,12 @@ function ingestIntoUnit(unitKey: string): void {
   const keep = unitEl.scrollTop;
   if (digestPath === null) void renderHero(unitKey); // empty unit → light up its first artifact
   renderHistory(unitKey);
+  // A new artifact makes the deck DEEPER — repaint the position ("2 of 5" → "2 of 6")
+  // and re-enable the "newer" chevron now that there IS something newer. Chrome only:
+  // the read card is addressed by path and keeps both its identity and its number, so
+  // the frame is untouched and the flip remains the user's click (the pill above offers
+  // it). This is the whole of what the poll may do to the deck.
+  renderDeckNav(unitKey);
   unitEl.scrollTop = keep;
 }
 

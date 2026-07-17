@@ -298,7 +298,11 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `Artifacts: EVERY TURN ENDS WITH ONE — no exemptions. You are not deciding whether, only what `+
     `shape. AUTHOR THE HTML YOURSELF: write a self-contained .html into ${a}. There is no renderer `+
     `and no background observer; you write the file, in full context, the first time (highest-quality, `+
-    `and cheapest on a warm cache). SIZE IT TO THE TURN: a decision, plan, review or analysis earns a `+
+    `and cheapest on a warm cache). ONE TURN, ONE SLUG: never rewrite a slug you shipped in an EARLIER `+
+    `turn — the user may still be reading it, and the 💬 comments they typed live only in that iframe, `+
+    `so a rewrite destroys both. Write a fresh slug; it lands as its own card and the old one stays one `+
+    `flip back. Within THIS turn, overwrite your own artifact freely. Exception: home.<unit>.html, the `+
+    `per-project digest, is a living document and updates in place. SIZE IT TO THE TURN: a decision, plan, review or analysis earns a `+
     `full document; a quick answer or a lookup earns a COMPACT CARD — small is the correct finished `+
     `form for a light turn, so do not pad it. An artifact is a STEERING surface, not a transcript: lead `+
     `with the pending decision or blocker and make it the loudest thing; show only what is needed to `+

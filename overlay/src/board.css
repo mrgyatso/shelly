@@ -1940,6 +1940,95 @@
   .hero-new-dot { animation: none; }
 }
 
+/* ---- The artifact DECK ----------------------------------------------------
+   The hero is a pageable STACK of the active session's artifacts. This is its nav:
+   prev/next and "N of M", floated over the artifact's top-right — pagination language,
+   clear of the top-center advance pill (they are different offers: the pill is news,
+   this is where you are). Anchored to the TOP because `.unit-main` is a flex column
+   holding the artifact AND the terminal below it, so a `bottom` offset would float this
+   over the terminal's dark surface and read as terminal chrome, not the deck's.
+
+   The chevrons are QUALIFIED `.deck-nav .deck-nav-btn` for the SPECIFICITY, not the
+   nesting: the global reset `.stage button { color: inherit }` is (0,1,1) and outranks a
+   lone `.deck-nav-btn` (0,1,0) — the chevrons would inherit the body ink and go
+   invisible against this panel, on live, working buttons. Same trap as `.settings-update`
+   above. Every DOM probe reports such a button healthy; only a screenshot catches it. */
+.deck-nav {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 8px 22px -10px rgba(40, 30, 20, 0.5);
+  animation: deck-nav-in 0.2s ease-out both;
+}
+.deck-nav[hidden] { display: none; }
+/* Terminal focused → no hero on screen → nothing to page. Mirrors the advance pill. */
+.board-unit[data-focus="terminal"] .deck-nav { display: none; }
+.board-unit.blank-hero .deck-nav { display: none; }
+.deck-nav .deck-nav-btn {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  transition: background 0.12s, color 0.12s;
+}
+.deck-nav .deck-nav-btn svg { width: 14px; height: 14px; }
+.deck-nav .deck-nav-btn:hover:not(:disabled) { background: var(--sunk); color: var(--ink); }
+/* An end of the deck: still legible, but plainly out of road. */
+.deck-nav .deck-nav-btn:disabled { color: var(--ink-4); cursor: default; }
+.deck-nav .deck-nav-pos {
+  flex: 0 0 auto;
+  padding: 0 7px;
+  font: 600 10.5px/1 var(--mono);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums; /* the total can grow under the poll — no reflow jitter */
+  white-space: nowrap;
+}
+@keyframes deck-nav-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* THE FLIP — the transition that carries "this is a different document now".
+   The card the user asked for is already loading when these run, so the motion covers
+   the paint rather than queueing behind it. Transform + opacity only (compositor-only;
+   no layout work on a live iframe). Direction encodes travel through time: a NEWER card
+   enters from the right, an OLDER one from the left. */
+.hub-frame[data-flip="next"] { animation: deck-flip-next 0.26s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.hub-frame[data-flip="prev"] { animation: deck-flip-prev 0.26s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes deck-flip-next {
+  from { opacity: 0; transform: translateX(4%) scale(0.985); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes deck-flip-prev {
+  from { opacity: 0; transform: translateX(-4%) scale(0.985); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .deck-nav { animation: none; }
+  /* The flip still needs to SAY something changed — a card swap with no signal at all is
+     the bug this feature exists to fix. Keep a plain opacity settle: no travel, no scale. */
+  .hub-frame[data-flip="next"],
+  .hub-frame[data-flip="prev"] { animation: deck-flip-fade 0.2s ease-out both; }
+}
+@keyframes deck-flip-fade {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
 /* Per-session embedded terminal panel — the real `claude` TUI the Board owns.
    A dark "sunken" inset in the paper chrome (no header bar — it fills the surface;
    its controls live in the Board's floating cluster). The body has a definite
