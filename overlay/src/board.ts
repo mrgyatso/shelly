@@ -3180,6 +3180,7 @@ function wireUnitChrome(): void {
     if (c) unitEl.dataset.railCollapsed = "1";
     else delete unitEl.dataset.railCollapsed;
     paintRailToggle(c);
+    homeRatePill(c);
     try {
       localStorage.setItem("companion:railCollapsed", c ? "1" : "0");
     } catch {
@@ -3195,6 +3196,7 @@ function wireUnitChrome(): void {
       else delete unitEl.dataset.railCollapsed;
     }
     paintRailToggle(collapsed); // restore glyph without refitting at wiring time
+    homeRatePill(collapsed); // …and re-home the pill, or a Board that BOOTS collapsed loses it
   } catch {
     /* non-fatal */
   }
@@ -3239,6 +3241,25 @@ interface RateBucket {
 interface RateLimitUsage {
   fiveHour: RateBucket | null;
   sevenDay: RateBucket | null;
+}
+
+/** The rate pill's home is the rail foot — it is account-wide, and the rail is where
+ *  the Board's global chrome lives. But a collapsed rail is `display: none`, and
+ *  losing your account meter as a side effect of wanting more room is a surprise at
+ *  exactly the wrong moment. So the ONE node is re-homed beside the rail toggle
+ *  rather than duplicated: one element, one render path, no second id.
+ *
+ *  It lands before the title, which carries `margin-right: auto` — so it stays in the
+ *  toolbar's LEFT group with the rail control it stands in for, and never drifts into
+ *  the session's own cluster on the right. The compact form (see .unit-toolbar
+ *  > .unit-rate) drops the bar and keeps the number, because at that width the ticks
+ *  say less than the digits do. */
+function homeRatePill(collapsed: boolean): void {
+  if (!rateEl) return;
+  const host = document.querySelector(collapsed ? ".unit-toolbar" : ".rail-foot");
+  if (!host || rateEl.parentElement === host) return;
+  // Rail foot: above Settings. Toolbar: straight after the rail toggle.
+  host.insertBefore(rateEl, collapsed ? host.children[1] ?? null : host.firstChild);
 }
 
 /** "resets 1:39 PM" for a same-day instant, "resets Jul 21" for a later one. */

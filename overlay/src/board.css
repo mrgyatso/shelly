@@ -1525,6 +1525,20 @@
   margin-bottom: 2px;
 }
 .rail-foot .unit-rate .meter-text { margin-left: auto; }
+/* Collapsed rail: homeRatePill re-parents this ONE node here so the account meter
+   doesn't vanish just because you wanted more room. It sits in the toolbar's LEFT
+   group, beside the rail control it stands in for — never in the session's cluster
+   on the right. The bar goes: at this width the ticks say less than the digits, and
+   a fenced pill next to the toggle reads as the rail's, not the session's. */
+.unit-toolbar > .unit-rate {
+  flex: 0 0 auto;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+}
+.unit-toolbar > .unit-rate .meter-bar { display: none; }
+.unit-toolbar > .unit-rate .rate-label { color: var(--ink-3); opacity: 0.8; }
 .rate-label {
   color: var(--ink-3);
   font: 600 10px/1 var(--ui-font);
