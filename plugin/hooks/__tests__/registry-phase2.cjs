@@ -61,7 +61,7 @@ ok(entry && entry.unit_key === rec.unit_key, "index entry unit_key matches the r
 ok(entry && entry.prompt_id === PROMPT_ID, "index entry carries the writing turn's prompt_id");
 const artNoPrompt = path.join(path.dirname(artifact), "no-prompt.html");
 fs.writeFileSync(artNoPrompt, "<html></html>");
-execFileSync("node", [path.join(HOOKS, "companion-index.cjs"), artNoPrompt, liveDir, indexPath], {
+execFileSync("node", [path.join(HOOKS, "shelly-index.cjs"), artNoPrompt, liveDir, indexPath], {
   env: { ...baseEnv, SID },
   encoding: "utf8",
 });

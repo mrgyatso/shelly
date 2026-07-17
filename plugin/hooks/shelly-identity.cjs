@@ -217,7 +217,7 @@ function routeArtifact(args, opts) {
     ts: Date.now(),
     session_id: sid,
     // Which user prompt this artifact was written under. The PreToolUse fork hook
-    // (companion-artifact-fork.cjs) compares it against the prompt_id on a later write to
+    // (shelly-artifact-fork.cjs) compares it against the prompt_id on a later write to
     // decide "still authoring" vs "sealed in an earlier turn" — an identity comparison,
     // where `ts` could only offer a clock comparison against a lagging transcript. Null on
     // an older client (prompt_id predates Claude Code 2.1.196); the fork hook then falls

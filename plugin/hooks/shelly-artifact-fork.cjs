@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// companion-artifact-fork.cjs — PreToolUse: a rewrite of a SEALED artifact forks.
+// shelly-artifact-fork.cjs — PreToolUse: a rewrite of a SEALED artifact forks.
 //
 // THE PROBLEM: an agent revisiting a subject rewrites the same slug. Nothing snapshots
 // the old revision, so the previous version is destroyed — and with it every 💬 comment
@@ -15,7 +15,7 @@
 //
 // HOW WE ANSWER "this turn?" — two rungs, in order:
 //   1. prompt_id. The PreToolUse payload carries a UUID for the prompt being processed
-//      (Claude Code ≥ 2.1.196); companion-index.cjs stamps it onto every artifact's
+//      (Claude Code ≥ 2.1.196); shelly-index.cjs stamps it onto every artifact's
 //      index entry at PostToolUse. Same prompt_id ⇒ same turn. This is an IDENTITY
 //      comparison: no clock skew, and immune to the transcript lag below.
 //   2. mtime vs turnStart, when there's no prompt_id (older client, un-indexed artifact,
@@ -45,7 +45,7 @@
 // file exists and was sealed in an earlier turn".
 //
 // The external-terminals guard and the cheap non-artifact pre-filter live in the sh
-// wrapper (companion-artifact-fork), mirroring companion-hook — so this module is pure
+// wrapper (shelly-artifact-fork), mirroring shelly-hook — so this module is pure
 // decision logic and is unit-tested directly.
 
 const fs = require("fs");
@@ -57,13 +57,13 @@ const path = require("path");
 // fail open, which is exactly this hook's contract anyway.
 let turn = { lastRealUserPromptTs: () => null };
 try {
-  turn = require("./companion-turn.cjs");
+  turn = require("./shelly-turn.cjs");
 } catch (_) {}
 
 const HOME = os.homedir();
 const ARTIFACTS_DIR =
-  process.env.COMPANION_ARTIFACTS_DIR || path.join(HOME, ".claude", "companion", "artifacts");
-const INDEX_PATH = path.join(HOME, ".claude", "companion", "artifact-index.json");
+  process.env.SHELLY_ARTIFACTS_DIR || path.join(HOME, ".shelly", "artifacts");
+const INDEX_PATH = path.join(HOME, ".shelly", "artifact-index.json");
 
 // How far to walk the -N suffixes before giving up (and failing open). A slug with 50
 // live forks is a runaway, not a workflow; blocking forever on it would be worse than
@@ -73,7 +73,7 @@ const MAX_FORKS = 50;
 // The living surfaces: per-project digests the agent is MEANT to rewrite forever, so the
 // Board's full-bleed home always reflects current state. Forking them would strand the
 // Board on revision 1 and litter the dir with home-2/-3.html. Mirrors the skip arms in
-// companion-hook exactly (home.html, home.<unit_key>.html and the _*.html diagnostic
+// shelly-hook exactly (home.html, home.<unit_key>.html and the _*.html diagnostic
 // scaffolds) — these are also the paths it never indexes, so they'd otherwise fall to
 // rung 2 and fork on every single update. Keep this list in lockstep with that hook: a
 // slug it refuses to index can never answer "same turn?", so anything it skips MUST be
@@ -191,7 +191,7 @@ function buildEditDenyReason(file, fork) {
 // follow-up edits and its message to the user both name the file that actually exists.
 function buildRedirectContext(file, fork) {
   return (
-    "Companion redirected this write: " +
+    "Shelly redirected this write: " +
     path.basename(file) +
     " was sealed in an earlier turn (rewriting it would destroy that revision and any 💬 comments " +
     "the user left on it), so your content was written to " +
@@ -273,7 +273,7 @@ function main() {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
             permissionDecision: forkDecision(input.permission_mode),
-            permissionDecisionReason: "Companion: forked a rewrite of a sealed artifact.",
+            permissionDecisionReason: "Shelly: forked a rewrite of a sealed artifact.",
             updatedInput: d.updatedInput,
             additionalContext: d.context,
           },

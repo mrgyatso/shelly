@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// companion-turn.cjs — the ONE derivation of "when did this turn start".
+// shelly-turn.cjs — the ONE derivation of "when did this turn start".
 //
 // WHY THIS FILE EXISTS: two hooks need the turn boundary, and they must agree.
-// The Stop-hook seatbelt (companion-artifact-gate.cjs) asks "did an artifact land
-// since this turn began?"; the PreToolUse fork hook (companion-artifact-fork.cjs)
+// The Stop-hook seatbelt (shelly-artifact-gate.cjs) asks "did an artifact land
+// since this turn began?"; the PreToolUse fork hook (shelly-artifact-fork.cjs)
 // asks "was this artifact sealed in an EARLIER turn?". Same fact, two callers — and
 // every identity bug this project has hit was two derivations of one fact drifting
-// apart (see companion-identity.cjs's header for the same lesson). So it is derived
+// apart (see shelly-identity.cjs's header for the same lesson). So it is derived
 // here, once, and required by both.
 //
 // CAVEAT THE CALLERS MUST RESPECT: Claude Code writes the transcript ASYNCHRONOUSLY.

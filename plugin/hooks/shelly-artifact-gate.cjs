@@ -45,13 +45,13 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-// The turn boundary is SHARED with the PreToolUse fork hook (companion-artifact-fork.cjs)
+// The turn boundary is SHARED with the PreToolUse fork hook (shelly-artifact-fork.cjs)
 // — one derivation, required by both, rather than two copies drifting apart. Co-located;
 // fall back to a null-returning stub if the require ever hiccups, which lands on the gate's
 // EXISTING uncertainty path (turnStart null → known:false → fail open), never a crash.
 let turn = { lastRealUserPromptTs: () => null };
 try {
-  turn = require("./companion-turn.cjs");
+  turn = require("./shelly-turn.cjs");
 } catch (_) {}
 
 const HOME = os.homedir();
@@ -66,7 +66,7 @@ function safeId(id) {
 }
 
 // turnStart = epoch-ms timestamp of the last GENUINE user prompt in the transcript.
-// Derived by the shared companion-turn.cjs (see its header for the tool_result skip and
+// Derived by the shared shelly-turn.cjs (see its header for the tool_result skip and
 // the transcript-lag caveat); re-exported here so this module's public surface — and its
 // tests — are unchanged by the extraction.
 function lastRealUserPromptTs(transcriptPath) {

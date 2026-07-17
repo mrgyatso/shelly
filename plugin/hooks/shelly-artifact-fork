@@ -1,25 +1,25 @@
 #!/usr/bin/env sh
-# companion-artifact-fork — PreToolUse hook: a rewrite of a SEALED artifact forks.
+# shelly-artifact-fork — PreToolUse hook: a rewrite of a SEALED artifact forks.
 #
 # An artifact finished in an EARLIER turn is sealed: rewriting it destroys that revision
 # and every 💬 comment the user typed into it (those live only in the Board's iframe DOM).
 # This hook redirects such a write to the next free slug instead. All logic — turn
-# boundary, the exemptions, the fork target — is in companion-artifact-fork.cjs; this
+# boundary, the exemptions, the fork target — is in shelly-artifact-fork.cjs; this
 # wrapper only applies the guards and passes the hook payload (stdin) through to node.
 #
-# Reading stdin FIRST mirrors companion-hook: the payload must be consumed before we can
+# Reading stdin FIRST mirrors shelly-hook: the payload must be consumed before we can
 # pre-filter on it, and the guards below cost nothing but shell builtins.
 
-ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/.claude/companion/artifacts}"
+ARTIFACTS_DIR="${SHELLY_ARTIFACTS_DIR:-$HOME/.shelly/artifacts}"
 
 payload=$(cat)
 
-# External-terminal handling (default OFF) — mirrors companion-hook/companion-artifact-gate.
-# Only sessions the Board spawned carry COMPANION_SESSION; a plain terminal that merely has
+# External-terminal handling (default OFF) — mirrors shelly-hook/shelly-artifact-gate.
+# Only sessions the Board spawned carry SHELLY_SESSION; a plain terminal that merely has
 # the plugin installed gets no fork (and writes nothing to the index either, so there'd be
 # nothing to fork against). Opt in per-machine via
-# ~/.claude/companion/external-terminals = "on".
-if [ -z "$COMPANION_SESSION" ] && [ "$(cat "${HOME}/.claude/companion/external-terminals" 2>/dev/null)" != "on" ]; then
+# ~/.shelly/external-terminals = "on".
+if [ -z "$SHELLY_SESSION" ] && [ "$(cat "${HOME}/.shelly/external-terminals" 2>/dev/null)" != "on" ]; then
   exit 0
 fi
 
@@ -33,9 +33,9 @@ case "$payload" in
   *) exit 0 ;;
 esac
 
-# No node, no fork. companion-session already said so once, at SessionStart — staying quiet
+# No node, no fork. shelly-session already said so once, at SessionStart — staying quiet
 # here keeps the message from repeating on every write.
 command -v node >/dev/null 2>&1 || exit 0
 
-printf '%s' "$payload" | node "$(dirname "$0")/companion-artifact-fork.cjs" 2>/dev/null
+printf '%s' "$payload" | node "$(dirname "$0")/shelly-artifact-fork.cjs" 2>/dev/null
 exit 0
