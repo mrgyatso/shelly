@@ -1356,48 +1356,6 @@
   text-transform: uppercase;
   margin-bottom: 7px;
 }
-/* Model rows. The tick column is always there, so the rows don't shuffle sideways
-   when the selection moves. */
-.model-list { display: flex; flex-direction: column; gap: 1px; }
-.model-list .model-opt {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 6px 7px;
-  background: transparent;
-  border: 0;
-  border-radius: 7px;
-  color: var(--ink-2);
-  text-align: left;
-  transition: background 110ms ease;
-}
-.model-list .model-opt:hover { background: var(--sunk); }
-.model-list .model-opt:focus-visible { outline: 2px solid var(--clay); outline-offset: -2px; }
-.model-list .model-opt.on { color: var(--ink-1); }
-.model-tick {
-  flex: 0 0 auto;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1.5px var(--line-1);
-  position: relative;
-}
-.model-list .model-opt.on .model-tick {
-  box-shadow: inset 0 0 0 1.5px var(--accent);
-}
-.model-list .model-opt.on .model-tick::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-.model-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.model-t { font: 550 12.5px/1 var(--ui-font); letter-spacing: -0.01em; }
-.model-list .model-opt.on .model-t { font-weight: 650; }
-.model-s { color: var(--ink-3); font: 400 10.5px/1.25 var(--ui-font); }
-
 /* Hand off. A once-a-session move: it reads as a menu row, not as a button competing
    with Compact — which is the whole point of it no longer being toolbar chrome. */
 .chip-acts { padding-bottom: 8px; }
@@ -2930,8 +2888,123 @@
   gap: 10px;
   min-height: 32px;
 }
+
+/* --- the model picker, in the composer ---
+   It sits here because the model is a property of the message you are about to send —
+   the same reason claude.ai puts it in the composer rather than the window chrome.
+   The chip's face still NAMES the model (state you glance at, legible even while this
+   bar is minimized); this is the control. State there, control here.
+
+   The menu opens UPWARD: the bar is docked to the bottom of the stage, so downward
+   would open straight off-screen. Every button rule is qualified past
+   `.stage button { color: inherit }` (0,1,1) — see the note on .unit-chip. */
+.chatbar-model { position: relative; flex: 0 0 auto; }
+.chatbar-model[hidden] { display: none; }
+.chatbar-model .cb-model-face {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 8px;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  color: var(--ink-3);
+  font: 550 11px/1 var(--ui-font);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+.chatbar-model .cb-model-face:hover {
+  color: var(--ink-2);
+  border-color: var(--line-1);
+  background: var(--sunk);
+}
+.chatbar-model .cb-model-face:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
+.cb-model-caret {
+  width: 10px;
+  height: 10px;
+  opacity: 0.7;
+  transition: transform 140ms ease;
+}
+.cb-model-caret svg { width: 100%; height: 100%; display: block; }
+.chatbar-model .cb-model-face[aria-expanded="true"] .cb-model-caret { transform: rotate(180deg); }
+
+.cb-model-menu {
+  position: absolute;
+  bottom: calc(100% + 7px); /* upward — the bar is docked to the bottom */
+  left: 0;
+  z-index: 60;
+  width: 232px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: 11px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 18px 40px -18px rgba(0, 0, 0, 0.4);
+  animation: cbModelIn 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.cb-model-menu[hidden] { display: none; }
+@keyframes cbModelIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+/* The tick column is always present, so rows never shuffle sideways as the
+   selection moves. */
+.cb-model-menu .cb-model-opt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 7px;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ink-2);
+  text-align: left;
+  transition: background 110ms ease;
+}
+.cb-model-menu .cb-model-opt:hover { background: var(--sunk); }
+.cb-model-menu .cb-model-opt:focus-visible { outline: 2px solid var(--clay); outline-offset: -2px; }
+.cb-model-menu .cb-model-opt.on { color: var(--ink-1); }
+.cb-model-tick {
+  flex: 0 0 auto;
+  position: relative;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--line-1);
+}
+.cb-model-menu .cb-model-opt.on .cb-model-tick { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.cb-model-menu .cb-model-opt.on .cb-model-tick::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.cb-model-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cb-model-t { font: 550 12.5px/1 var(--ui-font); letter-spacing: -0.01em; }
+.cb-model-menu .cb-model-opt.on .cb-model-t { font-weight: 650; }
+.cb-model-s { color: var(--ink-3); font: 400 10.5px/1.25 var(--ui-font); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cb-model-menu { animation: none; }
+  .cb-model-caret,
+  .chatbar-model .cb-model-face { transition: none; }
+}
 .chatbar-ctx {
   min-width: 0;
+  /* The row is [model] [ctx] … [send]: the picker and the context line group at the
+     left as one statement of what this send will do, and `auto` holds Send at the
+     right edge where it was before the picker joined them. */
+  margin-right: auto;
   font: 500 11px/1 var(--mono);
   letter-spacing: 0.02em;
   color: var(--ink-4);
