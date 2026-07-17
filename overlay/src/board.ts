@@ -452,6 +452,14 @@ let railSessionsEl: HTMLElement | null = null;
 let menuToggleEl: HTMLElement | null = null;
 let controlsEl: HTMLElement | null = null;
 let unitTitleEl: HTMLElement | null = null;
+let chipEl: HTMLElement | null = null;
+let chipFaceEl: HTMLButtonElement | null = null;
+let chipPopEl: HTMLElement | null = null;
+let chipLabelEl: HTMLElement | null = null;
+let chipDialFillEl: HTMLElement | null = null;
+let chipModelSecEl: HTMLElement | null = null;
+let chipActsSecEl: HTMLElement | null = null;
+let modelListEl: HTMLElement | null = null;
 let meterEl: HTMLElement | null = null;
 let meterBarEl: HTMLElement | null = null;
 let meterFillEl: HTMLElement | null = null;
@@ -2588,7 +2596,7 @@ function enterUnit(unitKey: string): void {
   unitEl.classList.toggle("no-terminal", isCloudUnit(unitKey));
   renderUnitRail(unitKey);
   renderUnitTitle(unitKey);
-  void renderUnitMeter(unitKey);
+  void renderSessionChip(unitKey);
   void renderHero(unitKey);
   renderHistory(unitKey);
   // Reveal this unit's Board-owned terminal. A unit is one specific session, so
@@ -3116,23 +3124,34 @@ function wireUnitChrome(): void {
     if (nameEl) startRename(currentUnitKey, nameEl, () => renderUnitTitle(currentUnitKey!));
   });
 
-  // Usage meter: paints on unit entry, then keeps itself current on its own slow
-  // cadence (a turn can land at any time, with nothing else to re-render).
+  // The session chip: paints on unit entry, then keeps itself current on its own
+  // slow cadence (a turn can land at any time, with nothing else to re-render).
+  chipEl = document.getElementById("unit-chip");
+  chipFaceEl = document.getElementById("unit-chip-face") as HTMLButtonElement | null;
+  chipPopEl = document.getElementById("unit-chip-pop");
+  chipLabelEl = document.getElementById("unit-chip-label");
+  chipDialFillEl = document.getElementById("unit-chip-dial-fill");
+  chipModelSecEl = document.getElementById("unit-chip-model");
+  chipActsSecEl = document.getElementById("unit-chip-acts");
+  modelListEl = document.getElementById("unit-model-list");
   meterEl = document.getElementById("unit-meter");
   meterBarEl = document.getElementById("unit-meter-bar");
   meterFillEl = document.getElementById("unit-meter-fill");
   meterTextEl = document.getElementById("unit-meter-text");
   compactBtnEl = document.getElementById("unit-compact") as HTMLButtonElement | null;
   compactBtnEl?.addEventListener("click", () => void runCompact());
-  window.setInterval(() => void renderUnitMeter(currentUnitKey), METER_POLL_MS);
+  buildModelList();
+  wireChipPopover();
+  window.setInterval(() => void renderSessionChip(currentUnitKey), METER_POLL_MS);
 
   // "⇥ Hand off": send /companion:handoff into this session's terminal so its
   // agent writes a handoff and launches it in a fresh session. Needs a Board-owned
-  // PTY to type into (no-terminal/cloud units hide the button via CSS).
+  // PTY to type into — renderSessionChip hides the section when there isn't one.
   document.getElementById("unit-handoff")?.addEventListener("click", () => {
     if (!currentUnitKey) return;
     const tabId = ownedTabForUnit(currentUnitKey);
     if (tabId) void handoffFromSession(tabId);
+    closeChipPop();
   });
 
   // Account rate-limit pill: one reading for the whole Board, on its own slow
@@ -3161,6 +3180,7 @@ function wireUnitChrome(): void {
     if (c) unitEl.dataset.railCollapsed = "1";
     else delete unitEl.dataset.railCollapsed;
     paintRailToggle(c);
+    homeRatePill(c);
     try {
       localStorage.setItem("companion:railCollapsed", c ? "1" : "0");
     } catch {
@@ -3176,6 +3196,7 @@ function wireUnitChrome(): void {
       else delete unitEl.dataset.railCollapsed;
     }
     paintRailToggle(collapsed); // restore glyph without refitting at wiring time
+    homeRatePill(collapsed); // …and re-home the pill, or a Board that BOOTS collapsed loses it
   } catch {
     /* non-fatal */
   }
@@ -3220,6 +3241,25 @@ interface RateBucket {
 interface RateLimitUsage {
   fiveHour: RateBucket | null;
   sevenDay: RateBucket | null;
+}
+
+/** The rate pill's home is the rail foot — it is account-wide, and the rail is where
+ *  the Board's global chrome lives. But a collapsed rail is `display: none`, and
+ *  losing your account meter as a side effect of wanting more room is a surprise at
+ *  exactly the wrong moment. So the ONE node is re-homed beside the rail toggle
+ *  rather than duplicated: one element, one render path, no second id.
+ *
+ *  It lands before the title, which carries `margin-right: auto` — so it stays in the
+ *  toolbar's LEFT group with the rail control it stands in for, and never drifts into
+ *  the session's own cluster on the right. The compact form (see .unit-toolbar
+ *  > .unit-rate) drops the bar and keeps the number, because at that width the ticks
+ *  say less than the digits do. */
+function homeRatePill(collapsed: boolean): void {
+  if (!rateEl) return;
+  const host = document.querySelector(collapsed ? ".unit-toolbar" : ".rail-foot");
+  if (!host || rateEl.parentElement === host) return;
+  // Rail foot: above Settings. Toolbar: straight after the rail toggle.
+  host.insertBefore(rateEl, collapsed ? host.children[1] ?? null : host.firstChild);
 }
 
 /** "resets 1:39 PM" for a same-day instant, "resets Jul 21" for a later one. */
@@ -3268,36 +3308,229 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-/** Repaint the meter for `unitKey`'s ACTIVE session. Hidden whenever there is no
- *  session to measure: the roster buckets, a cloud agent (no transcript), a tab too
- *  young to have taken a turn.
+// ---- the session chip -------------------------------------------------------
+// One chip carries this session's STATE on its face (model · context — the two
+// things worth a glance) and every VERB that acts on the session one click inside.
+// They used to sit side by side as equals: a number you watch constantly and a
+// hand-off you press once had the same weight in the same strip.
+
+/** What the picker offers. `/model` takes these bare aliases, and an alias is the
+ *  right unit of choice: it keeps pointing at the current model of its tier as new
+ *  ones ship, where a pinned id would rot the day the next one lands. */
+const MODEL_CHOICES: ReadonlyArray<{ alias: string; label: string; sub: string }> = [
+  { alias: "opus", label: "Opus", sub: "Deepest reasoning" },
+  { alias: "sonnet", label: "Sonnet", sub: "Best for everyday coding" },
+  { alias: "haiku", label: "Haiku", sub: "Fastest, cheapest" },
+];
+
+/** The tier `id` belongs to, or null. Prefix-matched for the same reason usage.rs's
+ *  `window_for` is: the transcript records a bare id that may carry version and date
+ *  suffixes, and an id we don't recognise must fall through rather than assert a
+ *  wrong tier — the picker showing NO selection beats it showing the wrong one. */
+function aliasOfModel(id: string): string | null {
+  for (const c of MODEL_CHOICES) if (id.startsWith(`claude-${c.alias}`)) return c.alias;
+  return null;
+}
+
+/** `claude-opus-4-8` → `Opus 4.8`: the name a person uses, from the id the transcript
+ *  keeps. An unrecognised id degrades to its own stem rather than a blank chip. */
+function modelDisplayName(id: string): string {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?/.exec(id);
+  if (!m) return id.replace(/^claude-/, "") || "Claude";
+  const tier = m[1].charAt(0).toUpperCase() + m[1].slice(1);
+  return m[3] ? `${tier} ${m[2]}.${m[3]}` : `${tier} ${m[2]}`;
+}
+
+/** The tier a picker click asked for, per unit, until the transcript agrees.
+ *  `/model` switches the session at once, but `usage.model` is read off the LAST
+ *  assistant turn — so between the click and the next turn the face would still name
+ *  the old model and the old radio would stay lit, reading exactly like a click that
+ *  did nothing. Cleared the moment the transcript catches up. */
+const pendingModel = new Map<string, string>();
+
+/** The provider of `unitKey`'s ACTIVE session. Absent (pre-provider records) ⇒
+ *  claude, matching providerForResumeId. */
+function activeProvider(unitKey: string): string {
+  const src = activeSessionSource(unitKey);
+  if (!src) return "claude";
+  return parseState(allSources.find((s) => s.source === src)?.json ?? "").provider ?? "claude";
+}
+
+/** Fill the picker once — the list is static, only the selection moves. */
+function buildModelList(): void {
+  if (!modelListEl) return;
+  modelListEl.innerHTML = "";
+  for (const c of MODEL_CHOICES) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "model-opt";
+    b.role = "radio";
+    b.dataset.alias = c.alias;
+    b.setAttribute("aria-checked", "false");
+    b.innerHTML =
+      '<span class="model-tick" aria-hidden="true"></span>' +
+      '<span class="model-main"><span class="model-t"></span><span class="model-s"></span></span>';
+    (b.querySelector(".model-t") as HTMLElement).textContent = c.label;
+    (b.querySelector(".model-s") as HTMLElement).textContent = c.sub;
+    b.addEventListener("click", () => void pickModel(c.alias));
+    modelListEl.append(b);
+  }
+}
+
+/** Switch the running session's model by typing `/model <alias>` into its own PTY —
+ *  the same wire Compact and Hand off already ride, so the ESC-strip and delayed-Enter
+ *  trust gate stay in one place. Nothing else can reach a session that is already
+ *  running: a spawn flag would only ever apply to the NEXT one. */
+async function pickModel(alias: string): Promise<void> {
+  const unitKey = currentUnitKey;
+  if (!unitKey) return;
+  const tabId = ownedTabForUnit(unitKey);
+  if (!tabId) return;
+  // Paint the pick immediately and let the transcript confirm it — see pendingModel.
+  pendingModel.set(unitKey, alias);
+  paintModelList(alias);
+  if (chipLabelEl) chipLabelEl.textContent = labelForAlias(alias);
+  closeChipPop();
+  try {
+    await submitIntoPty(tabId, `/model ${alias}`);
+  } catch (e) {
+    // The keystroke never landed, so no switch is coming and nothing will ever
+    // reconcile the optimistic paint. Drop it rather than leave the chip asserting
+    // a model this session is not on.
+    console.error("model switch failed", e);
+    pendingModel.delete(unitKey);
+    void renderSessionChip(unitKey);
+  }
+}
+
+/** The picker's label for a tier, for the face while a pick is still pending. */
+function labelForAlias(alias: string): string {
+  return MODEL_CHOICES.find((c) => c.alias === alias)?.label ?? alias;
+}
+
+/** Light the row that matches, and only it. */
+function paintModelList(alias: string | null): void {
+  if (!modelListEl) return;
+  for (const el of Array.from(modelListEl.querySelectorAll<HTMLElement>(".model-opt"))) {
+    const on = el.dataset.alias === alias;
+    el.setAttribute("aria-checked", on ? "true" : "false");
+    el.classList.toggle("on", on);
+  }
+}
+
+function closeChipPop(): void {
+  if (!chipPopEl || chipPopEl.hidden) return;
+  chipPopEl.hidden = true;
+  chipFaceEl?.setAttribute("aria-expanded", "false");
+}
+
+/** Open on the face, close on the face again, on Esc, or on any click outside —
+ *  the same contract openCtxMenu keeps, so the two popovers don't feel like
+ *  different apps. Listeners are bound once and read `hidden`, rather than being
+ *  added and removed per open. */
+function wireChipPopover(): void {
+  if (!chipFaceEl || !chipPopEl) return;
+  chipFaceEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = chipPopEl!.hidden;
+    chipPopEl!.hidden = !open;
+    chipFaceEl!.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  chipPopEl.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => closeChipPop());
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeChipPop();
+  });
+}
+
+/** The face: the model this session is on, and how full it is. The dial is the
+ *  context bar's own number as a ring — the one shape that still reads at 13px. */
+function paintChipFace(unitKey: string, usage: SessionUsage | null, isClaude: boolean): void {
+  if (!chipEl || !chipLabelEl || !chipDialFillEl) return;
+  const pending = pendingModel.get(unitKey);
+  const live = usage ? aliasOfModel(usage.model) : null;
+  // The transcript has caught up with the click: stop asserting and start reporting.
+  if (pending && live === pending) {
+    pendingModel.delete(unitKey);
+  }
+  const shown = pendingModel.get(unitKey) ?? null;
+
+  const name = shown
+    ? labelForAlias(shown)
+    : usage
+      ? modelDisplayName(usage.model)
+      : isClaude
+        ? "Claude"
+        : "Codex";
+  const pct =
+    usage && !usage.awaitingTurn ? Math.min(100, (usage.contextTokens / usage.limit) * 100) : null;
+  chipLabelEl.textContent = pct === null ? name : `${name} · ${Math.round(pct)}%`;
+  chipDialFillEl.style.setProperty("--p", String(pct ?? 0));
+  // The dial carries the meter's own level so a session running hot is legible from
+  // the face — the whole point of leaving the number outside the popover.
+  chipEl.dataset.dial = pct === null ? "none" : "on";
+  chipEl.dataset.level =
+    pct === null ? "none" : pct >= METER_HIGH_PCT ? "high" : pct >= METER_WARN_PCT ? "warn" : "ok";
+  paintModelList(shown ?? live);
+}
+
+/** Repaint the chip for `unitKey`'s ACTIVE session. Hidden whenever it would have
+ *  nothing to offer: a roster bucket, a cloud agent (no transcript, no PTY), a
+ *  session with neither numbers to read nor a terminal to act on.
  *
- *  The meter follows the session, but Compact needs a Board-owned PTY to type into —
- *  so an external session (or one whose terminal died) still shows its numbers with
- *  the button disabled, rather than hiding a meter that is perfectly readable. */
-async function renderUnitMeter(unitKey: string | null): Promise<void> {
-  if (!meterEl || !meterFillEl || !meterTextEl || !compactBtnEl || !meterBarEl) return;
-  const hide = (): void => {
-    meterEl!.hidden = true;
+ *  Each section is gated on what's actually reachable, so the chip never shows a
+ *  control that would no-op. An external session (or one whose terminal died) still
+ *  shows its numbers with Compact disabled — the meter is perfectly readable even
+ *  when there is no PTY to type into. */
+async function renderSessionChip(unitKey: string | null): Promise<void> {
+  if (!chipEl || !meterEl || !meterFillEl || !meterTextEl || !compactBtnEl || !meterBarEl) return;
+  const hideAll = (): void => {
+    closeChipPop();
+    chipEl!.hidden = true;
   };
-  if (!unitKey || unitKey === UNSOURCED || unitKey === IDLE || isCloudUnit(unitKey)) return hide();
-  // Entering a new unit: blank the meter rather than leave the previous session's
-  // numbers standing under the new name for the length of the read.
-  if (meterEl.dataset.unit !== unitKey) {
-    meterEl.hidden = true;
-    meterEl.dataset.unit = unitKey;
+  if (!unitKey || unitKey === UNSOURCED || unitKey === IDLE || isCloudUnit(unitKey)) {
+    return hideAll();
+  }
+  // Entering a new unit: blank the chip rather than leave the previous session's
+  // model and numbers standing under the new name for the length of the read.
+  if (chipEl.dataset.unit !== unitKey) {
+    closeChipPop();
+    chipEl.hidden = true;
+    chipEl.dataset.unit = unitKey;
   }
 
   const sessionId = activeSessionId(unitKey);
-  if (!sessionId) return hide();
+  if (!sessionId) return hideAll();
 
   const usage = await invoke<SessionUsage | null>("session_usage", { sessionId });
   // The await let the user switch units (or sessions) out from under us. Painting now
   // would show one session's numbers under another's name.
   if (currentUnitKey !== unitKey || sessionId !== lastMeterSessionId(unitKey)) return;
-  if (!usage) return hide();
 
-  meterEl.hidden = false;
+  const tabId = ownedTabForUnit(unitKey);
+  const isClaude = activeProvider(unitKey) === "claude";
+  // Model needs a Claude session we can type into; Hand off needs any PTY; Context
+  // needs a transcript. All three silent ⇒ there is no chip to show.
+  const canModel = isClaude && !!tabId;
+  if (!usage && !canModel && !tabId) return hideAll();
+
+  chipEl.hidden = false;
+  meterEl.hidden = !usage;
+  if (chipModelSecEl) chipModelSecEl.hidden = !canModel;
+  if (chipActsSecEl) chipActsSecEl.hidden = !tabId;
+  paintChipFace(unitKey, usage, isClaude);
+  if (usage) paintMeter(unitKey, sessionId, usage, tabId);
+}
+
+/** The context section: the bar, the numbers, and the compaction watch that rides
+ *  the same poll. Split out of renderSessionChip so each stays one job. */
+function paintMeter(
+  unitKey: string,
+  sessionId: string,
+  usage: SessionUsage,
+  tabId: string | null,
+): void {
+  if (!meterEl || !meterFillEl || !meterTextEl || !meterBarEl) return;
   if (usage.awaitingTurn) {
     // A compaction has landed and nothing has re-measured the context yet, so there is no
     // honest number to draw: the last turn's figure describes a request that no longer
@@ -3327,7 +3560,7 @@ async function renderUnitMeter(unitKey: string | null): Promise<void> {
       `${usage.outputTokens.toLocaleString()} tokens generated this session`;
   }
 
-  // The meter's own poll is what watches for the compaction to land — waiting costs no
+  // The chip's own poll is what watches for the compaction to land — waiting costs no
   // timer of its own. It also means a compaction can finish while the user is away in
   // another unit: the count comes from the whole transcript, so the watch still resolves
   // correctly the moment they come back to it.
@@ -3342,14 +3575,14 @@ async function renderUnitMeter(unitKey: string | null): Promise<void> {
   // whenever the next poll happens to come round.
   const after = compactEntry(compactState, unitKey, sessionId);
   if (before?.kind === "watch" && after?.kind === "done") {
-    window.setTimeout(() => void renderUnitMeter(currentUnitKey), COMPACT_DONE_MS);
+    window.setTimeout(() => void renderSessionChip(currentUnitKey), COMPACT_DONE_MS);
   }
-  paintCompactBtn(unitKey, sessionId, ownedTabForUnit(unitKey));
+  paintCompactBtn(unitKey, sessionId, tabId);
 }
 
 /** The button's whole appearance, derived in ONE place from whatever currently owns it.
- *  `renderUnitMeter` used to set `disabled` straight from the tab on every poll — which
- *  is exactly what wiped the in-flight label four seconds after the click. */
+ *  The meter used to set `disabled` straight from the tab on every poll — which is
+ *  exactly what wiped the in-flight label four seconds after the click. */
 function paintCompactBtn(unitKey: string, sessionId: string, tabId: string | null): void {
   if (!compactBtnEl) return;
   const b = compactBtnEl;
@@ -3405,7 +3638,7 @@ async function runCompact(): Promise<void> {
     // for the full timeout — and only this one, since another session may well be
     // mid-compaction and is none of our business.
     compactState = abandonCompact(compactState, unitKey, sessionId);
-    void renderUnitMeter(unitKey);
+    void renderSessionChip(unitKey);
     console.error("compact: could not type /compact into the session", e);
   }
   // On success the button STAYS busy. It is released by the meter poll, once the
