@@ -2339,23 +2339,30 @@ function buildRailTab(
     chevron.className = "unit-tab-chevron";
     chevron.textContent = expanded ? "▾" : "▸";
     chevron.title = expanded ? "Hide sessions" : "Show sessions";
-    // The chevron toggles THIS project's session switcher inline WITHOUT navigating
-    // (collapsing any other open one). stopPropagation keeps the tab-body click below
-    // from also firing — so you can peek at the sessions without leaving where you are.
+    // The chevron is the explicit show/hide TOGGLE for THIS project's session switcher,
+    // inline and WITHOUT navigating (collapsing any other open one). Read the LIVE
+    // expandedActiveProject, not the captured `expanded` — a poll/auto-open can flip the
+    // drawer open after this tab was built, and a stale closure would then toggle the
+    // wrong way. stopPropagation keeps the tab-body click below from also firing — so you
+    // can peek at the sessions without leaving where you are.
     chevron.addEventListener("click", (e) => {
       e.stopPropagation();
-      expandedActiveProject = expanded ? null : unitKey;
+      expandedActiveProject = expandedActiveProject === unitKey ? null : unitKey;
       sessionsAllShownFor = null; // a fresh open starts collapsed to the cap
       renderUnitRail(currentUnitKey);
     });
     tab.append(chevron);
   }
-  // Active multi-session: clicking the tab body toggles the session drawer so you can
-  // pick a session (same as the chevron — the whole tab is the affordance). Active
-  // single-session: no-op (already there). Inactive: navigate into the freshest session.
+  // Active multi-session: clicking the tab body REVEALS the session chooser — it never
+  // hides it. Entering a terminal-less unit auto-pops the chooser (so it's obvious you
+  // pick one), so a toggle here slammed shut the drawer that the click was meant to open
+  // — the "clicking the project I'm on won't show its sessions" bug. Reveal-only is
+  // idempotent; the chevron above is the deliberate hide affordance. Active single-
+  // session: no-op (already there). Inactive: navigate into the freshest session.
   if (active && hasDrawer) {
     tab.addEventListener("click", () => {
-      expandedActiveProject = expanded ? null : unitKey;
+      if (expandedActiveProject === unitKey) return; // already open — leave it (and its "show all") be
+      expandedActiveProject = unitKey;
       sessionsAllShownFor = null; // a fresh open starts collapsed to the cap
       renderUnitRail(currentUnitKey);
     });
