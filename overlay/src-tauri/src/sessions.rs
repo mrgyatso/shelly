@@ -48,11 +48,11 @@ fn projects_dir() -> Option<PathBuf> {
 
 /// Whether external (non-Board) sessions have been explicitly re-enabled on this
 /// machine — the same override the SessionStart/PostToolUse/Stop hooks honor
-/// (`~/.claude/companion/external-terminals` containing exactly "on"). When set,
+/// (`~/.shelly/external-terminals` containing exactly "on"). When set,
 /// the Recent band skips the ownership filter below and shows every transcript,
 /// matching the hooks' own opt-back-in behavior.
 fn external_terminals_enabled() -> bool {
-    let path = match crate::paths::companion_dir() {
+    let path = match crate::paths::shelly_dir() {
         Some(d) => d.join("external-terminals"),
         None => return false,
     };
@@ -63,14 +63,14 @@ fn external_terminals_enabled() -> bool {
 
 /// Every session id ever bound to a Board-owned terminal — the VALUES of
 /// `session-ids.json` (live-source stem → full session_id), which the
-/// `companion-session` hook only writes when `COMPANION_SESSION` was present at
+/// `shelly-session` hook only writes when `SHELLY_SESSION` was present at
 /// SessionStart. A session_id in this set was launched BY the Board at some
 /// point; anything else is external. Mirrors the ownership gate the Live rail
 /// already applies (via `owned-sessions.json`), extended to the Recent band —
 /// which otherwise reads `~/.claude/projects` transcripts directly, with no
 /// ownership check at all.
 fn owned_session_ids() -> std::collections::HashSet<String> {
-    let path = match crate::paths::companion_dir() {
+    let path = match crate::paths::shelly_dir() {
         Some(d) => d.join("session-ids.json"),
         None => return std::collections::HashSet::new(),
     };
@@ -81,12 +81,12 @@ fn owned_session_ids() -> std::collections::HashSet<String> {
         .unwrap_or_default()
 }
 
-/// `~/.claude/companion/recent-dismissed.json` — session ids the user manually hid
+/// `~/.shelly/recent-dismissed.json` — session ids the user manually hid
 /// from the Recent band. Separate from `dismissed.json` (live.rs), which is keyed
 /// by live-source STEM, not session id — Recent entries have no stem. A JSON array
 /// of strings.
 fn recent_dismissed_path() -> Option<PathBuf> {
-    crate::paths::companion_dir().map(|d| d.join("recent-dismissed.json"))
+    crate::paths::shelly_dir().map(|d| d.join("recent-dismissed.json"))
 }
 
 /// Read the recent-dismissed session-id set (empty when absent or unreadable).
@@ -476,7 +476,7 @@ pub fn list_recent_sessions(limit: Option<usize>) -> Vec<RecentSession> {
     all.truncate(cap);
 
     // Ownership gate: unless the user opted back into external terminals, a
-    // pre-existing transcript the Board never launched (no COMPANION_SESSION at
+    // pre-existing transcript the Board never launched (no SHELLY_SESSION at
     // SessionStart) must not surface in Recent — it would otherwise bypass the
     // same gate the Live rail already enforces. Plus the user's own manual hides.
     let show_external = external_terminals_enabled();
@@ -624,9 +624,9 @@ mod tests {
 
         // Both sessions are Board-owned (session-ids.json values) — the ownership
         // gate below only excludes UNOWNED transcripts.
-        std::fs::create_dir_all(home.join(".claude/companion")).unwrap();
+        std::fs::create_dir_all(home.join(".shelly")).unwrap();
         std::fs::write(
-            home.join(".claude/companion/session-ids.json"),
+            home.join(".shelly/session-ids.json"),
             r#"{"alpha--11111111":"11111111-aaaa-bbbb-cccc-000000000001","beta--22222222":"22222222-dddd-eeee-ffff-000000000002"}"#,
         )
         .unwrap();
@@ -683,7 +683,7 @@ mod tests {
         assert!(list_recent_sessions(None).is_empty());
 
         // Opt back into external terminals on this machine → shown.
-        let cmp = home.join(".claude/companion");
+        let cmp = home.join(".shelly");
         std::fs::create_dir_all(&cmp).unwrap();
         std::fs::write(cmp.join("external-terminals"), "on\n").unwrap();
         let list = list_recent_sessions(None);
@@ -697,8 +697,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    /// The companion-session hook only writes `session-ids.json` when the session was
-    /// launched by the Board (`COMPANION_SESSION` present) — so once that stem→id entry
+    /// The shelly-session hook only writes `session-ids.json` when the session was
+    /// launched by the Board (`SHELLY_SESSION` present) — so once that stem→id entry
     /// exists, the transcript surfaces even with no external-terminals opt-in.
     #[test]
     fn owned_transcript_shown_by_default() {
@@ -716,7 +716,7 @@ mod tests {
             ),
         )
         .unwrap();
-        let cmp = home.join(".claude/companion");
+        let cmp = home.join(".shelly");
         std::fs::create_dir_all(&cmp).unwrap();
         std::fs::write(
             cmp.join("session-ids.json"),
