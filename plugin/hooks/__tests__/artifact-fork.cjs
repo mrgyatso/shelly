@@ -122,6 +122,27 @@ console.log("### exemptions");
   // Not exempt just because the name starts with "home" — home-page.html is a normal slug.
   const homeish = artifact("home-page.html", TURN_START - 60000);
   ok(decide(payload(homeish), EMPTY_INDEX).fork, "home-page.html is NOT exempt (not a digest)");
+  // _*.html — companion-hook refuses to index the diagnostic scaffolds, so they can never
+  // answer "same turn?" and would fork on EVERY write. Exempt, in lockstep with that hook.
+  const scaffold = artifact("_probe.html", TURN_START - 60000);
+  ok(!decide(payload(scaffold), EMPTY_INDEX).updatedInput, "_*.html scaffold is exempt → rewritten in place");
+}
+
+// ---- permission posture is mirrored, never authored ------------------------
+// The redirect must claim "allow" or "ask" (nothing else carries updatedInput), so the
+// hook has to pick one — and the only defensible pick is whatever the session would have
+// done anyway. These pin BOTH directions so a future edit flips a test, not a user's
+// expectations: no strict user is silently auto-approved, no auto user is newly nagged.
+console.log("### permission posture");
+{
+  ok(fork.forkDecision("default") === "ask", "strict default mode → ask (the user still vets the write)");
+  ok(fork.forkDecision("plan") === "ask", "plan mode → ask");
+  ok(fork.forkDecision("acceptEdits") === "allow", "acceptEdits → allow (it was never going to prompt)");
+  ok(fork.forkDecision("bypassPermissions") === "allow", "bypassPermissions → allow");
+  ok(fork.forkDecision("dontAsk") === "allow", "dontAsk → allow");
+  ok(fork.forkDecision("auto") === "allow", "auto → allow");
+  ok(fork.forkDecision(undefined) === "ask", "absent mode → ask (never auto-approve a posture we cannot read)");
+  ok(fork.forkDecision("some-future-mode") === "ask", "unknown mode → ask (fail toward asking)");
 }
 
 // ---- paths we must never touch --------------------------------------------
@@ -232,23 +253,34 @@ console.log("### fail open");
 // permissionDecision is "allow"/"ask", so this asserts the pairing, not just the path.
 console.log("### stdin → stdout contract");
 {
+  // Run the real binary under BOTH postures. The pairing is what matters: whatever
+  // decision we emit must be one the client honors updatedInput for ("allow"/"ask"),
+  // and it must match the mode the session was already in.
+  const run = (file, mode) => {
+    const r = spawnSync("node", [path.join(__dirname, "..", "companion-artifact-fork.cjs")], {
+      input: JSON.stringify(payload(file, { prompt_id: null, permission_mode: mode })),
+      encoding: "utf8",
+      env: Object.assign({}, process.env, { COMPANION_ARTIFACTS_DIR: ARTIFACTS, HOME: sandbox }),
+    });
+    let out = null;
+    try {
+      out = JSON.parse(r.stdout);
+    } catch (_) {}
+    return { status: r.status, stdout: r.stdout, hso: out && out.hookSpecificOutput };
+  };
+
   const a = artifact("wire.html", TURN_START - 60000);
-  const r = spawnSync("node", [path.join(__dirname, "..", "companion-artifact-fork.cjs")], {
-    input: JSON.stringify(payload(a, { prompt_id: null })),
-    encoding: "utf8",
-    env: Object.assign({}, process.env, { COMPANION_ARTIFACTS_DIR: ARTIFACTS, HOME: sandbox }),
-  });
-  ok(r.status === 0, "hook exits 0");
-  let out = null;
-  try {
-    out = JSON.parse(r.stdout);
-  } catch (_) {}
-  const hso = out && out.hookSpecificOutput;
-  ok(!!hso, "emits JSON with hookSpecificOutput");
-  ok(hso && hso.hookEventName === "PreToolUse", "hookEventName is PreToolUse");
-  ok(hso && hso.permissionDecision === "allow", 'permissionDecision is "allow" (required — updatedInput is dropped without it)');
-  ok(hso && hso.updatedInput && hso.updatedInput.file_path === path.join(ARTIFACTS, "wire-2.html"), "updatedInput redirects file_path to the fork");
-  ok(hso && typeof hso.additionalContext === "string" && /wire-2\.html/.test(hso.additionalContext), "additionalContext tells the agent the real path");
+  const auto = run(a, "auto");
+  ok(auto.status === 0, "hook exits 0");
+  ok(!!auto.hso, "emits JSON with hookSpecificOutput");
+  ok(auto.hso && auto.hso.hookEventName === "PreToolUse", "hookEventName is PreToolUse");
+  ok(auto.hso && auto.hso.permissionDecision === "allow", 'auto mode → "allow" (a decision is REQUIRED — updatedInput is dropped without one)');
+  ok(auto.hso && auto.hso.updatedInput && auto.hso.updatedInput.file_path === path.join(ARTIFACTS, "wire-2.html"), "updatedInput redirects file_path to the fork");
+  ok(auto.hso && typeof auto.hso.additionalContext === "string" && /wire-2\.html/.test(auto.hso.additionalContext), "additionalContext tells the agent the real path");
+
+  const strict = run(artifact("wire-strict.html", TURN_START - 60000), "default");
+  ok(strict.hso && strict.hso.permissionDecision === "ask", 'strict default mode → "ask" — the fork never auto-approves a write the user vets');
+  ok(strict.hso && strict.hso.updatedInput && /wire-strict-2\.html/.test(strict.hso.updatedInput.file_path), "…and the redirect still carries (ask honors updatedInput too)");
 
   // A pass-through write must emit NOTHING — an empty stdout leaves the tool call alone.
   const r2 = spawnSync("node", [path.join(__dirname, "..", "companion-artifact-fork.cjs")], {

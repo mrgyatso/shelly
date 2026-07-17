@@ -73,10 +73,32 @@ const MAX_FORKS = 50;
 // The living surfaces: per-project digests the agent is MEANT to rewrite forever, so the
 // Board's full-bleed home always reflects current state. Forking them would strand the
 // Board on revision 1 and litter the dir with home-2/-3.html. Mirrors the skip arms in
-// companion-hook exactly (home.html and home.<unit_key>.html) — these are also the paths
-// it never indexes, so they'd otherwise fall to rung 2 and fork on every single update.
+// companion-hook exactly (home.html, home.<unit_key>.html and the _*.html diagnostic
+// scaffolds) — these are also the paths it never indexes, so they'd otherwise fall to
+// rung 2 and fork on every single update. Keep this list in lockstep with that hook: a
+// slug it refuses to index can never answer "same turn?", so anything it skips MUST be
+// exempt here too, or it forks unconditionally.
 function isLivingSurface(base) {
-  return base === "home.html" || /^home\..+\.html$/.test(base);
+  return base === "home.html" || /^home\..+\.html$/.test(base) || base.startsWith("_");
+}
+
+// Which permissionDecision carries the redirect — and it is NOT a free choice.
+//
+// The client honours updatedInput only when the decision is "allow" or "ask" (see the
+// header), so a fork MUST claim one of them. That makes this hook an accidental author of
+// the user's permission posture, which is not ours to change: "allow" would auto-approve
+// an artifact write someone in strict mode expects to vet, and "ask" would nag someone who
+// deliberately runs auto/bypass and has never been prompted for one.
+//
+// So MIRROR the posture the session already has, taking it from the payload's
+// permission_mode. In every mode the answer to "would this write have prompted me?" is
+// exactly what it would have been with no hook installed — the fork only ever changes
+// WHERE the bytes land, never whether the user is asked. Unknown/absent mode (an older
+// client, a non-Claude runner) falls to "ask": being asked once is a smaller harm than
+// silently auto-approving on a posture we could not read.
+const SILENT_MODES = new Set(["acceptEdits", "bypassPermissions", "dontAsk", "auto"]);
+function forkDecision(mode) {
+  return SILENT_MODES.has(String(mode || "")) ? "allow" : "ask";
 }
 
 // Is this a write we own? Only .html directly inside the artifacts dir. Everything else —
@@ -250,7 +272,7 @@ function main() {
         JSON.stringify({
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
-            permissionDecision: "allow",
+            permissionDecision: forkDecision(input.permission_mode),
             permissionDecisionReason: "Companion: forked a rewrite of a sealed artifact.",
             updatedInput: d.updatedInput,
             additionalContext: d.context,
@@ -279,6 +301,7 @@ else
     writtenThisTurn,
     nextForkPath,
     isLivingSurface,
+    forkDecision,
     isArtifactPath,
     readIndex,
   };
