@@ -264,6 +264,48 @@ impl CodexApproval {
     }
 }
 
+/// Which model a NEW claude session starts on, from the composer's picker.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ClaudeModel {
+    /// No flag — the CLI's own default (whatever `/model` last saved).
+    Default,
+    Opus,
+    Sonnet,
+    Haiku,
+}
+
+impl ClaudeModel {
+    /// Parse the frontend's pref string; anything unrecognized leaves the CLI's own
+    /// default in place.
+    ///
+    /// The CLOSED set is the point, not a convenience. The launch line is built by
+    /// string concatenation into a shell `-c` (see `claude_then_shell_script`), so a
+    /// free-form model string straight from the frontend would be an injection seam.
+    /// `CodexApproval` is safe for exactly this reason — it can only ever yield a
+    /// `&'static str` this file wrote — and this mirrors it deliberately rather than
+    /// passing the alias through and quoting it.
+    fn from_opt(s: Option<&str>) -> Self {
+        match s {
+            Some("opus") => Self::Opus,
+            Some("sonnet") => Self::Sonnet,
+            Some("haiku") => Self::Haiku,
+            _ => Self::Default,
+        }
+    }
+
+    /// Flags appended right after the `claude` binary (leading space so it
+    /// concatenates onto the quoted path). Bare aliases, not pinned ids: an alias
+    /// keeps pointing at its tier's current model as new ones ship.
+    fn flags(self) -> &'static str {
+        match self {
+            Self::Default => "",
+            Self::Opus => " --model opus",
+            Self::Sonnet => " --model sonnet",
+            Self::Haiku => " --model haiku",
+        }
+    }
+}
+
 /// The `-c` script the spawn shell runs: launch `claude`, then — when it exits
 /// (e.g. the user Ctrl-C's out of it) — `exec` a fresh interactive login shell so
 /// the terminal stays usable instead of dying. The spawn shell itself runs
@@ -277,6 +319,7 @@ fn claude_then_shell_script(
     resume: Option<&str>,
     agent: &str,
     codex_approval: CodexApproval,
+    model: ClaudeModel,
 ) -> String {
     // The approval preset only applies to codex; for claude it's always empty so the
     // claude launch line is unchanged.
@@ -285,6 +328,9 @@ fn claude_then_shell_script(
     } else {
         ""
     };
+    // …and the model only applies to claude. The two are mutually exclusive by agent,
+    // so the fresh-launch arm can concatenate both.
+    let model_flags = if agent == "codex" { "" } else { model.flags() };
     let launch = match resume {
         // Rejoin a specific prior session by its full id (used when reopening a
         // session that was closed off the Board roster). The resume verb is the
@@ -299,8 +345,17 @@ fn claude_then_shell_script(
                 shell_quote(id)
             )
         }
+        // A resume deliberately carries NO --model: it rejoins a session that already
+        // has one, and the launch pref is about starting something new. Forcing the
+        // pref onto a resume would silently re-model a conversation you only wanted
+        // to reopen.
         Some(id) => format!("{} --resume {}", shell_quote(agent_path), shell_quote(id)),
-        None => format!("{}{}", shell_quote(agent_path), codex_flags),
+        None => format!(
+            "{}{}{}",
+            shell_quote(agent_path),
+            codex_flags,
+            model_flags
+        ),
     };
     // Between claude exiting and the drop-to-shell, proactively disable mouse
     // tracking + bracketed paste and restore the cursor/screen buffer. A `claude`
@@ -336,6 +391,7 @@ pub async fn spawn_pty(
     resume: Option<String>,
     agent: Option<String>,
     codex_approval: Option<String>,
+    model: Option<String>,
 ) -> Result<(), String> {
     // Which agent CLI this tab embeds. "claude" (default) or "codex" — the
     // provider recorded in the session's registry record at SessionStart, echoed
@@ -347,6 +403,9 @@ pub async fn spawn_pty(
     // The approval preset a codex tab launches with (Settings pref, forwarded per
     // spawn). Ignored for claude.
     let codex_approval = CodexApproval::from_opt(codex_approval.as_deref());
+    // The model a fresh claude tab launches on (composer pref, forwarded per spawn).
+    // Ignored for codex, and for any resume.
+    let model = ClaudeModel::from_opt(model.as_deref());
     let agent_path = find_agent(agent).ok_or_else(|| match agent {
         "codex" => "Codex CLI not found. Install it with: npm install -g @openai/codex".to_string(),
         _ => "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"
@@ -374,6 +433,7 @@ pub async fn spawn_pty(
         resume.as_deref(),
         agent,
         codex_approval,
+        model,
     ));
     inject_env(&mut cmd, &tab_id);
     // A resume MUST run in the session's launch dir — the only place a resume
@@ -519,6 +579,7 @@ mod tests {
             None,
             "claude",
             CodexApproval::Off,
+            ClaudeModel::Default,
         );
         // claude runs first (quoted), so a path with spaces can't word-split.
         assert!(s.starts_with("'/usr/bin/claude';"), "got: {s}");
@@ -539,6 +600,7 @@ mod tests {
             Some("sess-42"),
             "claude",
             CodexApproval::Off,
+            ClaudeModel::Default,
         );
         // resume the exact prior session, id quoted so it can't word-split.
         assert!(
@@ -557,6 +619,7 @@ mod tests {
             Some("0199a213-81c0"),
             "codex",
             CodexApproval::Off,
+            ClaudeModel::Default,
         );
         assert!(
             s.starts_with("'/usr/bin/codex' resume '0199a213-81c0';"),
@@ -570,8 +633,76 @@ mod tests {
             None,
             "codex",
             CodexApproval::Off,
+            ClaudeModel::Default,
         );
         assert!(plain.starts_with("'/usr/bin/codex';"), "got: {plain}");
+    }
+
+    #[test]
+    fn model_flag_applies_to_a_fresh_claude_only() {
+        // A fresh claude launch carries the picked tier as a bare alias.
+        let fresh = claude_then_shell_script(
+            "/usr/bin/claude",
+            "/bin/zsh",
+            None,
+            "claude",
+            CodexApproval::Off,
+            ClaudeModel::Sonnet,
+        );
+        assert!(fresh.starts_with("'/usr/bin/claude' --model sonnet;"), "got: {fresh}");
+
+        // A RESUME carries no --model: it rejoins a session that already has one, and
+        // the launch pref must not silently re-model a conversation you only reopened.
+        let resumed = claude_then_shell_script(
+            "/usr/bin/claude",
+            "/bin/zsh",
+            Some("sess-42"),
+            "claude",
+            CodexApproval::Off,
+            ClaudeModel::Sonnet,
+        );
+        assert!(!resumed.contains("--model"), "resume must not re-model: {resumed}");
+
+        // Default = no flag at all, so the CLI's own default stands.
+        let plain = claude_then_shell_script(
+            "/usr/bin/claude",
+            "/bin/zsh",
+            None,
+            "claude",
+            CodexApproval::Off,
+            ClaudeModel::Default,
+        );
+        assert!(plain.starts_with("'/usr/bin/claude';"), "got: {plain}");
+
+        // The model never reaches codex, even if a pref is somehow set.
+        let codex = claude_then_shell_script(
+            "/usr/bin/codex",
+            "/bin/zsh",
+            None,
+            "codex",
+            CodexApproval::Off,
+            ClaudeModel::Opus,
+        );
+        assert!(!codex.contains("--model"), "codex takes no --model: {codex}");
+    }
+
+    #[test]
+    fn model_from_opt_rejects_anything_it_did_not_write() {
+        // The closed set is a safety boundary, not a convenience: the launch line is
+        // concatenated into a shell -c, so an unknown string must degrade to Default
+        // rather than reach the command line.
+        assert_eq!(ClaudeModel::from_opt(Some("opus")), ClaudeModel::Opus);
+        assert_eq!(ClaudeModel::from_opt(Some("haiku")), ClaudeModel::Haiku);
+        assert_eq!(ClaudeModel::from_opt(None), ClaudeModel::Default);
+        assert_eq!(ClaudeModel::from_opt(Some("")), ClaudeModel::Default);
+        assert_eq!(
+            ClaudeModel::from_opt(Some("opus; rm -rf ~")),
+            ClaudeModel::Default
+        );
+        assert_eq!(
+            ClaudeModel::from_opt(Some("$(whoami)")),
+            ClaudeModel::Default
+        );
     }
 
     #[test]
@@ -584,6 +715,7 @@ mod tests {
             None,
             "codex",
             CodexApproval::Auto,
+            ClaudeModel::Default,
         );
         assert!(
             fresh.starts_with("'/usr/bin/codex' -a on-request -s workspace-write;"),
@@ -595,6 +727,7 @@ mod tests {
             Some("sess-9"),
             "codex",
             CodexApproval::Auto,
+            ClaudeModel::Default,
         );
         assert!(
             resumed
@@ -611,6 +744,7 @@ mod tests {
             None,
             "codex",
             CodexApproval::Full,
+            ClaudeModel::Default,
         );
         assert!(
             s.starts_with("'/usr/bin/codex' --dangerously-bypass-approvals-and-sandbox;"),
@@ -628,6 +762,7 @@ mod tests {
             None,
             "claude",
             CodexApproval::Full,
+            ClaudeModel::Default,
         );
         assert!(s.starts_with("'/usr/bin/claude';"), "got: {s}");
         assert!(!s.contains("--dangerously-bypass"), "got: {s}");

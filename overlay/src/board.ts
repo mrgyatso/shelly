@@ -27,7 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit, copyToClipboard } from "./submit";
-import { initChatBar, syncChatBar, type ChatBarContext } from "./chatbar";
+import { initChatBar, syncChatBar, MODEL_CHOICES, type ChatBarContext } from "./chatbar";
 import { IS_LINUX } from "./platform";
 import { loadArtifactInto } from "./artifact-view";
 import { heroArtifactFor, artifactMatchesSource, effectsForRewrites } from "./ingest-logic";
@@ -62,7 +62,14 @@ import {
 import { classifyUpdate, type UpdateAttempt } from "./update-stale";
 import { mountClawd } from "./clawd";
 import { initCodePeek, closeCodePeek } from "./code-peek";
-import { getCodexApproval, setCodexApproval, type CodexApproval } from "./prefs";
+import {
+  getCodexApproval,
+  setCodexApproval,
+  getLaunchModel,
+  setLaunchModel,
+  type CodexApproval,
+  type LaunchModel,
+} from "./prefs";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   initOwnedTerminals,
@@ -457,9 +464,7 @@ let chipFaceEl: HTMLButtonElement | null = null;
 let chipPopEl: HTMLElement | null = null;
 let chipLabelEl: HTMLElement | null = null;
 let chipDialFillEl: HTMLElement | null = null;
-let chipModelSecEl: HTMLElement | null = null;
 let chipActsSecEl: HTMLElement | null = null;
-let modelListEl: HTMLElement | null = null;
 let meterEl: HTMLElement | null = null;
 let meterBarEl: HTMLElement | null = null;
 let meterFillEl: HTMLElement | null = null;
@@ -632,6 +637,7 @@ export async function initBoard(): Promise<void> {
     mount: stageEl,
     onSubmit: (text) => void submitFromShell(text),
     getContext: chatBarContext,
+    onPickModel: pickModelFromComposer,
   });
 
   setStatus(status, "Loading…");
@@ -910,11 +916,60 @@ function chatBarContext(): ChatBarContext {
   if (v.level === "unit") {
     if (ownedTabForUnit(v.unitKey)) {
       const sources = allSources.filter((s) => unitKeyOf(s) === v.unitKey);
-      return { atHome: false, mode: "message", target: unitName(v.unitKey, sources) };
+      const isClaude = activeProvider(v.unitKey) === "claude";
+      return {
+        atHome: false,
+        mode: "message",
+        target: unitName(v.unitKey, sources),
+        // What this session is ACTUALLY on — the chip's own reading, so the two
+        // surfaces can never disagree about the same session.
+        model: isClaude ? shownAliasFor(v.unitKey) : null,
+        canPickModel: isClaude,
+      };
     }
-    return { atHome: false, mode: "launch", target: null };
+    return {
+      atHome: false,
+      mode: "launch",
+      target: null,
+      model: launchAlias(),
+      canPickModel: preferredAgent() !== "codex",
+    };
   }
-  return { atHome: true, mode: "launch", target: null };
+  return {
+    atHome: true,
+    mode: "launch",
+    target: null,
+    model: launchAlias(),
+    canPickModel: preferredAgent() !== "codex",
+  };
+}
+
+/** The launch pref as an alias, or null for "whatever the CLI defaults to" — which
+ *  is a real, distinct state, not an absent one: the Board declines to override a
+ *  choice made outside it until you actually pick here. */
+function launchAlias(): string | null {
+  const m = getLaunchModel();
+  return m === "default" ? null : m;
+}
+
+/** A pick in the composer. It means two different things and only the router knows
+ *  which, because only it knows what a send would do right now:
+ *
+ *  message → the session is RUNNING, so switch it in place with `/model` (pickModel).
+ *  launch  → there is no session yet, so record what the next one starts on; the
+ *            spawn applies it as `--model` (prefs → terminal.ts → pty.rs).
+ *
+ *  A running session cannot be reached by a spawn flag, and a session that does not
+ *  exist cannot be typed into — so neither mechanism can cover both, and picking the
+ *  wrong one would silently do nothing. */
+function pickModelFromComposer(alias: string): void {
+  const v = currentView();
+  if (v.level === "unit" && ownedTabForUnit(v.unitKey)) {
+    void pickModel(alias);
+    return;
+  }
+  setLaunchModel(alias as LaunchModel);
+  syncChatBar();
 }
 
 // ---- /handoff → a live agent ------------------------------------------------
@@ -3131,16 +3186,13 @@ function wireUnitChrome(): void {
   chipPopEl = document.getElementById("unit-chip-pop");
   chipLabelEl = document.getElementById("unit-chip-label");
   chipDialFillEl = document.getElementById("unit-chip-dial-fill");
-  chipModelSecEl = document.getElementById("unit-chip-model");
   chipActsSecEl = document.getElementById("unit-chip-acts");
-  modelListEl = document.getElementById("unit-model-list");
   meterEl = document.getElementById("unit-meter");
   meterBarEl = document.getElementById("unit-meter-bar");
   meterFillEl = document.getElementById("unit-meter-fill");
   meterTextEl = document.getElementById("unit-meter-text");
   compactBtnEl = document.getElementById("unit-compact") as HTMLButtonElement | null;
   compactBtnEl?.addEventListener("click", () => void runCompact());
-  buildModelList();
   wireChipPopover();
   window.setInterval(() => void renderSessionChip(currentUnitKey), METER_POLL_MS);
 
@@ -3314,15 +3366,6 @@ function fmtTokens(n: number): string {
 // They used to sit side by side as equals: a number you watch constantly and a
 // hand-off you press once had the same weight in the same strip.
 
-/** What the picker offers. `/model` takes these bare aliases, and an alias is the
- *  right unit of choice: it keeps pointing at the current model of its tier as new
- *  ones ship, where a pinned id would rot the day the next one lands. */
-const MODEL_CHOICES: ReadonlyArray<{ alias: string; label: string; sub: string }> = [
-  { alias: "opus", label: "Opus", sub: "Deepest reasoning" },
-  { alias: "sonnet", label: "Sonnet", sub: "Best for everyday coding" },
-  { alias: "haiku", label: "Haiku", sub: "Fastest, cheapest" },
-];
-
 /** The tier `id` belongs to, or null. Prefix-matched for the same reason usage.rs's
  *  `window_for` is: the transcript records a bare id that may carry version and date
  *  suffixes, and an id we don't recognise must fall through rather than assert a
@@ -3348,6 +3391,18 @@ function modelDisplayName(id: string): string {
  *  did nothing. Cleared the moment the transcript catches up. */
 const pendingModel = new Map<string, string>();
 
+/** The tier the chip last READ off a unit's transcript. Cached because the composer
+ *  asks for it synchronously (getContext) while `usage` only lands on the chip's own
+ *  poll — without this the composer would show "Model" for a session the chip is
+ *  already naming, and the two surfaces would disagree about the same session. */
+const shownModel = new Map<string, string | null>();
+
+/** The tier to show for a unit: a pick still in flight beats the transcript, which
+ *  is the same precedence paintChipFace uses — one answer, one place. */
+function shownAliasFor(unitKey: string): string | null {
+  return pendingModel.get(unitKey) ?? shownModel.get(unitKey) ?? null;
+}
+
 /** The provider of `unitKey`'s ACTIVE session. Absent (pre-provider records) ⇒
  *  claude, matching providerForResumeId. */
 function activeProvider(unitKey: string): string {
@@ -3356,31 +3411,13 @@ function activeProvider(unitKey: string): string {
   return parseState(allSources.find((s) => s.source === src)?.json ?? "").provider ?? "claude";
 }
 
-/** Fill the picker once — the list is static, only the selection moves. */
-function buildModelList(): void {
-  if (!modelListEl) return;
-  modelListEl.innerHTML = "";
-  for (const c of MODEL_CHOICES) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "model-opt";
-    b.role = "radio";
-    b.dataset.alias = c.alias;
-    b.setAttribute("aria-checked", "false");
-    b.innerHTML =
-      '<span class="model-tick" aria-hidden="true"></span>' +
-      '<span class="model-main"><span class="model-t"></span><span class="model-s"></span></span>';
-    (b.querySelector(".model-t") as HTMLElement).textContent = c.label;
-    (b.querySelector(".model-s") as HTMLElement).textContent = c.sub;
-    b.addEventListener("click", () => void pickModel(c.alias));
-    modelListEl.append(b);
-  }
-}
-
-/** Switch the running session's model by typing `/model <alias>` into its own PTY —
+/** Switch the RUNNING session's model by typing `/model <alias>` into its own PTY —
  *  the same wire Compact and Hand off already ride, so the ESC-strip and delayed-Enter
- *  trust gate stay in one place. Nothing else can reach a session that is already
- *  running: a spawn flag would only ever apply to the NEXT one. */
+ *  trust gate stay in one place. Nothing else can reach a session that already exists:
+ *  the `--model` spawn flag only ever applies to the NEXT one.
+ *
+ *  Called by the composer's picker (pickModelFromComposer) — the control lives there
+ *  now, with the message it applies to. The chip only reports the result. */
 async function pickModel(alias: string): Promise<void> {
   const unitKey = currentUnitKey;
   if (!unitKey) return;
@@ -3388,9 +3425,7 @@ async function pickModel(alias: string): Promise<void> {
   if (!tabId) return;
   // Paint the pick immediately and let the transcript confirm it — see pendingModel.
   pendingModel.set(unitKey, alias);
-  paintModelList(alias);
   if (chipLabelEl) chipLabelEl.textContent = labelForAlias(alias);
-  closeChipPop();
   try {
     await submitIntoPty(tabId, `/model ${alias}`);
   } catch (e) {
@@ -3406,16 +3441,6 @@ async function pickModel(alias: string): Promise<void> {
 /** The picker's label for a tier, for the face while a pick is still pending. */
 function labelForAlias(alias: string): string {
   return MODEL_CHOICES.find((c) => c.alias === alias)?.label ?? alias;
-}
-
-/** Light the row that matches, and only it. */
-function paintModelList(alias: string | null): void {
-  if (!modelListEl) return;
-  for (const el of Array.from(modelListEl.querySelectorAll<HTMLElement>(".model-opt"))) {
-    const on = el.dataset.alias === alias;
-    el.setAttribute("aria-checked", on ? "true" : "false");
-    el.classList.toggle("on", on);
-  }
 }
 
 function closeChipPop(): void {
@@ -3453,6 +3478,9 @@ function paintChipFace(unitKey: string, usage: SessionUsage | null, isClaude: bo
   if (pending && live === pending) {
     pendingModel.delete(unitKey);
   }
+  // Hand the reading to the composer, which asks for it synchronously and has no
+  // usage of its own — this is the only place either surface learns the model.
+  shownModel.set(unitKey, live);
   const shown = pendingModel.get(unitKey) ?? null;
 
   const name = shown
@@ -3471,7 +3499,8 @@ function paintChipFace(unitKey: string, usage: SessionUsage | null, isClaude: bo
   chipEl.dataset.dial = pct === null ? "none" : "on";
   chipEl.dataset.level =
     pct === null ? "none" : pct >= METER_HIGH_PCT ? "high" : pct >= METER_WARN_PCT ? "warn" : "ok";
-  paintModelList(shown ?? live);
+  // The composer names the same model, so keep it honest as the transcript moves.
+  syncChatBar();
 }
 
 /** Repaint the chip for `unitKey`'s ACTIVE session. Hidden whenever it would have
@@ -3509,14 +3538,12 @@ async function renderSessionChip(unitKey: string | null): Promise<void> {
 
   const tabId = ownedTabForUnit(unitKey);
   const isClaude = activeProvider(unitKey) === "claude";
-  // Model needs a Claude session we can type into; Hand off needs any PTY; Context
-  // needs a transcript. All three silent ⇒ there is no chip to show.
-  const canModel = isClaude && !!tabId;
-  if (!usage && !canModel && !tabId) return hideAll();
+  // Hand off needs a PTY; Context needs a transcript. Both silent ⇒ no chip. (Model
+  // is no longer gated here — the picker moved to the composer, which does its own.)
+  if (!usage && !tabId) return hideAll();
 
   chipEl.hidden = false;
   meterEl.hidden = !usage;
-  if (chipModelSecEl) chipModelSecEl.hidden = !canModel;
   if (chipActsSecEl) chipActsSecEl.hidden = !tabId;
   paintChipFace(unitKey, usage, isClaude);
   if (usage) paintMeter(unitKey, sessionId, usage, tabId);

@@ -30,3 +30,32 @@ export function setCodexApproval(mode: CodexApproval): void {
     /* storage disabled (private mode) — falls back to the session default */
   }
 }
+
+/** Which model a NEW claude session launches on, from the composer's picker.
+ *  "default" sends no flag at all, leaving whatever the CLI itself defaults to —
+ *  that is deliberately distinct from naming a tier, so the Board never overrides a
+ *  choice the user made outside it just by being installed.
+ *
+ *  Read at spawn time (terminal.ts) and applied only to claude, and only to a fresh
+ *  launch — a resume rejoins a session that already has a model (see pty.rs). A
+ *  running tab keeps how it started; switching THAT is `/model` into its own PTY. */
+export type LaunchModel = "default" | "opus" | "sonnet" | "haiku";
+
+const LAUNCH_MODEL_KEY = "companion.launchModel";
+
+export function getLaunchModel(): LaunchModel {
+  try {
+    const v = localStorage.getItem(LAUNCH_MODEL_KEY);
+    return v === "opus" || v === "sonnet" || v === "haiku" ? v : "default";
+  } catch {
+    return "default";
+  }
+}
+
+export function setLaunchModel(model: LaunchModel): void {
+  try {
+    localStorage.setItem(LAUNCH_MODEL_KEY, model);
+  } catch {
+    /* storage disabled (private mode) — falls back to the CLI default */
+  }
+}

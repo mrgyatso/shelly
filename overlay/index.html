@@ -202,11 +202,10 @@
                   </span>
                 </button>
                 <div id="unit-chip-pop" class="chip-pop" role="dialog" aria-label="Session controls" hidden>
-                  <!-- Model. Populated from board.ts so the list has one source. -->
-                  <div id="unit-chip-model" class="chip-sec" hidden>
-                    <div class="chip-sec-h">Model</div>
-                    <div id="unit-model-list" class="model-list" role="radiogroup" aria-label="Model"></div>
-                  </div>
+                  <!-- Model is NOT here: the picker lives in the composer (chatbar.ts),
+                       with the message it applies to. The chip's face still NAMES the
+                       model, because that is state you glance at — and it stays legible
+                       when the composer is minimized. State here, control there. -->
                   <!-- Context: the meter, now on the inside. #unit-meter keeps its id
                        and its data-level — the fill's colour still keys off it. -->
                   <div id="unit-meter" class="unit-meter chip-sec" hidden>

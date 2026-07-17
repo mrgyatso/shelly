@@ -18,7 +18,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
-import { getCodexApproval } from "./prefs";
+import { getCodexApproval, getLaunchModel } from "./prefs";
 import { IS_MAC } from "./platform";
 
 const win = getCurrentWebviewWindow();
@@ -250,7 +250,14 @@ export async function createTerminal(
     // The Codex approval preset is a Board-wide pref, read fresh at spawn and applied
     // only to codex tabs (null for claude keeps the payload clean and the Rust side a no-op).
     const codexApproval = (opts.agent ?? null) === "codex" ? getCodexApproval() : null;
-    await invoke("spawn_pty", { tabId, rows, cols, cwd: opts.cwd ?? null, resume: opts.resume ?? null, agent: opts.agent ?? null, codexApproval });
+    // The launch model is the mirror image: a Board-wide pref read fresh at spawn and
+    // applied only to CLAUDE, and only to a fresh launch — a resume rejoins a session
+    // that already has a model, so re-modelling it here would change a conversation the
+    // user only meant to reopen. "default" sends nothing and leaves the CLI's own pick.
+    const isClaude = (opts.agent ?? "claude") !== "codex";
+    const launch = getLaunchModel();
+    const model = isClaude && !opts.resume && launch !== "default" ? launch : null;
+    await invoke("spawn_pty", { tabId, rows, cols, cwd: opts.cwd ?? null, resume: opts.resume ?? null, agent: opts.agent ?? null, codexApproval, model });
   } catch (e) {
     term.write(`\r\n\x1b[31m${String(e)}\x1b[0m\r\n`);
   }
