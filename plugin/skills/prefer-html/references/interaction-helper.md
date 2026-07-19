@@ -53,6 +53,13 @@ submit button, no separate flow. Native interactive elements (`a`, `button`, `in
 the Decide ballot are excluded automatically; give any other custom-interactive region (rare) a
 `data-shelly-noninspect` attribute to opt it out too.
 
+**Reading always wins over picking.** Two guards keep the picker from fighting the reader, and
+they apply to the *whole* page, not just commentable regions: a click that ends a **text
+selection** is treated as a read and never opens a composer (otherwise dragging across any
+non-commentable text would pop a composer and wipe the selection — an artifact you can't copy
+from); and `body` / `documentElement` / the `data-fit-root` wrapper are never pickable, so
+clicking dead space dismisses rather than spawning a composer named `body` with an empty path.
+
 ## The unified helper script (copy verbatim)
 
 ```html
@@ -195,6 +202,11 @@ the Decide ballot are excluded automatically; give any other custom-interactive 
   // itself, or an element already covered by the gutter-icon block system above.
   function isDirectPickable(el) {
     if (!el || el.nodeType !== 1) return false;
+    // The page itself is not a target: clicking dead space would otherwise open a
+    // composer named "body" with an empty path, and every click-away would spawn
+    // another one instead of dismissing the open composer.
+    if (el === document.body || el === document.documentElement) return false;
+    if (el.hasAttribute("data-fit-root")) return false;
     if (el.closest("a, button, input, select, textarea, label, summary, [role='button'], [tabindex]")) return false;
     if (el.closest(
       "[data-shelly-noninspect], [data-shelly-item], .decide, .bar, .cmp-comment, .cmp-chat, " +
@@ -267,6 +279,10 @@ the Decide ballot are excluded automatically; give any other custom-interactive 
 
   document.addEventListener("click", function (e) {
     var el = e.target;
+    // A click that ends a text selection is a READ, not a pick — without this,
+    // dragging across any non-commentable text pops a composer and wipes the
+    // selection, so the reader can never copy from an artifact.
+    if (String(window.getSelection() || "").trim()) return;
     if (!isDirectPickable(el)) return;
     hidePickBadge();
     var id = el.dataset.pickId;
