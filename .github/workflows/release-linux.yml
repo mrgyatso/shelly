@@ -151,7 +151,7 @@ jobs:
         env:
           FLOOR: '2.35' # Ubuntu 22.04 / Debian 12
         run: |
-          bin=overlay/src-tauri/target/release/companion-overlay
+          bin=overlay/src-tauri/target/release/shelly
           want=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
           echo "binary needs at most glibc $want; the floor is $FLOOR"
           if [ "$(printf '%s\n%s\n' "$want" "$FLOOR" | sort -V | tail -1)" != "$FLOOR" ]; then

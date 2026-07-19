@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Phase 4 verification — SANDBOXED. companion-index.cjs resolves identity from the
+// Phase 4 verification — SANDBOXED. shelly-index.cjs resolves identity from the
 // frozen registry record (no shortid live-file glob), LATE-REGISTERS sessions it has
 // never seen (same single derivation as SessionStart), and leaves artifacts with no
 // resolvable identity un-indexed (the Board fails those loud — never a silent guess).
@@ -10,9 +10,9 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const HOOKS = path.join(__dirname, "..");
-const INDEX_HOOK = path.join(HOOKS, "companion-index.cjs");
-const SESSION_HOOK = path.join(HOOKS, "companion-session");
-const identity = require(path.join(HOOKS, "companion-identity.cjs"));
+const INDEX_HOOK = path.join(HOOKS, "shelly-index.cjs");
+const SESSION_HOOK = path.join(HOOKS, "shelly-session");
+const identity = require(path.join(HOOKS, "shelly-identity.cjs"));
 
 let pass = 0,
   fail = 0;
@@ -28,16 +28,16 @@ function ok(cond, msg) {
 
 function mkSandbox(tag) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `cmp-p4-${tag}-`));
-  fs.mkdirSync(path.join(home, ".claude", "companion", "logs"), { recursive: true });
-  fs.mkdirSync(path.join(home, ".claude", "companion", "live"), { recursive: true });
-  fs.writeFileSync(path.join(home, ".claude", "companion", "external-terminals"), "on");
+  fs.mkdirSync(path.join(home, ".shelly", "logs"), { recursive: true });
+  fs.mkdirSync(path.join(home, ".shelly", "live"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".shelly", "external-terminals"), "on");
   return home;
 }
 function runIndex({ home, artifact, sid, cwd }) {
   const env = { ...process.env, HOME: home, SID: sid || "", CWD: cwd || "" };
-  delete env.COMPANION_SESSION;
-  const liveDir = path.join(home, ".claude", "companion", "live");
-  const indexPath = path.join(home, ".claude", "companion", "artifact-index.json");
+  delete env.SHELLY_SESSION;
+  const liveDir = path.join(home, ".shelly", "live");
+  const indexPath = path.join(home, ".shelly", "artifact-index.json");
   execFileSync("node", [INDEX_HOOK, artifact, liveDir, indexPath], { env, encoding: "utf8" });
   try {
     return JSON.parse(fs.readFileSync(indexPath, "utf8"));
@@ -46,7 +46,7 @@ function runIndex({ home, artifact, sid, cwd }) {
   }
 }
 function events(home) {
-  const p = path.join(home, ".claude", "companion", "events.ndjson");
+  const p = path.join(home, ".shelly", "events.ndjson");
   if (!fs.existsSync(p)) return [];
   return fs.readFileSync(p, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
@@ -78,7 +78,7 @@ console.log("\nCase 2 — shortid collision cannot mis-route (glob removed):");
   const short = sid.slice(0, 8);
   // Two live files with the SAME shortid, DIFFERENT units — the old glob picked
   // whichever readdir returned first; the record makes routing deterministic.
-  const liveDir = path.join(home, ".claude", "companion", "live");
+  const liveDir = path.join(home, ".shelly", "live");
   fs.writeFileSync(path.join(liveDir, `aaa-wrong--${short}.json`), JSON.stringify({ unit_key: "wrong-unit" }));
   fs.writeFileSync(path.join(liveDir, `zzz-right--${short}.json`), JSON.stringify({ unit_key: "right-unit" }));
   identity.register(
@@ -98,7 +98,7 @@ console.log("\nCase 3 — late registration reuses the frozen live identity:");
   const sid = "44440000-aaaa-bbbb-cccc-000000000003";
   const short = sid.slice(0, 8);
   // A live file from a pre-registry session (frozen identity, no record).
-  const liveDir = path.join(home, ".claude", "companion", "live");
+  const liveDir = path.join(home, ".shelly", "live");
   fs.writeFileSync(
     path.join(liveDir, `old-proj--${short}.json`),
     JSON.stringify({ project: "old-proj", is_repo: true, unit_key: "old-proj" }),
@@ -158,7 +158,7 @@ console.log("\nCase 6 — SessionStart + index round-trip, one identity:");
   execFileSync("git", ["init", "-q"], { cwd: repo });
   const sid = "44440000-aaaa-bbbb-cccc-000000000006";
   const env = { ...process.env, HOME: home };
-  delete env.COMPANION_SESSION;
+  delete env.SHELLY_SESSION;
   execFileSync("sh", [SESSION_HOOK], { input: JSON.stringify({ cwd: repo, session_id: sid }), env, encoding: "utf8" });
   const art = path.join(home, "six.html");
   fs.writeFileSync(art, "<html></html>");

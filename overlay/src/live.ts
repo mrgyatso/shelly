@@ -1,7 +1,7 @@
 // The always-on "live" surface: a single persistent pane reflecting the current
 // state of the work — what we're on (`working`), where we are (`where`), and the
 // next decisions (`next`) — read from the active per-session file under
-// ~/.claude/companion/live/ (newest-wins; see live.rs). Each session writes its
+// ~/.shelly/live/ (newest-wins; see live.rs). Each session writes its
 // own file, and a `project` label tells the user whose work the pane reflects.
 // The agent rewrites its file each turn; this shell polls `read_live` and
 // re-renders in place behind a soft cross-fade, so updates never pop a new
@@ -195,7 +195,7 @@ async function submit(): Promise<void> {
     return;
   }
   const verb: Record<Action, string> = { approve: "✓ Do it:", reject: "✗ Skip:", comment: "✎ Note:" };
-  const lines = ["[Companion live]", `Re: ${currentWorking}`, "", "— Decisions —", ""];
+  const lines = ["[Shelly live]", `Re: ${currentWorking}`, "", "— Decisions —", ""];
   for (const card of items) {
     const state = card.dataset.state as Action;
     lines.push(`${verb[state]} ${card.dataset.label || "(unlabeled)"}`);

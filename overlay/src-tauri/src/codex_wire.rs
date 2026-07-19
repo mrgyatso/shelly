@@ -1,7 +1,7 @@
-//! Auto-unlock Codex: wire the Companion marketplace + plugin into a Codex CLI
+//! Auto-unlock Codex: wire the Shelly marketplace + plugin into a Codex CLI
 //! that appeared AFTER setup ran.
 //!
-//! `companion setup` wires Codex when it's already installed — but a user who
+//! `shelly setup` wires Codex when it's already installed — but a user who
 //! installs Codex later shouldn't have to know to re-run setup. On every app
 //! launch this checks (on a background thread, best-effort, silent) whether a
 //! `codex` binary exists whose config doesn't yet carry our plugin, and adds it.
@@ -15,9 +15,9 @@
 
 use std::path::PathBuf;
 
-const MARKETPLACE: &str = "claude-code-companion";
-const MARKETPLACE_URL: &str = "https://github.com/mrgyatso/claude-code-companion";
-const PLUGIN: &str = "companion@claude-code-companion";
+const MARKETPLACE: &str = "shelly";
+const MARKETPLACE_URL: &str = "https://github.com/mrgyatso/shelly";
+const PLUGIN: &str = "shelly@shelly";
 
 /// `$CODEX_HOME/config.toml`, honoring the same override Codex itself uses.
 fn codex_config_path() -> Option<PathBuf> {
@@ -81,15 +81,15 @@ mod tests {
     #[test]
     fn wired_state_reads_the_config_codex_writes() {
         let both = r#"
-[marketplaces.claude-code-companion]
+[marketplaces.shelly]
 source = "/somewhere"
 
-[plugins."companion@claude-code-companion"]
+[plugins."shelly@shelly"]
 enabled = true
 "#;
         assert_eq!(wired_state(both), (true, true));
 
-        let mkt_only = "[marketplaces.claude-code-companion]\nsource = \"x\"\n";
+        let mkt_only = "[marketplaces.shelly]\nsource = \"x\"\n";
         assert_eq!(wired_state(mkt_only), (true, false));
 
         assert_eq!(wired_state(""), (false, false));
@@ -99,7 +99,7 @@ enabled = true
     fn a_disabled_plugin_still_counts_as_wired() {
         // enabled = false is a deliberate user choice — has_plugin must be true so
         // auto-wire never re-adds (and thereby re-enables) it.
-        let disabled = "[plugins.\"companion@claude-code-companion\"]\nenabled = false\n";
+        let disabled = "[plugins.\"shelly@shelly\"]\nenabled = false\n";
         assert_eq!(wired_state(disabled), (false, true));
     }
 }

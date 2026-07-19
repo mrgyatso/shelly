@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+# shelly-artifact-gate — Stop-hook seatbelt for inline artifact authoring.
+#
+# Artifacts are authored INLINE by the agent now (no background observer, no renderer).
+# This seatbelt hands control back ONCE when a turn ends with no .html artifact written,
+# so the agent can author it in full, warm-cache context. All logic — turn boundary,
+# index check, block/pass — is in shelly-artifact-gate.cjs; this wrapper only applies
+# the external-terminals guard (same as shelly-observe) and passes the hook payload
+# (stdin) straight through to node.
+
+# External-terminal handling (default OFF) — only sessions the Board spawned carry
+# SHELLY_SESSION; a plain terminal that merely has the plugin installed gets no
+# seatbelt (no forced continuation). Opt in per-machine via
+# ~/.shelly/external-terminals = "on".
+if [ -z "$SHELLY_SESSION" ] && [ "$(cat "${HOME}/.shelly/external-terminals" 2>/dev/null)" != "on" ]; then
+  exit 0
+fi
+
+# No node, no seatbelt. shelly-session already said so once, at SessionStart —
+# staying quiet here keeps the message from repeating on every Stop.
+command -v node >/dev/null 2>&1 || exit 0
+
+node "$(dirname "$0")/shelly-artifact-gate.cjs"
+exit 0

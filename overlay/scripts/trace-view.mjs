@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// trace-view.mjs — read the Companion trace harness log and print ONE artifact's
+// trace-view.mjs — read the Shelly trace harness log and print ONE artifact's
 // cross-layer timeline (the join the harness exists to produce).
 //
 //   node trace-view.mjs <corr-substring>     # one artifact's stage-by-stage timeline
 //   node trace-view.mjs --branches           # every ingest.branch decision + its inputs
 //   node trace-view.mjs --polls              # poll cadence (spot webview throttling)
 //
-// The log is ~/.claude/companion/logs/trace.ndjson (one NDJSON event per line,
+// The log is ~/.shelly/logs/trace.ndjson (one NDJSON event per line,
 // epoch-ms clock, `corr` = the artifact's absolute path = the cross-layer join key).
-// Turn the harness on with:  touch ~/.claude/companion/logs/trace.on   (rm to stop).
+// Turn the harness on with:  touch ~/.shelly/logs/trace.on   (rm to stop).
 //
 // To drive a FULL-pipeline trace you must write the artifact via Claude's Write tool
 // (a shell `cp` into the artifacts dir does NOT fire the PostToolUse hook — only a
@@ -18,7 +18,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const LOG = path.join(os.homedir(), ".claude/companion/logs/trace.ndjson");
+const LOG = path.join(os.homedir(), ".shelly/logs/trace.ndjson");
 
 function load() {
   let raw;

@@ -9,7 +9,7 @@
 //! `pty.rs` — the proven `portable-pty` + reader-thread path — trimmed to the
 //! essentials: no agent-output parsing, one PTY per tab, keyed by the tab id.
 //!
-//! The per-tab id is injected as `COMPANION_SESSION` into the spawned `claude`'s
+//! The per-tab id is injected as `SHELLY_SESSION` into the spawned `claude`'s
 //! environment; the PostToolUse hook (a child of `claude`) inherits it and
 //! reports it back, so artifacts route to the tab that produced them.
 
@@ -130,7 +130,7 @@ pub(crate) fn find_agent(bin: &str) -> Option<String> {
 }
 
 /// Inject the env `claude` / Ink need to detect terminal capabilities, plus the
-/// per-tab `COMPANION_SESSION` id. Other vars are inherited from the daemon.
+/// per-tab `SHELLY_SESSION` id. Other vars are inherited from the daemon.
 fn inject_env(cmd: &mut CommandBuilder, tab_id: &str) {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -143,7 +143,7 @@ fn inject_env(cmd: &mut CommandBuilder, tab_id: &str) {
     cmd.env_remove("CLAUDECODE");
     let lang = std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".into());
     cmd.env("LANG", lang);
-    cmd.env("COMPANION_SESSION", tab_id);
+    cmd.env("SHELLY_SESSION", tab_id);
 }
 
 /// Spawn the reader thread: read bytes off the PTY master, decode to UTF-8, and
@@ -823,7 +823,7 @@ mod tests {
 
         let mut cmd = CommandBuilder::new("/bin/sh");
         cmd.arg("-c");
-        cmd.arg("printf 'companion-pty-ok'");
+        cmd.arg("printf 'shelly-pty-ok'");
         let mut child = pair.slave.spawn_command(cmd).expect("spawn");
         drop(pair.slave);
 
@@ -842,7 +842,7 @@ mod tests {
                 Err(_) => break,
             }
         }
-        assert!(seen.contains("companion-pty-ok"), "got: {seen:?}");
+        assert!(seen.contains("shelly-pty-ok"), "got: {seen:?}");
 
         let status = child.wait().expect("wait");
         assert!(status.success());

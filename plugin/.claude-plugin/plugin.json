@@ -1,12 +1,12 @@
 {
-  "name": "companion",
-  "description": "Render Claude's work as HTML artifacts in the Companion overlay. The working agent authors each artifact inline, in full context, when a turn earns one; a Stop-hook backstop reminds it once if a substantive turn ends with nothing written. The live-state is a status heartbeat only. Manual /companion:html remains available.",
+  "name": "shelly",
+  "description": "Render your agent's work as HTML artifacts in Shelly — the shell your coding agents work inside. The working agent authors each artifact inline, in full context, when a turn earns one; a Stop-hook backstop reminds it once if a substantive turn ends with nothing written. The live-state is a status heartbeat only. Manual /shelly:html remains available.",
   "version": "0.8.0",
   "author": {
     "name": "mrgyatso",
-    "url": "https://github.com/mrgyatso/claude-code-companion"
+    "url": "https://github.com/mrgyatso/shelly"
   },
-  "homepage": "https://github.com/mrgyatso/claude-code-companion",
-  "repository": "https://github.com/mrgyatso/claude-code-companion",
+  "homepage": "https://github.com/mrgyatso/shelly",
+  "repository": "https://github.com/mrgyatso/shelly",
   "keywords": ["html", "artifacts", "overlay", "tauri", "macos"]
 }

@@ -11,7 +11,7 @@
  * The demo exists to teach ONE thing: you answer from the Board, and the agent
  * keeps going. That is the fourth side. These checks pin it.
  *
- * THE SIGNATURE: a Companion answer arrives as a BRACKETED PASTE (\e[200~ … \e[201~)
+ * THE SIGNATURE: a Shelly answer arrives as a BRACKETED PASTE (\e[200~ … \e[201~)
  * — submitIntoPty's wire format, which a human keystroke can never produce. That,
  * and only that, arms the follow-up. If someone "simplifies" write_pty back to a
  * plain `data === "\r"` check, case 5 fails: a visitor typing `hello` + Enter would
@@ -111,7 +111,7 @@ check(
 );
 check("typing + Enter does NOT land an artifact", !(await hasFollowUp()));
 
-/* ---- 3. a real Companion answer (bracketed paste + \r) arms the loop -------- */
+/* ---- 3. a real Shelly answer (bracketed paste + \r) arms the loop -------- */
 const ANSWER =
   "✓ Do it: Drop sales-velocity entirely and rank on followerCount delta\n✗ Skip: Pay for the vendor's paid analytics tier";
 out.length = 0;

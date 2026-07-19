@@ -1,4 +1,4 @@
-# Design brief — the Companion **Live** surface
+# Design brief — the Shelly **Live** surface
 
 A brief to hand to a design agent. The goal is to redesign the visual language of
 the always-on **Live** pane so it feels like an Anthropic product: **beautiful,
@@ -10,7 +10,7 @@ articulate, and simple — a really good app to be in.**
 
 The Live pane is a small, **always-on floating window** that sits over the user's
 terminal and reflects the *current state of the work* in real time. It is not a
-document and not a popup — it is a calm, persistent companion that updates **in
+document and not a popup — it is a calm, persistent shelly that updates **in
 place** every turn. Think: a living "where are we / what's next" card that's always
 glanceable in the corner of the screen.
 

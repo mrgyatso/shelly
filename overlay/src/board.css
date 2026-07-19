@@ -1,5 +1,5 @@
 /* =========================================================================
-   THE BOARD — Companion's home surface (ported from the Claude Design handoff).
+   THE BOARD — Shelly's home surface (ported from the Claude Design handoff).
    Design tokens + quiet chrome: a dark letterboxing stage, a warm "Anthropic
    paper" board surface, a serif greeting, minimal floating controls, a
    horizontal masonry of per-agent panes, each a bento of real artifact tiles.
@@ -242,7 +242,7 @@
 .greeting .sub:empty { display: none; }
 .greeting .sub b { color: var(--ink-2); font-weight: 500; }
 
-/* ── Agent-composed bar (L0) — themed from home.html's companion-bar block ── */
+/* ── Agent-composed bar (L0) — themed from home.html's shelly-bar block ── */
 .board-top.themed {
   align-items: center;
   padding: 0 14px 0 22px;
@@ -527,10 +527,10 @@
   padding: 40px;
 }
 .hub-fallback[hidden] { display: none; }
-/* A pixel-art clawd greets the idle L0 screen (a fresh pose each landing).
-   The library CSS (clawd.ts) sizes the .cw svg; this just seats the stage. */
-.hub-clawd { margin-bottom: -4px; }
-.hub-clawd .clawd-stage { display: flex; align-items: center; justify-content: center; }
+/* A pixel-art crab greets the idle L0 screen (a fresh pose each landing).
+   The library CSS (crab.ts) sizes the .cw svg; this just seats the stage. */
+.hub-crab { margin-bottom: -4px; }
+.hub-crab .crab-stage { display: flex; align-items: center; justify-content: center; }
 .hub-hello {
   font-family: var(--serif);
   font-optical-sizing: auto;
@@ -1680,7 +1680,7 @@
 #unit-digest[hidden] { display: none; }
 
 /* Blank-hero band — a session with no artifact yet. Seats in the hero slot (same
-   compact height as #unit-digest) with a pixel-art clawd + a warm waiting line,
+   compact height as #unit-digest) with a pixel-art crab + a warm waiting line,
    the terminal filling the rest below. Hidden unless the unit is in .blank-hero. */
 .unit-blank { display: none; position: relative; }
 .board-unit.blank-hero .unit-blank {
@@ -1729,7 +1729,7 @@
   text-overflow: ellipsis;
 }
 .unit-blank .blank-working:empty { display: none; }
-/* Idle home (no project selected): grow the clawd splash to fill the whole pane
+/* Idle home (no project selected): grow the crab splash to fill the whole pane
    and drop the (empty) terminal area below it, so it reads as a deliberate "nothing
    running" home rather than a session waiting for its first artifact. */
 .board-unit.is-idle.blank-hero .unit-blank { height: 100%; flex: 1 1 auto; }
@@ -2192,7 +2192,7 @@
   color: var(--accent);
 }
 
-/* SETTINGS view — Companion preferences. Placeholder rows for now (no wiring),
+/* SETTINGS view — Shelly preferences. Placeholder rows for now (no wiring),
    styled as real settings so the surface reads as designed, not "coming soon".
    Shown when data-view="settings". */
 .unit-settings {

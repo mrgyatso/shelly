@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Unit tests for companion-artifact-fork.cjs — the PreToolUse "sealed artifacts fork" hook.
+// Unit tests for shelly-artifact-fork.cjs — the PreToolUse "sealed artifacts fork" hook.
 // SANDBOXED: every artifact/transcript/index file is written under a throwaway tmp dir, so
-// this never touches live ~/.claude/companion state. Exercises decide() directly (both
+// this never touches live ~/.shelly state. Exercises decide() directly (both
 // turn-detection rungs, the exemptions, the fork-target walk, and every fail-open path),
 // plus one end-to-end run of the real .cjs over stdin to pin the emitted JSON contract.
 
@@ -10,7 +10,7 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const fork = require("../companion-artifact-fork.cjs");
+const fork = require("../shelly-artifact-fork.cjs");
 
 let pass = 0,
   fail = 0;
@@ -122,7 +122,7 @@ console.log("### exemptions");
   // Not exempt just because the name starts with "home" — home-page.html is a normal slug.
   const homeish = artifact("home-page.html", TURN_START - 60000);
   ok(decide(payload(homeish), EMPTY_INDEX).fork, "home-page.html is NOT exempt (not a digest)");
-  // _*.html — companion-hook refuses to index the diagnostic scaffolds, so they can never
+  // _*.html — shelly-hook refuses to index the diagnostic scaffolds, so they can never
   // answer "same turn?" and would fork on EVERY write. Exempt, in lockstep with that hook.
   const scaffold = artifact("_probe.html", TURN_START - 60000);
   ok(!decide(payload(scaffold), EMPTY_INDEX).updatedInput, "_*.html scaffold is exempt → rewritten in place");
@@ -257,10 +257,10 @@ console.log("### stdin → stdout contract");
   // decision we emit must be one the client honors updatedInput for ("allow"/"ask"),
   // and it must match the mode the session was already in.
   const run = (file, mode) => {
-    const r = spawnSync("node", [path.join(__dirname, "..", "companion-artifact-fork.cjs")], {
+    const r = spawnSync("node", [path.join(__dirname, "..", "shelly-artifact-fork.cjs")], {
       input: JSON.stringify(payload(file, { prompt_id: null, permission_mode: mode })),
       encoding: "utf8",
-      env: Object.assign({}, process.env, { COMPANION_ARTIFACTS_DIR: ARTIFACTS, HOME: sandbox }),
+      env: Object.assign({}, process.env, { SHELLY_ARTIFACTS_DIR: ARTIFACTS, HOME: sandbox }),
     });
     let out = null;
     try {
@@ -283,10 +283,10 @@ console.log("### stdin → stdout contract");
   ok(strict.hso && strict.hso.updatedInput && /wire-strict-2\.html/.test(strict.hso.updatedInput.file_path), "…and the redirect still carries (ask honors updatedInput too)");
 
   // A pass-through write must emit NOTHING — an empty stdout leaves the tool call alone.
-  const r2 = spawnSync("node", [path.join(__dirname, "..", "companion-artifact-fork.cjs")], {
+  const r2 = spawnSync("node", [path.join(__dirname, "..", "shelly-artifact-fork.cjs")], {
     input: JSON.stringify({ tool_name: "Write", tool_input: { file_path: path.join(sandbox, "x.ts"), content: "y" } }),
     encoding: "utf8",
-    env: Object.assign({}, process.env, { COMPANION_ARTIFACTS_DIR: ARTIFACTS, HOME: sandbox }),
+    env: Object.assign({}, process.env, { SHELLY_ARTIFACTS_DIR: ARTIFACTS, HOME: sandbox }),
   });
   ok(r2.status === 0 && r2.stdout.trim() === "", "a non-artifact write emits no output at all");
 }

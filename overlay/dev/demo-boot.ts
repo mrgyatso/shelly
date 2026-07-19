@@ -68,7 +68,7 @@ function waitFor(selector: string, timeoutMs = 10_000): Promise<Element> {
 
 /** Give each demo unit a Board-OWNED terminal.
  *
- *  Ownership is an in-memory binding (tabId ↔ `companion_session`), so a mocked
+ *  Ownership is an in-memory binding (tabId ↔ `shelly_session`), so a mocked
  *  live file can never produce it: the Board would correctly conclude the session
  *  runs in an external terminal and render the "Start session here" CTA instead of
  *  a PTY. Spawning through the Board's own entry point — the same one that CTA
@@ -84,7 +84,7 @@ async function primeDemoTerminals(): Promise<void> {
       return null;
     });
     // Without this the hero can't tie the unit's artifact to the shown session,
-    // and every unit lands on the blank "Clawd's on it" splash.
+    // and every unit lands on the blank "Crab's on it" splash.
     if (tabId) bindDemoSession(unitKey, tabId);
   }
 }

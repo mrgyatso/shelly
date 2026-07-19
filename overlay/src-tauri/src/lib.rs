@@ -45,7 +45,7 @@ fn log_panic(location: &str, msg: &str) {
     let line = format!("[{ts}] panic at {location}: {msg}\n");
     eprintln!("[overlay] {}", line.trim_end());
     if let Some(home) = std::env::var_os("HOME") {
-        let path = std::path::Path::new(&home).join("Library/Logs/companion-overlay.log");
+        let path = std::path::Path::new(&home).join("Library/Logs/shelly.log");
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -84,11 +84,11 @@ pub fn run() {
     // `npm run tauri dev` runs as a SECOND instance ALONGSIDE the installed release
     // — keep your stable app up for real work, iterate on the dev build, and never
     // have to close the whole app to rebuild/test. (Release still forwards a second
-    // `companion …` invocation to the running instance, as before.)
+    // `shelly …` invocation to the running instance, as before.)
     #[cfg(not(debug_assertions))]
     {
         builder = builder
-            // single-instance first so a forwarded `companion open …` exits fast.
+            // single-instance first so a forwarded `shelly open …` exits fast.
             .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
                 // This callback fires on the plugin's socket-listener thread, but
                 // creating a window (WebviewWindowBuilder::build / NSPanel reclass)
@@ -100,10 +100,10 @@ pub fn run() {
                     guard(|| {
                         // The decision lives in `launch` so it survives this
                         // `cfg(not(debug_assertions))` gate and can be unit-tested;
-                        // keep this a one-site match. (`companion history` toggles the
+                        // keep this a one-site match. (`shelly history` toggles the
                         // HUD — a keybind-free trigger, useful when ⌘8 is swallowed
                         // e.g. over remote desktop.)
-                        // A forwarded `companion handoff <file> …` queues the request
+                        // A forwarded `shelly handoff <file> …` queues the request
                         // and opens the Board (which acts on it); everything else is a
                         // plain surface open.
                         if let Some(req) = launch::handoff_for_args(&args, Some(cwd.as_str())) {
@@ -197,7 +197,7 @@ pub fn run() {
             // textarea inside an interactive artifact's iframe. A borderless
             // Accessory-policy app has no main menu by default, so AppKit had no
             // `paste:` key equivalent to dispatch — typing worked (key-window
-            // focus is fixed by the CompanionKeyPanel subclass) but paste didn't.
+            // focus is fixed by the ShellyKeyPanel subclass) but paste didn't.
             // The menu stays invisible (Accessory hides the bar); performKeyEquivalent
             // walks the main menu regardless.
             #[cfg(target_os = "macos")]
@@ -206,7 +206,7 @@ pub fn run() {
                 let h = app.handle();
                 let app_menu = Submenu::with_items(
                     h,
-                    "Companion",
+                    "Shelly",
                     true,
                     &[
                         &PredefinedMenuItem::hide(h, None)?,
@@ -248,13 +248,13 @@ pub fn run() {
                 let handle = app.handle().clone();
                 guard(move || windows::open_board_window(&handle));
             } else if let Some(req) = launch::handoff_for_args(&args, cwd.as_deref()) {
-                // First-launch `companion handoff <file> …`: this very process is
+                // First-launch `shelly handoff <file> …`: this very process is
                 // becoming the daemon, so queue the request now — the Board drains it
                 // on init via `take_pending_handoff`.
                 let handle = app.handle().clone();
                 guard(move || windows::queue_handoff(&handle, req));
             } else if artifact::parse_open_args(&args, cwd.as_deref()).is_some() {
-                // `companion open <artifact>` brings up the Board (the single
+                // `shelly open <artifact>` brings up the Board (the single
                 // surface), never a standalone window. The always-on board open
                 // below also covers this; kept explicit for clarity.
                 let handle = app.handle().clone();
@@ -270,15 +270,15 @@ pub fn run() {
                 let handle = app.handle().clone();
                 guard(move || windows::open_board_window(&handle));
             }
-            // Background remote-hub pull loop: if `~/.claude/companion/hub.json`
+            // Background remote-hub pull loop: if `~/.shelly/hub.json`
             // points at a hub, download its new artifacts into `remote/` (so the
             // history HUD shows them) and pop the ones that appear after the
             // initial sync. No-op until a hub is configured; re-reads config each
-            // tick so `companion hub set …` needs no restart.
+            // tick so `shelly hub set …` needs no restart.
             hub::start_pull_loop(app.handle().clone());
 
             // Auto-unlock Codex: a codex CLI installed after setup gets the
-            // Companion marketplace + plugin wired on the next app launch —
+            // Shelly marketplace + plugin wired on the next app launch —
             // background thread, best-effort, never re-adds anything present.
             codex_wire::auto_wire_on_launch();
 
@@ -292,10 +292,10 @@ pub fn run() {
             // Linux: WebKitGTK has no GPU compositing layer to promote CSS
             // animations to, so every ambient loop is a full software repaint —
             // one 6px infinite pulse measures 15–25% of a core here, and the
-            // idle Board's clawd scenes held the shared WebProcess near 70%.
+            // idle Board's crab scenes held the shared WebProcess near 70%.
             // Flip the app-local GTK animations toggle so every webview (Board,
             // panels, artifact iframes) reports `prefers-reduced-motion: reduce`.
-            // The surfaces are designed for that mode already (clawd.ts freezes
+            // The surfaces are designed for that mode already (crab.ts freezes
             // poses, board.css gates its loops), so this degrades ambience to
             // still art instead of a hot idle. App-local: the user's desktop
             // setting is untouched.
@@ -423,13 +423,13 @@ pub fn run() {
             // panic that unwound out of here would abort the daemon (see `guard`).
             guard(move || match event {
                 // Stay alive as a background daemon when the last PANEL closes, so a
-                // later `companion open` still forwards here — but honour a real Quit.
+                // later `shelly open` still forwards here — but honour a real Quit.
                 //
                 // `code` is the whole distinction, and it is not a detail:
                 //   None    — tao destroyed the last window (tauri-runtime-wry emits
                 //             `ExitRequested { code: None }` only from that path).
                 //   Some(_) — somebody called `app.exit(n)`. The tray's "Quit
-                //             Companion" is exactly this.
+                //             Shelly" is exactly this.
                 //
                 // Preventing BOTH made the app unquittable by any route, and an
                 // unquittable app is an un-upgradable one: it holds the single-instance
@@ -524,7 +524,7 @@ pub fn run() {
                         crate::layout::arrange(&handle, true);
                     });
                 }
-                // macOS Finder / `open file.html` / `companion://` URL handler.
+                // macOS Finder / `open file.html` / `shelly://` URL handler.
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Opened { urls } => {
                     for u in &urls {
@@ -535,7 +535,7 @@ pub fn run() {
                         } else {
                             artifact::parse_open_args(&["x".to_string(), u.to_string()], None)
                         };
-                        // A Finder open / `companion://` URL surfaces the Board
+                        // A Finder open / `shelly://` URL surfaces the Board
                         // (the single surface), never a standalone artifact window.
                         if path.is_some() {
                             windows::open_board_window(app_handle);

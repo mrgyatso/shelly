@@ -40,7 +40,7 @@ jobs:
           fi
 
           version="${TAG#v}"
-          dmg="Companion.Overlay_${version}_universal.dmg"
+          dmg="Shelly_${version}_universal.dmg"
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${dmg}"
 
           # Hash what users will actually download, not what a build box produced.
@@ -50,7 +50,7 @@ jobs:
 
           git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/mrgyatso/homebrew-tap.git" tap
           cd tap
-          cask=Casks/claude-code-companion.rb
+          cask=Casks/shelly.rb
 
           # The cask derives the DMG's name from `version`, so version + sha256 is
           # the entire bump.
@@ -69,7 +69,7 @@ jobs:
 
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -qam "claude-code-companion ${version}"
+          git commit -qam "shelly ${version}"
           git push
           echo "tap bumped to ${version}"
 
@@ -88,7 +88,7 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
         run: |
           version="${TAG#v}"
-          live=$(curl -fsSL "https://raw.githubusercontent.com/mrgyatso/homebrew-tap/main/Casks/claude-code-companion.rb" \
+          live=$(curl -fsSL "https://raw.githubusercontent.com/mrgyatso/homebrew-tap/main/Casks/shelly.rb" \
                  | sed -nE 's|^  version "([^"]+)".*|\1|p')
           echo "tap serves: ${live:-<none>} — expected: ${version}"
           if [ "$live" != "$version" ]; then

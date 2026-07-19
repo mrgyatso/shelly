@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# companion-session-end — Claude Code SessionEnd hook (best-effort).
+# shelly-session-end — Claude Code SessionEnd hook (best-effort).
 #
 # Drops this instance's live file ONLY when the user genuinely ended the session,
 # so a finished agent leaves the Board roster immediately instead of waiting out the
@@ -23,7 +23,7 @@ reason=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d
 
 # Trace harness (no-op unless enabled).
 CMP_HOOK_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)
-. "$CMP_HOOK_DIR/companion-trace.sh"
+. "$CMP_HOOK_DIR/shelly-trace.sh"
 
 # Forced/unknown exit (overlay shutdown SIGHUP, crash, signal) ⇒ keep everything and
 # let mtime-staleness reap it. Only a genuine user-initiated end removes the live file.
@@ -32,7 +32,7 @@ case "$reason" in
   *) trace session end-keep "reason=$reason"; exit 0 ;;
 esac
 
-line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
+line=$(sh "$(dirname "$0")/shelly-livepath.sh" "$cwd" "$session_id")
 live_path=$(printf '%s' "$line" | cut -f1)
 
 trace session end-delete "reason=$reason" "live=$live_path"
@@ -45,7 +45,7 @@ STEM="$stem" node -e '
   const fs=require("fs");
   // Object sidecars keyed by stem (stem -> value): drop this stem.
   for (const f of ["owned-sessions.json","session-dirs.json","session-ids.json"]) {
-    const p=`${process.env.HOME}/.claude/companion/${f}`;
+    const p=`${process.env.HOME}/.shelly/${f}`;
     try {
       const m=JSON.parse(fs.readFileSync(p,"utf8"));
       if (m && Object.prototype.hasOwnProperty.call(m, process.env.STEM)) {
@@ -56,7 +56,7 @@ STEM="$stem" node -e '
   }
   // dismissed.json is an ARRAY of stems — filter this one out so it does not
   // linger after the session is gone.
-  const dp=`${process.env.HOME}/.claude/companion/dismissed.json`;
+  const dp=`${process.env.HOME}/.shelly/dismissed.json`;
   try {
     const a=JSON.parse(fs.readFileSync(dp,"utf8"));
     if (Array.isArray(a) && a.includes(process.env.STEM)) {

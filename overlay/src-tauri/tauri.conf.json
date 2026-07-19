@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Companion Overlay",
+  "productName": "Shelly",
   "version": "0.10.1",
-  "identifier": "com.claudecode.companion-overlay",
+  "identifier": "io.github.mrgyatso.shelly",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -19,7 +19,7 @@
         "enable": true,
         "scope": [
           "$HOME/**",
-          "$HOME/.claude/companion/**",
+          "$HOME/.shelly/**",
           "$TEMP/**",
           "$DOCUMENT/**",
           "$DESKTOP/**",
@@ -42,16 +42,16 @@
       }
     },
     "resources": {
-      "../scripts/companion": "scripts/companion",
-      "../scripts/companion-hook": "scripts/companion-hook",
-      "../scripts/companion-doctor": "scripts/companion-doctor",
-      "../scripts/companion-setup": "scripts/companion-setup",
-      "../scripts/companion-update": "scripts/companion-update",
-      "../scripts/companion-uninstall": "scripts/companion-uninstall",
-      "../scripts/companion-hub": "scripts/companion-hub",
-      "../scripts/companion-index.cjs": "scripts/companion-index.cjs",
-      "../scripts/companion-trace.sh": "scripts/companion-trace.sh",
-      "../scripts/companion-trace.cjs": "scripts/companion-trace.cjs"
+      "../scripts/shelly": "scripts/shelly",
+      "../scripts/shelly-hook": "scripts/shelly-hook",
+      "../scripts/shelly-doctor": "scripts/shelly-doctor",
+      "../scripts/shelly-setup": "scripts/shelly-setup",
+      "../scripts/shelly-update": "scripts/shelly-update",
+      "../scripts/shelly-uninstall": "scripts/shelly-uninstall",
+      "../scripts/shelly-hub": "scripts/shelly-hub",
+      "../scripts/shelly-index.cjs": "scripts/shelly-index.cjs",
+      "../scripts/shelly-trace.sh": "scripts/shelly-trace.sh",
+      "../scripts/shelly-trace.cjs": "scripts/shelly-trace.cjs"
     },
     "icon": [
       "icons/32x32.png",
@@ -64,7 +64,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["companion"]
+        "schemes": ["shelly"]
       }
     }
   }

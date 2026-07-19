@@ -22,7 +22,7 @@ use tauri::{
 /// `board:navigate` event (an already-open window). Either path clears it.
 static BOARD_NAV_TARGET: Mutex<Option<String>> = Mutex::new(None);
 
-/// A pending `companion handoff …` request the Board should act on the moment it
+/// A pending `shelly handoff …` request the Board should act on the moment it
 /// opens: spawn a fresh session for the handoff and seed it. Same drain contract
 /// as [`BOARD_NAV_TARGET`] — the frontend takes it on init ([`take_pending_handoff`])
 /// or on the `board:handoff` event, whichever fires first.
@@ -38,11 +38,11 @@ const LABEL_PREFIX: &str = "art_";
 /// The single history HUD window. Fixed (not content-hashed) so ⌘8 always
 /// finds the one instance to toggle.
 pub const HISTORY_LABEL: &str = "hist_main";
-/// The single always-on live surface window. Fixed label so `companion live`
+/// The single always-on live surface window. Fixed label so `shelly live`
 /// always finds the one instance to create-or-raise.
 pub const LIVE_LABEL: &str = "live_main";
 /// The single Board window — the multi-agent steering canvas (grid of artifact
-/// tiles). Fixed label so `companion board` always finds the one instance to
+/// tiles). Fixed label so `shelly board` always finds the one instance to
 /// create-or-raise. P0: a new, isolated surface that does not replace the
 /// floating one-off panels yet.
 pub const BOARD_LABEL: &str = "board_main";
@@ -54,7 +54,7 @@ const POPOVER_H: f64 = 460.0;
 
 /// Deterministic, label-safe id for an artifact path. `DefaultHasher::new()` is
 /// seedless, so the same path maps to the same label for the life of the process
-/// — which is what lets a forwarded `companion open <same file>` find the panel
+/// — which is what lets a forwarded `shelly open <same file>` find the panel
 /// it already opened instead of creating a second one.
 fn label_for(path: &str) -> String {
     let mut h = DefaultHasher::new();
@@ -83,7 +83,7 @@ pub fn open_artifact_window(app: &AppHandle, path: String) {
     );
 
     let win = match WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
-        .title("Companion Overlay")
+        .title("Shelly")
         .inner_size(PANEL_W, PANEL_H)
         .min_inner_size(MIN_W, MIN_H)
         .decorations(false)
@@ -132,7 +132,7 @@ pub fn open_history_window(app: &AppHandle) {
 
     let win =
         match WebviewWindowBuilder::new(app, HISTORY_LABEL, WebviewUrl::App("index.html".into()))
-            .title("Companion History")
+            .title("Shelly History")
             .inner_size(900.0, 640.0)
             .min_inner_size(560.0, 360.0)
             // Same Linux-decorations rule as the Board (see open_board_window).
@@ -172,7 +172,7 @@ pub fn open_live_window(app: &AppHandle) {
     }
 
     let win = match WebviewWindowBuilder::new(app, LIVE_LABEL, WebviewUrl::App("index.html".into()))
-        .title("Companion Live")
+        .title("Shelly Live")
         .inner_size(440.0, 560.0)
         .min_inner_size(320.0, 200.0)
         .decorations(false)
@@ -224,7 +224,7 @@ pub fn open_board_window(app: &AppHandle) {
 
     let win =
         match WebviewWindowBuilder::new(app, BOARD_LABEL, WebviewUrl::App("index.html".into()))
-            .title("Companion Board")
+            .title("Shelly Board")
             .inner_size(1000.0, 700.0)
             .min_inner_size(560.0, 400.0)
             // Linux keeps native decorations: a frameless window on Wayland has no
@@ -287,7 +287,7 @@ pub fn take_board_nav_target() -> Option<String> {
     BOARD_NAV_TARGET.lock().ok().and_then(|mut g| g.take())
 }
 
-/// Queue a `companion handoff …` request and bring up the Board to act on it.
+/// Queue a `shelly handoff …` request and bring up the Board to act on it.
 /// Mirrors [`show_board`]: store the request, ping an already-open Board via
 /// `board:handoff`, and open-or-raise the Board (a fresh window drains the stored
 /// request on init instead of hearing the event).
@@ -327,7 +327,7 @@ pub fn toggle_popover(app: &AppHandle, anchor: Option<(f64, f64)>) {
 
     let win =
         match WebviewWindowBuilder::new(app, POPOVER_LABEL, WebviewUrl::App("index.html".into()))
-            .title("Companion")
+            .title("Shelly")
             .inner_size(POPOVER_W, POPOVER_H)
             .decorations(false)
             .transparent(true)

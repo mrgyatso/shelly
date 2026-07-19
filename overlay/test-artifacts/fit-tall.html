@@ -40,7 +40,7 @@
       var el = document.querySelector("[data-fit-root]") || document.body;
       var post = function () {
         parent.postMessage(
-          { source: "companion-artifact", kind: "size", w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) },
+          { source: "shelly-artifact", kind: "size", w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) },
           "*"
         );
       };

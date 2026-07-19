@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Unit + integration tests for the write-time charset safety net.
-//   - unit: ensureArtifactCharset (pure string→string) in companion-charset.cjs
-//   - integration: spawn the REAL companion-index.cjs on a charset-less temp artifact and
+//   - unit: ensureArtifactCharset (pure string→string) in shelly-charset.cjs
+//   - integration: spawn the REAL shelly-index.cjs on a charset-less temp artifact and
 //     confirm the file gains <meta charset> even when routing can't resolve (no session record).
 // SANDBOXED: temp files under a throwaway dir; never touches live ~/.claude state.
 
@@ -10,7 +10,7 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-const { ensureArtifactCharset } = require("../companion-charset.cjs");
+const { ensureArtifactCharset } = require("../shelly-charset.cjs");
 
 let pass = 0,
   fail = 0;
@@ -51,8 +51,8 @@ ok(ensureArtifactCharset(null) === null, "null → unchanged (no throw)");
 const once = ensureArtifactCharset("<div>x</div>");
 ok(ensureArtifactCharset(once) === once, "running twice is a no-op the second time");
 
-// ---- integration: companion-index.cjs repairs a real file ----------------
-console.log("### companion-index.cjs charset repair");
+// ---- integration: shelly-index.cjs repairs a real file ----------------
+console.log("### shelly-index.cjs charset repair");
 const artifact = path.join(sandbox, "bare.html");
 fs.writeFileSync(artifact, '<div data-fit-root>Shipped — all done</div>');
 const before = fs.readFileSync(artifact, "utf8");
@@ -64,10 +64,10 @@ fs.mkdirSync(liveDir, { recursive: true });
 // No session record exists → indexing will bail, but the charset fix runs first.
 const r = spawnSync(
   "node",
-  [path.join(__dirname, "..", "companion-index.cjs"), artifact, liveDir, idxPath],
+  [path.join(__dirname, "..", "shelly-index.cjs"), artifact, liveDir, idxPath],
   { env: { ...process.env, SID: "deadbeef-0000-1111-2222-333344445555" }, encoding: "utf8" },
 );
-ok(r.status === 0, "companion-index.cjs exits 0");
+ok(r.status === 0, "shelly-index.cjs exits 0");
 const after = fs.readFileSync(artifact, "utf8");
 ok(/<meta\s+charset="utf-8"/i.test(after), "artifact gained <meta charset> after the hook ran");
 ok(after.includes("Shipped — all done"), "original content preserved (em-dash intact)");
@@ -75,7 +75,7 @@ ok(after.includes("Shipped — all done"), "original content preserved (em-dash 
 // running the hook again must NOT double-insert
 const r2 = spawnSync(
   "node",
-  [path.join(__dirname, "..", "companion-index.cjs"), artifact, liveDir, idxPath],
+  [path.join(__dirname, "..", "shelly-index.cjs"), artifact, liveDir, idxPath],
   { env: { ...process.env, SID: "deadbeef-0000-1111-2222-333344445555" }, encoding: "utf8" },
 );
 ok(r2.status === 0, "second run exits 0");

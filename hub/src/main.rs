@@ -1,4 +1,4 @@
-//! Companion Hub — a small self-hosted HTTP server that serves the Companion
+//! Shelly Hub — a small self-hosted HTTP server that serves the Shelly
 //! live-state + artifacts (the same files the local overlay reads) to the
 //! overlay's pull loop and to a same-origin web UI.
 //!
@@ -34,13 +34,13 @@ async fn main() {
     let cfg = match Config::load() {
         Ok(c) => Arc::new(c),
         Err(e) => {
-            eprintln!("companion-hub: failed to load config: {e}");
+            eprintln!("shelly-hub: failed to load config: {e}");
             std::process::exit(1);
         }
     };
 
     println!(
-        "companion-hub v{} — binding {}:{}",
+        "shelly-hub v{} — binding {}:{}",
         env!("CARGO_PKG_VERSION"),
         cfg.bind,
         cfg.port
@@ -52,7 +52,7 @@ async fn main() {
     println!("  inbox:     {}", cfg.inbox_dir.display());
     println!("  web ui:    {}", cfg.webui_dir.display());
     println!("  pair this hub with the overlay:");
-    println!("      companion hub set <this-hub-url> {}", cfg.token);
+    println!("      shelly hub set <this-hub-url> {}", cfg.token);
 
     // Token-gated API surface. Health stays outside the auth layer so a client
     // can probe reachability before it has a (valid) token.
@@ -79,13 +79,13 @@ async fn main() {
 
     let listener = bind_with_retry(&cfg.bind, cfg.port).await;
     if let Err(e) = axum::serve(listener, app).await {
-        eprintln!("companion-hub: server error: {e}");
+        eprintln!("shelly-hub: server error: {e}");
         std::process::exit(1);
     }
 }
 
 /// Bind, retrying for up to ~5 minutes. A hub pinned to a tailnet IP via
-/// COMPANION_HUB_BIND races tailscale0 at boot ("Cannot assign requested
+/// SHELLY_HUB_BIND races tailscale0 at boot ("Cannot assign requested
 /// address") — that's transient, so wait for the interface instead of dying
 /// into systemd's start-limit. Persistent failures still exit non-zero.
 async fn bind_with_retry(bind: &str, port: u16) -> tokio::net::TcpListener {
@@ -97,14 +97,14 @@ async fn bind_with_retry(bind: &str, port: u16) -> tokio::net::TcpListener {
             Err(e) if attempt < MAX_ATTEMPTS => {
                 if attempt == 1 || attempt % 10 == 0 {
                     eprintln!(
-                        "companion-hub: bind {bind}:{port} failed ({e}); retrying every {}s (attempt {attempt}/{MAX_ATTEMPTS})",
+                        "shelly-hub: bind {bind}:{port} failed ({e}); retrying every {}s (attempt {attempt}/{MAX_ATTEMPTS})",
                         RETRY_EVERY.as_secs()
                     );
                 }
                 tokio::time::sleep(RETRY_EVERY).await;
             }
             Err(e) => {
-                eprintln!("companion-hub: failed to bind port {port}: {e}");
+                eprintln!("shelly-hub: failed to bind port {port}: {e}");
                 std::process::exit(1);
             }
         }

@@ -4,9 +4,9 @@
 // hooks system; these cases pin the provider-aware slice of that integration:
 //   - SessionStart records provider "codex"/"claude" from the transcript_path shape,
 //     and provider is frozen with the rest of the identity (resume can't flip it).
-//   - companion-artifact-paths.cjs extracts artifact paths from every payload shape
+//   - shelly-artifact-paths.cjs extracts artifact paths from every payload shape
 //     (Claude Write file_path, Codex apply_patch text, shell commands, escaped JSON).
-//   - The real companion-hook sh path indexes an artifact from a Codex-shaped
+//   - The real shelly-hook sh path indexes an artifact from a Codex-shaped
 //     apply_patch payload end-to-end (late registration carries the provider).
 //   - The Stop gate FAILS OPEN on a Codex rollout transcript (no Claude-style user
 //     entries → no turn boundary → never block). The seatbelt staying quiet under
@@ -18,10 +18,10 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const HOOKS = path.join(__dirname, "..");
-const SESSION_HOOK = path.join(HOOKS, "companion-session");
-const COMPANION_HOOK = path.join(HOOKS, "companion-hook");
-const { extractPaths } = require(path.join(HOOKS, "companion-artifact-paths.cjs"));
-const gate = require(path.join(HOOKS, "companion-artifact-gate.cjs"));
+const SESSION_HOOK = path.join(HOOKS, "shelly-session");
+const SHELLY_HOOK = path.join(HOOKS, "shelly-hook");
+const { extractPaths } = require(path.join(HOOKS, "shelly-artifact-paths.cjs"));
+const gate = require(path.join(HOOKS, "shelly-artifact-gate.cjs"));
 
 let pass = 0,
   fail = 0;
@@ -37,21 +37,21 @@ function ok(cond, msg) {
 
 function mkSandbox(tag) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), `cmp-codex-${tag}-`));
-  fs.mkdirSync(path.join(home, ".claude", "companion", "logs"), { recursive: true });
-  fs.writeFileSync(path.join(home, ".claude", "companion", "external-terminals"), "on");
+  fs.mkdirSync(path.join(home, ".shelly", "logs"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".shelly", "external-terminals"), "on");
   return home;
 }
 
 function runSession({ home, cwd, session_id, transcript_path }) {
   const env = { ...process.env, HOME: home };
-  delete env.COMPANION_SESSION;
-  delete env.COMPANION_ARTIFACTS_DIR;
+  delete env.SHELLY_SESSION;
+  delete env.SHELLY_ARTIFACTS_DIR;
   const payload = JSON.stringify({ cwd, session_id, transcript_path });
   return execFileSync("sh", [SESSION_HOOK], { input: payload, env, encoding: "utf8" });
 }
 
 function recordOf(home, session_id) {
-  const p = path.join(home, ".claude", "companion", "sessions", session_id + ".json");
+  const p = path.join(home, ".shelly", "sessions", session_id + ".json");
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
 }
 
@@ -106,9 +106,9 @@ console.log("\nCase 1 — SessionStart records the provider:");
 }
 
 // ---- Case 2: artifact-path extraction across payload shapes ----
-console.log("\nCase 2 — companion-artifact-paths.cjs extraction:");
+console.log("\nCase 2 — shelly-artifact-paths.cjs extraction:");
 {
-  const A = "/home/u/.claude/companion/artifacts";
+  const A = "/home/u/.shelly/artifacts";
 
   let got = extractPaths(
     JSON.stringify({ tool_input: { file_path: A + "/plan.html" } }),
@@ -141,17 +141,17 @@ console.log("\nCase 2 — companion-artifact-paths.cjs extraction:");
   ok(got.length === 1, "duplicate mentions dedupe to one path");
 }
 
-// ---- Case 3: companion-hook end-to-end with a Codex apply_patch payload ----
-console.log("\nCase 3 — companion-hook indexes a Codex artifact end-to-end:");
+// ---- Case 3: shelly-hook end-to-end with a Codex apply_patch payload ----
+console.log("\nCase 3 — shelly-hook indexes a Codex artifact end-to-end:");
 {
   const home = mkSandbox("hook");
-  const artifacts = path.join(home, ".claude", "companion", "artifacts");
+  const artifacts = path.join(home, ".shelly", "artifacts");
   fs.mkdirSync(artifacts, { recursive: true });
-  // The hook bails without a `companion` CLI on PATH (harmless-without-the-app seam);
+  // The hook bails without a `shelly` CLI on PATH (harmless-without-the-app seam);
   // stub one so the sandbox exercises the indexing path.
   const bin = path.join(home, "bin");
   fs.mkdirSync(bin, { recursive: true });
-  fs.writeFileSync(path.join(bin, "companion"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, "shelly"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cmp-codex-proj-"));
   const fp = path.join(artifacts, "codex-turn.html");
@@ -165,11 +165,11 @@ console.log("\nCase 3 — companion-hook indexes a Codex artifact end-to-end:");
     tool_input: { input: "*** Begin Patch\n*** Add File: " + fp + "\n+<!doctype html>\n*** End Patch" },
   });
   const env = { ...process.env, HOME: home, PATH: bin + ":" + process.env.PATH };
-  delete env.COMPANION_SESSION;
-  delete env.COMPANION_ARTIFACTS_DIR;
-  execFileSync("sh", [COMPANION_HOOK], { input: payload, env, encoding: "utf8" });
+  delete env.SHELLY_SESSION;
+  delete env.SHELLY_ARTIFACTS_DIR;
+  execFileSync("sh", [SHELLY_HOOK], { input: payload, env, encoding: "utf8" });
 
-  const idxPath = path.join(home, ".claude", "companion", "artifact-index.json");
+  const idxPath = path.join(home, ".shelly", "artifact-index.json");
   const idx = fs.existsSync(idxPath) ? JSON.parse(fs.readFileSync(idxPath, "utf8")) : {};
   const entry = idx[fp];
   ok(!!entry, "artifact-index.json gained an entry for the apply_patch write");

@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Unit tests for companion-artifact-gate.cjs — the Stop-hook seatbelt logic.
+// Unit tests for shelly-artifact-gate.cjs — the Stop-hook seatbelt logic.
 // SANDBOXED: every transcript/index file is written under a throwaway tmp dir, so this
-// never touches live ~/.claude/companion state. Exercises the pure functions directly
+// never touches live ~/.shelly state. Exercises the pure functions directly
 // (turn-boundary detection, the index check with its fail-open paths, and decide()).
 
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const gate = require("../companion-artifact-gate.cjs");
+const gate = require("../shelly-artifact-gate.cjs");
 
 let pass = 0,
   fail = 0;
@@ -128,7 +128,7 @@ ok(/done/i.test(responderReason), "responder reason covers the finished-work cas
 // (they spell the mechanical floor / the graft inline) and the responder reason instructs a GRAFT.
 ok(!/skill/i.test(blockRes.reason), "no-artifact block reason never mentions a skill");
 ok(!/skill/i.test(responderReason), "responder block reason never mentions a skill");
-ok(/charset/i.test(blockRes.reason) && /companion-meta/i.test(blockRes.reason), "no-artifact block reason lists the mechanical floor inline");
+ok(/charset/i.test(blockRes.reason) && /shelly-meta/i.test(blockRes.reason), "no-artifact block reason lists the mechanical floor inline");
 ok(/graft/i.test(responderReason), "responder reason instructs a graft onto the existing page");
 
 // Artifact landed this turn but its file is unreadable (index points at /a/x.html which
@@ -146,9 +146,9 @@ ok(
 
 // ---- hasAnswerableSurface -------------------------------------------------
 console.log("### hasAnswerableSurface");
-const artWithBallot = writeFile("art-ballot.html", '<div data-companion-item data-item-label="x"></div>');
-const artWithSubmit = writeFile("art-submit.html", '<button data-companion-submit="Do">Submit</button>');
-const artWithComment = writeFile("art-comment.html", '<section data-companion-commentable><p>hi</p></section>');
+const artWithBallot = writeFile("art-ballot.html", '<div data-shelly-item data-item-label="x"></div>');
+const artWithSubmit = writeFile("art-submit.html", '<button data-shelly-submit="Do">Submit</button>');
+const artWithComment = writeFile("art-comment.html", '<section data-shelly-commentable><p>hi</p></section>');
 const artBare = writeFile("art-bare.html", "<h1>We shipped it 🎉</h1><p>All done.</p>");
 ok(gate.hasAnswerableSurface([artWithBallot]).any === true, "ballot item counts as an answerable surface");
 ok(gate.hasAnswerableSurface([artWithSubmit]).any === true, "submit button counts as an answerable surface");
@@ -166,10 +166,10 @@ ok(mixed.any === true, "any one artifact with a responder → any=true");
 const artHelperOnly = writeFile(
   "art-helper-only.html",
   "<h1>Done</h1><p>Shipped it.</p>" +
-    "<style>[data-companion-commentable] .companion-commentable{position:relative}</style>" +
-    '<script>var s=document.querySelector("[data-companion-submit]");' +
-    'document.querySelectorAll("[data-companion-item]");' +
-    'document.querySelectorAll("[data-companion-commentable]");</script>',
+    "<style>[data-shelly-commentable] .shelly-commentable{position:relative}</style>" +
+    '<script>var s=document.querySelector("[data-shelly-submit]");' +
+    'document.querySelectorAll("[data-shelly-item]");' +
+    'document.querySelectorAll("[data-shelly-commentable]");</script>',
 );
 ok(
   gate.hasAnswerableSurface([artHelperOnly]).any === false,
@@ -178,8 +178,8 @@ ok(
 // Real commentable markup alongside the helper script still counts.
 const artRealPlusHelper = writeFile(
   "art-real-helper.html",
-  '<section data-companion-commentable><p>hi</p></section>' +
-    '<script>document.querySelector("[data-companion-submit]");</script>',
+  '<section data-shelly-commentable><p>hi</p></section>' +
+    '<script>document.querySelector("[data-shelly-submit]");</script>',
 );
 ok(
   gate.hasAnswerableSurface([artRealPlusHelper]).any === true,
@@ -197,20 +197,20 @@ const artCustomBallot = writeFile(
   '<div data-item data-a="do"><button data-a="do">Ship it</button></div>' +
     '<button id="submit">Submit</button>' +
     '<script>document.getElementById("submit").onclick=function(){' +
-    'parent.postMessage({source:"companion-artifact",kind:"submit",text:"ok"},"*");};</script>',
+    'parent.postMessage({source:"shelly-artifact",kind:"submit",text:"ok"},"*");};</script>',
 );
 ok(
   gate.hasAnswerableSurface([artCustomBallot]).any === true,
   'custom-wired ballot (markup <button> + kind:"submit" post) → answerable',
 );
 // A pure recap that EMBEDS the unified helper: its script source contains kind:"submit" and
-// the data-companion-submit selectors, but the markup has NO <button (the helper injects its
+// the data-shelly-submit selectors, but the markup has NO <button (the helper injects its
 // chat bar at runtime) and no house markers. The markup-<button> gate must keep it BLOCKED.
 const artRecapHelper = writeFile(
   "art-recap-helper.html",
   "<h1>All shipped</h1><p>Nothing else to do.</p>" +
-    '<script>var s=document.querySelector("[data-companion-submit]");' +
-    'function send(t){parent.postMessage({source:"companion-artifact",kind:"submit",text:t},"*");}</script>',
+    '<script>var s=document.querySelector("[data-shelly-submit]");' +
+    'function send(t){parent.postMessage({source:"shelly-artifact",kind:"submit",text:t},"*");}</script>',
 );
 ok(
   gate.hasAnswerableSurface([artRecapHelper]).any === false,

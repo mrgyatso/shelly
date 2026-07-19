@@ -2,7 +2,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { PASTE_KEY } from "./platform";
 
 // Interactive review artifacts post compiled-prose feedback up to the overlay
-// via `postMessage({source:"companion-artifact", kind:"submit", text})`. The
+// via `postMessage({source:"shelly-artifact", kind:"submit", text})`. The
 // overlay writes that text to the system clipboard and shows a corner toast so
 // the user knows to paste in their terminal.
 
@@ -17,7 +17,7 @@ export async function handleSubmit(text: string, artifactPath?: string): Promise
     // __ARTIFACT_PATH__; the Board passes the focused artifact's path explicitly
     // (its iframes are sandboxed and can't see their own path).
     const path = artifactPath ?? window.__ARTIFACT_PATH__;
-    const payload = path ? `${text}\n\n— Companion artifact: ${path} —` : text;
+    const payload = path ? `${text}\n\n— Shelly artifact: ${path} —` : text;
     await writeText(payload);
     showCopiedToast();
   } catch (e) {
@@ -27,7 +27,7 @@ export async function handleSubmit(text: string, artifactPath?: string): Promise
 }
 
 // An artifact Copy button (prefer-html's data-copy helper) bridges here via
-// `postMessage({source:"companion-artifact", kind:"copy", text})` because the
+// `postMessage({source:"shelly-artifact", kind:"copy", text})` because the
 // sandboxed opaque-origin iframe can't reach the clipboard itself on WebKitGTK.
 // Write it silently: the artifact's own button renders the "Copied ✓" state, so
 // a second overlay toast would be redundant.

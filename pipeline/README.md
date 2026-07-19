@@ -12,7 +12,7 @@ reaches `master` until you verify and promote it.**
   │
   ▼
   dispatch.mjs ──(claim)──►  agent:in-progress
-  │  • git worktree add  ../companion-<num>  on  agent/<num>-<slug>  (off origin/master)
+  │  • git worktree add  ../shelly-<num>  on  agent/<num>-<slug>  (off origin/master)
   │  • launch headless worker:  claude -p "<brief>" --permission-mode acceptEdits
   ▼
   worker agent (solve-issue discipline)
@@ -66,7 +66,7 @@ node pipeline/dispatch.mjs --max 3  # override concurrency cap (default 2)
 
 For each open `agent-ready` issue (up to the concurrency cap):
 1. relabels `agent-ready → agent:in-progress` (claim),
-2. `git worktree add ../companion-<num>` on `agent/<num>-<slug>` off fresh `origin/master`,
+2. `git worktree add ../shelly-<num>` on `agent/<num>-<slug>` off fresh `origin/master`,
 3. launches a headless worker: `claude -p "<worker prompt>" --permission-mode acceptEdits`,
    logging to `pipeline/logs/<num>.log`.
 
@@ -119,7 +119,7 @@ gate. Remove it any time:
 
 ```sh
 node pipeline/setup.mjs --unprotect
-# or:  gh api -X DELETE repos/mrgyatso/claude-code-companion/branches/master/protection
+# or:  gh api -X DELETE repos/mrgyatso/shelly/branches/master/protection
 ```
 
 If the `gh api` PUT is ever rejected (plan/permission change), setup does **not** fail —
@@ -131,13 +131,13 @@ it warns and falls back to the *procedural* gate: **only ever reach master via
 A watcher just runs `dispatch.mjs --go` on an interval. **It is not enabled** — turning
 it on starts continuous unattended agent spawning. Two ways to enable, both deliberate:
 
-**Option A — launchd (survives logout).** Template: `pipeline/com.companion.agent-dispatch.plist`
+**Option A — launchd (survives logout).** Template: `pipeline/com.shelly.agent-dispatch.plist`
 (fix the two absolute paths inside first).
 
 ```sh
-cp pipeline/com.companion.agent-dispatch.plist ~/Library/LaunchAgents/
-launchctl load  ~/Library/LaunchAgents/com.companion.agent-dispatch.plist   # ENABLE
-launchctl unload ~/Library/LaunchAgents/com.companion.agent-dispatch.plist  # DISABLE
+cp pipeline/com.shelly.agent-dispatch.plist ~/Library/LaunchAgents/
+launchctl load  ~/Library/LaunchAgents/com.shelly.agent-dispatch.plist   # ENABLE
+launchctl unload ~/Library/LaunchAgents/com.shelly.agent-dispatch.plist  # DISABLE
 ```
 
 **Option B — a `/loop` in a Claude session** (ephemeral, dies with the session):

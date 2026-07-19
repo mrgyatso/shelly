@@ -1,15 +1,15 @@
 #!/usr/bin/env sh
-# companion — drive the floating HTML artifact overlay.
+# shelly — drive the floating HTML artifact overlay.
 #
-#   companion open <file.html>   load an artifact (launches the overlay if needed)
+#   shelly open <file.html>   load an artifact (launches the overlay if needed)
 #
 # Invoking the real binary (not `open -a`) is what lets tauri-plugin-single-instance
 # forward these args to an already-running overlay. Resolves the binary from the
 # installed .app first, then the local dev/release build.
 set -e
 
-# Resolve $0 through symlinks (e.g. /usr/local/bin/companion) so SCRIPT_DIR is
-# the real scripts dir — needed to find sibling scripts like companion-doctor.
+# Resolve $0 through symlinks (e.g. /usr/local/bin/shelly) so SCRIPT_DIR is
+# the real scripts dir — needed to find sibling scripts like shelly-doctor.
 SELF=$0
 while [ -L "$SELF" ]; do
   target=$(readlink "$SELF")
@@ -24,20 +24,20 @@ SCRIPT_DIR=$(cd "$(dirname "$SELF")" && pwd)
 # which routes on argv itself (see launch.rs): no args or `board` opens the
 # Board, plus `open <file>`, `history` and `live`.
 case "$1" in
-  doctor) exec "$SCRIPT_DIR/companion-doctor" ;;
-  setup) shift; exec "$SCRIPT_DIR/companion-setup" "$@" ;;
-  hub) shift; exec "$SCRIPT_DIR/companion-hub" "$@" ;;
-  uninstall) shift; exec "$SCRIPT_DIR/companion-uninstall" "$@" ;;
+  doctor) exec "$SCRIPT_DIR/shelly-doctor" ;;
+  setup) shift; exec "$SCRIPT_DIR/shelly-setup" "$@" ;;
+  hub) shift; exec "$SCRIPT_DIR/shelly-hub" "$@" ;;
+  uninstall) shift; exec "$SCRIPT_DIR/shelly-uninstall" "$@" ;;
 esac
 
 # macOS: the installed .app. Linux: the .deb's /usr/bin binary. Both lists are
 # probed everywhere — a path that doesn't exist is just skipped.
-CANDIDATES="/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay
-$HOME/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay
-/usr/bin/companion-overlay
-/usr/local/bin/companion-overlay
-$SCRIPT_DIR/../src-tauri/target/release/companion-overlay
-$SCRIPT_DIR/../src-tauri/target/debug/companion-overlay"
+CANDIDATES="/Applications/Shelly.app/Contents/MacOS/shelly
+$HOME/Applications/Shelly.app/Contents/MacOS/shelly
+/usr/bin/shelly
+/usr/local/bin/shelly
+$SCRIPT_DIR/../src-tauri/target/release/shelly
+$SCRIPT_DIR/../src-tauri/target/debug/shelly"
 
 BIN=""
 IFS='
@@ -49,7 +49,7 @@ done
 unset IFS
 
 if [ -z "$BIN" ]; then
-  echo "companion: overlay binary not found." >&2
+  echo "shelly: overlay binary not found." >&2
   echo "  Build it: cd overlay && npm run tauri build   (or run 'npm run tauri dev')" >&2
   exit 1
 fi
@@ -62,7 +62,7 @@ fi
 #                        socket and exits immediately. Detaching changes nothing.
 #   daemon not up      → this process *becomes* the daemon. Under `exec` it never
 #                        returns, so the caller hangs until the app quits. That is
-#                        what wedged `companion doctor` on every fresh install, and
+#                        what wedged `shelly doctor` on every fresh install, and
 #                        blocked forever in CI where nothing ever quits it.
 #
 # Backgrounding costs us the binary's exit status, which we never surfaced anyway.

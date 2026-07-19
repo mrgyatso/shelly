@@ -1,23 +1,23 @@
 #!/usr/bin/env sh
-# companion-hook — Claude Code PostToolUse hook.
+# shelly-hook — Claude Code PostToolUse hook.
 # Pops the overlay when an HTML artifact is written into the artifacts dir.
 # Reads the hook JSON payload on stdin; never blocks the originating write.
 #
-# The watched dir is $COMPANION_ARTIFACTS_DIR (default: $HOME/codeviz/public/artifacts).
+# The watched dir is $SHELLY_ARTIFACTS_DIR (default: $HOME/codeviz/public/artifacts).
 #
 # Wire it (global) in ~/.claude/settings.json — use the absolute path to this file:
 #   "PostToolUse": [{ "matcher": "Write|Edit",
 #     "hooks": [{ "type": "command",
-#       "command": "</abs/path/to>/overlay/scripts/companion-hook" }] }]
+#       "command": "</abs/path/to>/overlay/scripts/shelly-hook" }] }]
 
-ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/.claude/companion/artifacts}"
+ARTIFACTS_DIR="${SHELLY_ARTIFACTS_DIR:-$HOME/.shelly/artifacts}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-LIVE_DIR="$HOME/.claude/companion/live"
-INDEX_PATH="$HOME/.claude/companion/artifact-index.json"
+LIVE_DIR="$HOME/.shelly/live"
+INDEX_PATH="$HOME/.shelly/artifact-index.json"
 
-# Trace harness (no-op unless COMPANION_TRACE=1 / the trace.on flag file exists).
+# Trace harness (no-op unless SHELLY_TRACE=1 / the trace.on flag file exists).
 CMP_HOOK_DIR="$SCRIPT_DIR"
-. "$SCRIPT_DIR/companion-trace.sh"
+. "$SCRIPT_DIR/shelly-trace.sh"
 
 payload=$(cat)
 
@@ -47,12 +47,12 @@ case "$fp" in
       home.html|home.*|_*) trace hook skip-index "corr=$fp" "reason=reserved-name" ;;
       *)
         trace hook index-spawn "corr=$fp"
-        SID="$SID" node "$SCRIPT_DIR/companion-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
+        SID="$SID" node "$SCRIPT_DIR/shelly-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
         trace hook index-done "corr=$fp"
         ;;
     esac
     # The Board is the single surface — it ingests artifacts via the live poll +
-    # native watcher. No standalone window: the obsolete `companion open` pop was
+    # native watcher. No standalone window: the obsolete `shelly open` pop was
     # removed here (the cleanup that also dropped the redundant settings.json
     # registration of this hook; PostToolUse now fires once, via the plugin).
     ;;

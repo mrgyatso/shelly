@@ -1,6 +1,6 @@
-# Companion artifact FEEL — the frame, and Broadsheet as its default look
+# Shelly artifact FEEL — the frame, and Broadsheet as its default look
 
-The design point-of-view every Companion artifact follows. Since 0.4.5 there is **one authoring
+The design point-of-view every Shelly artifact follows. Since 0.4.5 there is **one authoring
 path**: the working agent writes the HTML inline, in full context (no background observer, no
 deterministic renderer). This spec is the **floor** that keeps every artifact reading as one
 product — it is *not* a template the agent fills in. Broadsheet, established in the 2026-06-29/30
@@ -19,7 +19,7 @@ carries the invariants that hold across all of them.
 
 ## The one rule
 
-**Make the decision the loudest thing on the page.** A Companion artifact floats over a live
+**Make the decision the loudest thing on the page.** A Shelly artifact floats over a live
 coding agent and its job is to *move the work forward without the user touching the terminal*. So
 the single most confident, most-designed element is always the **next move**. Inform, then propel —
 never recap and stop.
@@ -37,7 +37,7 @@ Three failure modes it avoids:
 The agent authors freeform HTML — there is no template engine stamping a fixed layout. The feel is
 held by a **small set of invariants**, not by a mold. Hold these; invent everything else.
 
-**The invariants — what makes a bespoke page still read as *Companion*:**
+**The invariants — what makes a bespoke page still read as *Shelly*:**
 
 1. **Dissolve into the board — one color at a time across the whole surface.** Default:
    `html`/`body` background = the exact board shade `oklch(0.945 0.014 60)`, ink `#171A1F` (the
@@ -63,13 +63,13 @@ held by a **small set of invariants**, not by a mold. Hold these; invent everyth
 
 **Everything else is yours to invent** — layout, composition, how to show *this* data. When the
 content invites a better form, break format; that is the whole point of authoring inline. A block
-that merely fills the skeleton is worse than a bespoke one that earns its place. Clawd is the
+that merely fills the skeleton is worse than a bespoke one that earns its place. Crab is the
 emblem: the pixel-art clay character lives in the **masthead**, posing to the work — signature, not
 wallpaper; transform/opacity animation only.
 
 ## A suggested skeleton (a starting point, not a mold)
 
-`masthead (Clawd emblem + project + edition) → kicker → dominant headline → standfirst → working
+`masthead (Crab emblem + project + edition) → kicker → dominant headline → standfirst → working
 chip → touches (files) → visuals → evidence (collapsible) → **Decide ballot**`
 
 Follow it when nothing better suggests itself; depart from it when the content wants a different
@@ -80,7 +80,7 @@ shape. The invariants above are the contract — the skeleton is only a convenie
 An elevated panel set off with an accent top-rule and a real "Decide" header. Each move = kind
 label + title + one-line detail + generous ~42px tap targets **✓ do / ✎ note / ✗ skip**, plus a
 **Do all** and a primary dark **Commit & continue**. One shared comment rides the same submit,
-which posts `{source:'companion-artifact',kind:'submit',text}` with clear `✓ Do it / ✎ Note /
+which posts `{source:'shelly-artifact',kind:'submit',text}` with clear `✓ Do it / ✎ Note /
 ✗ Skip` lines. "Spend boldness on one memorable interaction" — this is it.
 
 ## Two modes of the same style

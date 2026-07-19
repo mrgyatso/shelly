@@ -1,14 +1,14 @@
 //! The connected-agents layer: registry, liveness, and the reply inbox.
 //!
 //! An *agent* is any autonomous worker (a Hermes cron, an OpenClaw-style
-//! gateway, a bare script) that publishes Companion surfaces — live-state JSON
+//! gateway, a bare script) that publishes Shelly surfaces — live-state JSON
 //! and HTML artifacts — under this hub's data dir. The registry gives each one
 //! a durable identity card (`agents/<id>.json`); the inbox gives the user a
 //! reply path (`inbox/<agent>/<envelope>.json`) so interacting with an agent's
 //! artifact on the Board round-trips back to the agent.
 //!
 //! Identity contract (one key, three places): an agent's `id` is its live-file
-//! slug (`live/<id>.json`) and its artifacts' `companion-meta.project`. That is
+//! slug (`live/<id>.json`) and its artifacts' `shelly-meta.project`. That is
 //! how liveness and artifact counts are attributed — no second derivation.
 //!
 //! Everything is file-backed, like the rest of the hub: co-located agents may
@@ -134,7 +134,7 @@ pub fn write_agent(
 }
 
 /// Liveness for one agent id: live-file mtime + `working` line, and how many
-/// artifacts it owns (by `companion-meta.project`).
+/// artifacts it owns (by `shelly-meta.project`).
 fn liveness(live_dir: &Path, artifacts_dir: &Path, id: &str) -> (u64, Option<String>, u64) {
     let live_path = live_dir.join(format!("{id}.json"));
     let live_mtime = std::fs::metadata(&live_path)
@@ -234,7 +234,7 @@ pub fn deliver(
         Some(argv) if !argv.is_empty() => match spawn_wake(&argv, &path) {
             Ok(()) => Delivery::Woken,
             Err(e) => {
-                eprintln!("companion-hub: wake for '{agent}' failed: {e}");
+                eprintln!("shelly-hub: wake for '{agent}' failed: {e}");
                 Delivery::WakeFailed
             }
         },
@@ -295,7 +295,7 @@ mod tests {
 
     fn temp_dirs(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
         let base = std::env::temp_dir().join(format!(
-            "companion-hub-agents-{name}-{}-{}",
+            "shelly-hub-agents-{name}-{}-{}",
             std::process::id(),
             now_ms()
         ));
@@ -354,14 +354,14 @@ mod tests {
         fs::write(
             artifacts.join("hermes-morning-brief.html"),
             r#"<html><head><title>Brief</title>
-               <script type="application/json" id="companion-meta">{"project":"hermes"}</script>
+               <script type="application/json" id="shelly-meta">{"project":"hermes"}</script>
                </head><body></body></html>"#,
         )
         .unwrap();
         fs::write(
             artifacts.join("other.html"),
             r#"<html><head><title>Other</title>
-               <script type="application/json" id="companion-meta">{"project":"someone-else"}</script>
+               <script type="application/json" id="shelly-meta">{"project":"someone-else"}</script>
                </head><body></body></html>"#,
         )
         .unwrap();

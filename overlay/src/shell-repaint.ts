@@ -41,7 +41,7 @@ const REVEAL_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 const RESET_GRACE_MS = 500;
 
 export interface ShellMessage {
-  source: "companion-artifact";
+  source: "shelly-artifact";
   kind: "shell";
   bg: string;
   ink?: string;
@@ -52,7 +52,7 @@ export function isShellMessage(d: unknown): d is ShellMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
   return (
-    m.source === "companion-artifact" &&
+    m.source === "shelly-artifact" &&
     m.kind === "shell" &&
     typeof m.bg === "string"
   );

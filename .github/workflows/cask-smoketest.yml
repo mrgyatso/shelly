@@ -4,7 +4,7 @@ name: Cask smoke test
 # (this project's primary dev box is Intel; arm64 runtime has not been
 # physically confirmed). Runs on every push to master and on demand.
 #
-# Coverage: install via cask → app placed → CLI on PATH → companion doctor
+# Coverage: install via cask → app placed → CLI on PATH → shelly doctor
 # passes its layered checks. The actual overlay rendering (window popping
 # on screen) still needs a human's eyes — a headless runner can't verify
 # graphics.
@@ -19,7 +19,7 @@ on:
 
 jobs:
   cask-install:
-    name: brew install + companion doctor (${{ matrix.os }})
+    name: brew install + shelly doctor (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -43,41 +43,41 @@ jobs:
           if brew trust --help >/dev/null 2>&1; then
             brew trust mrgyatso/tap
           fi
-          brew install --cask mrgyatso/tap/claude-code-companion
+          brew install --cask mrgyatso/tap/shelly
 
       - name: Confirm app placed
         run: |
-          test -d "/Applications/Companion Overlay.app" \
+          test -d "/Applications/Shelly.app" \
             || (echo "::error::app missing in /Applications" && exit 1)
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
-            "/Applications/Companion Overlay.app/Contents/Info.plist"
+            "/Applications/Shelly.app/Contents/Info.plist"
 
       - name: Confirm CLI symlinks
         run: |
-          which companion
-          ls -l "$(which companion)"
+          which shelly
+          ls -l "$(which shelly)"
 
       - name: Quarantine cleared by cask postflight
         run: |
           # postflight runs `xattr -dr com.apple.quarantine`; verify the flag is gone.
-          if xattr -p com.apple.quarantine "/Applications/Companion Overlay.app" 2>/dev/null; then
+          if xattr -p com.apple.quarantine "/Applications/Shelly.app" 2>/dev/null; then
             echo "::error::quarantine flag still set — cask postflight did not run"
             exit 1
           fi
           echo "ok — no quarantine flag"
 
-      - name: Run companion doctor
+      - name: Run shelly doctor
         run: |
-          # The artifacts dir is normally created by `companion setup`, which needs
+          # The artifacts dir is normally created by `shelly setup`, which needs
           # Claude Code and never runs here; pre-create it so doctor's dir row
           # exercises the path-detection logic rather than always warning.
-          mkdir -p "$HOME/.claude/companion/artifacts"
-          companion doctor > doctor.out 2>&1 || echo "doctor exit: $?"
+          mkdir -p "$HOME/.shelly/artifacts"
+          shelly doctor > doctor.out 2>&1 || echo "doctor exit: $?"
           cat doctor.out
-          # Doctor ends by rendering its health panel through `companion open`, which
+          # Doctor ends by rendering its health panel through `shelly open`, which
           # detaches the daemon (#84) rather than becoming it — so doctor returns, but
           # it may leave a headless overlay behind. Reap it so the runner exits clean.
-          pkill -f companion-overlay 2>/dev/null || true
+          pkill -f shelly 2>/dev/null || true
 
       - name: Doctor reports app + cli + dir green
         run: |

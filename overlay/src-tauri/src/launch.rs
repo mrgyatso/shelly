@@ -1,4 +1,4 @@
-//! Which surface a `companion …` invocation — or a bare re-launch — should bring up.
+//! Which surface a `shelly …` invocation — or a bare re-launch — should bring up.
 //!
 //! This lives outside the `#[cfg(not(debug_assertions))]` gate on the single-instance
 //! plugin registration that consumes it. That is the whole point of the module: a test
@@ -15,10 +15,10 @@ pub enum Surface {
     Board,
 }
 
-/// A `companion handoff <file> [--dir <dir>] [--agent <claude|codex>]` request:
+/// A `shelly handoff <file> [--dir <dir>] [--agent <claude|codex>]` request:
 /// spawn a fresh Board session in `dir` and drop the handoff at `file` into it.
 /// `dir`/`agent` are optional — the frontend picker fills in whatever is missing
-/// (so a bare `companion handoff <file>` still works and just asks for the rest).
+/// (so a bare `shelly handoff <file>` still works and just asks for the rest).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct HandoffRequest {
     pub file: String,
@@ -90,7 +90,7 @@ pub fn surface_for_args(args: &[String]) -> Surface {
     } else if args.iter().any(|a| a == "live") {
         Surface::Live
     } else {
-        // Everything else lands on the Board: `companion board`, `companion open
+        // Everything else lands on the Board: `shelly board`, `shelly open
         // <artifact>` (the Board is the single surface and ingests it — there is no
         // standalone artifact window), and a bare re-launch (double-click, `open -a`,
         // or a newly installed bundle at a different path).
@@ -104,7 +104,7 @@ mod tests {
 
     /// argv as the plugin delivers it — argv[0] is the binary itself.
     fn argv(rest: &[&str]) -> Vec<String> {
-        std::iter::once("/Applications/Companion Overlay.app/Contents/MacOS/companion-overlay")
+        std::iter::once("/Applications/Shelly.app/Contents/MacOS/shelly")
             .chain(rest.iter().copied())
             .map(String::from)
             .collect()

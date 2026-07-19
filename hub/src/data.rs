@@ -3,7 +3,7 @@
 //!
 //! This deliberately mirrors the overlay's `live.rs::read_live` (newest
 //! per-project `*.json` wins) and `history.rs::list_artifacts` (derive title +
-//! `companion-meta` from each `*.html`'s `<head>`). The logic is duplicated
+//! `shelly-meta` from each `*.html`'s `<head>`). The logic is duplicated
 //! rather than shared so the hub stays a small standalone binary with no Tauri
 //! dependency — easy to drop on a VPS.
 
@@ -17,7 +17,7 @@ const HEAD_SCAN_BYTES: usize = 16 * 1024;
 
 /// One artifact, as surfaced by `GET /api/artifacts`. `slug` is the filename
 /// stem (the `GET /api/artifacts/<slug>` key); the rest mirror the overlay's
-/// `ArtifactEntry` plus `project`/`created` from the `companion-meta` block.
+/// `ArtifactEntry` plus `project`/`created` from the `shelly-meta` block.
 #[derive(serde::Serialize)]
 pub struct ArtifactEntry {
     pub slug: String,
@@ -30,10 +30,10 @@ pub struct ArtifactEntry {
     pub size_bytes: u64,
 }
 
-/// The subset of the `companion-meta` JSON block the hub surfaces. Unknown
+/// The subset of the `shelly-meta` JSON block the hub surfaces. Unknown
 /// fields are ignored by serde.
 #[derive(serde::Deserialize)]
-struct CompanionMeta {
+struct ShellyMeta {
     subject: Option<String>,
     summary: Option<String>,
     project: Option<String>,
@@ -240,10 +240,10 @@ fn extract_title(html: &str) -> Option<String> {
     }
 }
 
-/// Parse the `companion-meta` JSON block, or `None` if absent/malformed.
-fn extract_meta(html: &str) -> Option<CompanionMeta> {
+/// Parse the `shelly-meta` JSON block, or `None` if absent/malformed.
+fn extract_meta(html: &str) -> Option<ShellyMeta> {
     let lower = html.to_ascii_lowercase();
-    let id = lower.find("id=\"companion-meta\"")?;
+    let id = lower.find("id=\"shelly-meta\"")?;
     let gt = lower[id..].find('>')? + id + 1;
     let close = lower[gt..].find("</script>")? + gt;
     serde_json::from_str(html[gt..close].trim()).ok()
@@ -324,7 +324,7 @@ mod tests {
 
     fn temp_path(name: &str) -> PathBuf {
         let unique = format!(
-            "companion-hub-test-{}-{}-{}",
+            "shelly-hub-test-{}-{}-{}",
             name,
             std::process::id(),
             now_ms()
@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn extracts_title_and_meta() {
         let html = r#"<html><head><title>Hello</title>
-            <script type="application/json" id="companion-meta">
+            <script type="application/json" id="shelly-meta">
             {"subject":"S","summary":"Sum","project":"P","created":"2026-06-09"}
             </script></head><body>x</body></html>"#;
         assert_eq!(extract_title(html).as_deref(), Some("Hello"));

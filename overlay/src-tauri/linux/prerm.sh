@@ -5,5 +5,5 @@
 set -e
 
 case "$1" in
-  remove|purge) rm -f /usr/bin/companion ;;
+  remove|purge) rm -f /usr/bin/shelly ;;
 esac

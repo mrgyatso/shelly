@@ -1,13 +1,13 @@
 #!/usr/bin/env sh
-# companion-update — move BOTH halves of Companion forward, then bring the app back.
+# shelly-update — move BOTH halves of Shelly forward, then bring the app back.
 #
-#   companion-update <pid> [--dry-run]
+#   shelly-update <pid> [--dry-run]
 #
-# Companion is two independently-rotting halves, and a real update moves both:
+# Shelly is two independently-rotting halves, and a real update moves both:
 #
 #   the app     Homebrew cask (macOS) or a .deb from GitHub Releases (Linux).
 #               A newer release never reaches an installed machine on its own.
-#   the plugin  `companion setup`, which runs `claude plugin update`. The plugin
+#   the plugin  `shelly setup`, which runs `claude plugin update`. The plugin
 #               executes from a CACHED snapshot, so it can sit stale forever with
 #               nothing in the UI saying so. This is the half users actually feel.
 #
@@ -39,13 +39,13 @@ for arg in "$@"; do
 done
 
 # A GUI-launched app on macOS inherits launchd's minimal PATH (/usr/bin:/bin:/usr/sbin:
-# /sbin) — which contains neither `brew` nor the `companion` symlink. We are that app's
+# /sbin) — which contains neither `brew` nor the `shelly` symlink. We are that app's
 # child, so we inherit the same stunted PATH. Put the real dirs back before anything
 # tries to resolve a binary.
 PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 export PATH
 
-LOG="$HOME/.claude/companion/update.log"
+LOG="$HOME/.shelly/update.log"
 mkdir -p "$(dirname "$LOG")"
 
 log() {
@@ -100,7 +100,7 @@ update_app_macos() {
   # unconditionally — the button also exists to refresh a stale PLUGIN under a
   # perfectly current app.
   log "updating the app via Homebrew"
-  run brew upgrade --cask mrgyatso/tap/claude-code-companion
+  run brew upgrade --cask mrgyatso/tap/shelly
 }
 
 # The release's .deb for THIS architecture, or empty. Same resolution install.sh uses:
@@ -108,7 +108,7 @@ update_app_macos() {
 # stays invisible here too.
 latest_deb_url() {
   arch=$(dpkg --print-architecture)
-  curl -fsSL https://api.github.com/repos/mrgyatso/claude-code-companion/releases/latest \
+  curl -fsSL https://api.github.com/repos/mrgyatso/shelly/releases/latest \
     | grep -o "\"browser_download_url\": *\"[^\"]*_${arch}\.deb\"" \
     | head -1 | sed 's/.*"\(https[^"]*\)"/\1/'
 }
@@ -126,13 +126,13 @@ escalate() {
   else
     log "no pkexec and sudo needs a password — cannot install the .deb without a terminal."
     log "run the installer by hand:"
-    log "  curl -fsSL https://raw.githubusercontent.com/mrgyatso/claude-code-companion/master/install.sh | bash"
+    log "  curl -fsSL https://raw.githubusercontent.com/mrgyatso/shelly/master/install.sh | bash"
     return 1
   fi
 }
 
 update_app_linux() {
-  installed=$(dpkg-query -W -f='${Version}' companion-overlay 2>/dev/null || true)
+  installed=$(dpkg-query -W -f='${Version}' shelly 2>/dev/null || true)
   if [ -z "$installed" ]; then
     # An AppImage or a source build is not dpkg-managed: there is no version to read,
     # and dropping a .deb on top would leave the machine holding two apps.
@@ -146,7 +146,7 @@ update_app_linux() {
     return 0
   fi
 
-  deb=$(mktemp -t companion-overlay-XXXXXX.deb)
+  deb=$(mktemp -t shelly-XXXXXX.deb)
   log "downloading $url"
   run curl -fsSL -o "$deb" "$url" || { rm -f "$deb"; return 1; }
   # mktemp gives 0600, which the `_apt` user cannot read — apt then drops its sandbox
@@ -168,18 +168,18 @@ case "$OS" in
 esac
 
 # --- 3. The plugin ---------------------------------------------------------------
-# The half that silently rots. `companion setup` runs `claude plugin update`, which
+# The half that silently rots. `shelly setup` runs `claude plugin update`, which
 # bumps the CACHED snapshot the hooks actually execute from — updating the app alone
 # would leave this exactly where it was.
 #
-# `companion` lives inside the bundle we may have just replaced, reached through the
+# `shelly` lives inside the bundle we may have just replaced, reached through the
 # /usr/local/bin symlink. The symlink target is a stable path, so it now points at the
 # NEW bundle — which is what we want: the new app's setup script wires the new plugin.
-if command -v companion >/dev/null 2>&1; then
+if command -v shelly >/dev/null 2>&1; then
   log "refreshing the Claude Code plugin"
-  run companion setup || true
+  run shelly setup || true
 else
-  log "no 'companion' on PATH — skipping the plugin refresh"
+  log "no 'shelly' on PATH — skipping the plugin refresh"
 fi
 
 # --- 4. Bring it back ------------------------------------------------------------
@@ -187,11 +187,11 @@ fi
 # vanished. It has to come back.
 if $DRY_RUN; then
   log "would relaunch the app"
-elif command -v companion >/dev/null 2>&1; then
+elif command -v shelly >/dev/null 2>&1; then
   log "relaunching"
-  companion board >> "$LOG" 2>&1 || log "FAILED to relaunch — open Companion Overlay by hand"
+  shelly board >> "$LOG" 2>&1 || log "FAILED to relaunch — open Shelly by hand"
 else
-  log "cannot relaunch: no 'companion' on PATH — open Companion Overlay by hand"
+  log "cannot relaunch: no 'shelly' on PATH — open Shelly by hand"
 fi
 
 log "--- update finished ---"

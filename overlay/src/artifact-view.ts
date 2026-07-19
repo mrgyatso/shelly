@@ -7,7 +7,7 @@
 // `allow-same-origin`) still isolates it in an opaque origin: it can't touch the
 // overlay's IPC or storage.
 //
-// All Companion artifacts live under `~/.claude/companion/**`, which is in the
+// All Shelly artifacts live under `~/.shelly/**`, which is in the
 // asset-protocol scope (tauri.conf.json), so for real artifacts the in-scope
 // branch always wins → tiles load via `asset://`, never `srcdoc`. The `srcdoc`
 // fallback covers only out-of-scope paths (static content renders; inline JS

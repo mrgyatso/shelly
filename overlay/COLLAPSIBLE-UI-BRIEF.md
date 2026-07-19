@@ -1,8 +1,8 @@
 # Collapsible "pill" overlay — handoff brief
 
-> For an agent picking up the **presentation-layer redesign** of the Companion overlay,
+> For an agent picking up the **presentation-layer redesign** of the Shelly overlay,
 > in parallel with ongoing hub work. Sibling of `LIVE_UI_BRIEF.md` (read that for the
-> visual language). Repo: `~/claude-code-companion`, overlay app under `overlay/`.
+> visual language). Repo: `~/shelly`, overlay app under `overlay/`.
 
 ## The problem (why this exists)
 
@@ -27,7 +27,7 @@ notch / Dynamic Island, or a draggable corner chip). Its states:
    artifact isn't destroyed, it's *parked*. Multiple artifacts stack behind the pill
    (cycle / pick from the pill, which ties into the existing history HUD).
 
-End state: the companion is always present but never intrusive — a pill you tap to see the
+End state: the shelly is always present but never intrusive — a pill you tap to see the
 current thing, that folds away when you're done.
 
 ## What you're building on (current architecture)
@@ -51,7 +51,7 @@ current thing, that folds away when you're done.
   into an `<iframe>` via the `asset:` protocol (real origin, inline JS runs) — **note the
   recent fix**: `tauri.conf.json` asset scope must include the artifact dir or it falls back
   to `srcdoc` where CSP blocks inline JS (dead buttons). Artifacts self-report size via
-  `postMessage({source:"companion-artifact", kind:"size"})` and submit via `kind:"submit"`
+  `postMessage({source:"shelly-artifact", kind:"size"})` and submit via `kind:"submit"`
   (→ `resize.ts`/`submit.ts` → clipboard). Keep this protocol intact.
 - **Global shortcuts** already exist (⌘0 toggle all, ⌘8 history, ⌘⌥0 panic-hide) in
   `lib.rs setup()` — add a pill toggle here.
@@ -90,7 +90,7 @@ The hub work in flight touches **`hub/`, `overlay/src-tauri/src/hub.rs`, `live.t
 `history.rs`, the CLI** — i.e. the *data source*, not the *presentation*. Your work is in
 `windows.rs`, `macos_panel.rs`, `layout.rs`, and the frontend presentation. Overlap is small
 but real on `windows.rs`/`lib.rs setup()`. Recommendation: **branch off `master`** (or current
-`feat/companion-hub` once it merges) as `feat/pill-overlay`, keep changes to the presentation
+`feat/shelly-hub` once it merges) as `feat/pill-overlay`, keep changes to the presentation
 layer, and we rebase. Flag any `windows.rs` signature changes early.
 
 Hub artifacts arrive through the **same `route_artifact` path**, so once the pill owns

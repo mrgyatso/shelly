@@ -1,30 +1,30 @@
 #!/usr/bin/env sh
-# companion-setup — wire the Claude Code plugin to this app, then verify.
+# shelly-setup — wire the Claude Code plugin to this app, then verify.
 #
 # The second (and last) command of a fresh install:
 #
-#   brew install --cask mrgyatso/tap/claude-code-companion
-#   companion setup
+#   brew install --cask mrgyatso/tap/shelly
+#   shelly setup
 #
 # Adds the marketplace, installs the plugin, creates the watched dirs, and hands
-# off to `companion doctor`. Safe to re-run: every step is skipped if already done.
+# off to `shelly doctor`. Safe to re-run: every step is skipped if already done.
 #
-# Invoked as `companion setup` (the wrapper execs here).
+# Invoked as `shelly setup` (the wrapper execs here).
 #
 # Flags:
 #   --external-terminals   also handle `claude` sessions started outside the app
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-STATE_DIR="$HOME/.claude/companion"
-ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$STATE_DIR/artifacts}"
-MARKETPLACE=claude-code-companion
-PLUGIN=companion@claude-code-companion
+STATE_DIR="$HOME/.shelly"
+ARTIFACTS_DIR="${SHELLY_ARTIFACTS_DIR:-$STATE_DIR/artifacts}"
+MARKETPLACE=shelly
+PLUGIN=shelly@shelly
 
 WANT_EXTERNAL=""
 for arg in "$@"; do
   case "$arg" in
     --external-terminals) WANT_EXTERNAL=1 ;;
-    *) echo "companion setup: unknown flag '$arg'" >&2; exit 2 ;;
+    *) echo "shelly setup: unknown flag '$arg'" >&2; exit 2 ;;
   esac
 done
 
@@ -32,9 +32,31 @@ say()  { printf '  %s\n' "$1"; }
 # A refresh that fails is not fatal — the machine is already wired and working, it just
 # did not get newer code (no network, most likely). Say so and carry on.
 warn() { printf '  %s\n' "$1" >&2; }
-fail() { printf '\ncompanion setup: %s\n' "$1" >&2; shift; for l in "$@"; do printf '  %s\n' "$l" >&2; done; exit 1; }
+fail() { printf '\nshelly setup: %s\n' "$1" >&2; shift; for l in "$@"; do printf '  %s\n' "$l" >&2; done; exit 1; }
 
-printf '\ncompanion setup\n\n'
+printf '\nshelly setup\n\n'
+
+# 0. Migration, from back when this was called Companion. The data home moved from
+#    ~/.claude/companion to ~/.shelly — not for the name, but because ~/.claude is
+#    Claude Code's directory and we also track Codex sessions.
+#
+#    Move it once, then leave a symlink behind. The symlink is the load-bearing half:
+#    artifacts written before the move hardcode asset://…/.claude/companion/vendor/…
+#    URLs into their <head>, and a running overlay is still polling the old path. Both
+#    keep resolving through the link. Only migrate when the destination is absent —
+#    if both exist, someone has already moved on and merging could clobber real state.
+OLD_STATE_DIR="$HOME/.claude/companion"
+if [ -d "$OLD_STATE_DIR" ] && [ ! -L "$OLD_STATE_DIR" ] && [ ! -e "$STATE_DIR" ]; then
+  if mv "$OLD_STATE_DIR" "$STATE_DIR" 2>/dev/null; then
+    ln -s "$STATE_DIR" "$OLD_STATE_DIR" 2>/dev/null
+    say "migrated    ~/.claude/companion → ~/.shelly (old path left as a symlink)"
+  else
+    warn "migrated    could not move ~/.claude/companion → ~/.shelly — move it by hand:"
+    warn "            mv ~/.claude/companion ~/.shelly && ln -s ~/.shelly ~/.claude/companion"
+  fi
+elif [ -d "$OLD_STATE_DIR" ] && [ ! -L "$OLD_STATE_DIR" ] && [ -e "$STATE_DIR" ]; then
+  warn "migrated    both ~/.claude/companion and ~/.shelly exist — left alone, merge by hand"
+fi
 
 # 1. Node — every plugin hook shells out to it. Claude Code ships as a native
 #    binary now, so node is NOT implied by having `claude` on PATH.
@@ -51,7 +73,7 @@ HAVE_CODEX=""
 command -v claude >/dev/null 2>&1 && HAVE_CLAUDE=1
 command -v codex >/dev/null 2>&1 && HAVE_CODEX=1
 [ -n "${HAVE_CLAUDE}${HAVE_CODEX}" ] || fail "no agent CLI found on PATH." \
-  "Companion wires itself into Claude Code and/or Codex — install one first:" \
+  "Shelly wires itself into Claude Code and/or Codex — install one first:" \
   "  Claude Code: https://claude.com/claude-code" \
   "  Codex:       npm install -g @openai/codex"
 if [ -n "$HAVE_CLAUDE" ]; then
@@ -71,9 +93,9 @@ if [ -n "$HAVE_CLAUDE" ]; then
       warn "marketplace ${MARKETPLACE} (configured; could not refresh — offline?)"
     fi
   else
-    claude plugin marketplace add mrgyatso/claude-code-companion >/dev/null 2>&1 \
+    claude plugin marketplace add mrgyatso/shelly >/dev/null 2>&1 \
       || fail "could not add the marketplace." "Run it by hand to see why:" \
-              "  claude plugin marketplace add mrgyatso/claude-code-companion"
+              "  claude plugin marketplace add mrgyatso/shelly"
     say "marketplace ${MARKETPLACE} (added)"
   fi
 fi
@@ -83,13 +105,13 @@ fi
 #    not imply newer plugin code. Without this, re-running the installer left the old
 #    hooks and skills in place forever.
 #
-#    `claude plugin update <plugin>` updates the USER scope. Companion is installed per
+#    `claude plugin update <plugin>` updates the USER scope. Shelly is installed per
 #    PROJECT, so the bare command fails on every machine that has it —
 #
-#        ✘ Plugin "companion" is not installed at scope user
+#        ✘ Plugin "shelly" is not installed at scope user
 #
 #    — and the old code caught that and printed "could not update — offline?". It was
-#    never offline. The refresh had simply never worked: `companion setup` claimed to
+#    never offline. The refresh had simply never worked: `shelly setup` claimed to
 #    have run while the plugin sat stale for weeks, which is exactly the silent rot the
 #    in-app Update button exists to end. Ask the manifest where the plugin actually
 #    lives and update it there.
@@ -101,7 +123,7 @@ plugin_scopes() {
     const f = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
     let j;
     try { j = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { process.exit(0); }
-    for (const i of (j.plugins || {})["companion@claude-code-companion"] || []) {
+    for (const i of (j.plugins || {})["shelly@shelly"] || []) {
       if (i.scope === "user") console.log("user");
       else if (i.projectPath) console.log("project\t" + i.projectPath);
     }
@@ -174,11 +196,11 @@ if command -v codex >/dev/null 2>&1; then
       && say "codex mkt   ${MARKETPLACE} (refreshed)" \
       || say "codex mkt   ${MARKETPLACE} (configured)"
   else
-    if codex plugin marketplace add "https://github.com/mrgyatso/claude-code-companion" >/dev/null 2>&1; then
+    if codex plugin marketplace add "https://github.com/mrgyatso/shelly" >/dev/null 2>&1; then
       say "codex mkt   ${MARKETPLACE} (added)"
     else
       warn "codex mkt   could not add the marketplace — wire it by hand:"
-      warn "            codex plugin marketplace add https://github.com/mrgyatso/claude-code-companion"
+      warn "            codex plugin marketplace add https://github.com/mrgyatso/shelly"
     fi
   fi
   if codex plugin list 2>/dev/null | grep -q "^${PLUGIN}[[:space:]]"; then
@@ -212,6 +234,6 @@ else
 fi
 
 printf '\nRestart any running `claude` session so it picks up the plugin, then:\n'
-printf '\n  companion board\n\n'
+printf '\n  shelly board\n\n'
 
-exec "$SCRIPT_DIR/companion-doctor"
+exec "$SCRIPT_DIR/shelly-doctor"

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# companion-session — Claude Code SessionStart hook.
+# shelly-session — Claude Code SessionStart hook.
 #
-# Hands this session its per-INSTANCE Companion live path and seeds the roster:
+# Hands this session its per-INSTANCE Shelly live path and seeds the roster:
 #   1. derive live/<slug>--<shortid>.json (shared with the artifact observer),
 #   2. write an initial stub there if absent, so the instance shows on the Board
 #      roster before its first Stop (skip-if-exists keeps resume/compact idempotent),
@@ -21,7 +21,7 @@ payload=$(cat)
 # SessionStart, and let the per-tool hooks no-op quietly rather than printing
 # "node: command not found" on every Write.
 if ! command -v node >/dev/null 2>&1; then
-  echo "Companion is inactive: node is not on PATH. Its hooks need Node 18+ — install it (brew install node), then run 'companion setup'." >&2
+  echo "Shelly is inactive: node is not on PATH. Its hooks need Node 18+ — install it (brew install node), then run 'shelly setup'." >&2
   exit 0
 fi
 
@@ -44,39 +44,39 @@ case "$cwd" in
 esac
 
 # External-terminal handling (default OFF). A terminal the Board did not spawn
-# carries no COMPANION_SESSION; by default the Companion ignores such external
+# carries no SHELLY_SESSION; by default the Shelly ignores such external
 # terminals entirely — no roster entry, no sidecars, no artifact observer — so a
 # plain terminal that merely has the plugin installed stays silent (no takeover,
 # no artifacts generated for sessions not using the app). Opt back in per-machine
-# by writing "on" to ~/.claude/companion/external-terminals. This gates only
+# by writing "on" to ~/.shelly/external-terminals. This gates only
 # hook-driven terminals; external *agents* (the remote/ push path) are unaffected.
 #
 # Being ignored is fine; being ignored *silently* is not — a user who installed both
 # pieces and typed `claude` in their own terminal has no way to tell the difference
 # between "off by design" and "broken". Say it once per machine (SessionStart stdout
 # is injected as agent context) so the agent can point them at the app, then stay quiet.
-if [ -z "$COMPANION_SESSION" ] && [ "$(cat "${HOME}/.claude/companion/external-terminals" 2>/dev/null)" != "on" ]; then
-  hint="${HOME}/.claude/companion/.external-hint-shown"
+if [ -z "$SHELLY_SESSION" ] && [ "$(cat "${HOME}/.shelly/external-terminals" 2>/dev/null)" != "on" ]; then
+  hint="${HOME}/.shelly/.external-hint-shown"
   if [ ! -f "$hint" ]; then
-    mkdir -p "${HOME}/.claude/companion" 2>/dev/null
+    mkdir -p "${HOME}/.shelly" 2>/dev/null
     : > "$hint" 2>/dev/null
-    echo "Companion is installed but inactive in this terminal — it only tracks sessions the app itself starts. If the user expects Companion here, tell them to run 'companion board' and start the session from the app, or 'companion setup --external-terminals' to track every terminal."
+    echo "Shelly is installed but inactive in this terminal — it only tracks sessions the app itself starts. If the user expects Shelly here, tell them to run 'shelly board' and start the session from the app, or 'shelly setup --external-terminals' to track every terminal."
   fi
   exit 0
 fi
 
-# Trace harness (no-op unless enabled). companion-livepath.sh sources it too.
+# Trace harness (no-op unless enabled). shelly-livepath.sh sources it too.
 CMP_HOOK_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)
-. "$CMP_HOOK_DIR/companion-trace.sh"
+. "$CMP_HOOK_DIR/shelly-trace.sh"
 
-line=$(sh "$(dirname "$0")/companion-livepath.sh" "$cwd" "$session_id")
+line=$(sh "$(dirname "$0")/shelly-livepath.sh" "$cwd" "$session_id")
 live_path=$(printf '%s' "$line" | cut -f1)
 project=$(printf '%s' "$line" | cut -f2)
 shortid=$(printf '%s' "$line" | cut -f3)
 is_repo=$(printf '%s' "$line" | cut -f4)
 unit_key=$(printf '%s' "$line" | cut -f5)
 root=$(printf '%s' "$line" | cut -f6)
-digest_path="${HOME}/.claude/companion/artifacts/home.${unit_key}.html"
+digest_path="${HOME}/.shelly/artifacts/home.${unit_key}.html"
 # The stem slug (live/<slug>--<shortid>.json) — the session's on-disk name. Recorded
 # alongside unit_key because the two DIFFER for $HOME sessions ('gyatso' vs '__home__');
 # artifact source stamps are built from the slug and must match the live stem.
@@ -92,24 +92,24 @@ slug=${stem%--"$shortid"}
 #     (which can be torn down mid-hook) still gets registered. Sits below the
 #     .claude-mem bail so the observer's own worker never self-registers.
 if [ -n "$session_id" ]; then
-  node "$CMP_HOOK_DIR/companion-identity.cjs" register \
-    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${COMPANION_SESSION:-}" "$provider" "$slug" 2>/dev/null
+  node "$CMP_HOOK_DIR/shelly-identity.cjs" register \
+    "$session_id" "$unit_key" "$is_repo" "$root" "$project" "${SHELLY_SESSION:-}" "$provider" "$slug" 2>/dev/null
   trace session register "sid=$shortid" "unit_key=$unit_key" "slug=$slug" "root=$root" "provider=$provider"
 fi
-trace session start "sid=$shortid" "cwd=$cwd" "live=$live_path" "project=$project" "is_repo=$is_repo" "unit_key=$unit_key" "owned=${COMPANION_SESSION:-}"
+trace session start "sid=$shortid" "cwd=$cwd" "live=$live_path" "project=$project" "is_repo=$is_repo" "unit_key=$unit_key" "owned=${SHELLY_SESSION:-}"
 
 live_dir=$(dirname "$live_path")
 mkdir -p "$live_dir" 2>/dev/null
 
 # 1a-bis. THE HOMELESS LATCH. A session rooted in $HOME has no project of its own yet: it
 #     sits on the shared Home shelf and is allowed to GRADUATE, exactly once, the first
-#     time it writes into a real git repo (companion-adopt.cjs, from the Write/Edit hook).
+#     time it writes into a real git repo (shelly-adopt.cjs, from the Write/Edit hook).
 #     The marker IS that permission — no marker means "already rooted", and rooted is
 #     terminal, so a session can never adopt twice or wander between projects.
-#     Its other job is a cost guard: companion-hook skips the adoption path entirely when
+#     Its other job is a cost guard: shelly-hook skips the adoption path entirely when
 #     this dir is empty, so a machine whose sessions are all in real repos pays nothing.
 #     Cleared on resume of an already-adopted session (root moved off $HOME).
-homeless_dir="${HOME}/.claude/companion/homeless"
+homeless_dir="${HOME}/.shelly/homeless"
 if [ "$unit_key" = "__home__" ]; then
   mkdir -p "$homeless_dir" 2>/dev/null
   : > "${homeless_dir}/${shortid}" 2>/dev/null
@@ -134,14 +134,14 @@ fi
 
 stem=$(basename "$live_path" .json)
 
-# 1b. If this session was spawned BY the Board (it injects COMPANION_SESSION=<tabId>
+# 1b. If this session was spawned BY the Board (it injects SHELLY_SESSION=<tabId>
 #     into the claude it owns; the hook inherits it), bind this session's live-file
 #     stem (<slug>--<shortid>) -> tabId in owned-sessions.json. The Board reads this
 #     sidecar (via live.rs) to match the terminal it spawned to the live source this
-#     session produces — agent-proof + Board-owned, mirroring companion-index.cjs.
+#     session produces — agent-proof + Board-owned, mirroring shelly-index.cjs.
 #     Written every start (outside the first-run guard) so resume/compact re-bind.
-if [ -n "$COMPANION_SESSION" ]; then
-  STEM="$stem" TAB="$COMPANION_SESSION" OWNED="${HOME}/.claude/companion/owned-sessions.json" node -e '
+if [ -n "$SHELLY_SESSION" ]; then
+  STEM="$stem" TAB="$SHELLY_SESSION" OWNED="${HOME}/.shelly/owned-sessions.json" node -e '
     const fs=require("fs");
     const p=process.env.OWNED;
     let m={};
@@ -155,15 +155,15 @@ if [ -n "$COMPANION_SESSION" ]; then
     m[stem]=tab;
     try { const t=p+".tmp"; fs.writeFileSync(t, JSON.stringify(m)); fs.renameSync(t, p); } catch (e) {}
   ' 2>/dev/null
-  trace session bind-owned "stem=$stem" "tab=$COMPANION_SESSION"
+  trace session bind-owned "stem=$stem" "tab=$SHELLY_SESSION"
 fi
 
 # 1c. Record this session's project ROOT (gitroot, else cwd) keyed by its live-file
 #     stem in session-dirs.json — a Board-owned, agent-proof sidecar the Board reads
 #     (via live.rs) to resolve a unit's absolute directory, so "+ session in this
 #     project" knows where to spawn. Written for EVERY session (external too).
-#     (root is derived once in companion-livepath.sh and parsed above — no second git call.)
-STEM="$stem" ROOT="$root" DIRS="${HOME}/.claude/companion/session-dirs.json" node -e '
+#     (root is derived once in shelly-livepath.sh and parsed above — no second git call.)
+STEM="$stem" ROOT="$root" DIRS="${HOME}/.shelly/session-dirs.json" node -e '
   const fs=require("fs");
   const p=process.env.DIRS;
   let m={};
@@ -177,11 +177,11 @@ trace session record-dir "stem=$stem" "root=$root"
 #     (the stem only carries the 8-char shortid, which can't drive `claude
 #     --resume`). The Board injects it per source so a session closed off the
 #     roster can be REJOINED via `claude --resume <id>`. Agent-proof sidecar.
-#     GUARDED on COMPANION_SESSION (same as 1b): only sessions the Board OWNS get
+#     GUARDED on SHELLY_SESSION (same as 1b): only sessions the Board OWNS get
 #     a resume id, so "has session_id" cleanly means "was Board-launched" — an
 #     external session's restore just un-hides, never spawns a duplicate claude.
-if [ -n "$COMPANION_SESSION" ] && [ -n "$session_id" ]; then
-  STEM="$stem" SID="$session_id" IDS="${HOME}/.claude/companion/session-ids.json" node -e '
+if [ -n "$SHELLY_SESSION" ] && [ -n "$session_id" ]; then
+  STEM="$stem" SID="$session_id" IDS="${HOME}/.shelly/session-ids.json" node -e '
     const fs=require("fs");
     const p=process.env.IDS;
     let m={};
@@ -207,7 +207,7 @@ find "$live_dir" -maxdepth 1 -name '*.json' -type f -mtime "+${PRUNE_DAYS}" -exe
 #     record that is BOTH old (>REGISTRY_PRUNE_DAYS) and unreferenced by a surviving live
 #     file. Best-effort; the current session's live file + sidecars were written above, so
 #     it is never self-evicted. Atomic tmp+rename writes; never blocks the hook.
-REGISTRY_PRUNE_DAYS=30 LIVE_DIR="$live_dir" CMP_DIR="${HOME}/.claude/companion" node -e '
+REGISTRY_PRUNE_DAYS=30 LIVE_DIR="$live_dir" CMP_DIR="${HOME}/.shelly" node -e '
   const fs=require("fs"), path=require("path");
   const cmp=process.env.CMP_DIR, liveDir=process.env.LIVE_DIR;
   const regDays=parseInt(process.env.REGISTRY_PRUNE_DAYS,10)||30;
@@ -260,7 +260,7 @@ REGISTRY_PRUNE_DAYS=30 LIVE_DIR="$live_dir" CMP_DIR="${HOME}/.claude/companion" 
 #     other's files. Repo-only; a one-off dir never triggers it.
 wt_note=""
 if [ "$is_repo" = "1" ]; then
-  other_active=$(STEM="$stem" ROOT="$root" DIRS="${HOME}/.claude/companion/session-dirs.json" LIVE_DIR="$live_dir" node -e '
+  other_active=$(STEM="$stem" ROOT="$root" DIRS="${HOME}/.shelly/session-dirs.json" LIVE_DIR="$live_dir" node -e '
     const fs=require("fs"),path=require("path");
     try{
       const dirs=JSON.parse(fs.readFileSync(process.env.DIRS,"utf8"))||{};
@@ -278,14 +278,14 @@ fi
 
 # 3. Tell the agent its live path (a status/roster heartbeat) AND that it now authors
 #    artifact HTML itself, inline, when a turn earns one. The live file is no longer
-#    rendered into a card; a Stop-hook backstop (companion-artifact-gate) reminds the agent
+#    rendered into a card; a Stop-hook backstop (shelly-artifact-gate) reminds the agent
 #    once if a substantive turn ends with nothing written.
-artifacts_dir="${COMPANION_ARTIFACTS_DIR:-$HOME/.claude/companion/artifacts}"
+artifacts_dir="${SHELLY_ARTIFACTS_DIR:-$HOME/.shelly/artifacts}"
 LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e '
   const p=process.env.LIVE_PATH;
   const a=process.env.ARTIFACTS_DIR;
   const wt=process.env.WT_NOTE ? "\n"+process.env.WT_NOTE : "";
-  const ctx=`Companion live surface: rewrite your live state to ${p} on each work turn. This is a `+
+  const ctx=`Shelly live surface: rewrite your live state to ${p} on each work turn. This is a `+
     `STATUS heartbeat only — it drives the Board roster AND the always-on status strip; it is NOT `+
     `rendered into an artifact. Shape: {"working":"…","where":["…"],"next":[{"title":"…","sub":"…",`+
     `"kind":"decision|todo|blocked"}],"project":"…","is_repo":<bool>,"unit_key":"…"}. Use exactly `+
@@ -314,8 +314,8 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `next move ("nothing left here; here is what I would pick up next, or tell me where to go"). `+
     `"Nothing to decide" is never true — choosing the next piece of work IS the decision. It holds for a bespoke `+
     `look-at design too: the visual is yours to craft, but the user must still be able to respond in `+
-    `place. EVERY artifact must include the size-reporter script and the companion-meta block or it `+
-    `renders at the wrong size. Load the companion:prefer-html skill for the full template WHEN building `+
+    `place. EVERY artifact must include the size-reporter script and the shelly-meta block or it `+
+    `renders at the wrong size. Load the shelly:prefer-html skill for the full template WHEN building `+
     `a non-trivial artifact (anything beyond a compact pill) — it is the pattern library, carrying the `+
     `interaction helper (commentable blocks + the Decide review form), those required snippets, and the `+
     `Broadsheet house style. Pattern menu — pick by content shape: compact pill (quick answer / status `+
@@ -323,10 +323,10 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `multi-point turns; the one pattern where multiple palette colors are sanctioned) · paginated wizard `+
     `(one deep sequence as pages 1..N ending on a decisions page) · sidebar multi-page (3+ peer subjects, `+
     `jump-anywhere) · two-zone (prose + one explanatory visual) · single scroll (one narrative) · bespoke `+
-    `dashboard (presentation-first). Load companion:prefer-html for the template once you\u0027ve picked. `+
+    `dashboard (presentation-first). Load shelly:prefer-html for the template once you\u0027ve picked. `+
     `Shell: set html/body background to oklch(0.945 0.014 60) (the app shade) by default. Optionally — `+
     `occasionally, when the turn earns it — an artifact may repaint the WHOLE surface: declare `+
-    `"shell": {"bg": "…", "ink": "…"} in companion-meta, post {source:\u0027companion-artifact\u0027, `+
+    `"shell": {"bg": "…", "ink": "…"} in shelly-meta, post {source:\u0027shelly-artifact\u0027, `+
     `kind:\u0027shell\u0027, bg, ink} to parent on load, and use that same bg as the page background. `+
     `Curated set only (bg/ink): paper #FBFAF6/#171A1F · slate #E7ECF1/#1B2530 · mint #E6F1EA/#16281F · `+
     `clay #F3E7DF/#2A1C14 · ink #14181D/#E8EDF3. Never any other color; never a partial repaint (the `+

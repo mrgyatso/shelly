@@ -1,15 +1,15 @@
 #!/usr/bin/env sh
-# companion-doctor — health check for the Companion overlay setup.
+# shelly-doctor — health check for the Shelly overlay setup.
 #
 # Runs eight checks, prints a plaintext summary to stdout, then renders the same
 # report as an HTML panel inside the overlay. Seeing the panel is itself the
 # proof that the render path works; the plaintext is the fallback for when the
 # overlay is the thing that's broken.
 #
-# Invoked as `companion doctor` (the wrapper execs here). No args.
+# Invoked as `shelly doctor` (the wrapper execs here). No args.
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-ARTIFACTS_DIR="${COMPANION_ARTIFACTS_DIR:-$HOME/.claude/companion/artifacts}"
+ARTIFACTS_DIR="${SHELLY_ARTIFACTS_DIR:-$HOME/.shelly/artifacts}"
 OS=$(uname -s)
 
 # Locate the installed app (needed for version + signing checks).
@@ -17,11 +17,11 @@ OS=$(uname -s)
 APP=""
 LINUX_BIN=""
 if [ "$OS" = Darwin ]; then
-  for a in "/Applications/Companion Overlay.app" "$HOME/Applications/Companion Overlay.app"; do
+  for a in "/Applications/Shelly.app" "$HOME/Applications/Shelly.app"; do
     [ -d "$a" ] && { APP="$a"; break; }
   done
 else
-  for b in /usr/bin/companion-overlay /usr/local/bin/companion-overlay; do
+  for b in /usr/bin/shelly /usr/local/bin/shelly; do
     [ -x "$b" ] && { LINUX_BIN="$b"; break; }
   done
 fi
@@ -55,23 +55,23 @@ if [ -n "$APP" ]; then
   ver=$(/usr/bin/defaults read "$APP/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo "?")
   add ok "app installed" "$APP ($ver)"
 elif [ -n "$LINUX_BIN" ]; then
-  ver=$(dpkg-query -W -f='${Version}' companion-overlay 2>/dev/null || echo "?")
+  ver=$(dpkg-query -W -f='${Version}' shelly 2>/dev/null || echo "?")
   add ok "app installed" "$LINUX_BIN ($ver)"
-elif [ -x "$SCRIPT_DIR/../src-tauri/target/release/companion-overlay" ] \
-  || [ -x "$SCRIPT_DIR/../src-tauri/target/debug/companion-overlay" ]; then
+elif [ -x "$SCRIPT_DIR/../src-tauri/target/release/shelly" ] \
+  || [ -x "$SCRIPT_DIR/../src-tauri/target/debug/shelly" ]; then
   add warn "app installed" "not installed system-wide — using a local dev build"
 elif [ "$OS" = Darwin ]; then
-  add bad "app installed" "Companion Overlay.app not found — install the DMG"
+  add bad "app installed" "Shelly.app not found — install the DMG"
 else
-  add bad "app installed" "companion-overlay not found — install the .deb"
+  add bad "app installed" "shelly not found — install the .deb"
 fi
 
 # 2. cli on PATH ----------------------------------------------------------
-cli=$(command -v companion 2>/dev/null || true)
+cli=$(command -v shelly 2>/dev/null || true)
 if [ -n "$cli" ]; then
   add ok "cli on PATH" "$cli"
 else
-  add warn "cli on PATH" "not linked — ln -s '$SCRIPT_DIR/companion' /usr/local/bin/companion"
+  add warn "cli on PATH" "not linked — ln -s '$SCRIPT_DIR/shelly' /usr/local/bin/shelly"
 fi
 
 # 2b. node ----------------------------------------------------------------
@@ -88,18 +88,18 @@ else
 fi
 
 # 3. overlay daemon -------------------------------------------------------
-# Linux truncates `comm` to 15 chars, so the process reads as "companion-overl" and
-# `pgrep -x companion-overlay` never matches it — the daemon always reported idle,
+# Linux truncates `comm` to 15 chars, so the process reads as "shelly-overl" and
+# `pgrep -x shelly` never matches it — the daemon always reported idle,
 # even with the app on screen. Anchor on the short form, which is also what macOS's
 # untruncated name starts with. Matching `comm` rather than the full cmdline keeps
 # this from ever selecting the doctor itself.
 pids=$(ps -eo pid=,comm= 2>/dev/null \
-  | awk '$2 ~ /^companion-overl/ { printf "%s ", $1 }' \
+  | awk '$2 ~ /^shelly-overl/ { printf "%s ", $1 }' \
   | sed 's/ *$//')
 if [ -n "$pids" ]; then
   add ok "overlay daemon" "running (pid $pids)"
 else
-  add warn "overlay daemon" "idle — starts on the first 'companion open'"
+  add warn "overlay daemon" "idle — starts on the first 'shelly open'"
 fi
 
 # 4. hooks wired ----------------------------------------------------------
@@ -107,12 +107,12 @@ fi
 # lands in settings.json), or a hand-added hook in settings.json. Check the
 # plugin FIRST; grepping settings.json alone reports a false failure on the
 # recommended install.
-if claude plugin list 2>/dev/null | grep -q "companion@claude-code-companion"; then
-  add ok "hooks wired" "via the companion plugin"
+if claude plugin list 2>/dev/null | grep -q "shelly@shelly"; then
+  add ok "hooks wired" "via the shelly plugin"
 else
   hook_found=""
   for s in "$HOME/.claude/settings.json" "$HOME/.claude/settings.local.json"; do
-    if [ -f "$s" ] && grep -q "companion-hook" "$s" 2>/dev/null; then
+    if [ -f "$s" ] && grep -q "shelly-hook" "$s" 2>/dev/null; then
       hook_found="${s#"$HOME"/}"
       break
     fi
@@ -120,24 +120,24 @@ else
   if [ -n "$hook_found" ]; then
     add ok "hooks wired" "by hand, in $hook_found"
   else
-    add bad "hooks wired" "absent — run 'companion setup'"
+    add bad "hooks wired" "absent — run 'shelly setup'"
   fi
 fi
 
 # 4b. session handling ----------------------------------------------------
 # The plugin ignores terminals the app did not spawn unless opted in. Without
 # this row, "installed everything, my terminal does nothing" has no diagnosis.
-if [ "$(cat "$HOME/.claude/companion/external-terminals" 2>/dev/null)" = on ]; then
+if [ "$(cat "$HOME/.shelly/external-terminals" 2>/dev/null)" = on ]; then
   add ok "session handling" "all terminals, including ones started outside the app"
 else
-  add warn "session handling" "app-spawned sessions only — 'companion setup --external-terminals' for the rest"
+  add warn "session handling" "app-spawned sessions only — 'shelly setup --external-terminals' for the rest"
 fi
 
 # 5. artifacts dir --------------------------------------------------------
 if [ -d "$ARTIFACTS_DIR" ]; then
   add ok "artifacts dir" "$ARTIFACTS_DIR"
 else
-  add warn "artifacts dir" "$ARTIFACTS_DIR (missing — set COMPANION_ARTIFACTS_DIR or create it)"
+  add warn "artifacts dir" "$ARTIFACTS_DIR (missing — set SHELLY_ARTIFACTS_DIR or create it)"
 fi
 
 # 6. signed / notarized (macOS only — Linux has no Gatekeeper) -------------
@@ -162,18 +162,18 @@ esac
 TS=$(date '+%Y-%m-%d %H:%M')
 
 # --- plaintext (always, even if the overlay can't render) ----------------
-printf '\ncompanion doctor — %s\n' "$HEAD"
+printf '\nshelly doctor — %s\n' "$HEAD"
 printf '%s\n' "$TEXT_ROWS"
 
 # --- HTML panel, rendered in the overlay ---------------------------------
-OUT="${TMPDIR:-/tmp}/companion-doctor.html"
+OUT="${TMPDIR:-/tmp}/shelly-doctor.html"
 cat > "$OUT" <<HTML
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>companion doctor</title>
+<title>shelly doctor</title>
 <style>
   :root {
     --paper:#f4f1ec; --surface:#ffffff; --ink:#1a1714; --muted:#6e655b;
@@ -207,7 +207,7 @@ cat > "$OUT" <<HTML
 </head>
 <body>
 <main data-fit-root>
-  <div class="top"><span class="eyebrow">companion · doctor</span><span class="ts">$TS</span></div>
+  <div class="top"><span class="eyebrow">shelly · doctor</span><span class="ts">$TS</span></div>
   <h1><span class="pin $HCLS"></span>$HEAD</h1>
   <div class="rows">$HTML_ROWS</div>
   <div class="foot">You are reading this <b>inside the overlay</b> — so the render path works.</div>
@@ -215,7 +215,7 @@ cat > "$OUT" <<HTML
 <script>
   (function(){
     var el=document.querySelector("[data-fit-root]")||document.body;
-    var post=function(){parent.postMessage({source:"companion-artifact",kind:"size",
+    var post=function(){parent.postMessage({source:"shelly-artifact",kind:"size",
       w:Math.ceil(el.scrollWidth),h:Math.ceil(el.scrollHeight)},"*");};
     if(typeof ResizeObserver!=="undefined") new ResizeObserver(post).observe(el);
     addEventListener("load",post); post();
@@ -226,5 +226,5 @@ cat > "$OUT" <<HTML
 HTML
 
 # Render it (ignore failure — plaintext above already gave the diagnosis).
-# `companion` detaches now, so this returns whether or not the daemon was up.
-"$SCRIPT_DIR/companion" open "$OUT" >/dev/null 2>&1 || true
+# `shelly` detaches now, so this returns whether or not the daemon was up.
+"$SCRIPT_DIR/shelly" open "$OUT" >/dev/null 2>&1 || true

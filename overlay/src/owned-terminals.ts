@@ -12,9 +12,9 @@
 //
 // Binding: a freshly spawned terminal knows only its own `tabId`. The
 // SessionStart hook writes `owned-sessions.json` (`<slug>--<shortid>` → tabId);
-// `live.rs` injects `companion_session` into each live source; `reconcileBindings`
+// `live.rs` injects `shelly_session` into each live source; `reconcileBindings`
 // (from the Board's pollLive) adopts the terminal into the unit of the source
-// whose `companion_session === tabId`. A new terminal may be given a PROVISIONAL
+// whose `shelly_session === tabId`. A new terminal may be given a PROVISIONAL
 // unit at spawn (when launched from inside an L2 unit) so it shows immediately;
 // the binding later confirms it.
 
@@ -82,7 +82,7 @@ let collapsed = false;
 let currentUnit: string | null = null;
 let seq = 0;
 /** A per-process tag so two coexisting overlay instances (e.g. your stable app +
- *  a `tauri dev` build sharing one ~/.claude/companion) never mint the same tabId
+ *  a `tauri dev` build sharing one ~/.shelly) never mint the same tabId
  *  — owned-sessions.json is keyed stem→tabId, so a shared `board-1` would cross-
  *  bind sessions between the two apps. 4 random chars is plenty to disambiguate. */
 const INSTANCE = Math.random().toString(36).slice(2, 6);
@@ -160,7 +160,7 @@ export async function spawnOwnedSession(
 }
 
 /** Adopt freshly-bound terminals into their units. `sessionToUnit` maps a
- *  `companion_session` (tabId) → the `unit_key` of the live source carrying it.
+ *  `shelly_session` (tabId) → the `unit_key` of the live source carrying it.
  *  Returns the bindings that changed this call (for re-show / auto-navigate). */
 export function reconcileBindings(sessionToUnit: Map<string, string>): NewBinding[] {
   const changed: NewBinding[] = [];

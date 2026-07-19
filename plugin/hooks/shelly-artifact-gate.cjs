@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// companion-artifact-gate.cjs — the logic behind the Stop-hook seatbelt.
+// shelly-artifact-gate.cjs — the logic behind the Stop-hook seatbelt.
 //
 // Artifacts are authored INLINE by the agent (the proactive path), guided by the pattern
 // INDEX in the SessionStart injection and the prefer-html skill it pulls PROACTIVELY when it
@@ -12,7 +12,7 @@
 //      Board)? If it has none of those → "graft an answerable surface on".
 //
 // THE GATE IS THE FLOOR, AND IT IS SELF-SUFFICIENT. Both block messages spell out the
-// mechanical minimum INLINE — the required head/charset, the size-reporter, companion-meta,
+// mechanical minimum INLINE — the required head/charset, the size-reporter, shelly-meta,
 // and the answerable-surface wiring — so the agent needs nothing else to comply. Crucially,
 // the reactive path NEVER tells the agent to load a skill: the block instructs a GRAFT onto
 // the design the agent already wrote (keep the look, add the plumbing), because a "load the
@@ -38,35 +38,35 @@
 // Loop guard: stop_hook_active is true only inside a continuation this hook itself drove;
 // it resets on the next real user prompt, so the seatbelt still fires every fresh turn.
 //
-// The external-terminals guard lives in the sh wrapper (companion-artifact-gate), mirroring
-// companion-observe — so this module is pure gate logic and is unit-tested directly.
+// The external-terminals guard lives in the sh wrapper (shelly-artifact-gate), mirroring
+// shelly-observe — so this module is pure gate logic and is unit-tested directly.
 
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-// The turn boundary is SHARED with the PreToolUse fork hook (companion-artifact-fork.cjs)
+// The turn boundary is SHARED with the PreToolUse fork hook (shelly-artifact-fork.cjs)
 // — one derivation, required by both, rather than two copies drifting apart. Co-located;
 // fall back to a null-returning stub if the require ever hiccups, which lands on the gate's
 // EXISTING uncertainty path (turnStart null → known:false → fail open), never a crash.
 let turn = { lastRealUserPromptTs: () => null };
 try {
-  turn = require("./companion-turn.cjs");
+  turn = require("./shelly-turn.cjs");
 } catch (_) {}
 
 const HOME = os.homedir();
 const ARTIFACTS_DIR =
-  process.env.COMPANION_ARTIFACTS_DIR || path.join(HOME, ".claude", "companion", "artifacts");
-const INDEX_PATH = path.join(HOME, ".claude", "companion", "artifact-index.json");
+  process.env.SHELLY_ARTIFACTS_DIR || path.join(HOME, ".shelly", "artifacts");
+const INDEX_PATH = path.join(HOME, ".shelly", "artifact-index.json");
 
-// Mirror of companion-identity.cjs safeId — the index stamps session_id through it.
+// Mirror of shelly-identity.cjs safeId — the index stamps session_id through it.
 // A normal UUID session_id is unchanged; this only matters for exotic ids.
 function safeId(id) {
   return String(id || "").replace(/[^A-Za-z0-9._-]/g, "-");
 }
 
 // turnStart = epoch-ms timestamp of the last GENUINE user prompt in the transcript.
-// Derived by the shared companion-turn.cjs (see its header for the tool_result skip and
+// Derived by the shared shelly-turn.cjs (see its header for the tool_result skip and
 // the transcript-lag caveat); re-exported here so this module's public surface — and its
 // tests — are unchanged by the extraction.
 function lastRealUserPromptTs(transcriptPath) {
@@ -74,7 +74,7 @@ function lastRealUserPromptTs(transcriptPath) {
 }
 
 // Did THIS session write an .html artifact since turnStart? Reads the Board's artifact
-// index (stamped by companion-hook/companion-index on every inline write). Returns
+// index (stamped by shelly-hook/shelly-index on every inline write). Returns
 // { known, wrote, paths }: known=false when we can't tell (no turn boundary, or a corrupt
 // index) so the caller fails open; paths is the abs-path list this session wrote this turn
 // (the index KEY is the artifact path) so the content-lint can read them. A MISSING index
@@ -109,7 +109,7 @@ function artifactWrittenSince(sessionId, turnStart, indexPath) {
 // the terminal: the Next-steps ballot items (✓/✎/✗), the Submit button, and commentable
 // blocks (the 💬 affordance). An artifact with none of them strands the user with only the
 // fallback chat bar — the exact "questions I can't answer" gap this gate guards.
-const RESPONDER_RE = /data-companion-(?:item|submit|commentable)/;
+const RESPONDER_RE = /data-shelly-(?:item|submit|commentable)/;
 
 // Signal 2 marker: the page's JS posts a submit to the Board (a custom-wired ballot emits
 // this from its own inline script, under whatever attribute names it likes). Matched against
@@ -132,8 +132,8 @@ function hasAnswerableSurface(paths) {
       continue;
     }
     // Strip <script>/<style> first. The unified helper's OWN source references every marker
-    // (querySelector("[data-companion-submit]"), [data-companion-item], …) and the ambient
-    // CSS has a [data-companion-commentable] selector — so a pure recap that embeds the
+    // (querySelector("[data-shelly-submit]"), [data-shelly-item], …) and the ambient
+    // CSS has a [data-shelly-commentable] selector — so a pure recap that embeds the
     // helper only for its fallback chat bar would falsely pass. Match against rendered
     // MARKUP only, where these appear solely as real attributes on real elements.
     const markup = html.replace(/<(script|style)[\s\S]*?<\/\1>/gi, "");
@@ -157,18 +157,18 @@ function hasAnswerableSurface(paths) {
 
 function buildReason(artifactsDir) {
   return (
-    "This turn ended with no artifact on the Companion Board. THE RULE IS ABSOLUTE: every turn " +
+    "This turn ended with no artifact on the Shelly Board. THE RULE IS ABSOLUTE: every turn " +
     "ends with one, with no exemptions. AUTHOR IT NOW: write a self-contained .html into " +
     artifactsDir +
     ". Size it to the turn — a decision, plan, review or analysis earns a full document; a quick " +
     "answer or a lookup earns a COMPACT CARD, not a padded one. The mechanical floor, inline (you " +
     'need nothing else): (a) a real <head> with <meta charset="utf-8">; (b) data-fit-root on the ' +
     "main wrapper plus the size-report snippet at the end of <body> — it posts " +
-    "{source:'companion-artifact',kind:'size',w,h} to parent so the overlay can size the frame; " +
-    "(c) a companion-meta JSON <script> block in the head; (d) an ANSWERABLE SURFACE — a short " +
-    "'Next steps' ballot (✓ do it / ✎ note / ✗ skip), each move marked data-companion-item and the " +
-    "Submit button marked data-companion-submit, whose click posts " +
-    "parent.postMessage({source:'companion-artifact',kind:'submit',text},'*'). Every artifact ends " +
+    "{source:'shelly-artifact',kind:'size',w,h} to parent so the overlay can size the frame; " +
+    "(c) a shelly-meta JSON <script> block in the head; (d) an ANSWERABLE SURFACE — a short " +
+    "'Next steps' ballot (✓ do it / ✎ note / ✗ skip), each move marked data-shelly-item and the " +
+    "Submit button marked data-shelly-submit, whose click posts " +
+    "parent.postMessage({source:'shelly-artifact',kind:'submit',text},'*'). Every artifact ends " +
     "by showing the user where they stand and what happens next; even when the work is finished, " +
     "say so and hand them the next move as a surface they can answer in place. You may copy the " +
     "size-reporter and ballot wiring verbatim from any recent .html in " +
@@ -182,14 +182,14 @@ function buildReason(artifactsDir) {
 // skill load, because that is what once destroyed a working bespoke design.
 function buildResponderReason() {
   return (
-    "You wrote a Companion artifact this turn, but it gives the user NO way to respond in place — " +
-    "no ✓/✎/✗ next-move items (data-companion-item), no Submit (data-companion-submit), no " +
-    "commentable blocks (data-companion-commentable), and no custom ballot that posts a submit to " +
+    "You wrote a Shelly artifact this turn, but it gives the user NO way to respond in place — " +
+    "no ✓/✎/✗ next-move items (data-shelly-item), no Submit (data-shelly-submit), no " +
+    "commentable blocks (data-shelly-commentable), and no custom ballot that posts a submit to " +
     "the Board. That strands the user with only the fallback chat bar. GRAFT an answerable surface " +
     "onto the page you ALREADY wrote — keep your design exactly as it is; do NOT restyle it, do NOT " +
     "rebuild it, do NOT reach for a template or reference. The minimal wiring: mark each next-move with " +
-    "data-companion-item + a data-item-label, add one data-companion-submit button, and have its " +
-    "click post {source:'companion-artifact',kind:'submit',text} to parent. If the page ALREADY has " +
+    "data-shelly-item + a data-item-label, add one data-shelly-submit button, and have its " +
+    "click post {source:'shelly-artifact',kind:'submit',text} to parent. If the page ALREADY has " +
     'a working ballot under custom names (e.g. data-a="do", id="submit", a clipboard submit), the ' +
     "fix is just adding those marker attributes and the postMessage — a ~5-line graft, not a " +
     "redesign. This holds even when the work is DONE: say it's done, then hand over the next move " +

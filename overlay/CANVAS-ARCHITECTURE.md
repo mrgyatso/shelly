@@ -2,11 +2,11 @@
 
 > Plan-first design + handoff for a dedicated agent. Supersedes and **absorbs**
 > `overlay/COLLAPSIBLE-UI-BRIEF.md` (the pill is now the collapsed state of this board).
-> Repo: `~/claude-code-companion`, overlay app under `overlay/`. Branch off `master`.
+> Repo: `~/shelly`, overlay app under `overlay/`. Branch off `master`.
 
 ## Vision (locked with Zach, 2026-06-09)
 
-Companion is a **steering tool for multi-agent work**: you run ~5 agents and often answer
+Shelly is a **steering tool for multi-agent work**: you run ~5 agents and often answer
 ~4; each agent puts an interactive artifact on your screen and you **steer each** by
 reacting to its specific sentences (💬) and items (✓/✎/✗). The Board is the surface that
 makes that real.
@@ -113,14 +113,14 @@ everything else a keystroke away:
   terminal/PTY + that session's artifacts. Build on the `wip/workspace-tabbed-terminal` seed
   (`portable-pty` + xterm.js + bracketed-paste). Generalize `route_artifact(path, session)`
   from *session→tab* to *session→Board-pane* so each artifact lands under its session's
-  terminal. Session ids come from a local hook's `$COMPANION_SESSION` or a hub artifact's
+  terminal. Session ids come from a local hook's `$SHELLY_SESSION` or a hub artifact's
   `project`/source field. (Async-remote sources with no live PTY still get a pane — just
   with live-state + artifacts and no terminal; see Response routing for their return path.)
 - **Render path (reuse, don't reinvent).** Each artifact iframe loads via
   `artifact-view.ts::loadArtifactInto` → `asset:` protocol. **The asset-scope fix matters:**
   artifacts must load via `asset://` (real origin) so their inline JS runs; never `srcdoc`
   (CSP blocks JS → dead buttons). All artifacts already live under
-  `~/.claude/companion/{artifacts,remote}` which is in the asset scope.
+  `~/.shelly/{artifacts,remote}` which is in the asset scope.
 - **Triage-first layout.** Not a grid of N equal live panes. A **triage rail** of sessions
   (sorted/badged by `next.kind`) + **one focal session** whose terminal + artifacts are live.
   Only the focal session runs a live PTY/xterm; the rest are lightweight live-state headers
@@ -187,7 +187,7 @@ the session has a live PTY**, not whether it's local vs remote (an SSH'd termina
   stays the existing non-activating panel, untouched. (Isolated; doesn't touch the existing
   artifact-panel path yet.)
 - **P1 — Triage rail (the "which agent needs me" milestone; this is what makes it *feel* like
-  the vision).** Read **every** `~/.claude/companion/live/<source>.json` (not just the newest
+  the vision).** Read **every** `~/.shelly/live/<source>.json` (not just the newest
   — generalize `live.rs::read_live` to return all) → render the **triage rail**: one entry per
   session showing its live-state header (`working`/`where`/`next`) and **badged/sorted by
   `next.kind`** (`blocked` > `decision` > `todo`). Selecting a rail entry makes that session
@@ -239,7 +239,7 @@ the session has a live PTY**, not whether it's local vs remote (an SSH'd termina
   off-screen artifacts); `layout.rs` (monitor-awareness, but the Board does internal layout);
   the hub pull (remote sessions); `live.rs`/`live.ts`/`LIVE_UI_BRIEF.md` (read-all-sources +
   paper aesthetic for the rail).
-- The **asset-scope fix** in `tauri.conf.json` (`$HOME/.claude/companion/**`) is load-bearing
+- The **asset-scope fix** in `tauri.conf.json` (`$HOME/.shelly/**`) is load-bearing
   — artifacts must load via `asset:`.
 - New for P4's async case: a **hub return path** (return endpoint/file under the hub) so a
   finished cron/brief agent reads its steering response on its next run. This lives in the hub
@@ -259,12 +259,12 @@ tauri-mcp-server `driver_session` (port 9339) → `webview_execute_js` / `manage
 `webview_screenshot` to drive + screenshot. Caveats learned: the bridge does **not** await
 promises from `webview_execute_js` (stash async results on `window.__x`, read them in a second
 call); the tile iframes are cross-origin/sandboxed so you can inspect the Board window but not
-reach inside a tile's iframe; kill the installed daemon (`pkill -x companion-overlay`) before
+reach inside a tile's iframe; kill the installed daemon (`pkill -x shelly`) before
 `npm run tauri dev` (single-instance forwards otherwise).
 
 **IMPORTANT — restore the user's overlay when you finish.** Killing the installed daemon for
 `tauri dev` closes the overlay the user is actively using. When done verifying, relaunch it:
-`open "/Applications/Companion Overlay.app"`. Never leave the user with no overlay running.
+`open "/Applications/Shelly.app"`. Never leave the user with no overlay running.
 
 ## Definition of done (P0–P2, the demoable core)
 A beautiful **focal Board app window** (collapsible to the ambient pill) shows a **triage

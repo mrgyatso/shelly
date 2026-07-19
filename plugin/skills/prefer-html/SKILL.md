@@ -1,12 +1,12 @@
 ---
 name: prefer-html
-description: The Companion artifact pattern library — invariants + copy-paste templates (pill, blob canvas, paginated wizard, sidebar multi-page, two-zone, dashboard) + the interaction helpers (Decide ballot, ambient comments, copy blocks). MANDATORY to read before building any non-trivial artifact (anything past a compact pill) — load it proactively the moment you pick a pattern. The floor (charset, size reporter, answerable responder, shell shade) is also enforced by the always-on session context + the Stop-hook gate; this skill is the single source for *how* to make an artifact good.
+description: The Shelly artifact pattern library — invariants + copy-paste templates (pill, blob canvas, paginated wizard, sidebar multi-page, two-zone, dashboard) + the interaction helpers (Decide ballot, ambient comments, copy blocks). MANDATORY to read before building any non-trivial artifact (anything past a compact pill) — load it proactively the moment you pick a pattern. The floor (charset, size reporter, answerable responder, shell shade) is also enforced by the always-on session context + the Stop-hook gate; this skill is the single source for *how* to make an artifact good.
 ---
 
-# Prefer HTML — render what changed in the Companion overlay
+# Prefer HTML — render what changed in the Shelly overlay
 
-The Companion overlay renders any `.html` file written into the artifacts dir. **Every
-Companion artifact is authored inline by the working agent** — there is no background observer
+The Shelly overlay renders any `.html` file written into the artifacts dir. **Every
+Shelly artifact is authored inline by the working agent** — there is no background observer
 and no deterministic renderer (both removed in 0.4.5). You write the file yourself, in full
 context; this skill is the single source for *how* to make it good.
 
@@ -32,7 +32,7 @@ it, how *this* data wants to look — is yours to invent. The pattern menu is a 
 # 1 · The invariants (the frame — short and absolute)
 
 These hold on every artifact, no exceptions. They are the whole reason a bespoke page still
-reads as *Companion*. If a template below ever seems to conflict with one of these, the
+reads as *Shelly*. If a template below ever seems to conflict with one of these, the
 invariant wins.
 
 ### 1.1 Every turn ends with an artifact
@@ -40,7 +40,7 @@ invariant wins.
 **There is no exemption** — you are never deciding *whether*, only *what shape*. If the user is
 in the app, they are here for the artifact; the off switch is which **terminal** they're in
 (external terminals are skipped entirely, in the sh wrapper), not a judgment you make turn by
-turn. A Stop-hook backstop (`companion-artifact-gate`) hands the turn back once if it ends with
+turn. A Stop-hook backstop (`shelly-artifact-gate`) hands the turn back once if it ends with
 nothing written — but author it inline rather than lean on the reminder.
 
 - **One turn, one artifact — always a fresh slug.** Never rewrite a slug you shipped in an
@@ -69,15 +69,15 @@ Every artifact — bespoke ones included — ends with a way for the user to res
 so they steer without opening the terminal. At minimum a clickable "what's next →"; usually a
 short Decide ballot of ✓/✎/✗ moves; on an informational page, the ambient 💬. **A question posed
 only as prose is a bug** — wire every question the artifact raises as its own
-`data-companion-item` or an ambient 💬 target, so one click answers it. The lone "Message the
+`data-shelly-item` or an ambient 💬 target, so one click answers it. The lone "Message the
 terminal" chat bar is a freeform fallback, never the way to answer a question the artifact
 itself raised. All responders post the same message to the parent:
 
 ```js
-parent.postMessage({ source: "companion-artifact", kind: "submit", text: "…" }, "*");
+parent.postMessage({ source: "shelly-artifact", kind: "submit", text: "…" }, "*");
 ```
 
-**Inform AND propel.** The Companion's job is to move the project toward shipping, not to
+**Inform AND propel.** The Shelly's job is to move the project toward shipping, not to
 recap. So a substantive artifact does two jobs: it informs (findings, status, explanation),
 then it **propels** — it ends by proposing the next move with a recommendation and a reason,
 asks the sharp questions, and never waits for the user to say what's next. If the goal /
@@ -93,14 +93,14 @@ template below:
 - **`data-fit-root`** on the main wrapper (definite width, height flows) **+ the size-reporter
   snippet** at the end of `<body>` — the sandboxed opaque-origin iframe can't be measured from
   outside, so the artifact self-reports its size (see §7.3).
-- **The `companion-meta` block** in `<head>` — so feedback is self-identifying, even to a later
+- **The `shelly-meta` block** in `<head>` — so feedback is self-identifying, even to a later
   session reopening it (see §7.4).
-- **`data-companion-commentable` on the content + the unified helper `<script>` pasted verbatim**
+- **`data-shelly-commentable` on the content + the unified helper `<script>` pasted verbatim**
   from `references/interaction-helper.md`, plus the §4.2 ambient CSS. §1.3 is only true if the 💬
   actually renders. **The markup alone is inert — the helper is what injects the icons**, so
   shipping one without the other is the single most common way an artifact arrives with nothing
   to click (§4.4). Content in styled `<div>`s (cards, blobs, callouts) is invisible to the
-  helper's tag list until you mark it `data-companion-block`.
+  helper's tag list until you mark it `data-shelly-block`.
   *Two shapes are exempt:* the **compact pill** (§3.1 — a status flip has nothing to annotate)
   and the **bespoke dashboard / L0 home** (§3.6 — presentation-first and persistent, not a turn
   artifact; it still carries its own responder per §1.3). Every other shape carries the helper.
@@ -240,7 +240,7 @@ amber = heads-up/partial, red = broke/blocked):
   </main>
   <script>
     (function () { var el = document.querySelector("[data-fit-root]") || document.body;
-      var post = function () { parent.postMessage({ source:"companion-artifact", kind:"size",
+      var post = function () { parent.postMessage({ source:"shelly-artifact", kind:"size",
         w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
       if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
       addEventListener("load", post); post(); })();
@@ -249,7 +249,7 @@ amber = heads-up/partial, red = broke/blocked):
 </html>
 ```
 
-The pill is the one pattern where a `companion-meta` block and a full Decide ballot are optional
+The pill is the one pattern where a `shelly-meta` block and a full Decide ballot are optional
 — a one-tap "what's next →" can be a single item. Everything heavier needs both.
 
 ## 3.2 · Blob canvas — the default for N independent points
@@ -274,11 +274,11 @@ lump is a broken artifact. Two granularities, and they nest cleanly:
 
 | Target | How it's wired | The reader is saying |
 |---|---|---|
-| `.blob-head` | `data-companion-block` (a styled div is invisible to the helper's tag list without it) | "about *this point*…" |
+| `.blob-head` | `data-shelly-block` (a styled div is invisible to the helper's tag list without it) | "about *this point*…" |
 | each `<p>` in `.blob-body` | auto-discovered by the `p` in `BLOCK_SELECTOR` | "about *this sentence*…" |
 
 The head and the body are siblings, so the helper's nesting guard leaves both live. Wire
-`data-companion-commentable` on `.canvas` — **never** on the ballot below it (§4.3) — and paste
+`data-shelly-commentable` on `.canvas` — **never** on the ballot below it (§4.3) — and paste
 the unified helper. Markup alone is inert: no helper, no icons, no way to answer (§4.4).
 
 ```html
@@ -287,10 +287,10 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
 <head>
 <meta charset="utf-8" />
 <title>blob canvas</title>
-<link rel="stylesheet" href="asset://localhost/Users/gyatso/.claude/companion/vendor/fonts.css" />
-<script type="application/json" id="companion-meta">
+<link rel="stylesheet" href="asset://localhost/Users/gyatso/.shelly/vendor/fonts.css" />
+<script type="application/json" id="shelly-meta">
 { "subject": "<short subject>", "summary": "<1–2 sentence description>",
-  "files": [], "project": "~/claude-code-companion", "branch": "<branch>", "created": "<YYYY-MM-DD>" }
+  "files": [], "project": "~/shelly", "branch": "<branch>", "created": "<YYYY-MM-DD>" }
 </script>
 <style>
   :root{
@@ -361,12 +361,12 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
      (left:-36px). On a blob that lands outside the card and .blob{overflow:hidden} CLIPS it,
      so the head must anchor its icon INSIDE, just left of the chevron. Paragraphs in
      .blob-body sit 43px in and keep the normal gutter icon — no override needed. */
-  .blob-head.companion-commentable{cursor:pointer}
-  .blob-head.companion-commentable::before{display:none}       /* gutter hover-bridge: N/A inside a card */
-  .blob-head > .companion-ask-btn{left:auto;right:44px;top:14px;transform:none}
-  .blob-head.companion-commentable:hover{box-shadow:none;background:rgba(182,120,29,.05)}
-  .blob-head.companion-commentable.has-comment{box-shadow:none;background:rgba(46,125,82,.07)}
-  .blob-body .companion-composer,.blob-body .companion-annotation{margin-left:0}
+  .blob-head.shelly-commentable{cursor:pointer}
+  .blob-head.shelly-commentable::before{display:none}       /* gutter hover-bridge: N/A inside a card */
+  .blob-head > .shelly-ask-btn{left:auto;right:44px;top:14px;transform:none}
+  .blob-head.shelly-commentable:hover{box-shadow:none;background:rgba(182,120,29,.05)}
+  .blob-head.shelly-commentable.has-comment{box-shadow:none;background:rgba(46,125,82,.07)}
+  .blob-body .shelly-composer,.blob-body .shelly-annotation{margin-left:0}
 
   /* DECIDE ballot — sits below the canvas */
   .decide{margin-top:38px;background:var(--paper);border:1px solid var(--hair);border-radius:16px;
@@ -409,7 +409,7 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
 <main data-fit-root>
 
   <div class="masthead">
-    <span class="brand">Companion · <!-- project --></span>
+    <span class="brand">Shelly · <!-- project --></span>
     <span class="edition"><!-- edition line · date --></span>
   </div>
 
@@ -419,14 +419,14 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
 
   <div class="hint">Click a card to open it. Skip what you don't need.</div>
 
-  <!-- data-companion-commentable wraps the CANVAS (never the ballot below it) so every
-       point is 💬-answerable. Each .blob-head carries data-companion-block — a styled div
+  <!-- data-shelly-commentable wraps the CANVAS (never the ballot below it) so every
+       point is 💬-answerable. Each .blob-head carries data-shelly-block — a styled div
        is invisible to the helper's tag list without it. -->
-  <div class="canvas" data-companion-commentable>
+  <div class="canvas" data-shelly-commentable>
     <!-- duplicate one .blob per point; give each a semantic palette class (.b-blue etc.) -->
     <div class="blob b-blue" data-blob>
       <div class="rule"></div>
-      <div class="blob-head" data-companion-block>
+      <div class="blob-head" data-shelly-block>
         <span class="dot"></span>
         <div class="bh-main">
           <div class="bh-kick">Point 1 · label</div>
@@ -443,7 +443,7 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
 
     <div class="blob b-amber wide" data-blob>
       <div class="rule"></div>
-      <div class="blob-head" data-companion-block>
+      <div class="blob-head" data-shelly-block>
         <span class="dot"></span>
         <div class="bh-main">
           <div class="bh-kick">Point N · label</div>
@@ -466,7 +466,7 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
     <h2>Where we land</h2>
     <p class="dsub">One line framing the moves.</p>
 
-    <div class="item" data-companion-item
+    <div class="item" data-shelly-item
       data-item-label="Imperative label — reads well inside the compiled submit message.">
       <div class="item-row">
         <div>
@@ -486,7 +486,7 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
     <div class="bar">
       <span class="count" data-count>nothing marked yet</span>
       <button class="doall" data-doall>✓ Do all</button>
-      <button class="submit" data-companion-submit="Decisions">Submit → ⌘V</button>
+      <button class="submit" data-shelly-submit="Decisions">Submit → ⌘V</button>
     </div>
   </section>
 
@@ -511,7 +511,7 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
 <script>
   (function () {
     var el = document.querySelector("[data-fit-root]") || document.body;
-    var post = function () { parent.postMessage({ source: "companion-artifact", kind: "size",
+    var post = function () { parent.postMessage({ source: "shelly-artifact", kind: "size",
       w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
     addEventListener("load", post); post();
@@ -544,10 +544,10 @@ throws (same constraint the sidebar template documents). The size-reporter obser
 <head>
 <meta charset="utf-8" />
 <title>wizard</title>
-<link rel="stylesheet" href="asset://localhost/Users/gyatso/.claude/companion/vendor/fonts.css" />
-<script type="application/json" id="companion-meta">
+<link rel="stylesheet" href="asset://localhost/Users/gyatso/.shelly/vendor/fonts.css" />
+<script type="application/json" id="shelly-meta">
 { "subject": "<short subject>", "summary": "<1–2 sentence description>",
-  "files": [], "project": "~/claude-code-companion", "branch": "<branch>", "created": "<YYYY-MM-DD>" }
+  "files": [], "project": "~/shelly", "branch": "<branch>", "created": "<YYYY-MM-DD>" }
 </script>
 <style>
   :root{
@@ -626,20 +626,20 @@ throws (same constraint the sidebar template documents). The size-reporter obser
 <main data-fit-root>
 
   <div class="wz-top">
-    <span class="wz-brand">Companion · <!-- title --></span>
+    <span class="wz-brand">Shelly · <!-- title --></span>
     <span class="wz-count"><span data-wz-now>1</span> of <span data-wz-total>3</span></span>
   </div>
   <div class="wz-progress"><i data-wz-fill></i></div>
 
   <!-- one .wz-page per step; the LAST page is the Decide ballot -->
   <!-- CONTENT pages are commentable; the decide page below is NOT (§4.3) -->
-  <section class="wz-page active" data-wz-page data-companion-commentable>
+  <section class="wz-page active" data-wz-page data-shelly-commentable>
     <div class="kick">Step 1</div>
     <h1>First step of the sequence.</h1>
     <p>Walk the reader through it. <strong>One idea per page.</strong></p>
   </section>
 
-  <section class="wz-page" data-wz-page data-companion-commentable>
+  <section class="wz-page" data-wz-page data-shelly-commentable>
     <div class="kick">Step 2</div>
     <h1>It builds on the last.</h1>
     <p>Order matters here — that's why it's a wizard and not a scroll.</p>
@@ -649,7 +649,7 @@ throws (same constraint the sidebar template documents). The size-reporter obser
     <div class="dh">Decide</div>
     <h2>What to do</h2>
     <p class="dsub">The sequence lands on the moves.</p>
-    <div class="item" data-companion-item data-item-label="Imperative label for the compiled submit message.">
+    <div class="item" data-shelly-item data-item-label="Imperative label for the compiled submit message.">
       <div class="item-row">
         <div><div class="item-title">Move title</div><div class="item-sub">One line.</div></div>
         <div class="item-actions">
@@ -667,7 +667,7 @@ throws (same constraint the sidebar template documents). The size-reporter obser
     <div style="display:flex;gap:10px;align-items:center">
       <button class="doall" data-doall style="display:none">✓ Do all</button>
       <button class="wz-btn next" data-wz-next>Next →</button>
-      <button class="submit" data-companion-submit="Wizard decisions" style="display:none">Submit → ⌘V</button>
+      <button class="submit" data-shelly-submit="Wizard decisions" style="display:none">Submit → ⌘V</button>
     </div>
   </div>
 
@@ -679,7 +679,7 @@ throws (same constraint the sidebar template documents). The size-reporter obser
   var pages=[].slice.call(document.querySelectorAll('[data-wz-page]'));
   var i=0, last=pages.length-1;
   var back=document.querySelector('[data-wz-back]'), next=document.querySelector('[data-wz-next]');
-  var submit=document.querySelector('[data-companion-submit]'), doall=document.querySelector('[data-doall]');
+  var submit=document.querySelector('[data-shelly-submit]'), doall=document.querySelector('[data-doall]');
   var fill=document.querySelector('[data-wz-fill]'), now=document.querySelector('[data-wz-now]'),
       total=document.querySelector('[data-wz-total]');
   if(total) total.textContent=pages.length;
@@ -708,7 +708,7 @@ throws (same constraint the sidebar template documents). The size-reporter obser
 <script>
   (function () {
     var el = document.querySelector("[data-fit-root]") || document.body;
-    var post = function () { parent.postMessage({ source: "companion-artifact", kind: "size",
+    var post = function () { parent.postMessage({ source: "shelly-artifact", kind: "size",
       w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
     addEventListener("load", post); post();
@@ -748,11 +748,11 @@ panel, and sizes through the same size-report snippet (switching pages re-fires 
 - **Soft cap ~12 pages.** Beyond that, group subjects or summarise the long tail on the Overview
   — don't emit 30 pages.
 - **Every content page is 💬-answerable — that is the floor, not a garnish.** Put
-  `data-companion-commentable` on each `data-mp-page` and paste the unified helper (§4.3); it
+  `data-shelly-commentable` on each `data-mp-page` and paste the unified helper (§4.3); it
   scans **all** commentable roots, so one helper covers every page. Bump
   `.mp-pages { padding-left: 56px }` so the 💬 icon clears the sidebar.
 - **One submit button for the whole file.** The unified helper gathers block-comments *and* any
-  ballot items into that single `data-companion-submit` — never wire a second submit per page.
+  ballot items into that single `data-shelly-submit` — never wire a second submit per page.
 
 ### Sidebar multi-page template (copy, fill, write)
 
@@ -804,7 +804,7 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
       <!-- one <a> per subject -->
     </nav>
     <main class="mp-pages">
-      <section id="overview" data-mp-page class="active" data-companion-commentable>
+      <section id="overview" data-mp-page class="active" data-shelly-commentable>
         <div class="kicker">Overview</div>
         <h1>What this covers</h1>
         <p>One short orienting paragraph + the count.</p>
@@ -813,17 +813,17 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
           <li><strong>Second subject</strong> — one-line summary.</li>
         </ul>
       </section>
-      <section id="p1" data-mp-page data-companion-commentable>
+      <section id="p1" data-mp-page data-shelly-commentable>
         <div class="kicker">Subject 1 of N</div>
         <h1>First subject</h1>
         <p>Real substance for this subject.</p>
       </section>
-      <section id="p2" data-mp-page data-companion-commentable>
+      <section id="p2" data-mp-page data-shelly-commentable>
         <div class="kicker">Subject 2 of N</div>
         <h1>Second subject</h1>
         <p>Real substance for this subject.</p>
       </section>
-      <!-- one <section> per subject — each one data-companion-commentable -->
+      <!-- one <section> per subject — each one data-shelly-commentable -->
     </main>
   </div>
   <script>
@@ -842,7 +842,7 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
     })();
     (function () {
       var el = document.querySelector("[data-fit-root]") || document.body;
-      var post = function () { parent.postMessage({ source: "companion-artifact", kind: "size",
+      var post = function () { parent.postMessage({ source: "shelly-artifact", kind: "size",
         w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
       if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
       addEventListener("load", post); post();
@@ -883,10 +883,10 @@ learns from the visual, leave the column out and go single-column.
 - **Quantitative data** → **D3** (bundled — see §7.7) for charts/graphs.
 - **Rich illustrative figures** a diagram can't capture (a scene, a textured concept image,
   a realistic mock) → generate one with **gpt image-2**, save it into the artifacts dir
-  (e.g. `~/.claude/companion/artifacts/img/<slug>-<n>.png`), and reference it via the
+  (e.g. `~/.shelly/artifacts/img/<slug>-<n>.png`), and reference it via the
   `asset:` protocol (external URLs are blocked in the sandbox):
   ```html
-  <img src="asset://localhost/Users/gyatso/.claude/companion/artifacts/img/<slug>-1.png"
+  <img src="asset://localhost/Users/gyatso/.shelly/artifacts/img/<slug>-1.png"
        width="360" alt="<what it shows>" />
   ```
   Always set an explicit `width`/`height` and a real `alt`. Generate sparingly — one
@@ -897,13 +897,13 @@ learns from the visual, leave the column out and go single-column.
 `data-fit-root` stays a block wrapper; the two-zone grid is its own element so the unified
 helper's auto-injected `.cmp-chat` bar (which targets `data-fit-root`) lands full-width
 below. The right column is `position:sticky` so it stays beside the prose as the left
-scrolls. The left column carries `data-companion-commentable`; the visual does not.
+scrolls. The left column carries `data-shelly-commentable`; the visual does not.
 
 ```html
 <main data-fit-root> <!-- width ~860–900px to actually use the space -->
   <header>…kicker + h1 + sub…</header>
   <div class="zone">
-    <div class="col-main" data-companion-commentable>
+    <div class="col-main" data-shelly-commentable>
       <h2>…</h2><p>…prose that the visual illustrates…</p>
     </div>
     <aside class="visual"><!-- sticky card -->
@@ -920,7 +920,7 @@ scrolls. The left column carries `data-companion-commentable`; the visual does n
   /* the 💬 sits at left:-36px — give the prose column room so it isn't clipped */
   .col-main { padding-left: 40px; }
 </style>
-<!-- THE HELPER — NOT OPTIONAL. data-companion-commentable above is inert markup on its own:
+<!-- THE HELPER — NOT OPTIONAL. data-shelly-commentable above is inert markup on its own:
      it is the helper that injects the 💬 icons. Copy the <script> from
      references/interaction-helper.md VERBATIM, plus the §4.2 ambient CSS. -->
 <script>
@@ -941,15 +941,15 @@ layout and feel are yours to craft; a rigid template on a debrief is worse than 
 forward-driving surface where the next moves live (§1.3). *Ask: act on it, or look at it?* Look →
 bespoke design; act → one of the ballot-carrying patterns above.
 
-The Board (`companion board`) opens to an **L0 hub** that an agent fully authors: write a
+The Board (`shelly board`) opens to an **L0 hub** that an agent fully authors: write a
 self-contained dashboard to the **reserved slug** `home.html` in the artifacts dir
-(`~/.claude/companion/artifacts/home.html`). The Board loads it **full-bleed** as the L0
+(`~/.shelly/artifacts/home.html`). The Board loads it **full-bleed** as the L0
 surface — it does NOT auto-pop as a panel (the hook skips it), and you re-see it by opening
-the Board, not via `companion open`. Think of it as a **daily dashboard**: regenerate it for
+the Board, not via `shelly open`. Think of it as a **daily dashboard**: regenerate it for
 whatever the user is actually working on that day — what needs them, what's running, the one
 thing that matters most.
 
-### The top bar is the Board's, themed by you (`companion-bar` block)
+### The top bar is the Board's, themed by you (`shelly-bar` block)
 
 The Board renders a persistent top bar across the whole surface. At L0 it is **themed and
 filled by your dashboard** so it matches your design; the **mandatory control cluster**
@@ -958,7 +958,7 @@ declare those, they can't go missing. You compose the bar's *content + colors* v
 block in `home.html`'s `<head>`:
 
 ```html
-<script type="application/json" id="companion-bar">
+<script type="application/json" id="shelly-bar">
 {
   "bg": "#efe9df", "fg": "#201b15", "accent": "#b0552f",
   "font": "Newsreader",
@@ -979,10 +979,10 @@ block in `home.html`'s `<head>`:
   - `{"type":"text","text":"…"}` — muted label
   - `{"type":"link","text":"…","to":"sessions"|"unit:<key>"|"hub"|"artifact:<path>"}` —
     navigates the Board (`session:<src>` still works as a back-compat alias → its unit)
-- **Rule:** if you set `companion-bar`, **do NOT draw your own header in the body** — the
+- **Rule:** if you set `shelly-bar`, **do NOT draw your own header in the body** — the
   Board's bar is your header. Start the body at the content.
 
-Without a `companion-bar` block the Board shows its native greeting. The theming applies at
+Without a `shelly-bar` block the Board shows its native greeting. The theming applies at
 **L0 only**; L1 (sessions) and L2 (one session) use native chrome.
 
 ### Navigation from inside the dashboard
@@ -991,7 +991,7 @@ Any element can drive the Board by posting a navigate message to the parent — 
 the dashboard links to sessions, and how it stays *inside* the Board (no separate windows):
 
 ```js
-parent.postMessage({ source: "companion-artifact", kind: "navigate",
+parent.postMessage({ source: "shelly-artifact", kind: "navigate",
   to: "unit:scalp-defense" }, "*");   // or "sessions" | "hub" | "artifact:<abs-path>"
 ```
 
@@ -1045,12 +1045,12 @@ even a single "ship it?" or a "done — what's next →" on a recap. **Skip it**
 
 ### Item HTML shape
 
-Each reviewable item is a `<li>` (or any element) marked with `data-companion-item`
+Each reviewable item is a `<li>` (or any element) marked with `data-shelly-item`
 and a `data-item-label` describing what the item is, in a way that will read
 naturally inside the compiled submit message:
 
 ```html
-<li data-companion-item data-item-label="Wire the postMessage handler in resize.ts">
+<li data-shelly-item data-item-label="Wire the postMessage handler in resize.ts">
   <div class="item-row">
     <span class="item-label">Wire the postMessage handler in resize.ts</span>
     <div class="item-actions">
@@ -1070,11 +1070,11 @@ string is sent.
 
 ### Submit button
 
-One Submit button per artifact, with `data-companion-submit` set to the title that
+One Submit button per artifact, with `data-shelly-submit` set to the title that
 prefixes the compiled message:
 
 ```html
-<button class="submit" data-companion-submit="Implementation plan review">
+<button class="submit" data-shelly-submit="Implementation plan review">
   Submit feedback
 </button>
 ```
@@ -1097,7 +1097,7 @@ artifact:
     document.addEventListener("click", function (e) {
       var btn = e.target.closest("[data-action]");
       if (btn) {
-        var item = btn.closest("[data-companion-item]");
+        var item = btn.closest("[data-shelly-item]");
         if (!item) return;
         var action = btn.getAttribute("data-action");
         var current = item.getAttribute("data-state");
@@ -1112,10 +1112,10 @@ artifact:
         if (action === "comment" && ta) setTimeout(function () { ta.focus(); }, 0);
         return;
       }
-      var submitBtn = e.target.closest("[data-companion-submit]");
+      var submitBtn = e.target.closest("[data-shelly-submit]");
       if (submitBtn) {
-        var title = submitBtn.getAttribute("data-companion-submit") || "Review feedback";
-        var items = document.querySelectorAll("[data-companion-item][data-state]");
+        var title = submitBtn.getAttribute("data-shelly-submit") || "Review feedback";
+        var items = document.querySelectorAll("[data-shelly-item][data-state]");
         if (items.length === 0) return;
         var lines = ["Re: " + title, ""];
         items.forEach(function (it) {
@@ -1130,7 +1130,7 @@ artifact:
           }
         });
         parent.postMessage({
-          source: "companion-artifact",
+          source: "shelly-artifact",
           kind: "submit",
           text: lines.join("\n")
         }, "*");
@@ -1191,23 +1191,23 @@ compiles every comment with its quoted snippet into prose and copies it.
 threshold for "the user wants to ask about one specific paragraph but doesn't want
 to retype it" — recaps, status briefings, explainers, comparisons-as-prose,
 research summaries, post-mortems. **Don't combine** it with the interactive review
-form in the same artifact — both helpers respond to the same `data-companion-submit`
+form in the same artifact — both helpers respond to the same `data-shelly-submit`
 button and would write competing payloads to the clipboard. When an artifact needs both,
 use the **unified helper** (§4.3) instead. Otherwise pick one per artifact.
 
 ### Convention
 
-Wrap the readable content in a `<div data-companion-commentable>` and include the
+Wrap the readable content in a `<div data-shelly-commentable>` and include the
 helper snippet below. The helper auto-discovers `p, li, h2, h3, h4, blockquote, pre`
 elements inside the wrapper and attaches the affordance to each. **Content placed in
 styled `<div>`s — cards, callouts, custom rows — is invisible to that tag list.** Add
-`data-companion-block` to any such container to make it commentable. Add a Submit
-button anywhere in the page with `data-companion-submit="title"` — the same
+`data-shelly-block` to any such container to make it commentable. Add a Submit
+button anywhere in the page with `data-shelly-submit="title"` — the same
 attribute the review form uses (the helper short-circuits when no comments exist,
 so a Submit button can safely live next to other UI):
 
 ```html
-<div data-companion-commentable>
+<div data-shelly-commentable>
   <h2>What shipped this session</h2>
   <p>Normal prose. On hover, a 💬 appears to the left.</p>
   <ul>
@@ -1216,34 +1216,34 @@ so a Submit button can safely live next to other UI):
   <pre><code>// so are code blocks</code></pre>
 </div>
 
-<button data-companion-submit="Comments on session recap">Submit → ⌘V</button>
+<button data-shelly-submit="Comments on session recap">Submit → ⌘V</button>
 ```
 
 ### Required ambient-comments helper snippet
 
 Drop this in addition to (not instead of) the size-reporter snippet. Safe to
-include even when there's no `data-companion-commentable` wrapper present — the
+include even when there's no `data-shelly-commentable` wrapper present — the
 helper no-ops in that case:
 
 ```html
 <style>
-  [data-companion-commentable] .companion-commentable {
+  [data-shelly-commentable] .shelly-commentable {
     position: relative; border-radius: 5px; cursor: text;
     transition: background 140ms ease, box-shadow 140ms ease;
   }
   /* Hover-bridge: extend the hover hit area 36 px into the left gutter so
      the cursor doesn't leave :hover while travelling toward the 💬 icon. */
-  .companion-commentable::before {
+  .shelly-commentable::before {
     content: ""; position: absolute;
     top: 0; left: -36px; width: 36px; height: 100%;
   }
-  .companion-commentable:hover {
+  .shelly-commentable:hover {
     background: rgba(182,120,29,0.07); box-shadow: inset 2px 0 0 #b6781d;
   }
-  .companion-commentable.has-comment {
+  .shelly-commentable.has-comment {
     background: rgba(46,125,82,0.05); box-shadow: inset 2px 0 0 #2e7d52;
   }
-  .companion-ask-btn {
+  .shelly-ask-btn {
     position: absolute; left: -36px; top: 50%; transform: translateY(-50%);
     width: 26px; height: 26px; padding: 0;
     border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #6e655b;
@@ -1251,56 +1251,56 @@ helper no-ops in that case:
     display: none; align-items: center; justify-content: center;
     font-size: 12px; box-shadow: 0 4px 10px -6px rgba(26,23,20,0.4);
   }
-  .companion-commentable:hover > .companion-ask-btn,
-  .companion-commentable.has-comment > .companion-ask-btn { display: inline-flex; }
-  .companion-commentable.has-comment > .companion-ask-btn {
+  .shelly-commentable:hover > .shelly-ask-btn,
+  .shelly-commentable.has-comment > .shelly-ask-btn { display: inline-flex; }
+  .shelly-commentable.has-comment > .shelly-ask-btn {
     color: #2e7d52; border-color: #2e7d52;
   }
-  .companion-composer {
+  .shelly-composer {
     margin: 6px 0 10px; padding: 10px 11px;
     background: #fff; border: 1px solid #b6781d; border-radius: 8px;
     box-shadow: 0 10px 24px -16px rgba(26,23,20,0.5);
   }
-  .companion-composer .ref {
+  .shelly-composer .ref {
     font: 600 11px/1.4 ui-monospace, Menlo, monospace; color: #6e655b;
     border-left: 2px solid #b6781d; padding: 4px 8px; margin-bottom: 6px;
     background: rgba(182,120,29,0.07); border-radius: 0 4px 4px 0;
   }
-  .companion-composer textarea {
+  .shelly-composer textarea {
     display: block; width: 100%; min-height: 64px; padding: 8px 10px;
     font: 13px/1.5 -apple-system, system-ui, sans-serif;
     background: #f4f1ec; color: #1a1714;
     border: 1px solid rgba(26,23,20,0.2); border-radius: 6px;
     outline: none; resize: vertical; box-sizing: border-box;
   }
-  .companion-composer textarea:focus { border-color: #b6781d; }
-  .companion-composer .row {
+  .shelly-composer textarea:focus { border-color: #b6781d; }
+  .shelly-composer .row {
     display: flex; justify-content: space-between; gap: 8px; margin-top: 8px;
   }
-  .companion-composer button {
+  .shelly-composer button {
     font: 600 11.5px/1 -apple-system, system-ui, sans-serif;
     padding: 7px 11px; border-radius: 6px; cursor: pointer;
     border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #1a1714;
   }
-  .companion-composer button.save {
+  .shelly-composer button.save {
     background: #1a1714; color: #f4f1ec; border-color: #1a1714;
   }
-  .companion-composer button.delete {
+  .shelly-composer button.delete {
     color: #6e655b; border-color: transparent; background: transparent;
   }
-  .companion-annotation {
+  .shelly-annotation {
     margin: 4px 0 10px; padding: 7px 10px;
     background: rgba(46,125,82,0.08); border-left: 2px solid #2e7d52;
     border-radius: 0 6px 6px 0; color: #1a1714;
     font-size: 12.5px; line-height: 1.5; cursor: pointer;
   }
-  .companion-annotation::before { content: "💬 "; }
+  .shelly-annotation::before { content: "💬 "; }
 </style>
 <script>
   (function () {
-    var root = document.querySelector("[data-companion-commentable]");
+    var root = document.querySelector("[data-shelly-commentable]");
     if (!root) return;
-    var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre, [data-companion-block]";
+    var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre, [data-shelly-block]";
     var blocks = Array.prototype.slice.call(root.querySelectorAll(BLOCK_SELECTOR))
       .filter(function (b) {   // an outer marked card must not double-icon its inner text
         return !(b.parentElement && b.parentElement.closest(BLOCK_SELECTOR));
@@ -1309,11 +1309,11 @@ helper no-ops in that case:
     var open = null;
 
     blocks.forEach(function (b, i) {
-      b.classList.add("companion-commentable");
+      b.classList.add("shelly-commentable");
       b.dataset.cBlockId = "b" + i;
       var btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "companion-ask-btn";
+      btn.className = "shelly-ask-btn";
       btn.title = "Comment on this block";
       btn.textContent = "💬";
       btn.addEventListener("click", function (e) { e.stopPropagation(); openFor(b); });
@@ -1327,7 +1327,7 @@ helper no-ops in that case:
 
     function snippet(b) {
       var c = b.cloneNode(true);
-      var x = c.querySelector(".companion-ask-btn"); if (x) x.remove();
+      var x = c.querySelector(".shelly-ask-btn"); if (x) x.remove();
       var t = (c.textContent || "").replace(/\s+/g, " ").trim();
       return t.length > 80 ? t.slice(0, 77) + "…" : t;
     }
@@ -1336,7 +1336,7 @@ helper no-ops in that case:
       closeOpen();
       var id = b.dataset.cBlockId;
       var box = document.createElement("div");
-      box.className = "companion-composer";
+      box.className = "shelly-composer";
       box.innerHTML =
         '<div class="ref"></div>' +
         '<textarea placeholder="Your question or comment about this block…"></textarea>' +
@@ -1367,7 +1367,7 @@ helper no-ops in that case:
     function renderAnno(b, t) {
       removeAnno(b);
       var note = document.createElement("div");
-      note.className = "companion-annotation";
+      note.className = "shelly-annotation";
       note.dataset.forBlock = b.dataset.cBlockId;
       note.textContent = t;
       note.addEventListener("click", function () { openFor(b); });
@@ -1375,15 +1375,15 @@ helper no-ops in that case:
     }
     function removeAnno(b) {
       var n = b.parentNode.querySelector(
-        '.companion-annotation[data-for-block="' + b.dataset.cBlockId + '"]'
+        '.shelly-annotation[data-for-block="' + b.dataset.cBlockId + '"]'
       );
       if (n) n.remove();
     }
 
     document.addEventListener("click", function (e) {
-      var submitBtn = e.target.closest("[data-companion-submit]");
+      var submitBtn = e.target.closest("[data-shelly-submit]");
       if (!submitBtn || comments.size === 0) return;
-      var title = submitBtn.getAttribute("data-companion-submit") || "Comments";
+      var title = submitBtn.getAttribute("data-shelly-submit") || "Comments";
       var lines = ["Re: " + title, ""];
       blocks.forEach(function (b) {
         var id = b.dataset.cBlockId;
@@ -1393,7 +1393,7 @@ helper no-ops in that case:
         lines.push("");
       });
       parent.postMessage({
-        source: "companion-artifact",
+        source: "shelly-artifact",
         kind: "submit",
         text: lines.join("\n")
       }, "*");
@@ -1453,19 +1453,19 @@ least one of them belongs on almost every artifact.
 ## 4.3 · The unified helper (both comments AND decisions in one submit)
 
 When one artifact carries **both** ambient-commentable content **and** a Decide ballot, the two
-single-purpose helpers above would fight over `data-companion-submit`. Use the **combined
+single-purpose helpers above would fight over `data-shelly-submit`. Use the **combined
 helper** instead: it gathers block-comments *and* item-decisions into one pasteable payload,
 sectioned as `— Questions / comments —` then `— Decisions —`.
 
-**Critical wiring rule:** put `data-companion-commentable` only on the **content** pages/blocks,
+**Critical wiring rule:** put `data-shelly-commentable` only on the **content** pages/blocks,
 never on the Next-steps ballot, so the two behaviours don't double up on the same blocks.
 
 ```html
 <!-- content page(s): commentable -->
-<section data-companion-commentable> … prose, lists, headings … </section>
+<section data-shelly-commentable> … prose, lists, headings … </section>
 <!-- the Next-steps page: review items, NOT commentable -->
 <section>
-  <div class="item" data-companion-item data-item-label="Short label that reads well in the submit message">
+  <div class="item" data-shelly-item data-item-label="Short label that reads well in the submit message">
     <div class="item-row">
       <div class="item-main"><div class="item-title">…</div><div class="item-sub">…</div></div>
       <div class="item-actions">
@@ -1480,14 +1480,14 @@ never on the Next-steps ballot, so the two behaviours don't double up on the sam
   <div class="bar">
     <span class="count" data-count>nothing marked yet</span>
     <button class="doall" data-doall>✓ Do all</button>
-    <button class="submit" data-companion-submit="Title that prefixes the compiled message">Submit → ⌘V</button>
+    <button class="submit" data-shelly-submit="Title that prefixes the compiled message">Submit → ⌘V</button>
   </div>
 </section>
 ```
 
 The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) inside a
-`data-companion-commentable` region. **Content placed in styled `<div>`s — cards, callouts,
-custom rows — is invisible to that tag list and will get no 💬.** Add `data-companion-block`
+`data-shelly-commentable` region. **Content placed in styled `<div>`s — cards, callouts,
+custom rows — is invisible to that tag list and will get no 💬.** Add `data-shelly-block`
 to any such container to make it commentable (the helper de-dupes nested matches, so marking
 an outer card won't double-icon its inner text).
 
@@ -1523,8 +1523,8 @@ user with a decision form they can't use. This must never ship. Two hard rules:
 Confirm all four, every time:
 
 - [ ] The interaction helper `<script>` is present and **unedited** (copy-paste, don't retype).
-- [ ] Every `[data-action]` button sits inside a `[data-companion-item]` ancestor.
-- [ ] Exactly one `[data-companion-submit]` button exists.
+- [ ] Every `[data-action]` button sits inside a `[data-shelly-item]` ancestor.
+- [ ] Exactly one `[data-shelly-submit]` button exists.
 - [ ] No element with `position:fixed`/absolute overlaps the buttons at load (the
       `.cmp-submitted` overlay is fine — it only appears *after* submit).
 
@@ -1537,13 +1537,13 @@ When an artifact contains content the user is meant to **copy verbatim and paste
 somewhere else** — an integration brief to hand another agent ("paste this to Hermes"),
 a prompt, a config/code snippet, a handoff note, an onboarding blurb — give it a **Copy
 button**, never leave them to hand-select. This is a first-class capability of the
-surface: a Companion artifact can deliver ready-to-paste handoffs for the user's *other*
+surface: a Shelly artifact can deliver ready-to-paste handoffs for the user's *other*
 agents/tools, so "onboard this agent" becomes "open the card → Copy → paste."
 
 Mark the copyable element `data-copy` and pair a `data-copy-btn` button with it (same
 container, or point at it with `data-copy-target="#id"`). The artifact runs in a sandboxed,
 opaque-origin iframe where **both `navigator.clipboard` and `execCommand("copy")` are blocked
-on WebKitGTK (Linux)** — so the helper below **bridges to the Companion overlay**
+on WebKitGTK (Linux)** — so the helper below **bridges to the Shelly overlay**
 (`postMessage({kind:"copy"})`, which the overlay writes through Tauri's clipboard) *and* also
 tries the in-page clipboard so a standalone browser (artifact opened directly, no overlay
 parent) still copies. Whichever path lands, the button confirms. Supports multiple blocks per
@@ -1561,10 +1561,10 @@ artifact.
 (function () {
   // Copy `text` to the user's system clipboard from inside the sandboxed iframe.
   function copy(text) {
-    // 1) Bridge to the Companion overlay — the reliable path on Linux, where the
+    // 1) Bridge to the Shelly overlay — the reliable path on Linux, where the
     //    iframe's own clipboard APIs are blocked. The overlay writes it via Tauri.
     //    A no-op (harmless) in a standalone browser with no such parent listener.
-    try { parent.postMessage({ source: "companion-artifact", kind: "copy", text: text }, "*"); } catch (e) {}
+    try { parent.postMessage({ source: "shelly-artifact", kind: "copy", text: text }, "*"); } catch (e) {}
     // 2) Also try the in-page clipboard so a standalone browser still copies.
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).catch(function () { exec(text); });
@@ -1596,7 +1596,7 @@ artifact.
 </script>
 ```
 
-This is independent of the `data-companion-submit` helper (which routes feedback to the
+This is independent of the `data-shelly-submit` helper (which routes feedback to the
 agent) — a Copy button copies to the *system clipboard for the user*, so the two coexist
 freely in one artifact.
 
@@ -1626,13 +1626,13 @@ surface stays app-shade.
 
 ### To repaint, do ALL THREE
 
-1. **Declare it in `companion-meta`** — add a `"shell"` field:
+1. **Declare it in `shelly-meta`** — add a `"shell"` field:
    ```json
    "shell": { "bg": "#E7ECF1", "ink": "#1B2530" }
    ```
 2. **Post it on load** — alongside the size snippet, post a `kind:"shell"` message:
    ```js
-   parent.postMessage({ source: "companion-artifact", kind: "shell",
+   parent.postMessage({ source: "shelly-artifact", kind: "shell",
      bg: "#E7ECF1", ink: "#1B2530" }, "*");
    ```
 3. **Set your own `html, body` background to exactly that bg** (and ink) — so the iframe matches
@@ -1662,7 +1662,7 @@ always-answerable, decision-loudest, the type pairing, one accent. The **ceiling
 open** — which pattern (§2/§3), how you compose inside it, how *this* data wants to look. When the
 content invites a better form, break format; a bespoke page that earns its shape beats one that
 just fills a skeleton. That range is the point of authoring inline — the invariants are what keep
-it still reading as Companion.
+it still reading as Shelly.
 
 ### The look, concretely
 
@@ -1704,7 +1704,7 @@ Write one **self-contained** `.html` file (inline all CSS/JS, no build step, no 
 deps) into the artifacts dir:
 
 ```
-${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}/<kebab-slug>.html
+${SHELLY_ARTIFACTS_DIR:-~/.shelly/artifacts}/<kebab-slug>.html
 ```
 
 Use a descriptive slug (e.g. `auth-fix-heads-up.html`, `migration-plan.html`). Writing the
@@ -1720,8 +1720,8 @@ file is what pops the overlay — no other action needed.
 
 ### The pull verb
 
-The user can run `/companion:html` at any time to ask for an artifact about the current turn.
-`/companion:render` is the deprecated alias and still works for one release. (You never have to
+The user can run `/shelly:html` at any time to ask for an artifact about the current turn.
+`/shelly:render` is the deprecated alias and still works for one release. (You never have to
 decide *whether* to author — see §1.1. This verb just lets the user ask for a fresh one mid-turn.)
 
 ## 7.2 · Required: a full-document head with `<meta charset>`
@@ -1760,7 +1760,7 @@ root scrollbar, and include this snippet at the end of `<body>`:
   (function () {
     var el = document.querySelector("[data-fit-root]") || document.body;
     var post = function () {
-      parent.postMessage({ source: "companion-artifact", kind: "size",
+      parent.postMessage({ source: "shelly-artifact", kind: "size",
         w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
     };
     if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
@@ -1771,19 +1771,19 @@ root scrollbar, and include this snippet at the end of `<body>`:
 
 ## 7.4 · Metadata block (so feedback on this artifact is self-identifying)
 
-Add a `companion-meta` block in `<head>`. When the user submits feedback, the helper
+Add a `shelly-meta` block in `<head>`. When the user submits feedback, the helper
 prepends these fields to the pasted message, so the agent — **even in a different,
 later session re-opening this artifact from the history HUD (⌘8)** — knows which
 artifact it is, what it was about, and which files it concerns. The history HUD also
 shows `summary` as the card subtitle. Skip it only for throwaway pills.
 
 ```html
-<script type="application/json" id="companion-meta">
+<script type="application/json" id="shelly-meta">
 {
   "subject": "<short subject line>",
   "summary": "<1–2 sentence plain-English description of what this artifact is about>",
   "files": ["<repo-relative paths the artifact concerns>"],
-  "project": "<cwd or repo, e.g. ~/claude-code-companion>",
+  "project": "<cwd or repo, e.g. ~/shelly>",
   "branch": "<git branch>",
   "created": "<YYYY-MM-DD>"
 }
@@ -1796,24 +1796,24 @@ two sentences — it is the highest-leverage field for a cold agent picking up c
 
 ## 7.5 · Surfacing or re-showing an artifact
 
-Artifacts surface **only inside the Board shell** — the single Companion surface. Writing a
+Artifacts surface **only inside the Board shell** — the single Shelly surface. Writing a
 new `.html` into the artifacts dir is enough: the Board ingests it as a tile in its session
 via the live poll. **Artifacts never open as standalone floating windows**, so there is no
 "pop this file" verb to run.
 
 When the user asks to **see an artifact again** ("show me that again", "open it", "pull that
-back up"), don't re-write the file — run **`companion board`** to bring the shell forward
+back up"), don't re-write the file — run **`shelly board`** to bring the shell forward
 (the artifact is already ingested inside it).
 
-> **Never run `companion open <path>`.** It spawns a standalone OS window outside the shell —
+> **Never run `shelly open <path>`.** It spawns a standalone OS window outside the shell —
 > the obsolete pre-Board behavior. Launching an artifact without the shell is exactly what
-> must not happen. Use `companion board`.
+> must not happen. Use `shelly board`.
 
 ## 7.6 · First-run: build an example artifact on request
 
-When someone has just installed Companion and asks to **see what it does** — "show me an
+When someone has just installed Shelly and asks to **see what it does** — "show me an
 example artifact", "show me an example", "what does this do", "demo it" — build a real,
-self-contained **full-document** artifact that explains Companion itself, and write it into
+self-contained **full-document** artifact that explains Shelly itself, and write it into
 the artifacts dir (writing pops it). Don't pre-fetch or copy a canned file; generate a fresh,
 polished page each time — it's the product's first impression.
 
@@ -1822,11 +1822,11 @@ Cover, briefly and visually:
 - **What the overlay is** — a focus-stealing-free floating window that auto-renders any HTML
   Claude writes, layered over your terminal.
 - **How artifacts appear** — Claude writes a self-contained `.html` into the watched dir
-  (`${COMPANION_ARTIFACTS_DIR:-~/.claude/companion/artifacts}`) and the overlay pops it. No
+  (`${SHELLY_ARTIFACTS_DIR:-~/.shelly/artifacts}`) and the overlay pops it. No
   copy-paste, no browser tab.
 - **The cadence** — small "pill" heads-up for light changes, full document when the content is
   dense (a plan, review, diagram, comparison).
-- **How to check it's healthy** — `/companion:doctor` renders a health panel in the overlay.
+- **How to check it's healthy** — `/shelly:doctor` renders a health panel in the overlay.
 
 Make it look designed (this is onboarding), and keep the required `data-fit-root` + size-report
 snippet so it sizes correctly. This is also the perfect smoke test: if the page pops in the
@@ -1834,13 +1834,13 @@ overlay, the whole skill → write → hook → overlay path works end to end.
 
 ## 7.7 · Bundled assets (fonts, D3, GSAP)
 
-Three libraries are bundled in `~/.claude/companion/vendor/` and accessible via `asset:`.
+Three libraries are bundled in `~/.shelly/vendor/` and accessible via `asset:`.
 Use them instead of CDN links — the artifact sandbox blocks external URLs.
 
 ### Fonts
 
 ```html
-<link rel="stylesheet" href="asset://localhost/Users/gyatso/.claude/companion/vendor/fonts.css">
+<link rel="stylesheet" href="asset://localhost/Users/gyatso/.shelly/vendor/fonts.css">
 ```
 
 Loads three variable fonts:
@@ -1865,7 +1865,7 @@ font-weight: 650;   /* medium-bold heading */
 ### D3 (data visualization)
 
 ```html
-<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/d3.min.js"></script>
+<script src="asset://localhost/Users/gyatso/.shelly/vendor/d3.min.js"></script>
 ```
 
 Full D3 v7. Use for charts, graphs, force layouts, geographic projections, data transforms.
@@ -1873,7 +1873,7 @@ The `d3` global is available after the script loads.
 
 ```html
 <svg id="chart"></svg>
-<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/d3.min.js"></script>
+<script src="asset://localhost/Users/gyatso/.shelly/vendor/d3.min.js"></script>
 <script>
   var data = [4, 8, 15, 16, 23, 42];
   var svg = d3.select("#chart").attr("width", 400).attr("height", 120);
@@ -1889,15 +1889,15 @@ The `d3` global is available after the script loads.
 ### GSAP (animation)
 
 ```html
-<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/gsap.min.js"></script>
+<script src="asset://localhost/Users/gyatso/.shelly/vendor/gsap.min.js"></script>
 <!-- optional: scroll-triggered animation -->
-<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/ScrollTrigger.min.js"></script>
+<script src="asset://localhost/Users/gyatso/.shelly/vendor/ScrollTrigger.min.js"></script>
 ```
 
 GSAP 3 core + ScrollTrigger. The `gsap` global is available after the script loads.
 
 ```html
-<script src="asset://localhost/Users/gyatso/.claude/companion/vendor/gsap.min.js"></script>
+<script src="asset://localhost/Users/gyatso/.shelly/vendor/gsap.min.js"></script>
 <script>
   // animate in on load
   gsap.from(".card", { opacity: 0, y: 20, duration: 0.5, stagger: 0.08, ease: "power2.out" });
@@ -1925,17 +1925,17 @@ Always load scripts before your inline `<script>` that uses them. Fonts load asy
 
 ```html
 <head>
-  <link rel="stylesheet" href="asset://localhost/Users/gyatso/.claude/companion/vendor/fonts.css">
+  <link rel="stylesheet" href="asset://localhost/Users/gyatso/.shelly/vendor/fonts.css">
 </head>
 <body>
   <!-- content -->
-  <script src="asset://localhost/Users/gyatso/.claude/companion/vendor/d3.min.js"></script>
-  <script src="asset://localhost/Users/gyatso/.claude/companion/vendor/gsap.min.js"></script>
+  <script src="asset://localhost/Users/gyatso/.shelly/vendor/d3.min.js"></script>
+  <script src="asset://localhost/Users/gyatso/.shelly/vendor/gsap.min.js"></script>
   <script>/* your code here */</script>
 </body>
 ```
 
 ## 7.8 · Verify it's wired
 
-Run `/companion:doctor` (or `companion doctor` in a shell) — it renders a health panel in
+Run `/shelly:doctor` (or `shelly doctor` in a shell) — it renders a health panel in
 the overlay. If you can see the panel, the whole path works.

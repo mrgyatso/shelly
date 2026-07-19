@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Home-shelf + adoption verification — SANDBOXED (throwaway HOME, never touches the live
-// session's ~/.claude/companion state). Drives the REAL hook path end to end:
-// companion-session → companion-livepath.sh → companion-hook → companion-adopt.cjs.
+// session's ~/.shelly state). Drives the REAL hook path end to end:
+// shelly-session → shelly-livepath.sh → shelly-hook → shelly-adopt.cjs.
 //
 // The invariants under test:
 //   * a $HOME-launched session lands on the shared "__home__" shelf, NOT in a unit named
@@ -23,8 +23,8 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const HOOKS = path.join(__dirname, "..");
-const SESSION_HOOK = path.join(HOOKS, "companion-session");
-const WRITE_HOOK = path.join(HOOKS, "companion-hook");
+const SESSION_HOOK = path.join(HOOKS, "shelly-session");
+const WRITE_HOOK = path.join(HOOKS, "shelly-hook");
 
 let pass = 0,
   fail = 0;
@@ -42,14 +42,14 @@ function mkSandbox(tag) {
   // realpath: on macOS os.tmpdir() is a /var symlink, and the hooks compare canonical
   // paths ($HOME vs a git root), so an un-resolved HOME would never compare equal.
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `cmp-home-${tag}-`)));
-  fs.mkdirSync(path.join(home, ".claude", "companion", "logs"), { recursive: true });
-  fs.writeFileSync(path.join(home, ".claude", "companion", "external-terminals"), "on");
+  fs.mkdirSync(path.join(home, ".shelly", "logs"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".shelly", "external-terminals"), "on");
   return home;
 }
 
 function runSession({ home, cwd, session_id }) {
   const env = { ...process.env, HOME: home };
-  delete env.COMPANION_SESSION;
+  delete env.SHELLY_SESSION;
   execFileSync("sh", [SESSION_HOOK], {
     input: JSON.stringify({ cwd, session_id }),
     env,
@@ -60,7 +60,7 @@ function runSession({ home, cwd, session_id }) {
 /** A Write through the REAL PostToolUse hook — the path adoption actually rides. */
 function runWrite({ home, cwd, session_id, file_path }) {
   const env = { ...process.env, HOME: home };
-  delete env.COMPANION_SESSION;
+  delete env.SHELLY_SESSION;
   execFileSync("sh", [WRITE_HOOK], {
     input: JSON.stringify({
       cwd,
@@ -74,7 +74,7 @@ function runWrite({ home, cwd, session_id, file_path }) {
   });
 }
 
-const cmp = (home, ...p) => path.join(home, ".claude", "companion", ...p);
+const cmp = (home, ...p) => path.join(home, ".shelly", ...p);
 const readJson = (p, d) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : d);
 const sessionDirs = (home) => readJson(cmp(home, "session-dirs.json"), {});
 const liveStems = (home) =>
@@ -130,7 +130,7 @@ console.log("\nCase 3 — writes that must NOT trigger adoption:");
   const short = sid.slice(0, 8);
   runSession({ home, cwd: home, session_id: sid });
 
-  // an artifact — Companion's own plumbing is not project work
+  // an artifact — Shelly's own plumbing is not project work
   runWrite({
     home,
     cwd: home,

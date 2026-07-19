@@ -1,12 +1,12 @@
 [package]
-name = "companion-hub"
+name = "shelly-hub"
 version = "0.1.0"
 edition = "2021"
-description = "Self-hosted hub that serves Companion live-state + artifacts to the overlay and a web UI"
+description = "Self-hosted hub that serves Shelly live-state + artifacts to the overlay and a web UI"
 license = "MIT"
 
 [[bin]]
-name = "companion-hub"
+name = "shelly-hub"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,8 +1,8 @@
 //! The append-only event log — read side / tailer (Rust).
 //!
-//! `~/.claude/companion/events.ndjson` is the source-of-truth log of what happened when
+//! `~/.shelly/events.ndjson` is the source-of-truth log of what happened when
 //! (`session.registered`, `artifact.routed`, …), one JSON object per line, appended by
-//! `companion-identity.cjs`. Phase 3 has the Board TAIL it incrementally — reading only the
+//! `shelly-identity.cjs`. Phase 3 has the Board TAIL it incrementally — reading only the
 //! bytes appended since its last read — instead of re-deriving all state every poll.
 //!
 //! [`poll_events`] is the bridge: the Board passes the byte offset it last consumed and gets
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 fn events_path() -> Option<PathBuf> {
-    crate::paths::companion_dir().map(|d| d.join("events.ndjson"))
+    crate::paths::shelly_dir().map(|d| d.join("events.ndjson"))
 }
 
 /// A batch of newly-appended events plus the offset to resume from next time.
@@ -108,11 +108,11 @@ mod tests {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        std::fs::create_dir_all(tmp.join(".claude/companion")).unwrap();
+        std::fs::create_dir_all(tmp.join(".shelly")).unwrap();
         tmp
     }
     fn log_path(home: &std::path::Path) -> PathBuf {
-        home.join(".claude/companion/events.ndjson")
+        home.join(".shelly/events.ndjson")
     }
     fn append(home: &std::path::Path, line: &str) {
         use std::io::Write;
