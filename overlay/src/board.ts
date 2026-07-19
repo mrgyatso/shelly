@@ -2933,7 +2933,7 @@ async function flipDeck(dir: FlipDir): Promise<void> {
   // same path is now moot. A pill offering a DIFFERENT path stays: still unseen.
   if (heroPendingPath === target.path) hideHeroNewPill();
   digestEl.removeAttribute("hidden");
-  syncSurfaceStrip(true);
+  syncSurfaceStrip(true, true); // a flip within the deck — stay in whatever view the user picked
   applyBar(null);
   digestPath = target.path;
   markArtifactRead(target.path);
@@ -2988,7 +2988,7 @@ async function viewHeroPending(): Promise<void> {
   const v = currentView();
   if (!path || v.level !== "unit") return;
   digestEl.removeAttribute("hidden");
-  syncSurfaceStrip(true);
+  syncSurfaceStrip(true, true); // same flip vocabulary as flipDeck — stay in the current view
   applyBar(null);
   digestPath = path;
   markArtifactRead(path);
@@ -3840,11 +3840,15 @@ function endSession(): void {
 }
 
 /** Reflect whether there's a hero to size against: with no hero the strip + pill
- *  hide and the terminal owns the pane; with one, reset to the split default. */
-function syncSurfaceStrip(hasHero: boolean): void {
+ *  hide and the terminal owns the pane; with one, reset to the split default.
+ *  `preserveFocus` keeps whatever split/artifact choice the user already made —
+ *  for a flip/advance within an already-visible hero, not a fresh entry — only
+ *  escaping "terminal" (where the hero was tucked away and now needs to be seen). */
+function syncSurfaceStrip(hasHero: boolean, preserveFocus = false): void {
   if (!unitEl) return;
   unitEl.classList.toggle("no-hero", !hasHero);
   if (hasHero) unitEl.classList.remove("blank-hero"); // an artifact arrived → drop the waiting band
+  if (preserveFocus && hasHero && unitEl.dataset.focus !== "terminal") return;
   setFocus(hasHero ? "split" : "terminal");
 }
 
