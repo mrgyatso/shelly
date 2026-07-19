@@ -24,9 +24,7 @@ It's also a shell in the plainer sense. The terminals your agents actually run i
 
 ## Demo
 
-![Shelly rendering a debugging session as a page you read and answer in the app](docs/images/shelly-example.png)
-
-*A real session: Claude tracked down a UI freeze, and Shelly rendered its write-up — root cause, a proof chart, and a one-click decision — as a page you read and answer without touching the terminal.*
+**[Try it in your browser — no install](https://share.aletheia.dev/companion/)**. It's the real Board running a recorded session, so the interactions — opening a project, reading a page, answering ✓/✎/✗ — are all live. Nothing to install, nothing to connect; click "Take the tour" and it drives itself.
 
 <!--
   To add the demo video:
@@ -35,7 +33,7 @@ It's also a shell in the plainer sense. The terminals your agents actually run i
     3. Paste that URL on its own line below (plain, no image markdown; GitHub embeds a player).
 -->
 
-> Demo video coming soon.
+> Demo video coming soon — see the [live demo](https://share.aletheia.dev/companion/) above in the meantime.
 
 ## What you do here
 
