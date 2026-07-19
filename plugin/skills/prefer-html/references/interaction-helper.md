@@ -39,6 +39,27 @@ The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) in
 `data-shelly-commentable` region. Content in styled `<div>`s is invisible to that list — add
 `data-shelly-block` to any such container to make it commentable.
 
+**Click anywhere — comment on anything, not just marked blocks. No mode, no toggle.** Prose,
+list items and headings inside `data-shelly-commentable` keep working exactly as above (hover →
+gutter 💬 → click the icon) so reading and text selection are never disturbed by a stray click.
+For everything else on the page — a card, an image, a whole section, anything not already
+commentable and not a native interactive control — a plain click opens the same composer
+immediately, keyed off a generated name + short CSS-ish path instead of a text snippet. Hovering
+such an element first shows a small, decorative 💬 hint near its corner (`pointer-events: none` —
+it never intercepts the click itself) so the reader knows it's there before they click. There is
+no activation step: it's live the moment the page loads, same as the gutter icons. Both paths
+write into the same `comments`/`picked` state and compile into the one Submit payload — no second
+submit button, no separate flow. Native interactive elements (`a`, `button`, `input`, etc.) and
+the Decide ballot are excluded automatically; give any other custom-interactive region (rare) a
+`data-shelly-noninspect` attribute to opt it out too.
+
+**Reading always wins over picking.** Two guards keep the picker from fighting the reader, and
+they apply to the *whole* page, not just commentable regions: a click that ends a **text
+selection** is treated as a read and never opens a composer (otherwise dragging across any
+non-commentable text would pop a composer and wipe the selection — an artifact you can't copy
+from); and `body` / `documentElement` / the `data-fit-root` wrapper are never pickable, so
+clicking dead space dismisses rather than spawning a composer named `body` with an empty path.
+
 ## The unified helper script (copy verbatim)
 
 ```html
@@ -113,6 +134,162 @@ The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) in
     if (n) n.remove();
   }
 
+  // --- Click anywhere: comment on ANY element, not just auto-discovered blocks -
+  // No mode, no toggle, no activation step — live from page load. A plain click
+  // on anything that isn't already commentable, a native interactive control, or
+  // the ballot opens a composer immediately. A small pointer-events:none 💬 hint
+  // previews the target on hover so the reader knows before they click; it never
+  // intercepts the click itself, so it can't fight the artifact's own
+  // interactivity (blob expand, ballot buttons, links) — those simply aren't
+  // matched by isDirectPickable() below and are left completely alone.
+  // Naming/path logic here is written from scratch for Shelly's simpler target
+  // (one static file, no shadow DOM, no framework) — not derived from any
+  // third-party component-detection tool.
+  var picked = new Map(); // pickId -> { name, path, comment }
+  var pickCounter = 0;
+  var pickPop = null;
+
+  function firstReadableClass(el) {
+    var raw = el.className;
+    if (typeof raw !== "string" || !raw) return "";
+    var tokens = raw.split(/\s+/);
+    for (var i = 0; i < tokens.length; i++) {
+      var t = tokens[i];
+      if (t.length > 2 && t.length < 24 && !/^[a-z]{1,2}$/.test(t) && !/\d{4,}/.test(t)) return t;
+    }
+    return "";
+  }
+  function describeEl(el) {
+    var tag = el.tagName.toLowerCase();
+    if (tag === "img") { var alt = el.getAttribute("alt"); return alt ? 'image "' + alt.slice(0, 30) + '"' : "image"; }
+    if (tag === "button" || tag === "a") {
+      var label = (el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 30);
+      return label ? tag + ' "' + label + '"' : tag;
+    }
+    if (/^h[1-6]$/.test(tag)) {
+      var ht = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40);
+      return ht ? tag + ' "' + ht + '"' : tag;
+    }
+    if (tag === "input" || tag === "textarea" || tag === "select") {
+      return tag + " [" + (el.getAttribute("placeholder") || el.getAttribute("name") || el.getAttribute("type") || tag) + "]";
+    }
+    var cls = firstReadableClass(el);
+    if (cls) return tag + "." + cls;
+    var text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (text && text.length < 60 && !el.children.length) return '"' + text + '"';
+    return el.id ? tag + "#" + el.id : tag;
+  }
+  function pathFor(el) {
+    var root = document.querySelector("[data-fit-root]") || document.body;
+    var parts = [], node = el, depth = 0;
+    while (node && node !== root && node.nodeType === 1 && depth < 5) {
+      var seg = node.tagName.toLowerCase();
+      if (node.id) { parts.unshift(seg + "#" + node.id); break; }
+      var cls = firstReadableClass(node);
+      if (cls) { seg += "." + cls; }
+      else if (node.parentElement) {
+        var same = [].filter.call(node.parentElement.children, function (c) { return c.tagName === node.tagName; });
+        if (same.length > 1) seg += ":nth-of-type(" + (same.indexOf(node) + 1) + ")";
+      }
+      parts.unshift(seg);
+      node = node.parentElement;
+      depth++;
+    }
+    return parts.join(" > ");
+  }
+  // A click target qualifies for the direct "open a composer" behavior only when
+  // it is none of: a native interactive control, the ballot / chrome / composer
+  // itself, or an element already covered by the gutter-icon block system above.
+  function isDirectPickable(el) {
+    if (!el || el.nodeType !== 1) return false;
+    // The page itself is not a target: clicking dead space would otherwise open a
+    // composer named "body" with an empty path, and every click-away would spawn
+    // another one instead of dismissing the open composer.
+    if (el === document.body || el === document.documentElement) return false;
+    if (el.hasAttribute("data-fit-root")) return false;
+    if (el.closest("a, button, input, select, textarea, label, summary, [role='button'], [tabindex]")) return false;
+    if (el.closest(
+      "[data-shelly-noninspect], [data-shelly-item], .decide, .bar, .cmp-comment, .cmp-chat, " +
+      ".shelly-composer, .pick-popover, .shelly-pick-badge, .shelly-annotation, .cmp-submitted"
+    )) return false;
+    if (el.closest("[data-c-block-id]")) return false;
+    return true;
+  }
+  function closePick() { if (pickPop) { pickPop.remove(); pickPop = null; } }
+  function openPickComposer(el, id) {
+    closeOpen(); closePick();
+    var name = describeEl(el), path = pathFor(el);
+    var box = document.createElement("div");
+    box.className = "shelly-composer pick-popover";
+    box.innerHTML = '<div class="ref"></div>' +
+      '<textarea placeholder="Your question or comment about this element…"></textarea>' +
+      '<div class="row"><button type="button" class="delete">Discard</button>' +
+      '<div style="display:flex;gap:6px;"><button type="button" class="cancel">Cancel</button>' +
+      '<button type="button" class="save">Save</button></div></div>';
+    box.querySelector(".ref").textContent = name + " — " + path;
+    document.body.appendChild(box);
+    var rect = el.getBoundingClientRect();
+    var left = Math.max(8, Math.min(rect.left, window.innerWidth - box.offsetWidth - 8 || window.innerWidth - 276));
+    var top = rect.bottom + 8;
+    if (top + 170 > window.innerHeight) top = Math.max(8, rect.top - 178);
+    box.style.position = "fixed"; box.style.zIndex = "10001"; box.style.width = "260px";
+    box.style.left = left + "px"; box.style.top = top + "px";
+    pickPop = box;
+    var ta = box.querySelector("textarea");
+    var prior = picked.get(id); ta.value = prior ? prior.comment : "";
+    setTimeout(function () { ta.focus(); }, 60);
+    box.querySelector(".save").addEventListener("click", function () {
+      var v = ta.value.trim();
+      if (v) { picked.set(id, { name: name, path: path, comment: v }); el.classList.add("shelly-pick-marked"); }
+      else { picked.delete(id); el.classList.remove("shelly-pick-marked"); }
+      closePick(); refresh();
+    });
+    box.querySelector(".cancel").addEventListener("click", closePick);
+    box.querySelector(".delete").addEventListener("click", function () {
+      picked.delete(id); el.classList.remove("shelly-pick-marked"); closePick(); refresh();
+    });
+  }
+
+  // Decorative hover hint — a single reused node, repositioned to whatever's
+  // under the cursor. pointer-events:none so it can never itself be the click
+  // target; the real click always lands on the underlying element.
+  var pickBadge = null;
+  function showPickBadge(el) {
+    if (!pickBadge) {
+      pickBadge = document.createElement("div");
+      pickBadge.className = "shelly-pick-badge";
+      pickBadge.textContent = "💬";
+      document.body.appendChild(pickBadge);
+    }
+    var r = el.getBoundingClientRect();
+    pickBadge.style.left = Math.max(4, Math.min(r.right - 12, window.innerWidth - 26)) + "px";
+    pickBadge.style.top = Math.max(4, r.top - 12) + "px";
+    pickBadge.style.display = "flex";
+  }
+  function hidePickBadge() {
+    if (pickBadge) pickBadge.style.display = "none";
+  }
+  document.addEventListener("mousemove", function (e) {
+    if (pickPop) { hidePickBadge(); return; }
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!isDirectPickable(el)) { hidePickBadge(); return; }
+    showPickBadge(el);
+  });
+  window.addEventListener("scroll", hidePickBadge, true);
+
+  document.addEventListener("click", function (e) {
+    var el = e.target;
+    // A click that ends a text selection is a READ, not a pick — without this,
+    // dragging across any non-commentable text pops a composer and wipes the
+    // selection, so the reader can never copy from an artifact.
+    if (String(window.getSelection() || "").trim()) return;
+    if (!isDirectPickable(el)) return;
+    hidePickBadge();
+    var id = el.dataset.pickId;
+    if (!id) { id = "pk" + (pickCounter++); el.dataset.pickId = id; }
+    openPickComposer(el, id);
+  });
+
   // review items: ✓ approve / ✎ comment / ✗ reject.
   // The comment box stays hidden until ✎ is clicked. Toggle via inline style.display
   // (NOT the `hidden` attr) so author CSS like `.item textarea{display:block}` can't
@@ -142,10 +319,10 @@ The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) in
   var commentEl = null; // the single freeform comment field, injected below
   function freeComment() { return commentEl ? commentEl.value.trim() : ""; }
   function pending() {
-    return comments.size + document.querySelectorAll("[data-shelly-item][data-state]").length + (freeComment() ? 1 : 0);
+    return comments.size + picked.size + document.querySelectorAll("[data-shelly-item][data-state]").length + (freeComment() ? 1 : 0);
   }
   function refresh() {
-    var c = comments.size, d = document.querySelectorAll("[data-shelly-item][data-state]").length, fc = freeComment() ? 1 : 0;
+    var c = comments.size + picked.size, d = document.querySelectorAll("[data-shelly-item][data-state]").length, fc = freeComment() ? 1 : 0;
     if (countEl) countEl.textContent = (c || d || fc)
       ? (d + " decision" + (d !== 1 ? "s" : "") + (c ? (" · " + c + " comment" + (c !== 1 ? "s" : "")) : "") + (fc ? " · note added" : ""))
       : "nothing marked yet";
@@ -167,11 +344,16 @@ The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) in
   function build(title) {
     var lines = meta().concat(["Re: " + title, ""]);
     var cBlocks = blocks.filter(function (b) { return comments.has(b.dataset.cBlockId); });
-    if (cBlocks.length) {
+    if (cBlocks.length || picked.size) {
       lines.push("— Questions / comments —", "");
       cBlocks.forEach(function (b) {
         lines.push("On: " + JSON.stringify(snippet(b)));
         comments.get(b.dataset.cBlockId).split("\n").forEach(function (l) { lines.push("    " + l); });
+        lines.push("");
+      });
+      picked.forEach(function (p) {
+        lines.push("On: " + p.name + " (" + p.path + ")");
+        p.comment.split("\n").forEach(function (l) { lines.push("    " + l); });
         lines.push("");
       });
     }
@@ -656,6 +838,16 @@ they render right. Tune the colors to your artifact’s accent. (The review-item
     font-size: 12.5px; line-height: 1.5; cursor: pointer;
   }
   .shelly-annotation::before { content: "💬 "; }
+
+  /* Click-anywhere picker: decorative hover hint + persistent "has comment" marker.
+     No toggle, no mode CSS — this is live from page load. */
+  .shelly-pick-badge {
+    position: fixed; pointer-events: none; z-index: 10000; display: none;
+    align-items: center; justify-content: center; width: 24px; height: 24px;
+    border-radius: 7px; background: #1a1714; color: #f4f1ec; font-size: 12px;
+    box-shadow: 0 6px 16px -8px rgba(0,0,0,.6); opacity: .9;
+  }
+  .shelly-pick-marked { outline: 2px solid #2e7d52; outline-offset: 2px; cursor: pointer; }
 </style>
 ```
 
@@ -666,3 +858,6 @@ they render right. Tune the colors to your artifact’s accent. (The review-item
 - [ ] Exactly one `[data-shelly-submit]` button exists.
 - [ ] No `position:fixed`/absolute element overlaps the buttons at load (the `.cmp-submitted`
       overlay is fine — it only appears *after* submit).
+- [ ] The click-anywhere picker never fights native interactive elements or the Decide ballot —
+      both are excluded automatically (`isDirectPickable`); no extra markup needed unless a
+      custom non-ballot region also needs `data-shelly-noninspect`.
