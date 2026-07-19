@@ -11,22 +11,29 @@
 # Watched dir: $SHELLY_ARTIFACTS_DIR (default: $HOME/.shelly/artifacts).
 
 ARTIFACTS_DIR="${SHELLY_ARTIFACTS_DIR:-$HOME/.shelly/artifacts}"
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 LIVE_DIR="$HOME/.shelly/live"
 INDEX_PATH="$HOME/.shelly/artifact-index.json"
-
-# Trace harness (no-op unless SHELLY_TRACE=1 / the trace.on flag file exists).
-CMP_HOOK_DIR="$SCRIPT_DIR"
-. "$SCRIPT_DIR/shelly-trace.sh"
 
 payload=$(cat)
 
 # External-terminal handling (default OFF) — do not index artifacts written by a
 # terminal the Board did not spawn (no SHELLY_SESSION). See shelly-session
 # for the full note; opt in via ~/.shelly/external-terminals = "on".
+#
+# First real statement in the file, above the subshell and the trace sourcing below:
+# this hook is wired to PostToolUse for Write|Edit|shell|apply_patch, so it fires on
+# essentially every tool call in every session on the machine, and for a non-Board
+# session the answer is always "exit 0". Worth ~3ms a call — small, but it is the
+# hottest path Shelly owns and nothing above the gate is needed to evaluate it.
 if [ -z "$SHELLY_SESSION" ] && [ "$(cat "${HOME}/.shelly/external-terminals" 2>/dev/null)" != "on" ]; then
   exit 0
 fi
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+
+# Trace harness (no-op unless SHELLY_TRACE=1 / the trace.on flag file exists).
+CMP_HOOK_DIR="$SCRIPT_DIR"
+. "$SCRIPT_DIR/shelly-trace.sh"
 
 # ADOPTION — a session still on the Home shelf graduates to its own project the first
 # time it writes into a git repo that isn't $HOME (i.e. it ran `git init`). This must run

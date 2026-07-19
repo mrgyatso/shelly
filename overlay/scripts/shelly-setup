@@ -19,6 +19,10 @@ STATE_DIR="$HOME/.shelly"
 ARTIFACTS_DIR="${SHELLY_ARTIFACTS_DIR:-$STATE_DIR/artifacts}"
 MARKETPLACE=shelly
 PLUGIN=shelly@shelly
+# What this was called before the rename. Still installed on every machine that ran
+# Companion; step 4a removes it, because leaving it in place actively breaks Shelly.
+LEGACY_MARKETPLACE=claude-code-companion
+LEGACY_PLUGIN=companion@claude-code-companion
 
 WANT_EXTERNAL=""
 for arg in "$@"; do
@@ -55,7 +59,18 @@ if [ -d "$OLD_STATE_DIR" ] && [ ! -L "$OLD_STATE_DIR" ] && [ ! -e "$STATE_DIR" ]
     warn "            mv ~/.claude/companion ~/.shelly && ln -s ~/.shelly ~/.claude/companion"
   fi
 elif [ -d "$OLD_STATE_DIR" ] && [ ! -L "$OLD_STATE_DIR" ] && [ -e "$STATE_DIR" ]; then
-  warn "migrated    both ~/.claude/companion and ~/.shelly exist — left alone, merge by hand"
+  # Refusing to auto-merge is right — merging two real state dirs can clobber live
+  # sessions. But leaving it at one quiet line was not: while BOTH paths are real
+  # directories the machine is split-brained. The app polls ~/.shelly; anything still
+  # writing the old path (a pre-rename artifact's asset:// URL, a stale rules file, a
+  # session whose hooks predate the rename) lands somewhere the app never reads, and
+  # artifacts go unrouted with nothing on screen to say why. Say so properly.
+  warn "migrated    ✘ BOTH ~/.claude/companion and ~/.shelly exist — Shelly is split-brained"
+  warn "            The app reads ~/.shelly. Anything still writing the old path is invisible to it."
+  warn "            Merge the old dir into the new one, then leave the symlink behind:"
+  warn "              rsync -a ~/.claude/companion/ ~/.shelly/"
+  warn "              mv ~/.claude/companion ~/.claude/companion.bak"
+  warn "              ln -s ~/.shelly ~/.claude/companion"
 fi
 
 # 1. Node — every plugin hook shells out to it. Claude Code ships as a native
@@ -116,25 +131,69 @@ fi
 #    in-app Update button exists to end. Ask the manifest where the plugin actually
 #    lives and update it there.
 
-# One line per install: "user", or "project<TAB></abs/path>".
+# One line per install of the plugin id in $1: "user", or "project<TAB></abs/path>".
 plugin_scopes() {
-  node -e '
+  SHELLY_PLUGIN_ID="$1" node -e '
     const fs = require("fs"), os = require("os"), path = require("path");
     const f = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
     let j;
     try { j = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { process.exit(0); }
-    for (const i of (j.plugins || {})["shelly@shelly"] || []) {
+    for (const i of (j.plugins || {})[process.env.SHELLY_PLUGIN_ID] || []) {
       if (i.scope === "user") console.log("user");
       else if (i.projectPath) console.log("project\t" + i.projectPath);
     }
   ' 2>/dev/null
 }
 
+# 4a. Legacy plugin removal — the Companion → Shelly rename.
+#
+#     The plugin id changed (companion@claude-code-companion → shelly@shelly), and a
+#     rename is NOT something `claude plugin update` can carry anyone across: the old id
+#     keeps resolving to its own cached hooks. Those hooks gate every session on
+#     COMPANION_SESSION and write to ~/.claude/companion — but the app now exports
+#     SHELLY_SESSION and reads ~/.shelly. Left installed alongside the new plugin, the
+#     old hooks see a Board-spawned session, find no COMPANION_SESSION, and bail as if it
+#     were an untracked external terminal: the session never registers (the project sits
+#     grey on the roster, owning nothing) and artifacts never get indexed (they land
+#     unrouted). Both failures are silent — .external-hint-shown is usually already
+#     stamped, so not even the hint prints.
+#
+#     So this is not tidy-up: leaving it installed is the breakage. Uninstall it wherever
+#     it lives, then drop the marketplace it came from.
+if [ -n "$HAVE_CLAUDE" ]; then
+  legacy_removed=0
+  legacy_scopes=$(plugin_scopes "${LEGACY_PLUGIN}")
+  # Here-doc, not a pipe — see step 4: a piped `while` runs in a subshell and the
+  # counter would be discarded.
+  while IFS="$(printf '\t')" read -r scope proj; do
+    [ -n "$scope" ] || continue
+    if [ "$scope" = user ]; then
+      claude plugin uninstall "${LEGACY_PLUGIN}" --scope user >/dev/null 2>&1 \
+        && legacy_removed=$((legacy_removed + 1))
+    elif [ -d "$proj" ]; then
+      # --scope project resolves against the CWD, so stand in the project. Subshell'd
+      # so the cd cannot leak.
+      (cd "$proj" && claude plugin uninstall "${LEGACY_PLUGIN}" --scope project >/dev/null 2>&1) \
+        && legacy_removed=$((legacy_removed + 1))
+    fi
+  done <<EOF
+$legacy_scopes
+EOF
+
+  if [ "$legacy_removed" -gt 0 ]; then
+    say "legacy      removed ${LEGACY_PLUGIN} (${legacy_removed} install(s) from before the rename)"
+    # Only drop the old marketplace once nothing is installed from it. A failure here is
+    # cosmetic — a marketplace with no installs of its own does no harm.
+    claude plugin marketplace remove "${LEGACY_MARKETPLACE}" >/dev/null 2>&1 \
+      && say "legacy      removed marketplace ${LEGACY_MARKETPLACE}"
+  fi
+fi
+
 if [ -n "$HAVE_CLAUDE" ]; then
   if claude plugin list 2>/dev/null | grep -q "${PLUGIN}"; then
     updated=0
     failed=0
-    scopes=$(plugin_scopes)
+    scopes=$(plugin_scopes "${PLUGIN}")
     if [ -z "$scopes" ]; then
       # `plugin list` sees it but the manifest does not say where. Fall back to the
       # CLI's own default rather than skipping the refresh outright.
@@ -176,10 +235,21 @@ EOF
       say "plugin      ${PLUGIN} (updated)"
     fi
   else
-    claude plugin install "${PLUGIN}" >/dev/null 2>&1 \
+    # USER scope, explicitly. The Board opens sessions in whatever project you point it
+    # at, so a per-project install is wrong by construction: the plugin is enabled in the
+    # one directory setup happened to run in, and every other project silently gets no
+    # hooks at all — no session registration (the project sits grey on the roster) and no
+    # artifact indexing (artifacts land unrouted). That failure is indistinguishable from
+    # the plugin being broken, which is how it went unnoticed.
+    #
+    # Machine-wide is safe because scope is not what keeps Shelly out of terminals it
+    # should not touch — the SHELLY_SESSION gate is. A terminal the Board did not spawn
+    # bails in the first few lines of every hook regardless of how the plugin was
+    # installed, so user scope buys coverage without buying behaviour.
+    claude plugin install "${PLUGIN}" --scope user >/dev/null 2>&1 \
       || fail "could not install the plugin." "Run it by hand to see why:" \
-              "  claude plugin install ${PLUGIN}"
-    say "plugin      ${PLUGIN} (installed)"
+              "  claude plugin install ${PLUGIN} --scope user"
+    say "plugin      ${PLUGIN} (installed, user scope)"
   fi
 fi
 

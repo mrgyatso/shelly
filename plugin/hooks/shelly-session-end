@@ -17,6 +17,15 @@
 
 payload=$(cat)
 
+# Same gate as SessionStart, and for the same reason. A session the Board never spawned
+# has no live file and no sidecars, so every line below it is work on state that does not
+# exist. Ungated, that cost ~249ms at the end of every `claude` session on the machine —
+# three node invocations to parse a payload whose only possible answer is "nothing to do".
+# Gated here it is ~13ms. Mirrors shelly-session; keep the two in step.
+if [ -z "$SHELLY_SESSION" ] && [ "$(cat "${HOME}/.shelly/external-terminals" 2>/dev/null)" != "on" ]; then
+  exit 0
+fi
+
 cwd=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||process.cwd())}catch(e){console.log(process.cwd())}})')
 session_id=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})')
 reason=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).reason||"")}catch(e){}})')

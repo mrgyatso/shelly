@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # shelly-doctor — health check for the Shelly overlay setup.
 #
-# Runs eight checks, prints a plaintext summary to stdout, then renders the same
+# Runs nine checks, prints a plaintext summary to stdout, then renders the same
 # report as an HTML panel inside the overlay. Seeing the panel is itself the
 # proof that the render path works; the plaintext is the fallback for when the
 # overlay is the thing that's broken.
@@ -122,6 +122,30 @@ else
   else
     add bad "hooks wired" "absent — run 'shelly setup'"
   fi
+fi
+
+# 4a. rename leftovers (Companion → Shelly) -------------------------------
+# Two states a machine can be left in after the rename. Both look healthy to
+# every other check here — this doctor reported "Working, with notes" on a
+# machine where nothing had routed for a day — and both break routing silently:
+#
+#   - the pre-rename plugin still installed. A plugin RENAME is not something
+#     `claude plugin update` carries anyone across, so it sits there alongside
+#     the new one. Its hooks gate on COMPANION_SESSION and write
+#     ~/.claude/companion, while the app sets SHELLY_SESSION and reads
+#     ~/.shelly — so every Board-spawned session is judged an untracked external
+#     terminal and the hook exits before registering it or indexing anything.
+#   - both state dirs still real directories. The app polls ~/.shelly; whatever
+#     still writes the old path lands somewhere nothing reads.
+#
+# Symptoms are identical and give the user nothing to search for: projects sit
+# grey while they are typing into them, and artifacts arrive unrouted.
+if claude plugin list 2>/dev/null | grep -q "companion@claude-code-companion"; then
+  add bad "rename leftovers" "pre-rename plugin still installed — run 'shelly setup' to remove it"
+elif [ -d "$HOME/.claude/companion" ] && [ ! -L "$HOME/.claude/companion" ]; then
+  add bad "rename leftovers" "~/.claude/companion and ~/.shelly are both real dirs — split state, run 'shelly setup'"
+else
+  add ok "rename leftovers" "none — one plugin, one state dir"
 fi
 
 # 4b. session handling ----------------------------------------------------
