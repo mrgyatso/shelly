@@ -235,10 +235,21 @@ EOF
       say "plugin      ${PLUGIN} (updated)"
     fi
   else
-    claude plugin install "${PLUGIN}" >/dev/null 2>&1 \
+    # USER scope, explicitly. The Board opens sessions in whatever project you point it
+    # at, so a per-project install is wrong by construction: the plugin is enabled in the
+    # one directory setup happened to run in, and every other project silently gets no
+    # hooks at all — no session registration (the project sits grey on the roster) and no
+    # artifact indexing (artifacts land unrouted). That failure is indistinguishable from
+    # the plugin being broken, which is how it went unnoticed.
+    #
+    # Machine-wide is safe because scope is not what keeps Shelly out of terminals it
+    # should not touch — the SHELLY_SESSION gate is. A terminal the Board did not spawn
+    # bails in the first few lines of every hook regardless of how the plugin was
+    # installed, so user scope buys coverage without buying behaviour.
+    claude plugin install "${PLUGIN}" --scope user >/dev/null 2>&1 \
       || fail "could not install the plugin." "Run it by hand to see why:" \
-              "  claude plugin install ${PLUGIN}"
-    say "plugin      ${PLUGIN} (installed)"
+              "  claude plugin install ${PLUGIN} --scope user"
+    say "plugin      ${PLUGIN} (installed, user scope)"
   fi
 fi
 

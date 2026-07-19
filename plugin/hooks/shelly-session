@@ -16,6 +16,44 @@ PRUNE_DAYS=7
 
 payload=$(cat)
 
+# External-terminal handling (default OFF) — CHECKED FIRST, deliberately.
+#
+# A terminal the Board did not spawn carries no SHELLY_SESSION, and by default Shelly
+# ignores such terminals entirely: no roster entry, no sidecars, no artifact observer.
+# So for those sessions everything below this point is work whose result is thrown away.
+#
+# This test used to sit ~40 lines lower, under three separate `node` invocations that
+# parsed the payload. Measured, that put the bail at ~292ms — paid at the start of every
+# `claude` session on the machine once the plugin is installed at user scope (which it
+# must be, since the Board opens sessions in arbitrary projects). Hoisted above them it
+# is ~13ms. Nothing below needs to run to decide this, so nothing below should.
+#
+# Opt back in per-machine by writing "on" to ~/.shelly/external-terminals. This gates
+# only hook-driven terminals; external *agents* (the remote/ push path) are unaffected.
+#
+# Being ignored is fine; being ignored *silently* is not — a user who installed both
+# pieces and typed `claude` in their own terminal has no way to tell the difference
+# between "off by design" and "broken". Say it once per machine (SessionStart stdout
+# is injected as agent context) so the agent can point them at the app, then stay quiet.
+if [ -z "$SHELLY_SESSION" ] && [ "$(cat "${HOME}/.shelly/external-terminals" 2>/dev/null)" != "on" ]; then
+  # The one-time hint is a scarce resource: it fires once per machine and then never
+  # again. Tool-internal observer sessions (claude-mem spawns long-lived `claude`
+  # processes under ~/.claude-mem/observer-sessions) would otherwise consume it before
+  # the user ever sees it. They used to be filtered below, by cwd — which is no longer
+  # parsed at this point, so match the raw payload instead. A shell `case` is a builtin:
+  # no fork, which is the entire reason this block can afford to run first.
+  case "$payload" in
+    *'/.claude-mem'*) exit 0 ;;
+  esac
+  hint="${HOME}/.shelly/.external-hint-shown"
+  if [ ! -f "$hint" ]; then
+    mkdir -p "${HOME}/.shelly" 2>/dev/null
+    : > "$hint" 2>/dev/null
+    echo "Shelly is installed but inactive in this terminal — it only tracks sessions the app itself starts. If the user expects Shelly here, tell them to run 'shelly board' and start the session from the app, or 'shelly setup --external-terminals' to track every terminal."
+  fi
+  exit 0
+fi
+
 # Node is a hard requirement — the hooks below are Node programs. Claude Code ships
 # as a native binary, so `claude` on PATH does not imply node. Say so once, here at
 # SessionStart, and let the per-tool hooks no-op quietly rather than printing
@@ -43,27 +81,6 @@ case "$cwd" in
   */.claude-mem/*|*/.claude-mem) exit 0 ;;
 esac
 
-# External-terminal handling (default OFF). A terminal the Board did not spawn
-# carries no SHELLY_SESSION; by default the Shelly ignores such external
-# terminals entirely — no roster entry, no sidecars, no artifact observer — so a
-# plain terminal that merely has the plugin installed stays silent (no takeover,
-# no artifacts generated for sessions not using the app). Opt back in per-machine
-# by writing "on" to ~/.shelly/external-terminals. This gates only
-# hook-driven terminals; external *agents* (the remote/ push path) are unaffected.
-#
-# Being ignored is fine; being ignored *silently* is not — a user who installed both
-# pieces and typed `claude` in their own terminal has no way to tell the difference
-# between "off by design" and "broken". Say it once per machine (SessionStart stdout
-# is injected as agent context) so the agent can point them at the app, then stay quiet.
-if [ -z "$SHELLY_SESSION" ] && [ "$(cat "${HOME}/.shelly/external-terminals" 2>/dev/null)" != "on" ]; then
-  hint="${HOME}/.shelly/.external-hint-shown"
-  if [ ! -f "$hint" ]; then
-    mkdir -p "${HOME}/.shelly" 2>/dev/null
-    : > "$hint" 2>/dev/null
-    echo "Shelly is installed but inactive in this terminal — it only tracks sessions the app itself starts. If the user expects Shelly here, tell them to run 'shelly board' and start the session from the app, or 'shelly setup --external-terminals' to track every terminal."
-  fi
-  exit 0
-fi
 
 # Trace harness (no-op unless enabled). shelly-livepath.sh sources it too.
 CMP_HOOK_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)
