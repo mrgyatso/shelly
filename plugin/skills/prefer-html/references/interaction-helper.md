@@ -389,21 +389,67 @@ clicking dead space dismisses rather than spawning a composer named `body` with 
     submitBtn.dataset.label = prev; submitBtn.textContent = msg;
     clearTimeout(submitBtn._t); submitBtn._t = setTimeout(function () { submitBtn.textContent = submitBtn.dataset.label; }, 2000);
   }
+  // How long to wait for the overlay to confirm a submit before calling it failed.
+  // It acks as soon as it has ROUTED the text (PTY write, hub POST, or clipboard),
+  // so this only covers that hop — never the agent's reply.
+  var ACK_MS = 2500;
+  var awaitingAck = false;
+
+  // Post a submit to the overlay and report what ACTUALLY happened to it.
+  //
+  // This used to claim "Sent ✓" on the line right after postMessage, with nothing
+  // listening for a reply — so an artifact that posted a wrong `kind` had every
+  // answer silently discarded while telling the user it had been sent. Success is
+  // now only ever reported on a real ack from the overlay; silence is a failure.
+  function postWithAck(text, done) {
+    if (awaitingAck) return;
+    var settled = false, timer = 0;
+    function settle(ok, via) {
+      if (settled) return;
+      settled = true; awaitingAck = false;
+      window.removeEventListener("message", onAck);
+      clearTimeout(timer);
+      done(ok, via);
+    }
+    function onAck(e) {
+      var d = e.data;
+      if (!d || d.source !== "shelly-board" || d.kind !== "submit-ack") return;
+      settle(!!d.ok, d.via);
+    }
+    awaitingAck = true;
+    window.addEventListener("message", onAck);
+    timer = setTimeout(function () { settle(false); }, ACK_MS);
+    try {
+      parent.postMessage({ source: "shelly-artifact", kind: "submit", text: text }, "*");
+    } catch (e) { settle(false); }
+  }
+
   function doSubmit(sub) {
+    if (awaitingAck) return;
     if (pending() === 0) { flash("Mark an item, leave a 💬, or write a comment first"); return; }
     var text = build(sub.getAttribute("data-shelly-submit") || "Review");
-    try { parent.postMessage({ source: "shelly-artifact", kind: "submit", text: text }, "*"); } catch (e) {}
-    // Inside the Shelly overlay (iframed) the overlay is the single clipboard
-    // writer — it appends the artifact's file path before writing, so we must NOT
-    // also self-write here or the two race and the path-less copy can win. Only
-    // self-write when standalone (opened directly in a browser, not iframed).
+    // Standalone (opened directly in a browser, not iframed): there is no overlay
+    // to route or ack it, so the clipboard IS the delivery. Inside the overlay we
+    // must NOT self-write — the overlay appends the artifact's file path before
+    // writing, and a second write here races it and can win with a path-less copy.
     if (window.parent === window) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text)
-          .then(function () { flash("Copied ✓ — ⌘V to paste"); })
-          .catch(function () { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); });
-      } else { flash(fallbackCopy(text) ? "Copied ✓ — ⌘V to paste" : "Sent ✓"); }
-    } else { flash("Sent to overlay ✓ — ⌘V to paste"); }
+          .then(function () { submitDone(true, "clipboard"); })
+          .catch(function () { submitDone(fallbackCopy(text), "clipboard"); });
+      } else { submitDone(fallbackCopy(text), "clipboard"); }
+      return;
+    }
+    flash("Sending…");
+    postWithAck(text, submitDone);
+  }
+
+  // One place that decides what the user is told — and only shows the "working"
+  // splash when the answer genuinely left the artifact. On failure the form stays
+  // marked up exactly as it was, so nothing the user typed is lost to a retry.
+  function submitDone(ok, via) {
+    if (!ok) { flash("Couldn't reach the terminal — nothing sent"); return; }
+    flash(via === "terminal" ? "Sent ✓" : via === "agent" ? "Sent to your agent ✓" : "Copied ✓ — ⌘V to paste");
     try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
   }
 
@@ -643,11 +689,26 @@ clicking dead space dismisses rather than spawning a composer named `body` with 
       var inp = cbar.querySelector("input"), snd = cbar.querySelector("button");
       var sendChat = function () {
         var v = inp.value.trim(); if (!v) return;
-        try { parent.postMessage({ source: "shelly-artifact", kind: "submit", text: v }, "*"); } catch (e) {}
-        if (window.parent === window && navigator.clipboard) { navigator.clipboard.writeText(v).catch(function () {}); }
-        inp.value = ""; var p = snd.textContent; snd.textContent = "Sent ✓";
-        setTimeout(function () { snd.textContent = p; }, 1500);
-        try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
+        var p = snd.textContent;
+        var say = function (msg, hold) {
+          snd.textContent = msg;
+          setTimeout(function () { snd.textContent = p; }, hold || 1500);
+        };
+        // Same rule as the ballot Submit: only claim it sent once the overlay
+        // says so, and KEEP the user's text in the box on failure so a dropped
+        // message never costs them what they typed.
+        if (window.parent === window) {
+          if (navigator.clipboard) { navigator.clipboard.writeText(v).catch(function () {}); }
+          inp.value = ""; say("Copied ✓");
+          try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
+          return;
+        }
+        say("Sending…", 2600);
+        postWithAck(v, function (ok) {
+          if (!ok) { say("Couldn't send — try again", 2600); return; }
+          inp.value = ""; say("Sent ✓");
+          try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
+        });
       };
       snd.addEventListener("click", sendChat);
       inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendChat(); } });

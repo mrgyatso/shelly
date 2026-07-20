@@ -2,6 +2,14 @@ import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { handleSubmit, copyToClipboard } from "./submit";
+import {
+  submitAckMessage,
+  unknownArtifactKind,
+  unknownKindWarning,
+  type SubmitOutcome,
+} from "./submit-ack";
+
+export type { SubmitOutcome };
 
 // Fit-to-content sizing. The artifact iframe is opaque-origin (no
 // `allow-same-origin`), so the parent can't read its layout. Instead the
@@ -106,6 +114,31 @@ export function isNewSessionMessage(d: unknown): d is NewSessionMessage {
     m.kind === "new-session" &&
     typeof m.quote === "string"
   );
+}
+
+/** Warn about a `shelly-artifact` message whose kind matches no handler. The
+ *  decision of what counts as unknown is pure logic in submit-ack.ts; this is
+ *  just the console wrapper. */
+export function warnUnknownArtifactMessage(d: unknown): void {
+  const kind = unknownArtifactKind(d);
+  if (kind !== null) console.warn(unknownKindWarning(kind));
+}
+
+/** Tell an artifact what actually happened to the submit it just posted, so its
+ *  helper can show the truth instead of an optimistic "Sent ✓". `via` names the
+ *  route that took it: the session's terminal, the owning cloud agent, or the
+ *  clipboard fallback. */
+export function postSubmitAck(
+  target: Window | null,
+  ok: boolean,
+  via: SubmitOutcome["via"],
+): void {
+  if (!target) return;
+  try {
+    target.postMessage(submitAckMessage(ok, via), "*");
+  } catch (e) {
+    console.error("submit-ack post failed", e);
+  }
 }
 
 let raf = 0;
@@ -255,17 +288,24 @@ export function resetFit(): void {
  *   - `submit` — interactive review artifact pasted compiled prose; write to clipboard
  *   - `copy`   — an artifact Copy button; write its text to the system clipboard
  *
- * Unknown kinds are silently dropped (artifact authors may add their own
- * iframe-internal messaging without us mistaking it for protocol traffic).
+ * A message in someone else's namespace is still dropped in silence (artifact
+ * authors may add their own iframe-internal messaging). But one claiming
+ * `source:"shelly-artifact"` with an unrecognised kind now warns — see
+ * warnUnknownArtifactMessage.
  */
 export function initFit(): void {
   window.addEventListener("message", (e: MessageEvent) => {
     if (isFitMessage(e.data)) {
       void fit({ w: e.data.w, h: e.data.h });
     } else if (isSubmitMessage(e.data)) {
-      void handleSubmit(e.data.text);
+      // Ack the real outcome — a failed clipboard write must not read as sent.
+      void handleSubmit(e.data.text).then((ok) => {
+        postSubmitAck(e.source as Window | null, ok, "clipboard");
+      });
     } else if (isCopyMessage(e.data)) {
       void copyToClipboard(e.data.text);
+    } else {
+      warnUnknownArtifactMessage(e.data);
     }
   });
 }
