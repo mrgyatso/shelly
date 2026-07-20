@@ -6,17 +6,44 @@
 // (the path is inside a command string), so there is no single field to read. This
 // helper owns that difference: it prints every path under ARTIFACTS_DIR ending in
 // .html that the payload plausibly wrote, one per line, deduped —
-//   1. tool_input.file_path when present (the Claude fast path, exact),
+//   1. tool_input.file_path when present (the Claude fast path, EXACT — the field only
+//      exists on a write tool, so its presence is itself proof of a write),
 //   2. a literal scan of the raw payload for "<ARTIFACTS_DIR>/…*.html" (patch text,
 //      command strings — whatever shape the tool_input takes).
-// The scan is safe to over-match: every consumer re-checks the path against its own
-// case rules (home.html/_*.html skips) and the file's existence before acting on it.
+//
+// ORIGIN matters downstream. A scanned path is a MENTION, not a proven write: a shell
+// tool that only READS an artifact (`grep … foo.html`, `cat foo.html`) carries the exact
+// same text as one that wrote it. Stamping the index off a mention re-routes another
+// session's artifact to whoever grepped it. So scanned paths carry origin "scan" and
+// must clear two gates the exact path skips:
+//   - here: the file exists and its mtime is FRESH (something really did just write it),
+//   - shelly-index.cjs: it is not already indexed to a DIFFERENT session (no hijack).
 //
 // Usage: printf '%s' "$payload" | ARTIFACTS_DIR=<dir> node shelly-artifact-paths.cjs
+//        → one "<origin>\t<path>" line per path.
 
-function extractPaths(payload, artifactsDir) {
+const fs = require("fs");
+
+// How recently a scanned path must have been written to count as this call's doing.
+// Generous enough for a command that writes the file and then does slow work in the same
+// invocation (build, verify, screenshot) — the hook only fires once the whole command exits.
+const FRESH_MS = 30_000;
+
+function freshOnDisk(p, nowMs) {
+  try {
+    return nowMs - fs.statSync(p).mtimeMs <= FRESH_MS;
+  } catch (_) {
+    return false; // missing/unreadable — a mention of a path nothing wrote
+  }
+}
+
+// [{ path, origin: "exact" | "scan" }], deduped, exact winning over scan for a path
+// named both ways. opts.isFresh / opts.now are injectable so tests stay off the clock.
+function classifyPaths(payload, artifactsDir, opts) {
   if (!payload || !artifactsDir) return [];
-  const found = new Set();
+  const isFresh = (opts && opts.isFresh) || freshOnDisk;
+  const now = (opts && opts.now) || Date.now();
+  const byPath = new Map();
 
   let parsed = null;
   try {
@@ -24,7 +51,7 @@ function extractPaths(payload, artifactsDir) {
   } catch (_) {}
   const fp = parsed && parsed.tool_input && parsed.tool_input.file_path;
   if (typeof fp === "string" && fp.startsWith(artifactsDir + "/") && fp.endsWith(".html")) {
-    found.add(fp);
+    byPath.set(fp, "exact");
   }
 
   // Literal scan for artifact paths embedded in patch/command text. JSON encoders may
@@ -33,18 +60,27 @@ function extractPaths(payload, artifactsDir) {
   const norm = payload.replace(/\\\//g, "/");
   const esc = artifactsDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(esc + "/[^\"'`\\s\\\\]+?\\.html", "g");
-  for (const m of norm.match(re) || []) found.add(m);
+  for (const m of norm.match(re) || []) {
+    if (!byPath.has(m)) byPath.set(m, "scan");
+  }
 
-  return [...found];
+  return [...byPath.entries()]
+    .filter(([p, origin]) => origin === "exact" || isFresh(p, now))
+    .map(([path, origin]) => ({ path, origin }));
 }
 
-module.exports = { extractPaths };
+// Back-compat: paths only, and no freshness gate (pure — no fs, no clock).
+function extractPaths(payload, artifactsDir) {
+  return classifyPaths(payload, artifactsDir, { isFresh: () => true }).map((e) => e.path);
+}
+
+module.exports = { extractPaths, classifyPaths, FRESH_MS };
 
 if (require.main === module) {
   let raw = "";
   process.stdin.on("data", (c) => (raw += c));
   process.stdin.on("end", () => {
     const dir = process.env.ARTIFACTS_DIR || "";
-    for (const p of extractPaths(raw, dir)) process.stdout.write(p + "\n");
+    for (const e of classifyPaths(raw, dir)) process.stdout.write(e.origin + "\t" + e.path + "\n");
   });
 }

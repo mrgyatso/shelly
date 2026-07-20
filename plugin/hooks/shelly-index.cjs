@@ -80,6 +80,22 @@ if (!sessionId || !shortid) {
   process.exit(0);
 }
 
+// NO-HIJACK GUARD. A "scan" path was recovered from command/patch TEXT, where a read
+// (`grep … foo.html`) is indistinguishable from a write. If that artifact is already
+// routed to a DIFFERENT session, the overwhelmingly likely story is that this session
+// merely read someone else's file — re-stamping would move their artifact onto our
+// shelf. Leave the existing owner alone. An "exact" file_path write is a proven write
+// and may legitimately take ownership, so it skips this gate.
+if (process.env.ORIGIN === "scan") {
+  try {
+    const prior = JSON.parse(fs.readFileSync(indexPath, "utf8"))[key];
+    if (prior && prior.session_id && prior.session_id !== sessionId) {
+      trace.emit("index", "skip", { corr: key, reason: "scan-would-hijack", owner: prior.session_id });
+      process.exit(0);
+    }
+  } catch (_) {} // no index yet / unreadable — nothing to protect
+}
+
 let rec = identity.readRecord(sessionId);
 if (!rec) {
   // Late registration (see header). shelly-livepath.sh prints

@@ -72,10 +72,13 @@ fi
 command -v shelly >/dev/null 2>&1 || { trace hook no-shelly-cli "corr=${_t_fp:-}"; exit 0; }
 
 # Pull the artifact path(s) + session_id + cwd out of the payload. Claude's Write/Edit
-# carry the target as tool_input.file_path; Codex's apply_patch/shell tools embed it in
-# patch/command text — shelly-artifact-paths.cjs owns that difference and prints one
-# path per line. cwd feeds shelly-index's LATE REGISTRATION only (a session with no
-# registry record); a registered session's identity comes from its frozen record.
+# carry the target as tool_input.file_path; Claude's Bash and Codex's apply_patch/shell
+# tools embed it in patch/command text — shelly-artifact-paths.cjs owns that difference
+# and prints one "<origin>\t<path>" line per path. ORIGIN travels to shelly-index.cjs,
+# which trusts an "exact" (file_path) write but makes a "scan" (command-text) hit prove
+# it isn't just a READ of somebody else's artifact. cwd feeds shelly-index's LATE
+# REGISTRATION only (a session with no registry record); a registered session's identity
+# comes from its frozen record.
 paths=$(printf '%s' "$payload" | ARTIFACTS_DIR="$ARTIFACTS_DIR" node "$SCRIPT_DIR/shelly-artifact-paths.cjs" 2>/dev/null)
 SID=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).session_id||"")}catch(e){}})' 2>/dev/null)
 CWD=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).cwd||"")}catch(e){}})' 2>/dev/null)
@@ -93,7 +96,7 @@ PROMPT_ID=$(printf '%s' "$payload" | node -e 'let d="";process.stdin.on("data",c
 # live poll. We DO stamp the routing index here so the Board groups the artifact
 # under the WRITING session's unit (keyed on session_id; unit_key resolved from
 # that session's live file — cwd is volatile, so never derive from it).
-printf '%s\n' "$paths" | while IFS= read -r fp; do
+printf '%s\n' "$paths" | while IFS="$(printf '\t')" read -r origin fp; do
   [ -n "$fp" ] || continue
   case "$fp" in
     "$ARTIFACTS_DIR"/home.html|"$ARTIFACTS_DIR"/home.*.html)
@@ -105,8 +108,8 @@ printf '%s\n' "$paths" | while IFS= read -r fp; do
       trace hook skip-index "corr=$fp" "reason=diagnostic-scaffold"
       ;;
     "$ARTIFACTS_DIR"/*.html)
-      trace hook index-spawn "corr=$fp"
-      SID="$SID" CWD="$CWD" PROVIDER="$PROVIDER" PROMPT_ID="$PROMPT_ID" node "$SCRIPT_DIR/shelly-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
+      trace hook index-spawn "corr=$fp" "origin=$origin"
+      SID="$SID" CWD="$CWD" PROVIDER="$PROVIDER" PROMPT_ID="$PROMPT_ID" ORIGIN="$origin" node "$SCRIPT_DIR/shelly-index.cjs" "$fp" "$LIVE_DIR" "$INDEX_PATH" 2>/dev/null
       trace hook index-done "corr=$fp"
       ;;
   esac
