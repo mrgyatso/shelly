@@ -418,7 +418,12 @@ clicking dead space dismisses rather than spawning a composer named `body` with 
     }
     awaitingAck = true;
     window.addEventListener("message", onAck);
-    timer = setTimeout(function () { settle(false); }, ACK_MS);
+    // Silence is UNKNOWN, not failure — and the difference matters. An overlay
+    // older than the ack never replies, so asserting "nothing sent" there would
+    // be the same false certainty this fix exists to remove, just inverted.
+    // `via:"unknown"` lets the caller say "couldn't confirm" instead of lying in
+    // either direction, which is also what makes the rollout order not matter.
+    timer = setTimeout(function () { settle(false, "unknown"); }, ACK_MS);
     try {
       parent.postMessage({ source: "shelly-artifact", kind: "submit", text: text }, "*");
     } catch (e) { settle(false); }
@@ -448,7 +453,11 @@ clicking dead space dismisses rather than spawning a composer named `body` with 
   // splash when the answer genuinely left the artifact. On failure the form stays
   // marked up exactly as it was, so nothing the user typed is lost to a retry.
   function submitDone(ok, via) {
-    if (!ok) { flash("Couldn't reach the terminal — nothing sent"); return; }
+    if (!ok) {
+      // A refusal we were TOLD about is certain; silence is not. Say which.
+      flash(via === "unknown" ? "No confirmation — check your terminal" : "Couldn't send — nothing left the artifact");
+      return;
+    }
     flash(via === "terminal" ? "Sent ✓" : via === "agent" ? "Sent to your agent ✓" : "Copied ✓ — ⌘V to paste");
     try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
   }
@@ -704,8 +713,8 @@ clicking dead space dismisses rather than spawning a composer named `body` with 
           return;
         }
         say("Sending…", 2600);
-        postWithAck(v, function (ok) {
-          if (!ok) { say("Couldn't send — try again", 2600); return; }
+        postWithAck(v, function (ok, via) {
+          if (!ok) { say(via === "unknown" ? "Not confirmed — check terminal" : "Couldn't send", 2600); return; }
           inp.value = ""; say("Sent ✓");
           try { if (window.__cmpShowSubmitted) window.__cmpShowSubmitted(); } catch (e) {}
         });
