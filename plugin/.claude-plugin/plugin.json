@@ -1,7 +1,7 @@
 {
   "name": "shelly",
   "description": "Render your agent's work as HTML artifacts in Shelly — the shell your coding agents work inside. The working agent authors each artifact inline, in full context, when a turn earns one; a Stop-hook backstop reminds it once if a substantive turn ends with nothing written. The live-state is a status heartbeat only. Manual /shelly:html remains available.",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "author": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso/shelly"

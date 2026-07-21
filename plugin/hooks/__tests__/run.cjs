@@ -20,6 +20,7 @@ const suites = [
   "charset.cjs",
   "codex-provider.cjs",
   "home-adoption.cjs",
+  "bash-writes.cjs",
 ];
 let failed = 0;
 for (const s of suites) {

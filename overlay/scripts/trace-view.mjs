@@ -10,9 +10,10 @@
 // epoch-ms clock, `corr` = the artifact's absolute path = the cross-layer join key).
 // Turn the harness on with:  touch ~/.shelly/logs/trace.on   (rm to stop).
 //
-// To drive a FULL-pipeline trace you must write the artifact via Claude's Write tool
-// (a shell `cp` into the artifacts dir does NOT fire the PostToolUse hook — only a
-// Claude tool-write does). The watcher → board half traces either way.
+// To drive a FULL-pipeline trace, write the artifact through a Claude tool — Write/Edit
+// (exact) or a Bash command that redirects into the artifacts dir (recovered from the
+// command text). A `cp` you run yourself in a terminal fires no hook at all, since there
+// is no tool call to observe. The watcher → board half traces either way.
 
 import fs from "node:fs";
 import os from "node:os";
