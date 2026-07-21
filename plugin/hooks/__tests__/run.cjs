@@ -17,6 +17,7 @@ const suites = [
   "registry-phase5.cjs",
   "artifact-gate.cjs",
   "artifact-fork.cjs",
+  "artifact-seal.cjs",
   "charset.cjs",
   "codex-provider.cjs",
   "home-adoption.cjs",

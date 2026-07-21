@@ -243,7 +243,68 @@ function routeArtifact(args, opts) {
   return entry;
 }
 
-module.exports = { register, resolveUnit, readRecord, appendEvent, routeArtifact, recordPath, sessionsDir, eventsPath };
+/**
+ * SEAL this session's artifacts — "the agent has stopped writing; you may show them now."
+ *
+ * WHY: `routeArtifact` stamps the index on EVERY write, and an agent authoring one
+ * artifact writes it many times in a turn (a Write, then edits, then a rewrite). The
+ * Board polls that index, so it used to surface revision 1 the instant it landed and
+ * then nag an "Updated" affordance on every keystroke after it — the user watching a
+ * document assemble itself and being asked to re-read it each time. An artifact is a
+ * SEALED deliverable, not a live buffer; the in-flight surface is the live pane.
+ *
+ * So the Board withholds an artifact until it carries `sealed_ms`, and this is what
+ * stamps it: called from the Stop hook, i.e. exactly when the agent hands the terminal
+ * back. That is the SAME turn boundary shelly-turn.cjs serves to the gate and the fork
+ * hook — a third caller of one fact, never a fourth derivation of it.
+ *
+ * SEALS THE WHOLE SESSION, NOT JUST THIS TURN. An interrupted turn (the user hits ESC)
+ * never reaches Stop, so its artifact would otherwise stay unsealed — invisible — forever.
+ * Sweeping every unsealed entry this session owns means the next Stop adopts that orphan.
+ * The Rust reader carries a time backstop for the session that never Stops again at all.
+ *
+ * Idempotent: an already-sealed entry keeps its original `sealed_ms`, so re-running at
+ * every Stop can't keep bumping the seal time. Returns the number of entries newly
+ * sealed; 0 on any failure — a seal that doesn't land costs visibility for the backstop
+ * window, never correctness.
+ */
+function sealArtifacts(session_id, opts) {
+  const sid = safeId(session_id);
+  if (!sid) return 0;
+  const indexPath =
+    (opts && opts.indexPath) || path.join(shellyDir(opts), "artifact-index.json");
+  let index;
+  try {
+    index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {};
+  } catch (_) {
+    return 0; // no index yet, or unreadable — nothing to seal
+  }
+  const now = Date.now();
+  const short = sid.slice(0, 8);
+  let sealed = 0;
+  for (const [key, entry] of Object.entries(index)) {
+    if (!entry || typeof entry !== "object") continue;
+    if (entry.sealed_ms) continue; // already sealed — keep the original stamp
+    // Match the gate's ownership test: session_id when present, else the shortid an
+    // older entry was stamped with.
+    if (entry.session_id !== sid && entry.shortid !== short) continue;
+    index[key] = { ...entry, sealed_ms: now };
+    sealed++;
+  }
+  if (!sealed) return 0;
+  try {
+    // Atomic (temp + rename), matching routeArtifact — the Board polls this file.
+    const tmp = indexPath + "." + process.pid + ".seal.tmp";
+    fs.writeFileSync(tmp, JSON.stringify(index));
+    fs.renameSync(tmp, indexPath);
+  } catch (_) {
+    return 0;
+  }
+  trace.emit("registry", "seal", { session_id: sid, count: sealed });
+  return sealed;
+}
+
+module.exports = { register, resolveUnit, readRecord, appendEvent, routeArtifact, sealArtifacts, recordPath, sessionsDir, eventsPath };
 
 // CLI form for the sh hooks (shelly-session). Mirrors shelly-trace.cjs's
 // require.main pattern. Positional args keep the sh call site simple:
