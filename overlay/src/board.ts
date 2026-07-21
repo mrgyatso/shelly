@@ -495,6 +495,11 @@ let compactState: CompactState = NO_COMPACT;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
 let currentUnitKey: string | null = null;
 let lastRailActiveUnit: string | null = null; // tracks which unit the rail was last rendered for
+/** Which unit's session drawer was actually PAINTED by the last rail render, or null.
+ *  Distinct from `expandedActiveProject` (the intent) — this is what the DOM ended up
+ *  showing, which is what the open/close animations have to diff against. Comparing
+ *  intent against itself would fire an animation on every poll. */
+let lastRailDrawerUnit: string | null = null;
 /** Which recent (closed) project is expanded in the rail, or null for all collapsed. */
 let expandedRecentProject: string | null = null;
 /** Which LIVE (active-section) project's session dropdown is expanded, or null for
@@ -1988,19 +1993,22 @@ function renderUnitRail(activeUnitKey: string | null): void {
   const order = roomFilter
     ? allOrder.filter((u) => unitKindWith(u) === roomFilter)
     : allOrder;
-  const prevActiveUnit = lastRailActiveUnit;
-  const unitChanged = activeUnitKey !== prevActiveUnit;
+  // (The old `unitChanged` / `prevActiveUnit` pair is gone: both animations now diff the
+  // painted DRAWER unit rather than the active PROJECT, which is what lets a same-unit
+  // toggle animate at all. `lastRailActiveUnit` is still tracked — other callers pass it
+  // back in to re-render the rail for whatever unit is current.)
   lastRailActiveUnit = activeUnitKey;
 
-  // On a project switch, grab the OUTGOING project's session group so it can animate
-  // closed after the rebuild (replaceChildren would otherwise drop it instantly).
-  const exitingGroup =
-    unitChanged && prevActiveUnit
-      ? (railSessionsEl.querySelector(".unit-subtab-group") as HTMLElement | null)
-      : null;
+  // Grab whatever session group is currently painted, BEFORE the rebuild — holding the
+  // reference keeps the node alive after replaceChildren detaches it, so it can be
+  // re-inserted to animate closed. Captured unconditionally: whether it's actually
+  // exiting isn't known until we've built the new nodes (see `exitingGroup` below).
+  const priorGroup = railSessionsEl.querySelector(".unit-subtab-group") as HTMLElement | null;
+  const priorDrawerUnit = lastRailDrawerUnit;
 
   const nodes: HTMLElement[] = [];
   let newGroup: HTMLElement | null = null;
+  let newDrawerUnit: string | null = null; // the unit whose drawer this render actually paints
 
   // FAIL-LOUD SURFACE. Artifacts that exhausted the identity grace window route to
   // the Unsourced bucket AND alarm here — a visible warning row pinned above the
@@ -2069,6 +2077,7 @@ function renderUnitRail(activeUnitKey: string | null): void {
       group.appendChild(inner);
       nodes.push(group);
       newGroup = group;
+      newDrawerUnit = unit;
     }
   }
 
@@ -2105,16 +2114,27 @@ function renderUnitRail(activeUnitKey: string | null): void {
   }
 
   railSessionsEl.replaceChildren(...nodes);
+  lastRailDrawerUnit = newDrawerUnit;
 
-  // Animate the incoming group's drop-down — a CSS keyframe (no rAF, runs even when
-  // the Board isn't the key window). Only on a project switch, not on every poll.
-  if (unitChanged && newGroup) newGroup.classList.add("opening");
+  // BOTH animations diff PAINTED-vs-PAINTED, never intent-vs-intent: the rail re-renders
+  // on every poll, so keying off `expandedActiveProject` would replay the keyframe
+  // continuously while a drawer merely stayed open. A drawer animates only when the unit
+  // it belongs to actually changes — which now covers the same-unit toggle as well as a
+  // project switch, since the tab can open and close its own drawer in place.
+  const drawerChanged = newDrawerUnit !== priorDrawerUnit;
 
-  // Re-attach the outgoing group under its (still-present) project tab and play the
-  // close keyframe, then remove — old sessions slide up as the new ones slide down.
+  // Incoming: drop-down. A CSS keyframe (no rAF, so it runs even when the Board isn't the
+  // key window).
+  if (drawerChanged && newGroup) newGroup.classList.add("opening");
+
+  // Outgoing: re-attach the old group under its (still-present) project tab and play the
+  // close keyframe, then remove. Without this, replaceChildren drops it instantly and a
+  // toggle-closed drawer pops out while an opening one glides — the asymmetry that made
+  // closing feel broken once the tab became a toggle.
+  const exitingGroup = drawerChanged && priorDrawerUnit ? priorGroup : null;
   if (exitingGroup) {
     const oldTab = Array.from(railSessionsEl.querySelectorAll(".unit-tab")).find(
-      (t) => (t as HTMLElement).dataset.unit === prevActiveUnit,
+      (t) => (t as HTMLElement).dataset.unit === priorDrawerUnit,
     ) as HTMLElement | undefined;
     if (oldTab) {
       exitingGroup.style.pointerEvents = "none"; // inert while collapsing
