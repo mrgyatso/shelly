@@ -1019,6 +1019,10 @@
   --tab-bg: var(--card);
   cursor: default;
 }
+/* …but the active tab of a MULTI-SESSION project still does something: it toggles the
+   session drawer. `cursor: default` there would advertise a dead control and is the
+   difference between "this is inert" and "click me again to close". */
+.unit-tab.active.has-drawer { cursor: pointer; }
 .unit-tab.active::before { height: 26px; }
 /* Filled avatar + bolder name make the active project unmistakably "in focus" */
 .unit-tab.active .unit-tab-mark {
