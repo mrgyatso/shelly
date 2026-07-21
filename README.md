@@ -1,6 +1,6 @@
 # Shelly
 
-**Coding agents got fast. Reading what they did didn't.** Shelly is a desktop shell where your agents report each turn as a page you read — and answer with a click.
+**Coding agents got fast. Reading what they did didn't.**
 
 [![Latest release](https://img.shields.io/github/v/release/mrgyatso/shelly?include_prereleases&sort=semver)](https://github.com/mrgyatso/shelly/releases)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-black?logo=apple)](#requirements)
