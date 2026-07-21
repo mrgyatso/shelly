@@ -318,7 +318,27 @@ fn load_artifact_index() -> std::collections::HashMap<String, IndexEntry> {
 /// uncertainty — no entry, no `ts` to age against, a clock that jumped backwards — resolves
 /// to visible, because a withheld artifact is invisible and an artifact the user cannot see
 /// is worse than one they see too early.
-fn is_settled(entry: Option<&IndexEntry>, now: u64) -> bool {
+/// Is the installed plugin sealing at all? True once ANY index entry carries `sealed_ms`.
+///
+/// VERSION SKEW IS THE FAILURE THIS PREVENTS, and it is not hypothetical: the app ships as a
+/// cask and the plugin ships through `claude plugin update`, so a user WILL run a new overlay
+/// against an old plugin. That plugin never stamps a seal, so without this probe every indexed
+/// artifact would be withheld for the full backstop — a 15-minute blackout that reads as "the
+/// Board is broken", which is far worse than the churn the seal removes.
+///
+/// So the reader treats sealing as a capability it must OBSERVE rather than assume. One seal
+/// anywhere in the index proves the writing side speaks the protocol; until then nothing is
+/// withheld. Self-healing and one-directional — the first seal a new plugin writes turns the
+/// feature on for good, and the cost is that the very first artifact under a brand-new index
+/// surfaces early, once.
+fn index_seals(index: &std::collections::HashMap<String, IndexEntry>) -> bool {
+    index.values().any(|e| e.sealed_ms.is_some())
+}
+
+fn is_settled(entry: Option<&IndexEntry>, now: u64, seal_aware: bool) -> bool {
+    if !seal_aware {
+        return true; // the writing side isn't sealing — withholding would strand everything
+    }
     let Some(entry) = entry else { return true };
     if entry.sealed_ms.is_some() {
         return true;
@@ -366,13 +386,14 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
         // routing so an unsealed artifact never reaches the Board at all — not by any
         // road, hero or history — rather than being surfaced and then filtered per-view.
         let now = now_ms();
+        let seal_aware = index_seals(&index);
         entries.retain(|e| {
             let by_path = index.get(&e.path);
             let by_name = Path::new(&e.path)
                 .file_name()
                 .and_then(|s| s.to_str())
                 .and_then(|n| index.get(n));
-            is_settled(by_path.or(by_name), now)
+            is_settled(by_path.or(by_name), now, seal_aware)
         });
         for e in &mut entries {
             let by_path = index.get(&e.path);
@@ -547,14 +568,14 @@ mod tests {
     #[test]
     fn withholds_an_unsealed_recent_artifact() {
         let e = entry(None, Some(NOW - 5_000));
-        assert!(!is_settled(Some(&e), NOW));
+        assert!(!is_settled(Some(&e), NOW, true));
     }
 
     // The Stop hook sealed it — the agent has handed the terminal back.
     #[test]
     fn shows_a_sealed_artifact() {
         let e = entry(Some(NOW - 1_000), Some(NOW - 5_000));
-        assert!(is_settled(Some(&e), NOW));
+        assert!(is_settled(Some(&e), NOW, true));
     }
 
     // The backstop: a session that died before it could seal must not strand its
@@ -562,7 +583,7 @@ mod tests {
     #[test]
     fn shows_an_unsealed_artifact_past_the_backstop() {
         let e = entry(None, Some(NOW - SETTLE_BACKSTOP_MS - 1));
-        assert!(is_settled(Some(&e), NOW));
+        assert!(is_settled(Some(&e), NOW, true));
     }
 
     // Un-indexed is NOT unsealed. The living home.<unit>.html digests are never
@@ -570,7 +591,7 @@ mod tests {
     // them would hide them permanently rather than briefly.
     #[test]
     fn shows_an_unindexed_artifact() {
-        assert!(is_settled(None, NOW));
+        assert!(is_settled(None, NOW, true));
     }
 
     // Entries written by a pre-seal plugin carry neither field. They must keep their
@@ -578,13 +599,31 @@ mod tests {
     #[test]
     fn shows_a_legacy_entry_with_no_timestamps() {
         let e = entry(None, None);
-        assert!(is_settled(Some(&e), NOW));
+        assert!(is_settled(Some(&e), NOW, true));
     }
 
     // A backwards clock must not withhold forever — saturating_sub keeps it visible.
     #[test]
     fn shows_an_artifact_stamped_in_the_future() {
         let e = entry(None, Some(NOW + 60_000));
-        assert!(is_settled(Some(&e), NOW));
+        assert!(is_settled(Some(&e), NOW, true));
+    }
+
+    // VERSION SKEW. A new overlay against an old plugin: nothing ever stamps a seal, so
+    // withholding would black out the Board for the whole backstop window. The probe must
+    // keep everything visible until it observes the writing side sealing at all.
+    #[test]
+    fn shows_everything_when_the_plugin_does_not_seal() {
+        let e = entry(None, Some(NOW - 5_000));
+        assert!(is_settled(Some(&e), NOW, false));
+    }
+
+    #[test]
+    fn detects_seal_support_from_a_single_sealed_entry() {
+        let mut idx = std::collections::HashMap::new();
+        idx.insert("/a".to_string(), entry(None, Some(NOW)));
+        assert!(!index_seals(&idx), "no sealed entry → the plugin is not sealing");
+        idx.insert("/b".to_string(), entry(Some(NOW), Some(NOW)));
+        assert!(index_seals(&idx), "one sealed entry proves the protocol is live");
     }
 }
