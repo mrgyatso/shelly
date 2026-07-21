@@ -14,6 +14,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { spawn } = require("child_process");
 
 const identity = require("../shelly-identity.cjs");
 const gate = require("../shelly-artifact-gate.cjs");
@@ -138,6 +139,74 @@ console.log("\nsealIfDone (the Stop-hook gate)");
   ok(gate.sealIfDone({ session_id: SID }, null) === 0, "no decision → 0, no throw");
 }
 
-fs.rmSync(sandbox, { recursive: true, force: true });
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+console.log("\nconcurrent writers (the CodeRabbit finding)");
+
+// THE RACE, RUN FOR REAL. sealArtifacts rewrites every entry it owns, so it is the writer
+// most likely to land on top of a sibling session's freshly-routed artifact. Before the
+// lock this lost entries: seal reads the index, a routeArtifact lands, seal writes its
+// stale copy back, and the new entry is gone — an artifact with no identity, which the
+// Board surfaces as UNROUTED.
+//
+// Separate PROCESSES, not mocked calls: the writers are independent hooks, so an
+// in-process mutex would prove nothing about the real failure. Children route artifacts
+// while the parent seals repeatedly; every routed entry must survive.
+//
+// The children get a sandboxed `home` as well as an explicit indexPath — routeArtifact
+// also appends to events.ndjson, and a test must never write into the real ~/.shelly.
+async function concurrentWriters() {
+  const home = path.join(sandbox, "cw-home");
+  fs.mkdirSync(path.join(home, ".shelly"), { recursive: true });
+  const idx = makeIndex({
+    "/a/seed.html": { unit_key: "u", session_id: SID, shortid: SID.slice(0, 8), ts: 1000 },
+  });
+  const N = 12;
+  const identityPath = path.join(__dirname, "..", "shelly-identity.cjs");
+
+  const kids = Array.from({ length: N }, (_, i) =>
+    new Promise((resolve) => {
+      const child = spawn(
+        process.execPath,
+        [
+          "-e",
+          `const id=require(${JSON.stringify(identityPath)});
+           id.routeArtifact(
+             { artifactPath: "/a/w${i}.html", session_id: ${JSON.stringify(OTHER)},
+               unit_key: "u", shortid: "sibling1", source: "s",
+               indexPath: ${JSON.stringify(idx)} },
+             { home: ${JSON.stringify(home)} });`,
+        ],
+        { stdio: "ignore" },
+      );
+      child.on("exit", resolve);
+      child.on("error", resolve);
+    }),
+  );
+
+  // Seal in the parent WHILE the children are writing — the interleaving under test.
+  for (let i = 0; i < 60; i++) identity.sealArtifacts(SID, { indexPath: idx, home });
+  await Promise.all(kids);
+
+  const final = read(idx);
+  const lost = [];
+  for (let i = 0; i < N; i++) if (!final["/a/w" + i + ".html"]) lost.push(i);
+  ok(
+    lost.length === 0,
+    `all ${N} concurrently-routed artifacts survive a parallel seal` +
+      (lost.length ? ` (lost ${lost.length}: ${lost.join(",")})` : ""),
+  );
+  ok(!!final["/a/seed.html"], "the sealing session's own entry is intact");
+  ok(final["/a/seed.html"] && final["/a/seed.html"].sealed_ms > 0, "…and did get sealed");
+  // A leaked lock would wedge every later write until it aged out of the stale window.
+  ok(!fs.existsSync(idx + ".lock"), "no lock directory left behind");
+}
+
+concurrentWriters()
+  .catch((e) => {
+    fail++;
+    console.log("  ✗ FAIL: concurrent-writer test threw — " + (e && e.message));
+  })
+  .then(() => {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+    console.log(`\n${pass} passed, ${fail} failed`);
+    process.exit(fail ? 1 : 0);
+  });
