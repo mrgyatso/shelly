@@ -261,6 +261,17 @@
                 <span class="hero-new-label">New artifact</span>
                 <span class="hero-new-cue">view ↑</span>
               </button>
+              <!-- "Writing…" pill — the hero holds artifact N while the session is
+                   mid-authoring N+1. Artifacts are withheld until their turn seals, so
+                   without this the Board says nothing at all while work is happening and
+                   the user can't tell a busy agent from an idle one. A DIV, not a button:
+                   there is deliberately nothing to click — the draft is half-written and
+                   showing it is exactly what the seal prevents. Replaced by the pill
+                   above the moment the artifact seals. -->
+              <div id="unit-hero-building" class="hero-building-pill" hidden>
+                <span class="hero-new-dot"></span>
+                <span class="hero-building-label">Writing…</span>
+              </div>
               <!-- Deck nav — the hero is a pageable STACK of this session's artifacts,
                    not one slot. Flips between cards; the position tells the user how
                    deep the deck is and where they are in it. Hidden below two cards

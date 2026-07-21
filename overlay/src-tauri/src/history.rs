@@ -298,6 +298,23 @@ fn load_artifact_index() -> std::collections::HashMap<String, IndexEntry> {
     map
 }
 
+/// Is the installed plugin sealing at all? True once ANY index entry carries `sealed_ms`.
+///
+/// VERSION SKEW IS THE FAILURE THIS PREVENTS, and it is not hypothetical: the app ships as a
+/// cask and the plugin ships through `claude plugin update`, so a user WILL run a new overlay
+/// against an old plugin. That plugin never stamps a seal, so without this probe every indexed
+/// artifact would be withheld for the full backstop — a 15-minute blackout that reads as "the
+/// Board is broken", which is far worse than the churn the seal removes.
+///
+/// So the reader treats sealing as a capability it must OBSERVE rather than assume. One seal
+/// anywhere in the index proves the writing side speaks the protocol; until then nothing is
+/// withheld. Self-healing and one-directional — the first seal a new plugin writes turns the
+/// feature on for good, and the cost is that the very first artifact under a brand-new index
+/// surfaces early, once.
+fn index_seals(index: &std::collections::HashMap<String, IndexEntry>) -> bool {
+    index.values().any(|e| e.sealed_ms.is_some())
+}
+
 /// May the Board show this artifact yet?
 ///
 /// THE RULE: an artifact is a sealed deliverable, not a live buffer. An agent authoring
@@ -318,23 +335,6 @@ fn load_artifact_index() -> std::collections::HashMap<String, IndexEntry> {
 /// uncertainty — no entry, no `ts` to age against, a clock that jumped backwards — resolves
 /// to visible, because a withheld artifact is invisible and an artifact the user cannot see
 /// is worse than one they see too early.
-/// Is the installed plugin sealing at all? True once ANY index entry carries `sealed_ms`.
-///
-/// VERSION SKEW IS THE FAILURE THIS PREVENTS, and it is not hypothetical: the app ships as a
-/// cask and the plugin ships through `claude plugin update`, so a user WILL run a new overlay
-/// against an old plugin. That plugin never stamps a seal, so without this probe every indexed
-/// artifact would be withheld for the full backstop — a 15-minute blackout that reads as "the
-/// Board is broken", which is far worse than the churn the seal removes.
-///
-/// So the reader treats sealing as a capability it must OBSERVE rather than assume. One seal
-/// anywhere in the index proves the writing side speaks the protocol; until then nothing is
-/// withheld. Self-healing and one-directional — the first seal a new plugin writes turns the
-/// feature on for good, and the cost is that the very first artifact under a brand-new index
-/// surfaces early, once.
-fn index_seals(index: &std::collections::HashMap<String, IndexEntry>) -> bool {
-    index.values().any(|e| e.sealed_ms.is_some())
-}
-
 fn is_settled(entry: Option<&IndexEntry>, now: u64, seal_aware: bool) -> bool {
     if !seal_aware {
         return true; // the writing side isn't sealing — withholding would strand everything
@@ -353,6 +353,79 @@ fn is_settled(entry: Option<&IndexEntry>, now: u64, seal_aware: bool) -> bool {
         return true;
     }
     now - ts >= SETTLE_BACKSTOP_MS
+}
+
+/// A withheld artifact — one `is_settled` is currently holding back — reported to the Board
+/// so it can show "this session is writing something" instead of nothing at all.
+///
+/// Deliberately NOT an `ArtifactEntry`. A pending artifact is a *signal*, not a document: it
+/// has no title, no summary, and nothing to render, because the file on disk is a half-written
+/// draft we have promised not to show. Giving it the same type would let it flow into the hero
+/// selector, the deck and the history list — every road the seal exists to keep it off — and
+/// one missed filter would put the draft back on screen. A separate, deliberately anaemic type
+/// makes that mistake unavailable.
+#[derive(serde::Serialize)]
+pub struct PendingArtifact {
+    /// Whose unit it belongs to — the Board shows the placeholder only in this unit.
+    pub unit_key: String,
+    /// The writing session's source stem, so the Board can scope the placeholder to the
+    /// session actually on screen and never paint one for a sibling's work.
+    pub source: Option<String>,
+    pub session_id: Option<String>,
+    /// When the draft was last written — drives "writing…" vs a staler "still writing".
+    pub modified_ms: u64,
+}
+
+/// The artifacts currently being authored: indexed, unsealed, and still inside the backstop.
+///
+/// The exact complement of the `retain` in [`list_artifacts`], sharing [`is_settled`] so the
+/// two can never disagree about what is withheld — a placeholder for an artifact the Board is
+/// simultaneously showing would be worse than no placeholder at all.
+///
+/// Resolves the unit the same way `list_artifacts` does (registry first, stamped key as
+/// fallback) so a placeholder lands in the same unit its artifact will surface in. Empty
+/// whenever the plugin isn't sealing — nothing is withheld then, so nothing is pending.
+#[tauri::command]
+pub fn list_pending_artifacts() -> Vec<PendingArtifact> {
+    let index = load_artifact_index();
+    if index.is_empty() || !index_seals(&index) {
+        return Vec::new();
+    }
+    let now = now_ms();
+    let mut out: Vec<PendingArtifact> = artifact_dirs()
+        .iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            // Reuse the listing's own file filter, so scaffolding and the living home
+            // digests are excluded here exactly as they are there.
+            let entry = entry_from_path(&path)?;
+            let key = entry.path.clone();
+            let by_name = Path::new(&key)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .and_then(|n| index.get(n));
+            let idx = index.get(&key).or(by_name)?;
+            if is_settled(Some(idx), now, true) {
+                return None; // already shown (or released) — not pending
+            }
+            let unit_key = idx
+                .session_id
+                .as_deref()
+                .and_then(crate::registry::resolve_unit)
+                .unwrap_or_else(|| idx.unit_key.clone());
+            Some(PendingArtifact {
+                unit_key,
+                source: idx.source.clone(),
+                session_id: idx.session_id.clone(),
+                modified_ms: entry.modified_ms,
+            })
+        })
+        .collect();
+    out.sort_by_key(|p| std::cmp::Reverse(p.modified_ms));
+    out
 }
 
 /// Read up to `limit` bytes of a file as lossy UTF-8. `None` on read failure.

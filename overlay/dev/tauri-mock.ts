@@ -496,6 +496,11 @@ export function installTauriMock(opts: { demo?: DemoProfile } = {}): void {
     sweep_artifacts: () => 0,
     read_all_live: () => liveSources,
     list_artifacts: () => artifactsNow(),
+    // The demo timeline has no half-written drafts — every artifact it replays is
+    // already sealed — so nothing is ever pending here. Present so the harness answers
+    // the call at all: an unmocked command rejects, and the poll that reads this runs
+    // beside list_artifacts on every tick.
+    list_pending_artifacts: () => [],
     // Event tail (Phase 3/4): the artifact.routed event for RACE_RESOLVED becomes
     // readable at the stamp time — the identity the Board must wait for. `from` is
     // treated as an index (the real command uses byte offsets; same contract shape).

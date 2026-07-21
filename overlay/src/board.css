@@ -1701,7 +1701,10 @@
 /* No artifact yet → nothing to resize or restore; keep the strip quiet. */
 .board-unit.blank-hero .sc-resize,
 .board-unit.blank-hero #unit-artifact-pill,
-.board-unit.blank-hero .hero-new-pill { display: none; }
+.board-unit.blank-hero .hero-new-pill,
+/* A blank hero says "writing your first one" in its own splash copy (BLANK_BUILDING),
+   so the pill would be a second voice saying the same thing over the crab. */
+.board-unit.blank-hero .hero-building-pill { display: none; }
 .unit-blank .blank-copy { max-width: 260px; }
 .unit-blank .blank-t {
   font-family: var(--serif);
@@ -1896,6 +1899,37 @@
 @media (prefers-reduced-motion: reduce) {
   .hero-new-pill { animation: none; }
   .hero-new-dot { animation: none; }
+}
+/* "Writing…" — the same pill idiom as .hero-new-pill, deliberately quieter. It is an
+   AMBIENT status, not an offer: muted border, no hover, no pointer, so it never reads as
+   something to click. Its pulsing dot is the whole signal. Sits at the same anchor, and
+   the two are mutually exclusive in board.ts — an artifact is either still being written
+   or newly arrived, never both. */
+.hero-building-pill {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 10px 26px -12px rgba(40, 30, 20, 0.45);
+  color: var(--ink-3);
+  cursor: default;
+  user-select: none;
+  font: 600 12px/1 var(--ui-font);
+  animation: hero-new-in 0.22s ease-out both;
+}
+.hero-building-pill[hidden] { display: none; }
+.board-unit[data-focus="terminal"] .hero-building-pill { display: none; }
+.hero-building-label { flex: 0 0 auto; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-building-pill { animation: none; }
 }
 
 /* ---- The artifact DECK ----------------------------------------------------

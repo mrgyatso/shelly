@@ -12,7 +12,7 @@
  * reload, never a silent no-op. If a future refactor reintroduces the bug (all roads
  * keyed on path-novelty/difference), case 1 fails.
  */
-import { rewritesOnScreen, effectsForRewrites } from "../src/ingest-logic.ts";
+import { rewritesOnScreen, effectsForRewrites, sessionIsWriting } from "../src/ingest-logic.ts";
 
 let failed = 0;
 function check(name: string, cond: boolean): void {
@@ -143,6 +143,41 @@ check(
 
 // (retainedIdentity checks removed with the function at the Phase 4 cutover — the
 // staleness guard that caused the identity flap is gone from history.rs.)
+
+// ---- sessionIsWriting: the "Writing…" pill's scoping -------------------------
+// The pill claims "the agent you are looking at is busy". Scoped like the hero, or it
+// claims a SIBLING's work as yours and points at output you will never be shown.
+const MINE = "proj--aaaaaaaa";
+const THEIRS = "proj--bbbbbbbb";
+const U = "proj";
+
+check(
+  "10. the active session's own in-flight artifact lights the pill",
+  sessionIsWriting([{ unit_key: U, source: MINE }], U, MINE),
+);
+check(
+  "11. a SIBLING session's in-flight artifact never lights it",
+  !sessionIsWriting([{ unit_key: U, source: THEIRS }], U, MINE),
+);
+check(
+  "12. another unit's in-flight artifact never lights it",
+  !sessionIsWriting([{ unit_key: "other", source: MINE }], U, MINE),
+);
+check(
+  "13. a not-yet-live session (null source) shows nothing, never a stranger's",
+  !sessionIsWriting([{ unit_key: U, source: THEIRS }], U, null),
+);
+// A home session's record slug (__home__) differs from its live stem, so an equality
+// check would silently drop its OWN work — the bug artifactMatchesSource exists for.
+check(
+  "14. a home session matches its own work by session_id shortid, not slug equality",
+  sessionIsWriting(
+    [{ unit_key: U, source: "__home__", session_id: "cccccccc-1111-2222-3333-444444444444" }],
+    U,
+    "gyatso--cccccccc",
+  ),
+);
+check("15. nothing pending → no pill", !sessionIsWriting([], U, MINE));
 
 console.log(failed === 0 ? "\nPASS — ingest gate holds" : `\n${failed} check(s) FAILED`);
 process.exit(failed === 0 ? 0 : 1);
