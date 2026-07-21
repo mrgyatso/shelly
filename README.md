@@ -1,6 +1,6 @@
 # Shelly
 
-**A shell for your coding agents. They work inside it, write each turn as a page you can actually read, and end every page by asking you what's next — you answer with a click.**
+**Coding agents got fast. Reading what they did didn't.**
 
 [![Latest release](https://img.shields.io/github/v/release/mrgyatso/shelly?include_prereleases&sort=semver)](https://github.com/mrgyatso/shelly/releases)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-black?logo=apple)](#requirements)
@@ -8,19 +8,79 @@
 [![Signing: unsigned preview](https://img.shields.io/badge/signing-unsigned%20preview-orange)](#first-launch)
 [![Downloads](https://img.shields.io/github/downloads/mrgyatso/shelly/total)](https://github.com/mrgyatso/shelly/releases)
 
-Your agent keeps doing more on its own. In a terminal, that arrives as a wall of scrollback you skim past — and you drift out of the loop.
+## What Shelly is
 
-Shelly gives that work a shell to live in. Your agents run inside it, and every turn one of them takes comes back as a page built to digest at a glance: the plan, the diff, the call it needs from you. And it doesn't only show you — it **asks**. Each page ends in the agent's open questions as one-click **✓ / ✎ / ✗** answers that go straight back to it. You move the work forward from the app, and for a lot of turns you never open a terminal at all.
+Coding agents got good enough that the bottleneck moved. It is no longer how fast
+the model works — it is how fast you can read what it did. A long agent turn
+arrives as a wall of terminal scrollback, and buried somewhere in that wall are
+the two decisions that actually needed you.
 
-Run one agent or ten — local, or on a box across the world. They all come home to the same shell, and each one tells you the moment it needs you, so you switch between them in seconds.
+Andrej Karpathy put the general problem well: text is a poor output channel for a
+system that can produce anything. Roughly a third of the human brain is a parallel
+processor dedicated to vision — it is the widest input path we have, and we are
+sending everything down a one-lane road instead. His practical suggestion was to
+ask the model to structure its response as HTML and open it in a browser.
 
-## Why "Shelly"
+That works remarkably well. It also doesn't survive contact with real use: you are
+still alt-tabbing to a browser, still hunting for the file, still typing your
+answer back into a terminal in a different window.
 
-A hermit crab doesn't grow its own shell. It finds one, moves in, and carries it everywhere it goes — and the shell doesn't much care which crab is inside.
+Shelly makes it the default working mode instead of a trick you remember to use.
 
-That's the whole idea. **Shelly is the shell. Your agent is what moves in.** Claude in this window, Codex in the next, whatever ships next year after that — same shell, same pages, same one-click answers. The shell is yours and it stays put; what lives in it is up to you.
+### The loop
 
-It's also a shell in the plainer sense. The terminals your agents actually run in are *inside* Shelly, not scattered across your desktop in windows you forgot you opened. One place the work lives, one place you look.
+Agent sessions — Claude Code or Codex — run inside Shelly in embedded terminals.
+Each turn, the agent writes a self-contained HTML page: a status card, a plan, a
+diff review, a set of generated assets, a comparison. Shelly detects the file and
+floats it in a panel over whatever you are doing, without stealing focus. You read
+the page instead of the scrollback.
+
+The second half is the reply, and it is the part that makes it a loop rather than
+a viewer. Pages carry their own controls: a ✓ / ✎ / ✗ ballot on proposed next
+steps, and a comment affordance on every block. Click a specific paragraph and
+answer that paragraph. Your response is compiled into prose and injected directly
+into that agent's live session. You never type into a terminal.
+
+Karpathy's post names an input problem alongside the output one — the need to
+point at things on the screen the way you would if a person were sitting next to
+you. Clicking the paragraph you are asking about is that gesture. Shelly
+implements both halves of the argument, not just the easy one.
+
+### Why it is a desktop app and not a web page
+
+Because the panels have to sit over your terminal without taking focus from it,
+and because the agents have to actually run somewhere.
+
+Shelly registers an Objective-C `NSPanel` subclass at runtime from Rust and swaps
+framework-owned windows into it, which is what allows a panel to be dragged,
+scrolled and clicked while your keystrokes keep going to the terminal underneath.
+It runs each agent CLI in an owned PTY, so it is orchestrating real processes
+rather than proxying an API. And it treats agent-authored HTML as untrusted —
+sandboxed opaque-origin iframes, a typed message protocol, and a hard gate that
+stops remotely-fetched pages from ever reaching a local shell.
+
+None of that is expressible in a browser tab.
+
+### What you get
+
+- **Artifact panels** — agent-authored HTML floated over your work, never stealing
+  focus, laid out automatically in the gutters beside your terminal
+- **Answer in place** — ballots and per-block comments compile into one reply and
+  land in the agent's live session
+- **Multiple agents at once** — concurrent sessions in embedded terminals, each
+  with a stable identity that survives resume, compaction and crashes
+- **The Board** — one surface for every session: artifact history, unread counts,
+  live status, and a read-only diff of the files a session has touched
+- **Session intelligence** — context-window fill, compaction tracking and account
+  rate limits, read from state the tooling already keeps on disk
+- **Remote sessions** — an optional self-hosted hub federates agents running on
+  other machines into the same Board
+
+### Status
+
+macOS (universal) via Homebrew cask or `.dmg`; Linux via `.deb` and AppImage.
+Unsigned and un-notarized — an honest preview, not a polished product. Built and
+used daily by one person; public launch pending.
 
 ## Demo
 
@@ -35,21 +95,13 @@ It's also a shell in the plainer sense. The terminals your agents actually run i
 
 > Demo video coming soon — see the [live demo](https://share.aletheia.dev/companion/) above in the meantime.
 
-## What you do here
+## Why "Shelly"
 
-- **Read, don't scroll.** Every turn is a page built to digest at a glance — the plan, the diff, the call to make — instead of scrollback you skim past.
-- **Answer in the UI.** The agent's open questions and decisions become **✓ do it / ✎ note / ✗ skip** you click; your answer lands straight back with the agent. For decision and question turns, you never touch the terminal.
-- **Keep your terminals in the shell.** Start sessions right in the app and type into them whenever you want. They survive restarts and resume where they left off.
-- **One home for every agent.** Sessions group by project — two agents in one repo read as a single card — and the home orders them by who needs a decision, so you always know where to look next.
-- **Reach agents anywhere.** Connect remote or offsite agents through the optional hub; they appear on the same surface and you answer them the same way.
-- **Peek the code.** See the files a session is touching, in a real editor, without leaving the app.
-- **Stays out of your way.** It never steals keyboard focus — when you *do* drop to a terminal, it's right beside you.
+A hermit crab doesn't grow its own shell. It finds one, moves in, and carries it everywhere it goes — and the shell doesn't much care which crab is inside.
 
-## Why the pages read so well
+That's the whole idea. **Shelly is the shell. Your agent is what moves in.** Claude in this window, Codex in the next, whatever ships next year after that — same shell, same pages, same one-click answers. The shell is yours and it stays put; what lives in it is up to you.
 
-This builds on Anthropic's ["The unreasonable effectiveness of HTML"](https://claude.com/blog/using-claude-code-the-unreasonable-effectiveness-of-html) by Thariq Shihipar ([@trq212](https://x.com/trq212)). The idea: an agent that reports its plans, reviews, and decisions as rich, interactive HTML — tables, diagrams, charts, live controls — instead of walls of Markdown keeps your review loop tight. *"You stay in the loop, but the loop gets much tighter."*
-
-Your agent writes each turn as one of those HTML pages. Shelly watches for it and renders it the instant it's written — no file to open, no window to switch to. That's why a turn you'd have skimmed past in scrollback becomes something you read, react to, and answer in place.
+It's also a shell in the plainer sense. The terminals your agents actually run in are *inside* Shelly, not scattered across your desktop in windows you forgot you opened. One place the work lives, one place you look.
 
 ## Requirements
 
@@ -334,7 +386,9 @@ The flags mirror the installer's: `--check` reports what would be removed and ch
 
 ## Credit and license
 
-The idea comes from Thariq Shihipar's ["The unreasonable effectiveness of HTML"](https://claude.com/blog/using-claude-code-the-unreasonable-effectiveness-of-html) ([@trq212](https://x.com/trq212)). This project is the surface that makes that workflow effortless.
+Two people arrived at this before I did. Andrej Karpathy named the general problem — text is a poor output channel, and the screen is the widest input path we have — and suggested asking the model for HTML. Thariq Shihipar ([@trq212](https://x.com/trq212)) worked out what it does to a coding agent specifically, in ["The unreasonable effectiveness of HTML"](https://claude.com/blog/using-claude-code-the-unreasonable-effectiveness-of-html): *"You stay in the loop, but the loop gets much tighter."*
+
+Shelly is the surface that makes that the default instead of a trick you remember to use.
 
 Licensed under the [MIT License](./LICENSE).
 </content>
