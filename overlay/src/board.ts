@@ -495,6 +495,11 @@ let compactState: CompactState = NO_COMPACT;
 /** The unit currently shown at L2 — so the in-session rename knows its target. */
 let currentUnitKey: string | null = null;
 let lastRailActiveUnit: string | null = null; // tracks which unit the rail was last rendered for
+/** Which unit's session drawer was actually PAINTED by the last rail render, or null.
+ *  Distinct from `expandedActiveProject` (the intent) — this is what the DOM ended up
+ *  showing, which is what the open/close animations have to diff against. Comparing
+ *  intent against itself would fire an animation on every poll. */
+let lastRailDrawerUnit: string | null = null;
 /** Which recent (closed) project is expanded in the rail, or null for all collapsed. */
 let expandedRecentProject: string | null = null;
 /** Which LIVE (active-section) project's session dropdown is expanded, or null for
@@ -1988,19 +1993,22 @@ function renderUnitRail(activeUnitKey: string | null): void {
   const order = roomFilter
     ? allOrder.filter((u) => unitKindWith(u) === roomFilter)
     : allOrder;
-  const prevActiveUnit = lastRailActiveUnit;
-  const unitChanged = activeUnitKey !== prevActiveUnit;
+  // (The old `unitChanged` / `prevActiveUnit` pair is gone: both animations now diff the
+  // painted DRAWER unit rather than the active PROJECT, which is what lets a same-unit
+  // toggle animate at all. `lastRailActiveUnit` is still tracked — other callers pass it
+  // back in to re-render the rail for whatever unit is current.)
   lastRailActiveUnit = activeUnitKey;
 
-  // On a project switch, grab the OUTGOING project's session group so it can animate
-  // closed after the rebuild (replaceChildren would otherwise drop it instantly).
-  const exitingGroup =
-    unitChanged && prevActiveUnit
-      ? (railSessionsEl.querySelector(".unit-subtab-group") as HTMLElement | null)
-      : null;
+  // Grab whatever session group is currently painted, BEFORE the rebuild — holding the
+  // reference keeps the node alive after replaceChildren detaches it, so it can be
+  // re-inserted to animate closed. Captured unconditionally: whether it's actually
+  // exiting isn't known until we've built the new nodes (see `exitingGroup` below).
+  const priorGroup = railSessionsEl.querySelector(".unit-subtab-group") as HTMLElement | null;
+  const priorDrawerUnit = lastRailDrawerUnit;
 
   const nodes: HTMLElement[] = [];
   let newGroup: HTMLElement | null = null;
+  let newDrawerUnit: string | null = null; // the unit whose drawer this render actually paints
 
   // FAIL-LOUD SURFACE. Artifacts that exhausted the identity grace window route to
   // the Unsourced bucket AND alarm here — a visible warning row pinned above the
@@ -2018,7 +2026,7 @@ function renderUnitRail(activeUnitKey: string | null): void {
     // Computed for EVERY live project (not just the active one) so the chevron is
     // accurate before you've entered it: any multi-session project is a dropdown.
     const siblings = recentSiblingsFor(projectGroupKeyOf(unit, sources));
-    const hasDrawer = sources.length + siblings.length > 1;
+    const hasDrawer = unitHasDrawer(unit, sources);
     nodes.push(buildRailTab(unit, sources, bandOf.get(unit) ?? "idle", isActive, hasDrawer, isExpanded));
     // Click a multi-session project to expand its session chooser inline (this does
     // NOT navigate — picking a session does); mirrors the Recent-project expander.
@@ -2069,6 +2077,7 @@ function renderUnitRail(activeUnitKey: string | null): void {
       group.appendChild(inner);
       nodes.push(group);
       newGroup = group;
+      newDrawerUnit = unit;
     }
   }
 
@@ -2105,16 +2114,27 @@ function renderUnitRail(activeUnitKey: string | null): void {
   }
 
   railSessionsEl.replaceChildren(...nodes);
+  lastRailDrawerUnit = newDrawerUnit;
 
-  // Animate the incoming group's drop-down — a CSS keyframe (no rAF, runs even when
-  // the Board isn't the key window). Only on a project switch, not on every poll.
-  if (unitChanged && newGroup) newGroup.classList.add("opening");
+  // BOTH animations diff PAINTED-vs-PAINTED, never intent-vs-intent: the rail re-renders
+  // on every poll, so keying off `expandedActiveProject` would replay the keyframe
+  // continuously while a drawer merely stayed open. A drawer animates only when the unit
+  // it belongs to actually changes — which now covers the same-unit toggle as well as a
+  // project switch, since the tab can open and close its own drawer in place.
+  const drawerChanged = newDrawerUnit !== priorDrawerUnit;
 
-  // Re-attach the outgoing group under its (still-present) project tab and play the
-  // close keyframe, then remove — old sessions slide up as the new ones slide down.
+  // Incoming: drop-down. A CSS keyframe (no rAF, so it runs even when the Board isn't the
+  // key window).
+  if (drawerChanged && newGroup) newGroup.classList.add("opening");
+
+  // Outgoing: re-attach the old group under its (still-present) project tab and play the
+  // close keyframe, then remove. Without this, replaceChildren drops it instantly and a
+  // toggle-closed drawer pops out while an opening one glides — the asymmetry that made
+  // closing feel broken once the tab became a toggle.
+  const exitingGroup = drawerChanged && priorDrawerUnit ? priorGroup : null;
   if (exitingGroup) {
     const oldTab = Array.from(railSessionsEl.querySelectorAll(".unit-tab")).find(
-      (t) => (t as HTMLElement).dataset.unit === prevActiveUnit,
+      (t) => (t as HTMLElement).dataset.unit === priorDrawerUnit,
     ) as HTMLElement | undefined;
     if (oldTab) {
       exitingGroup.style.pointerEvents = "none"; // inert while collapsing
@@ -2209,8 +2229,11 @@ function pickSession(unitKey: string, s: LiveSource): void {
   }
   const st = parseState(s.json);
   void showSessionInUnit(unitKey, st.shelly_session ?? null, st.session_id ?? null, st.provider).then(() => {
-    goUnit(unitKey); // enterUnit collapses the chooser on a fresh entry…
-    expandedActiveProject = unitKey; // …so re-open it after landing and repaint the rail
+    goUnit(unitKey); // enterUnit opens this unit's chooser on arrival (it has >1 session)
+    // Belt-and-braces: entry derives the drawer from the unit's session count, so if that
+    // count momentarily reads as 1 mid-swap the chooser you picked from would vanish under
+    // you. Pinning it here keeps the drawer you are actively using open regardless.
+    expandedActiveProject = unitKey;
     renderUnitRail(unitKey);
   });
 }
@@ -2230,6 +2253,21 @@ function baseProjectOf(unitKey: string): string {
  *  project basename — the robust, format-independent match against recentProjectKey —
  *  and fall back to baseProjectOf when the unit has no live source yet (the brief
  *  provisional window after a launch/resume, before its live file appears). */
+/** Does this project have a session drawer — i.e. more than one session to choose from?
+ *
+ *  A project's sessions are its LIVE ones plus its resumable (closed) siblings, folded
+ *  together so a sibling doesn't vanish the moment one session goes live.
+ *
+ *  ONE DERIVATION, TWO CALLERS, and that is the point: `renderUnitRail` uses it to decide
+ *  whether to DRAW a drawer, and `enterUnit` uses it to decide whether to OPEN one. If
+ *  those two ever disagreed, entry would mark a drawer open that the rail then refuses to
+ *  paint — an invisible open state that swallows the next click on the tab (it would read
+ *  as "already open" and toggle shut against a drawer the user never saw). */
+function unitHasDrawer(unitKey: string, sources?: LiveSource[]): boolean {
+  const srcs = sources ?? sourcesForUnit(unitKey);
+  return srcs.length + recentSiblingsFor(projectGroupKeyOf(unitKey, srcs)).length > 1;
+}
+
 function projectGroupKeyOf(unitKey: string, sources?: LiveSource[]): string {
   return sources && sources[0] ? sourceProjectKey(sources[0]) : baseProjectOf(unitKey);
 }
@@ -2425,6 +2463,7 @@ function buildRailTab(
 
   if (hasDrawer) {
     tab.classList.toggle("expanded", expanded);
+    tab.classList.add("has-drawer"); // the active tab is clickable only when it toggles something
     const chevron = document.createElement("span");
     chevron.className = "unit-tab-chevron";
     chevron.textContent = expanded ? "▾" : "▸";
@@ -2443,16 +2482,24 @@ function buildRailTab(
     });
     tab.append(chevron);
   }
-  // Active multi-session: clicking the tab body REVEALS the session chooser — it never
-  // hides it. Entering a terminal-less unit auto-pops the chooser (so it's obvious you
-  // pick one), so a toggle here slammed shut the drawer that the click was meant to open
-  // — the "clicking the project I'm on won't show its sessions" bug. Reveal-only is
-  // idempotent; the chevron above is the deliberate hide affordance. Active single-
-  // session: no-op (already there). Inactive: navigate into the freshest session.
+  // Active multi-session: the tab body TOGGLES its session chooser — the same expression
+  // the chevron uses, so the whole tab is one affordance instead of a reveal here and a
+  // hide three pixels away.
+  //
+  // This was deliberately reveal-only (#106), and the reason was real: entry auto-popped
+  // the chooser ASYNCHRONOUSLY, after the terminal resolved, so a toggle-closed drawer got
+  // flipped straight back open by that late write — "clicking the project I'm on won't
+  // show its sessions". That auto-open is gone; `enterUnit` now sets the state
+  // synchronously before any click can land, so nothing races the toggle and the early
+  // return that papered over it is no longer needed.
+  //
+  // Active single-session: no-op (already there, nothing to choose). Inactive: navigate,
+  // and `enterUnit` opens the drawer on arrival — one click to select AND see the sessions.
   if (active && hasDrawer) {
     tab.addEventListener("click", () => {
-      if (expandedActiveProject === unitKey) return; // already open — leave it (and its "show all") be
-      expandedActiveProject = unitKey;
+      // Read LIVE state, not the captured `expanded` — a poll can repaint between the
+      // tab being built and this firing (same reason the chevron does).
+      expandedActiveProject = expandedActiveProject === unitKey ? null : unitKey;
       sessionsAllShownFor = null; // a fresh open starts collapsed to the cap
       renderUnitRail(currentUnitKey);
     });
@@ -2679,7 +2726,17 @@ function showRecentProjectMenu(e: MouseEvent, sessions: RecentSession[]): void {
 function enterUnit(unitKey: string): void {
   pendingIngest.delete(unitKey);
   updateGlobalUnread();
-  expandedActiveProject = null; // a fresh entry collapses any chooser — click a tab to reveal (like Recent)
+  // ONE CLICK SELECTS THE PROJECT *AND* DROPS ITS SESSIONS. Entry used to blanket-collapse
+  // the chooser, so picking a multi-session project landed you in one of its sessions with
+  // no sign of the others — you had to find the chevron to discover them. Now arriving at a
+  // project shows what's inside it, and a single-session project (nothing to choose) stays
+  // closed rather than flashing an empty drawer.
+  //
+  // This also SUBSUMES the old post-terminal auto-open, which only fired for terminal-less
+  // units and fired ASYNCHRONOUSLY — that late write is exactly what made the active-tab
+  // click reveal-only (a toggle would be flipped back by the auto-open landing after it).
+  // Setting the state synchronously here, on every entry, is what lets the tab toggle.
+  expandedActiveProject = unitHasDrawer(unitKey) ? unitKey : null;
   focusPath = null;
   currentUnitKey = unitKey;
   // Always land on the Sessions face / Session view / split surfaces on entry.
@@ -2701,19 +2758,13 @@ function enterUnit(unitKey: string): void {
   // Board-launched session whose terminal is gone (e.g. after a Board restart) is
   // RESUMED (same id ⇒ same unit ⇒ reusable); an external session has no terminal
   // the Board can attach to, so it shows its hero + history only (with an empty-state
-  // CTA in the panel). When a unit ends up with no terminal AND has more than one
-  // session to choose from, pop its session chooser so it's obvious you pick one.
-  void ensureAndShowTerminal(unitKey).then(() => {
-    if (
-      currentUnitKey === unitKey &&
-      !ownedTabForUnit(unitKey) &&
-      sourcesForUnit(unitKey).length > 1 &&
-      expandedActiveProject !== unitKey
-    ) {
-      expandedActiveProject = unitKey;
-      renderUnitRail(unitKey);
-    }
-  });
+  // CTA in the panel).
+  //
+  // (The session-chooser auto-open that used to hang off this promise is gone: entry now
+  // opens the drawer synchronously above, for every multi-session unit rather than only
+  // terminal-less ones. Keeping it would have re-opened a drawer the user closed in the
+  // gap while the terminal resolved — the late write that made the tab click reveal-only.)
+  void ensureAndShowTerminal(unitKey);
 }
 
 /** Reveal the unit's terminal. Resume a Board-launched session if its terminal is

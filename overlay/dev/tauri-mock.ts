@@ -322,6 +322,27 @@ const LIVE_SOURCES = [
       updated_ms: now - 9 * MIN,
     }),
   },
+  {
+    // A SECOND live lantern session, so one project in the harness has a session DRAWER
+    // (>1 session) and no Board-owned terminal. Without this every harness project is
+    // single-session, and the rail's whole chooser — open-on-entry, tab toggle,
+    // click-away dismiss — has no fixture to exercise it.
+    //
+    // Harness-only: the public demo build reads DEMO_LIVE_SOURCES in demo-profile.ts,
+    // not this array, so adding a session here can't change what the demo shows.
+    source: "lantern--9d47a2e7",
+    json: JSON.stringify({
+      working: "Second lantern session, external terminal",
+      where: ["Running outside the Board"],
+      next: [{ title: "Confirm the ingest backfill", sub: "external session", kind: "todo" }],
+      project: "lantern",
+      is_repo: true,
+      unit_key: "lantern",
+      session_id: "9d47a2e7-0000-4000-8000-000000000002",
+      unit_dir: "/Users/dev/lantern",
+      updated_ms: now - 4 * MIN,
+    }),
+  },
 ];
 
 // Fixtures are shared with the PUBLIC demo build — keep every name, path and id
