@@ -9,7 +9,11 @@ import { PASTE_KEY } from "./platform";
 const TOAST_VISIBLE_MS = 1500;
 let toastTimer = 0;
 
-export async function handleSubmit(text: string, artifactPath?: string): Promise<void> {
+/** Write compiled artifact feedback to the clipboard. Returns whether it landed —
+ *  the caller acks that outcome back to the artifact, which only claims "Sent ✓"
+ *  on a true. Swallowing the failure here (as this used to) is what let an
+ *  artifact report success for a submit that never arrived. */
+export async function handleSubmit(text: string, artifactPath?: string): Promise<boolean> {
   try {
     // Append the artifact's own file path so pasted feedback is self-identifying
     // — the agent can Read that file for full context even for an old artifact
@@ -20,9 +24,12 @@ export async function handleSubmit(text: string, artifactPath?: string): Promise
     const payload = path ? `${text}\n\n— Shelly artifact: ${path} —` : text;
     await writeText(payload);
     showCopiedToast();
+    return true;
   } catch (e) {
-    // Clipboard plugin failure shouldn't crash the overlay; log and move on.
+    // Clipboard plugin failure shouldn't crash the overlay; log and report it so
+    // the artifact can show a real failure instead of a false "Sent ✓".
     console.error("clipboard write failed", e);
+    return false;
   }
 }
 
