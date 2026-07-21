@@ -30,7 +30,12 @@ import { handleSubmit, copyToClipboard } from "./submit";
 import { initChatBar, syncChatBar, MODEL_CHOICES, type ChatBarContext } from "./chatbar";
 import { IS_LINUX } from "./platform";
 import { loadArtifactInto } from "./artifact-view";
-import { heroArtifactFor, artifactMatchesSource, effectsForRewrites } from "./ingest-logic";
+import {
+  heroArtifactFor,
+  artifactMatchesSource,
+  effectsForRewrites,
+  sessionIsWriting,
+} from "./ingest-logic";
 import { buildDeck, deckPosition, flipTarget, type FlipDir } from "./deck-logic";
 import {
   HOME_UNIT,
@@ -381,6 +386,20 @@ const unreadByUnit = new Map<string, Set<string>>();
 /** Signature of the last-seen artifact set (path:mtime) — a cheap poll no-op guard. */
 let lastArtifactSig = "";
 
+/** An artifact the backend is WITHHOLDING because its turn hasn't sealed yet — the
+ *  session is still writing it. Deliberately contentless (see `PendingArtifact` in
+ *  history.rs): there is nothing to render, only the fact that work is happening. */
+interface PendingArtifact {
+  unit_key: string;
+  source: string | null;
+  session_id: string | null;
+  modified_ms: number;
+}
+/** The currently-withheld artifacts, refreshed each poll. Drives the "Writing…" pill and
+ *  the blank hero's copy — never the hero, the deck, or history, which only ever show
+ *  sealed artifacts. Empty whenever the plugin isn't sealing at all. */
+let pendingArtifacts: PendingArtifact[] = [];
+
 // ---- Phase 3: event-log tail ------------------------------------------------
 // The Board tails ~/.shelly/events.ndjson incrementally (poll_events, by byte
 // offset) so it learns an artifact's authoritative routing from the `artifact.routed`
@@ -461,6 +480,8 @@ let digestPath: string | null = null; // tracks what's currently loaded in diges
 /** Newest unseen artifact for the on-screen unit while its hero stays sticky. */
 let heroPendingPath: string | null = null;
 let heroNewEl: HTMLButtonElement | null = null;
+/** The ambient "Writing…" status pill (a div — nothing to click). */
+let heroBuildingEl: HTMLElement | null = null;
 /** The deck's prev/next/position chrome. The deck itself is DERIVED (deckForUnit) from
  *  allArtifacts + the active session — there is deliberately no retained deck array and
  *  no current-index: `digestPath` alone says which card is read. State that duplicated
@@ -578,6 +599,7 @@ export async function initBoard(): Promise<void> {
   historyEl = history;
   initShellRepaint(stageEl);
   heroNewEl = document.getElementById("unit-hero-new") as HTMLButtonElement | null;
+  heroBuildingEl = document.getElementById("unit-hero-building");
   deckNavEl = document.getElementById("unit-deck-nav");
   // Mirror the focusFrame "restore-submitted" logic: when the hero digest
   // reloads after a unit re-entry, re-show the submitted overlay if the user
@@ -2826,6 +2848,9 @@ function leaveUnit(): void {
   currentUnitKey = null;
   closeFocus();
   hideHeroNewPill();
+  // Explicit, not left to hideHeroNewPill's re-sync: the view stack may not have popped
+  // yet here, so currentView() can still name the unit we are leaving and re-show it.
+  heroBuildingEl?.setAttribute("hidden", "");
   dismissBoardSubmitted(); // never leave the "On it" splash mounted across nav
   if (unitEl) {
     unitEl.dataset.rail = "sessions";
@@ -2910,7 +2935,14 @@ async function renderHero(unitKey: string): Promise<void> {
     // first artifact would mis-route to the "new artifact" pill instead of auto-lighting,
     // and maybeLightBlankHero (which guards on digestPath === null) would never fire.
     // A connected agent has no terminal below, so its blank copy can't promise one.
-    showBlankHero(isCloudUnit(unitKey) ? BLANK_AGENT : BLANK_FIRST, blankWorkingLine(src));
+    // A local session mid-authoring gets the more specific promise; a connected agent
+    // keeps its own copy (no terminal to promise) and an idle one the generic splash.
+    const blankCopy = isCloudUnit(unitKey)
+      ? BLANK_AGENT
+      : activeSessionIsWriting(unitKey)
+        ? BLANK_BUILDING
+        : BLANK_FIRST;
+    showBlankHero(blankCopy, blankWorkingLine(src));
     renderDeckNav(unitKey); // no card loaded ⇒ no position ⇒ the nav hides itself
   }
 }
@@ -2930,6 +2962,36 @@ function maybeLightBlankHero(unitKey: string): void {
   if (allArtifacts.some((a) => artifactMatchesSource(a, src) && unitForArtifact(a) === unitKey)) {
     void renderHero(unitKey);
   }
+}
+
+/** Is the session that OWNS the unit on screen currently writing an artifact?
+ *
+ *  Scoped exactly like the hero (`heroArtifactFor`) — same unit AND the active session's
+ *  own work, via `artifactMatchesSource` rather than `===`, since a home session's record
+ *  slug differs from its live stem. A sibling session sharing this unit must never light
+ *  the pill: it would claim "your agent is writing" about work the user can't see and
+ *  didn't ask for, which is the 2026-07-09 disappearance bug wearing a different hat.
+ *
+ *  Fail-closed by construction: `activeSessionSource` returns null for a not-yet-live
+ *  session, and `artifactMatchesSource(_, null)` is false — so an unknown owner shows no
+ *  pill rather than a stranger's. */
+function activeSessionIsWriting(unitKey: string): boolean {
+  return sessionIsWriting(pendingArtifacts, unitKey, activeSessionSource(unitKey));
+}
+
+/** Show/hide the ambient "Writing…" pill for whatever is on screen.
+ *
+ *  Suppressed while the "New artifact" pill is up: that one is an OFFER the user can act
+ *  on, and stacking a status pill on the same anchor would both overlap it and bury the
+ *  actionable thing under the ambient one. The blank hero suppresses it too (in CSS) —
+ *  its splash copy already says the same thing in its own voice. */
+function syncBuildingPill(): void {
+  if (!heroBuildingEl) return;
+  const v = currentView();
+  const show =
+    v.level === "unit" && heroPendingPath === null && activeSessionIsWriting(v.unitKey);
+  if (show) heroBuildingEl.removeAttribute("hidden");
+  else heroBuildingEl.setAttribute("hidden", "");
 }
 
 // ---- The artifact DECK ------------------------------------------------------
@@ -3029,11 +3091,16 @@ function showHeroNewPill(path: string, label = "New artifact"): void {
   const labelEl = heroNewEl?.querySelector(".hero-new-label");
   if (labelEl) labelEl.textContent = label;
   heroNewEl?.removeAttribute("hidden");
+  // The offer supersedes the ambient status on the same anchor — drop it immediately
+  // rather than waiting for the next poll tick to notice.
+  syncBuildingPill();
 }
 
 function hideHeroNewPill(): void {
   heroPendingPath = null;
   heroNewEl?.setAttribute("hidden", "");
+  // The anchor is free again — if the session is still writing, say so.
+  syncBuildingPill();
 }
 
 /** User-initiated hero advance: load the pending artifact into the hero. This is
@@ -3916,6 +3983,14 @@ const BLANK_FIRST = {
   title: "Crab's on it.",
   sub: "Your first artifact will land right here — the terminal's below while it works.",
 };
+/** The session is writing its FIRST artifact right now. Artifacts are withheld until
+ *  their turn seals, so without this the splash promises an artifact "will land here"
+ *  with no hint that one is actively being written — indistinguishable from an idle
+ *  agent. Same slot, same crab; only the promise gets more specific. */
+const BLANK_BUILDING = {
+  title: "Writing it now.",
+  sub: "Your first artifact lands here the moment it's finished — the terminal's below meanwhile.",
+};
 /** A connected agent that's registered but hasn't published an artifact yet — no
  *  terminal below to promise, so the copy just says it's connected and waiting. */
 const BLANK_AGENT = {
@@ -4618,6 +4693,16 @@ async function pollLive(): Promise<void> {
     console.error("list_artifacts failed", e);
     return;
   }
+  // The withheld set, alongside the real one. Its OWN try/catch that does NOT return:
+  // this is an ambient nicety, and letting it abort the poll would trade a missing
+  // "Writing…" pill for a Board that stops ingesting artifacts entirely. On failure we
+  // keep the previous list rather than blanking — a stale pill beats a flickering one.
+  try {
+    pendingArtifacts = await invoke<PendingArtifact[]>("list_pending_artifacts");
+  } catch (e) {
+    console.error("list_pending_artifacts failed", e);
+  }
+  syncBuildingPill();
   // PHASE 3: tail the event log BEFORE fingerprinting, so a freshly-appended
   // `artifact.routed` is folded into routedByPath and the sig below already reflects it —
   // the arriving event then re-triggers ingest and routes the artifact by event identity.

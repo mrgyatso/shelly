@@ -227,7 +227,28 @@ struct IndexEntry {
     /// Full writing-session id; `Some` ⇒ resolve `unit_key` authoritatively via the
     /// registry, `None` ⇒ trust the stamped `unit_key` (legacy entry).
     session_id: Option<String>,
+    /// When the writing session's Stop hook SEALED this artifact — "the agent stopped
+    /// writing; you may show it". `None` ⇒ still being authored, so the listing withholds
+    /// it (see `is_settled`). Absent on entries from a pre-seal plugin, which
+    /// `is_settled`'s backstop covers.
+    sealed_ms: Option<u64>,
+    /// When the entry was last stamped (every write re-stamps it). Feeds the backstop
+    /// that releases an artifact whose session died before it could seal.
+    ts: Option<u64>,
 }
+
+/// How long an UNSEALED artifact is withheld before the listing shows it anyway.
+///
+/// The seal is the real signal; this is the backstop for the session that never reaches
+/// another Stop at all — killed, crashed, or a provider whose harness has no Stop hook.
+/// Without it those artifacts would be withheld forever, which is a far worse failure
+/// than the mid-build churn the seal prevents.
+///
+/// Long on purpose. A turn that runs 20 minutes is unremarkable, and every minute below
+/// this is a minute of real turns leaking their half-built artifacts back onto the Board.
+/// Interrupted turns don't need it (the session's NEXT Stop sweeps them up — see
+/// `sealArtifacts`), so this only has to catch the session that never comes back.
+const SETTLE_BACKSTOP_MS: u64 = 15 * 60 * 1000;
 
 /// The hook-written routing index: `abs-path → IndexEntry`. Lives next to the live dir at
 /// `~/.shelly/artifact-index.json`, shape
@@ -259,18 +280,152 @@ fn load_artifact_index() -> std::collections::HashMap<String, IndexEntry> {
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string());
+                let sealed_ms = entry.get("sealed_ms").and_then(|v| v.as_u64());
+                let ts = entry.get("ts").and_then(|v| v.as_u64());
                 map.insert(
                     name.clone(),
                     IndexEntry {
                         unit_key: unit.to_string(),
                         source,
                         session_id,
+                        sealed_ms,
+                        ts,
                     },
                 );
             }
         }
     }
     map
+}
+
+/// Is the installed plugin sealing at all? True once ANY index entry carries `sealed_ms`.
+///
+/// VERSION SKEW IS THE FAILURE THIS PREVENTS, and it is not hypothetical: the app ships as a
+/// cask and the plugin ships through `claude plugin update`, so a user WILL run a new overlay
+/// against an old plugin. That plugin never stamps a seal, so without this probe every indexed
+/// artifact would be withheld for the full backstop — a 15-minute blackout that reads as "the
+/// Board is broken", which is far worse than the churn the seal removes.
+///
+/// So the reader treats sealing as a capability it must OBSERVE rather than assume. One seal
+/// anywhere in the index proves the writing side speaks the protocol; until then nothing is
+/// withheld. Self-healing and one-directional — the first seal a new plugin writes turns the
+/// feature on for good, and the cost is that the very first artifact under a brand-new index
+/// surfaces early, once.
+fn index_seals(index: &std::collections::HashMap<String, IndexEntry>) -> bool {
+    index.values().any(|e| e.sealed_ms.is_some())
+}
+
+/// May the Board show this artifact yet?
+///
+/// THE RULE: an artifact is a sealed deliverable, not a live buffer. An agent authoring
+/// one writes it repeatedly — a Write, some edits, a rewrite — and every one of those
+/// re-stamps the index this listing polls. Showing revision 1 meant the user watched a
+/// document assemble itself and got an "Updated" nag for each keystroke after it; the
+/// in-flight surface is the live pane, so the artifact waits for its seal.
+///
+/// `entry: None` MEANS SHOW IT, and that is deliberate rather than an oversight. An
+/// artifact with no index entry was never claimed by the seal protocol at all — the
+/// living `home.<unit>.html` digests (which the hook pointedly never indexes so they can
+/// update in place forever), hub-pulled `remote/` artifacts, and anything written where
+/// the PostToolUse hook never ran. Withholding those would hide whole classes of artifact
+/// permanently to fix a churn problem they never had. Un-indexed keeps its existing
+/// behaviour, including surfacing fail-loud as unrouted.
+///
+/// Withholding therefore requires a POSITIVE "indexed, unsealed, and recent". Every
+/// uncertainty — no entry, no `ts` to age against, a clock that jumped backwards — resolves
+/// to visible, because a withheld artifact is invisible and an artifact the user cannot see
+/// is worse than one they see too early.
+fn is_settled(entry: Option<&IndexEntry>, now: u64, seal_aware: bool) -> bool {
+    if !seal_aware {
+        return true; // the writing side isn't sealing — withholding would strand everything
+    }
+    let Some(entry) = entry else { return true };
+    if entry.sealed_ms.is_some() {
+        return true;
+    }
+    // Unsealed. Hold it only while the write is recent enough to still be in flight.
+    // No `ts` (a malformed or pre-seal entry) → nothing to age against → show it.
+    let Some(ts) = entry.ts else { return true };
+    // A future `ts` is a skewed or jumped clock, not a fresh write. Saturating here would
+    // read as "age 0" and withhold it until the clock caught up — silently invisible for
+    // as long as the skew lasts. Uncertainty resolves to VISIBLE, so treat it as settled.
+    if ts > now {
+        return true;
+    }
+    now - ts >= SETTLE_BACKSTOP_MS
+}
+
+/// A withheld artifact — one `is_settled` is currently holding back — reported to the Board
+/// so it can show "this session is writing something" instead of nothing at all.
+///
+/// Deliberately NOT an `ArtifactEntry`. A pending artifact is a *signal*, not a document: it
+/// has no title, no summary, and nothing to render, because the file on disk is a half-written
+/// draft we have promised not to show. Giving it the same type would let it flow into the hero
+/// selector, the deck and the history list — every road the seal exists to keep it off — and
+/// one missed filter would put the draft back on screen. A separate, deliberately anaemic type
+/// makes that mistake unavailable.
+#[derive(serde::Serialize)]
+pub struct PendingArtifact {
+    /// Whose unit it belongs to — the Board shows the placeholder only in this unit.
+    pub unit_key: String,
+    /// The writing session's source stem, so the Board can scope the placeholder to the
+    /// session actually on screen and never paint one for a sibling's work.
+    pub source: Option<String>,
+    pub session_id: Option<String>,
+    /// When the draft was last written — drives "writing…" vs a staler "still writing".
+    pub modified_ms: u64,
+}
+
+/// The artifacts currently being authored: indexed, unsealed, and still inside the backstop.
+///
+/// The exact complement of the `retain` in [`list_artifacts`], sharing [`is_settled`] so the
+/// two can never disagree about what is withheld — a placeholder for an artifact the Board is
+/// simultaneously showing would be worse than no placeholder at all.
+///
+/// Resolves the unit the same way `list_artifacts` does (registry first, stamped key as
+/// fallback) so a placeholder lands in the same unit its artifact will surface in. Empty
+/// whenever the plugin isn't sealing — nothing is withheld then, so nothing is pending.
+#[tauri::command]
+pub fn list_pending_artifacts() -> Vec<PendingArtifact> {
+    let index = load_artifact_index();
+    if index.is_empty() || !index_seals(&index) {
+        return Vec::new();
+    }
+    let now = now_ms();
+    let mut out: Vec<PendingArtifact> = artifact_dirs()
+        .iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            // Reuse the listing's own file filter, so scaffolding and the living home
+            // digests are excluded here exactly as they are there.
+            let entry = entry_from_path(&path)?;
+            let key = entry.path.clone();
+            let by_name = Path::new(&key)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .and_then(|n| index.get(n));
+            let idx = index.get(&key).or(by_name)?;
+            if is_settled(Some(idx), now, true) {
+                return None; // already shown (or released) — not pending
+            }
+            let unit_key = idx
+                .session_id
+                .as_deref()
+                .and_then(crate::registry::resolve_unit)
+                .unwrap_or_else(|| idx.unit_key.clone());
+            Some(PendingArtifact {
+                unit_key,
+                source: idx.source.clone(),
+                session_id: idx.session_id.clone(),
+                modified_ms: entry.modified_ms,
+            })
+        })
+        .collect();
+    out.sort_by_key(|p| std::cmp::Reverse(p.modified_ms));
+    out
 }
 
 /// Read up to `limit` bytes of a file as lossy UTF-8. `None` on read failure.
@@ -300,6 +455,19 @@ pub fn list_artifacts() -> Vec<ArtifactEntry> {
     // a basename match for entries written by an older (basename-keyed) hook.
     let index = load_artifact_index();
     if !index.is_empty() {
+        // Withhold the artifacts still being authored (see `is_settled`). Done BEFORE
+        // routing so an unsealed artifact never reaches the Board at all — not by any
+        // road, hero or history — rather than being surfaced and then filtered per-view.
+        let now = now_ms();
+        let seal_aware = index_seals(&index);
+        entries.retain(|e| {
+            let by_path = index.get(&e.path);
+            let by_name = Path::new(&e.path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .and_then(|n| index.get(n));
+            is_settled(by_path.or(by_name), now, seal_aware)
+        });
         for e in &mut entries {
             let by_path = index.get(&e.path);
             let by_name = Path::new(&e.path)
@@ -448,5 +616,87 @@ pub fn reopen_artifact(app: AppHandle, path: String) {
     crate::windows::open_artifact_window(&app, path);
     if let Some(hud) = app.get_webview_window(crate::windows::HISTORY_LABEL) {
         let _ = hud.hide();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(sealed_ms: Option<u64>, ts: Option<u64>) -> IndexEntry {
+        IndexEntry {
+            unit_key: "u".into(),
+            source: None,
+            session_id: None,
+            sealed_ms,
+            ts,
+        }
+    }
+
+    const NOW: u64 = 1_000_000_000;
+
+    // THE FIX. An artifact stamped seconds ago and not yet sealed is mid-authoring:
+    // the agent still holds the terminal, so the Board must not paint revision 1 and
+    // then nag "Updated" for every write after it.
+    #[test]
+    fn withholds_an_unsealed_recent_artifact() {
+        let e = entry(None, Some(NOW - 5_000));
+        assert!(!is_settled(Some(&e), NOW, true));
+    }
+
+    // The Stop hook sealed it — the agent has handed the terminal back.
+    #[test]
+    fn shows_a_sealed_artifact() {
+        let e = entry(Some(NOW - 1_000), Some(NOW - 5_000));
+        assert!(is_settled(Some(&e), NOW, true));
+    }
+
+    // The backstop: a session that died before it could seal must not strand its
+    // artifact invisible forever.
+    #[test]
+    fn shows_an_unsealed_artifact_past_the_backstop() {
+        let e = entry(None, Some(NOW - SETTLE_BACKSTOP_MS - 1));
+        assert!(is_settled(Some(&e), NOW, true));
+    }
+
+    // Un-indexed is NOT unsealed. The living home.<unit>.html digests are never
+    // indexed by design, and remote/ artifacts never ran the local hook — withholding
+    // them would hide them permanently rather than briefly.
+    #[test]
+    fn shows_an_unindexed_artifact() {
+        assert!(is_settled(None, NOW, true));
+    }
+
+    // Entries written by a pre-seal plugin carry neither field. They must keep their
+    // old behaviour (visible), not vanish on upgrade.
+    #[test]
+    fn shows_a_legacy_entry_with_no_timestamps() {
+        let e = entry(None, None);
+        assert!(is_settled(Some(&e), NOW, true));
+    }
+
+    // A backwards clock must not withhold forever — saturating_sub keeps it visible.
+    #[test]
+    fn shows_an_artifact_stamped_in_the_future() {
+        let e = entry(None, Some(NOW + 60_000));
+        assert!(is_settled(Some(&e), NOW, true));
+    }
+
+    // VERSION SKEW. A new overlay against an old plugin: nothing ever stamps a seal, so
+    // withholding would black out the Board for the whole backstop window. The probe must
+    // keep everything visible until it observes the writing side sealing at all.
+    #[test]
+    fn shows_everything_when_the_plugin_does_not_seal() {
+        let e = entry(None, Some(NOW - 5_000));
+        assert!(is_settled(Some(&e), NOW, false));
+    }
+
+    #[test]
+    fn detects_seal_support_from_a_single_sealed_entry() {
+        let mut idx = std::collections::HashMap::new();
+        idx.insert("/a".to_string(), entry(None, Some(NOW)));
+        assert!(!index_seals(&idx), "no sealed entry → the plugin is not sealing");
+        idx.insert("/b".to_string(), entry(Some(NOW), Some(NOW)));
+        assert!(index_seals(&idx), "one sealed entry proves the protocol is live");
     }
 }

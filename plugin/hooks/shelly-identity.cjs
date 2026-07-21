@@ -70,6 +70,82 @@ function recordPath(session_id, opts) {
   return path.join(sessionsDir(opts), safeId(session_id) + ".json");
 }
 
+// ---- artifact-index.json write lock -----------------------------------------
+//
+// EVERY WRITER OF THE INDEX READ-MODIFY-WRITES THE WHOLE FILE, so two hooks racing lose
+// each other's updates. The temp+rename below is atomic for READERS (nobody sees a torn
+// file) but does nothing for writers: A reads, B reads, A writes, B writes — and A's
+// entry is gone. That is not theoretical here. Two sessions in one repo is the normal
+// case, and the collision is exactly `sealArtifacts` (fires at Stop, rewrites many
+// entries) landing on top of a sibling's `routeArtifact` (fires on every artifact write).
+// The lost entry means an artifact with no identity, which the Board surfaces as UNROUTED.
+//
+// So both writers serialize on one lock. `mkdir` is the primitive: atomic on POSIX, fails
+// with EEXIST if held, and needs no dependency.
+//
+// The read MUST happen inside the critical section — that is the whole point. A lock held
+// only around the write serializes nothing, because the stale copy was already in hand.
+
+/** How long a lock may be held before we assume its owner died and steal it. Hooks touch
+ *  this file for single-digit milliseconds, so seconds of age means a crash — and a
+ *  crashed hook must never wedge artifact indexing permanently. */
+const LOCK_STALE_MS = 5000;
+/** How long to wait for the lock before giving up and proceeding UNLOCKED. */
+const LOCK_WAIT_MS = 2000;
+const LOCK_POLL_MS = 15;
+
+/** Block this process without a dependency (these hooks are short-lived CLI processes,
+ *  so a synchronous wait is honest — there is no event loop to starve). */
+function sleepSync(ms) {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch (_) {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {} // eslint-disable-line no-empty
+  }
+}
+
+/**
+ * Run `fn` holding the index write lock. Returns whatever `fn` returns.
+ *
+ * FAILS OPEN, DELIBERATELY: if the lock can't be taken within `LOCK_WAIT_MS` we run `fn`
+ * anyway, unlocked. Skipping the write instead would strand an artifact with no index
+ * entry — the unrouted state — and a rare lost update is strictly better than a
+ * guaranteed lost one. Contention here is microseconds of real work, so the timeout
+ * should never be reached in practice; it exists so a pathological case degrades to
+ * today's behaviour rather than to silence.
+ */
+function withIndexLock(indexPath, fn) {
+  const lockPath = indexPath + ".lock";
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  let held = false;
+  while (Date.now() < deadline) {
+    try {
+      fs.mkdirSync(lockPath);
+      held = true;
+      break;
+    } catch (e) {
+      if (!e || e.code !== "EEXIST") break; // unusable lock path → proceed unlocked
+      try {
+        if (Date.now() - fs.statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
+          fs.rmdirSync(lockPath); // owner died mid-write; reclaim and retry immediately
+          continue;
+        }
+      } catch (_) {} // the holder released between our EEXIST and the stat — just retry
+      sleepSync(LOCK_POLL_MS);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    if (held) {
+      try {
+        fs.rmdirSync(lockPath);
+      } catch (_) {}
+    }
+  }
+}
+
 /** Read a session's record, or null if absent/unreadable. Pure lookup — no derive. */
 function readRecord(session_id, opts) {
   const sid = safeId(session_id);
@@ -225,25 +301,100 @@ function routeArtifact(args, opts) {
     prompt_id: args.prompt_id || null,
   };
   const indexPath = args.indexPath || path.join(shellyDir(opts), "artifact-index.json");
-  try {
-    let index = {};
+  // Read + write INSIDE the lock (see withIndexLock): a concurrent sealArtifacts holding
+  // an older copy would otherwise drop this entry on its own write, leaving the artifact
+  // unrouted.
+  const wrote = withIndexLock(indexPath, () => {
     try {
-      index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {};
-    } catch (_) {}
-    index[key] = entry;
-    // Atomic write (temp + rename) so a concurrent reader never sees a partial file.
-    const tmp = indexPath + "." + process.pid + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(index));
-    fs.renameSync(tmp, indexPath);
-  } catch (_) {
-    return null;
-  }
+      let index = {};
+      try {
+        index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {};
+      } catch (_) {}
+      index[key] = entry;
+      // Atomic write (temp + rename) so a concurrent reader never sees a partial file.
+      const tmp = indexPath + "." + process.pid + ".tmp";
+      fs.writeFileSync(tmp, JSON.stringify(index));
+      fs.renameSync(tmp, indexPath);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  });
+  if (!wrote) return null;
   appendEvent({ evt: "artifact.routed", path: key, session_id: sid, unit_key }, opts);
   trace.emit("registry", "route", { corr: key, session_id: sid || "", unit_key });
   return entry;
 }
 
-module.exports = { register, resolveUnit, readRecord, appendEvent, routeArtifact, recordPath, sessionsDir, eventsPath };
+/**
+ * SEAL this session's artifacts — "the agent has stopped writing; you may show them now."
+ *
+ * WHY: `routeArtifact` stamps the index on EVERY write, and an agent authoring one
+ * artifact writes it many times in a turn (a Write, then edits, then a rewrite). The
+ * Board polls that index, so it used to surface revision 1 the instant it landed and
+ * then nag an "Updated" affordance on every keystroke after it — the user watching a
+ * document assemble itself and being asked to re-read it each time. An artifact is a
+ * SEALED deliverable, not a live buffer; the in-flight surface is the live pane.
+ *
+ * So the Board withholds an artifact until it carries `sealed_ms`, and this is what
+ * stamps it: called from the Stop hook, i.e. exactly when the agent hands the terminal
+ * back. That is the SAME turn boundary shelly-turn.cjs serves to the gate and the fork
+ * hook — a third caller of one fact, never a fourth derivation of it.
+ *
+ * SEALS THE WHOLE SESSION, NOT JUST THIS TURN. An interrupted turn (the user hits ESC)
+ * never reaches Stop, so its artifact would otherwise stay unsealed — invisible — forever.
+ * Sweeping every unsealed entry this session owns means the next Stop adopts that orphan.
+ * The Rust reader carries a time backstop for the session that never Stops again at all.
+ *
+ * Idempotent: an already-sealed entry keeps its original `sealed_ms`, so re-running at
+ * every Stop can't keep bumping the seal time. Returns the number of entries newly
+ * sealed; 0 on any failure — a seal that doesn't land costs visibility for the backstop
+ * window, never correctness.
+ */
+function sealArtifacts(session_id, opts) {
+  const sid = safeId(session_id);
+  if (!sid) return 0;
+  const indexPath =
+    (opts && opts.indexPath) || path.join(shellyDir(opts), "artifact-index.json");
+  // THE WHOLE READ-MODIFY-WRITE IS THE CRITICAL SECTION. This function rewrites EVERY
+  // entry it owns, so it is the writer most likely to clobber a sibling's freshly-routed
+  // artifact — and re-reading here, under the lock, is what makes that impossible.
+  const sealed = withIndexLock(indexPath, () => {
+    let index;
+    try {
+      index = JSON.parse(fs.readFileSync(indexPath, "utf8")) || {};
+    } catch (_) {
+      return 0; // no index yet, or unreadable — nothing to seal
+    }
+    const now = Date.now();
+    const short = sid.slice(0, 8);
+    let n = 0;
+    for (const [key, entry] of Object.entries(index)) {
+      if (!entry || typeof entry !== "object") continue;
+      if (entry.sealed_ms) continue; // already sealed — keep the original stamp
+      // Match the gate's ownership test: session_id when present, else the shortid an
+      // older entry was stamped with.
+      if (entry.session_id !== sid && entry.shortid !== short) continue;
+      index[key] = { ...entry, sealed_ms: now };
+      n++;
+    }
+    if (!n) return 0;
+    try {
+      // Atomic (temp + rename), matching routeArtifact — the Board polls this file.
+      const tmp = indexPath + "." + process.pid + ".seal.tmp";
+      fs.writeFileSync(tmp, JSON.stringify(index));
+      fs.renameSync(tmp, indexPath);
+    } catch (_) {
+      return 0;
+    }
+    return n;
+  });
+  if (!sealed) return 0;
+  trace.emit("registry", "seal", { session_id: sid, count: sealed });
+  return sealed;
+}
+
+module.exports = { register, resolveUnit, readRecord, appendEvent, routeArtifact, sealArtifacts, recordPath, sessionsDir, eventsPath };
 
 // CLI form for the sh hooks (shelly-session). Mirrors shelly-trace.cjs's
 // require.main pattern. Positional args keep the sh call site simple:

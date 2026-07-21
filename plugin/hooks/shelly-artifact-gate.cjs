@@ -220,6 +220,30 @@ function decide(input, opts) {
   return { block: true, reason: buildResponderReason() };
 }
 
+/**
+ * Seal this session's artifacts iff the turn is genuinely OVER — the signal the Board
+ * uses to stop withholding them (see sealArtifacts in shelly-identity.cjs).
+ *
+ * GATED ON `!block`, AND THAT IS THE WHOLE POINT. When this hook blocks it is handing the
+ * turn BACK: the agent is about to write again — most sharply in the responder-less case,
+ * where an artifact already landed and the agent's very next act is to rewrite it with a
+ * ballot. Sealing there would publish the half-finished revision and then bill the user an
+ * "Updated" nag for the fix — exactly the mid-build churn the seal exists to prevent. A
+ * blocked turn is an unfinished turn, so the seal waits for the Stop that doesn't block.
+ *
+ * Never throws and never touches the decision: a failed seal costs visibility until the
+ * Rust reader's time backstop, which is strictly better than wedging a turn over it.
+ */
+function sealIfDone(input, decision, opts) {
+  if (!input || !input.session_id) return 0;
+  if (!decision || decision.block) return 0;
+  try {
+    return require("./shelly-identity.cjs").sealArtifacts(input.session_id, opts);
+  } catch (_) {
+    return 0;
+  }
+}
+
 function main() {
   let raw = "";
   process.stdin.on("data", (c) => (raw += c));
@@ -234,6 +258,7 @@ function main() {
     } catch (_) {
       // Any unexpected error → fail open (never wedge the session).
     }
+    sealIfDone(input, d);
     if (d.block) process.stdout.write(JSON.stringify({ decision: "block", reason: d.reason }));
     process.exit(0);
   });
@@ -246,6 +271,7 @@ else
     artifactWrittenSince,
     hasAnswerableSurface,
     decide,
+    sealIfDone,
     buildReason,
     buildResponderReason,
     safeId,

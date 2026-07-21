@@ -140,6 +140,39 @@ export function artifactMatchesSource(
   return sid.length >= 8 && src.endsWith(`--${sid.slice(0, 8)}`);
 }
 
+/** The minimum a withheld artifact exposes for the "is my session writing?" check. */
+export interface PendingLike {
+  unit_key: string;
+  source?: string | null;
+  session_id?: string | null;
+}
+
+/**
+ * Is the ACTIVE session of `unitKey` currently writing an artifact?
+ *
+ * Lives here, beside `heroArtifactFor`, because it is the same scoping rule applied to a
+ * different set — and the two must not drift. The "Writing…" pill answers "is the agent
+ * whose work you are looking at busy?", so it has to be scoped exactly like the hero:
+ * lighting it for a SIBLING session sharing the unit would claim your agent is working
+ * when it isn't, and point at output the user will never be shown (the 2026-07-09
+ * disappearance bug in a new costume).
+ *
+ * Matches with `artifactMatchesSource`, never `===`: a home session's record slug
+ * (`__home__`) differs from its live stem, so equality silently drops its own work.
+ * `activeSource === null` (a session that isn't live yet) yields false — an unknown owner
+ * shows nothing rather than a stranger's status.
+ */
+export function sessionIsWriting(
+  pending: readonly PendingLike[],
+  unitKey: string,
+  activeSource: string | null,
+): boolean {
+  if (!activeSource) return false;
+  return pending.some(
+    (p) => p.unit_key === unitKey && artifactMatchesSource(p, activeSource),
+  );
+}
+
 /**
  * THE SIBLING-SESSION FIX. Choose the ONE artifact a unit's hero paints.
  *
