@@ -53,7 +53,14 @@ import {
   NO_COMPACT,
   type CompactState,
 } from "./compact-logic";
-import { isCopyMessage, isNavigateMessage, isNewSessionMessage } from "./resize";
+import {
+  isCopyMessage,
+  isNavigateMessage,
+  isNewSessionMessage,
+  postSubmitAck,
+  warnUnknownArtifactMessage,
+} from "./resize";
+import type { SubmitOutcome } from "./resize";
 import {
   initShellRepaint,
   isShellMessage,
@@ -5081,12 +5088,17 @@ function wireNavigate(): void {
       // This is also the submit→PTY trust gate the audit called for on hub-pulled
       // artifacts — a remote artifact's postMessage can never auto-Enter into a
       // local PTY; it only ever travels to the agent that authored it.
+      // Who to ack: the iframe window that posted this submit. Its helper is
+      // waiting on the answer and shows a real failure if none arrives.
+      const acker = e.source as Window | null;
       {
         const openPath = focusPath ?? digestPath;
         const openArt = openPath ? allArtifacts.find((a) => a.path === openPath) : undefined;
         const agentId = openArt ? cloudAgentOf(unitForArtifact(openArt)) : null;
         if (openArt && agentId) {
-          void submitToAgent(agentId, d.text, openArt);
+          void submitToAgent(agentId, d.text, openArt).then((r) =>
+            postSubmitAck(acker, r.ok, r.via),
+          );
           return;
         }
         // Bare-Cloud (unattributed) remote artifacts have no agent to address —
@@ -5105,12 +5117,18 @@ function wireNavigate(): void {
       const tabId = (focusPath ? ownedTabForArtifact(focusPath) : null) ?? unitTab;
       if (tabId) {
         const tag = focusPath ? `\n\n— Shelly artifact: ${focusPath} —` : "";
-        void submitIntoPty(tabId, `${d.text}${tag}`).catch((e) => {
-          console.error("submit into PTY failed; clipboard fallback", e);
-          void handleSubmit(d.text, focusPath ?? undefined);
-        });
+        void submitIntoPty(tabId, `${d.text}${tag}`)
+          .then(() => postSubmitAck(acker, true, "terminal"))
+          .catch((err) => {
+            console.error("submit into PTY failed; clipboard fallback", err);
+            void handleSubmit(d.text, focusPath ?? undefined).then((ok) =>
+              postSubmitAck(acker, ok, "clipboard"),
+            );
+          });
       } else {
-        void handleSubmit(d.text, focusPath ?? undefined);
+        void handleSubmit(d.text, focusPath ?? undefined).then((ok) =>
+          postSubmitAck(acker, ok, "clipboard"),
+        );
       }
       // The artifact's OWN in-page splash (the prefer-html helper's
       // __cmpShowSubmitted, fired from its doSubmit) is the single "On it"
@@ -5118,7 +5136,11 @@ function wireNavigate(): void {
       // iframe — but dismissing it only revealed the in-page one underneath, so the
       // user had to dismiss twice (the double-splash bug). nav-back still re-shows
       // the in-page splash via restore-submitted; auto-advance clears it on reload.
+      return;
     }
+    // Nothing above claimed it. If it is addressing our protocol at all, say so —
+    // a mis-wired kind used to vanish here without a trace.
+    warnUnknownArtifactMessage(d);
   });
 }
 
@@ -5138,7 +5160,11 @@ function shellOriginFrame(win: Window | null): HTMLIFrameElement | null {
  *  artifact's own in-page "On it" splash is the confirmation UX; delivery outcome
  *  (woken / queued / wake_failed) lands in the console. On hub failure the reply
  *  falls back to the clipboard so it's never lost. */
-async function submitToAgent(agent: string, text: string, art: ArtifactEntry): Promise<void> {
+async function submitToAgent(
+  agent: string,
+  text: string,
+  art: ArtifactEntry,
+): Promise<SubmitOutcome> {
   const payload = {
     kind: "artifact-reply",
     artifact: art.path.split("/").pop() ?? art.path,
@@ -5155,9 +5181,12 @@ async function submitToAgent(agent: string, text: string, art: ArtifactEntry): P
       /* non-JSON response; outcome unknown but the POST succeeded */
     }
     console.info(`[shelly] reply → agent '${agent}' (${delivery || "sent"})`);
+    return { ok: true, via: "agent" };
   } catch (e) {
+    // Report the route actually taken, not the one intended: this fell back to
+    // the clipboard, so the artifact must say "copied", not "sent to your agent".
     console.error("hub inbox submit failed; clipboard fallback", e);
-    void handleSubmit(text, art.path);
+    return { ok: await handleSubmit(text, art.path), via: "clipboard" };
   }
 }
 
