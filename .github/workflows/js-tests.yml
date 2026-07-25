@@ -59,6 +59,16 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      - name: Lint + format check
+        # These are green as of the commit that introduced them, which is the whole point:
+        # the rule set was chosen to pass on existing code so that any future failure is a
+        # real signal rather than pre-existing noise somebody learns to ignore.
+        # `format:check` covers TypeScript only — CSS is in .prettierignore because the
+        # formatter grew board.css by 31% expanding deliberately dense declarations.
+        run: |
+          npm run lint
+          npm run format:check
+
       - name: Board checks + plugin hook suites + frame render
         # `npm test` runs the pure-logic checks (ingest, sibling-unread, compact-state,
         # unit-identity, unread-store), the file-size ratchets, then the hook suites, which
