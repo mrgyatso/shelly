@@ -44,8 +44,9 @@ const BUDGETS: Record<string, number> = {
   // Raised once, deliberately, from 5500: adopting Prettier normalised this file's formatting
   // and cost +76 lines (5,431 → 5,507) in one-time churn, not new code. That is the kind of
   // increase this ratchet is meant to make you justify out loud rather than nudge silently —
-  // so it is written down here. It goes DOWN from now on, as extractions land.
-  "src/board.ts": 5560,
+  // so it is written down here. It goes DOWN from now on, as extractions land — and it has:
+  // 5560 → 5512 as the reader state moved to `src/reader-state.ts`.
+  "src/board.ts": 5512,
   // board.css is NOT Prettier-formatted on purpose (see .prettierignore): the formatter grew
   // it by 960 lines expanding dense declarations, which is a formatter making a too-big file
   // measurably worse. So this number reflects hand-formatted CSS and should stay tight.
@@ -98,7 +99,9 @@ check(
 console.log("\n### board.ts shared mutable state (ratchet down, never up)");
 const boardSrc = read("src/board.ts");
 const globals = (boardSrc.match(/^let /gm) || []).length;
-const GLOBAL_BUDGET = 66;
+// 66 → 62: `focusPath`, `digestPath`, `readerStalePath` and `awaitingAdvanceSource` became
+// fields of one tested state object (`src/reader-state.ts`).
+const GLOBAL_BUDGET = 62;
 check(
   `board.ts has ${globals} module-level \`let\`s, budget ${GLOBAL_BUDGET}`,
   globals <= GLOBAL_BUDGET,

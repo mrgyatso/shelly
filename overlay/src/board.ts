@@ -73,6 +73,7 @@ import {
   noteArtifactShown,
 } from "./shell-repaint";
 import { classifyUpdate, type UpdateAttempt } from "./update-stale";
+import * as reader from "./reader-state";
 import * as unread from "./unread-store";
 import { mountCrab } from "./crab";
 import { initCodePeek, closeCodePeek } from "./code-peek";
@@ -347,28 +348,19 @@ let pendingNavFresh = false;
  *  entry lands terminal-focused with no flash. Consumed on the first render. */
 let freshLaunchUnit: string | null = null;
 
-/** The reader overlay's dedicated live iframe + the path it's showing (null = closed). */
+/** The reader overlay's dedicated live iframe (null = closed). The DOM half stays here;
+ *  WHICH artifact it shows is `readerState.focusPath`. */
 let focusFrame: HTMLIFrameElement | null = null;
-let focusPath: string | null = null;
-/** Set when the artifact open in the reader is rewritten under it. Drives the
- *  "↻ Updated" button in the reader nav — an OFFER, never an automatic reload, so
- *  a comment being typed survives (see the two rules in ingest-logic.ts). */
-let readerStalePath: string | null = null;
-/** Artifact paths visited in this reader session, for "← Back" after jumping
- *  through the agents-need-you queue. Cleared when the reader closes. */
-const readerBackStack: string[] = [];
-/** Artifacts the user has already submitted from, keyed by path → the file's
- *  modified_ms at submit time. Lets the reader re-show the "submitted" overlay
- *  when you navigate back to one (otherwise the iframe reloads fresh and the
- *  state is lost). A later rewrite (new modified_ms) clears it — fresh content
- *  is fresh work, not an already-answered card. */
-const submittedArtifacts = new Map<string, number>();
-/** After a submit, the source (session) whose NEXT artifact should auto-open in
- *  the reader — so you flow card→card without touching the terminal. Set on
- *  submit, consumed by the next same-source artifact, cleared on manual nav or
- *  reader close. Only THIS session's artifacts auto-advance; another session's
- *  new work just raises the ambient "N agents need you" awareness (unread). */
-let awaitingAdvanceSource: string | null = null;
+/** What the user is reading (reader path, hero path, back-trail) and what they are waiting
+ *  for (the auto-advance arm, the answered-card stamps).
+ *
+ *  The arithmetic lives in `reader-state.ts`, which is unit-tested — these five were five
+ *  bare bindings assigned at ~30 sites in this file, with three rules hand-copied between
+ *  them: the focus-over-hero precedence, "any reader load shows current content so nothing
+ *  is stale", and "manual navigation cancels a pending auto-advance". The third was written
+ *  at three of the reader's nav sites and none of the hero's. Navigate through the module's
+ *  functions, never by assigning to a field. */
+const readerState = reader.createReaderState();
 /** Teardown for the scoped "On it" overlay's resize listener, or null when none. */
 let boardSubmittedCleanup: (() => void) | null = null;
 
@@ -480,7 +472,6 @@ let scrimEl: HTMLElement;
 let hubEl: HTMLElement;
 let unitEl: HTMLElement;
 let digestEl: HTMLIFrameElement;
-let digestPath: string | null = null; // tracks what's currently loaded in digestEl
 /** Newest unseen artifact for the on-screen unit while its hero stays sticky. */
 let heroPendingPath: string | null = null;
 let heroNewEl: HTMLButtonElement | null = null;
@@ -488,7 +479,7 @@ let heroNewEl: HTMLButtonElement | null = null;
 let heroBuildingEl: HTMLElement | null = null;
 /** The deck's prev/next/position chrome. The deck itself is DERIVED (deckForUnit) from
  *  allArtifacts + the active session — there is deliberately no retained deck array and
- *  no current-index: `digestPath` alone says which card is read. State that duplicated
+ *  no current-index: `readerState.digestPath` alone says which card is read. State that duplicated
  *  either could disagree with the frame, and a stale index would re-point at a different
  *  document the instant the deck's contents changed. */
 let deckNavEl: HTMLElement | null = null;
@@ -613,11 +604,10 @@ export async function initBoard(): Promise<void> {
     // message (posted right after load) clears it and repaints; a plain artifact
     // lets it fire, returning the surface to the app shade.
     noteArtifactShown(digest);
-    if (!digestPath) return;
-    const stamp = submittedArtifacts.get(digestPath);
-    if (stamp === undefined) return;
-    const art = allArtifacts.find((a) => a.path === digestPath);
-    if (art && art.modified_ms !== stamp) return; // rewritten → form re-arms
+    const shown = readerState.digestPath;
+    if (!shown) return;
+    const art = allArtifacts.find((a) => a.path === shown);
+    if (!reader.wasSubmitted(readerState, shown, art?.modified_ms)) return;
     digest.contentWindow?.postMessage({ source: "shelly-board", kind: "restore-submitted" }, "*");
   });
   railEl = document.getElementById("unit-rail");
@@ -2808,7 +2798,7 @@ function enterUnit(unitKey: string): void {
   // click reveal-only (a toggle would be flipped back by the auto-open landing after it).
   // Setting the state synchronously here, on every entry, is what lets the tab toggle.
   expandedActiveProject = unitHasDrawer(unitKey) ? unitKey : null;
-  focusPath = null;
+  reader.close(readerState); // entry is navigation: drop the trail and any pending advance
   currentUnitKey = unitKey;
   // Always land on the Sessions face / Session view / split surfaces on entry.
   unitEl.dataset.rail = "sessions";
@@ -2914,9 +2904,9 @@ function leaveUnit(): void {
   historyEl?.replaceChildren();
   digestEl?.setAttribute("hidden", "");
   deckNavEl?.setAttribute("hidden", ""); // no unit on screen ⇒ no deck to page
-  digestPath = null;
+  reader.setHero(readerState, null);
   applyBar(null);
-  focusPath = null;
+  reader.close(readerState);
   // Hide (NEVER dispose) the owned terminals — their PTYs must stay alive across
   // navigation. The mounts persist in #unit-terminals; only visibility changes.
   hideOwnedTerminals();
@@ -2938,7 +2928,7 @@ async function renderHero(unitKey: string): Promise<void> {
   // so a later NORMAL entry to the same unit re-resolves the hero as usual.
   if (freshLaunchUnit === unitKey) {
     freshLaunchUnit = null;
-    digestPath = null;
+    reader.setHero(readerState, null);
     applyBar(null);
     digestEl.setAttribute("hidden", "");
     // A fresh session with no artifact of its own → show the waiting crab band; a
@@ -2963,7 +2953,7 @@ async function renderHero(unitKey: string): Promise<void> {
   if (latest) {
     digestEl.removeAttribute("hidden");
     syncSurfaceStrip(true);
-    digestPath = latest.path;
+    reader.setHero(readerState, latest.path);
     // The ONE artifact this entry actually puts in front of the user. Marking it —
     // and only it — read is what lets `enterUnit` stop clearing the whole unit: a
     // sibling session's artifact keeps its unread until its own session is picked
@@ -2977,12 +2967,12 @@ async function renderHero(unitKey: string): Promise<void> {
     );
   } else {
     // The active session owns no artifact: blank the hero.
-    // Reset digestPath HERE (not at the top of the function — that would expose a
+    // Reset readerState.digestPath HERE (not at the top of the function — that would expose a
     // transient null for a concurrent poll to act on). Without this, switching
     // from a session WITH an artifact to a blank one
-    // leaves digestPath pointing at the prior session's artifact, so the new session's
+    // leaves readerState.digestPath pointing at the prior session's artifact, so the new session's
     // first artifact would mis-route to the "new artifact" pill instead of auto-lighting,
-    // and maybeLightBlankHero (which guards on digestPath === null) would never fire.
+    // and maybeLightBlankHero (which guards on readerState.digestPath === null) would never fire.
     // A connected agent has no terminal below, so its blank copy can't promise one.
     // A local session mid-authoring gets the more specific promise; a connected agent
     // keeps its own copy (no terminal to promise) and an idle one the generic splash.
@@ -3002,10 +2992,10 @@ async function renderHero(unitKey: string): Promise<void> {
  *  binds straight to its provisional unit (so there's no re-nav to repaint either).
  *  Cheap-guarded so the poll only pays the renderHero invoke when there's actually
  *  something to show; honours the sticky-hero rule by acting ONLY while the hero is
- *  blank (digestPath === null), so a genuinely-new session with no artifacts stays
+ *  blank (readerState.digestPath === null), so a genuinely-new session with no artifacts stays
  *  blank and nothing the user is reading gets reloaded. */
 function maybeLightBlankHero(unitKey: string): void {
-  if (digestPath !== null) return;
+  if (readerState.digestPath !== null) return;
   const src = activeSessionSource(unitKey);
   if (!src) return;
   if (allArtifacts.some((a) => artifactMatchesSource(a, src) && unitForArtifact(a) === unitKey)) {
@@ -3070,7 +3060,7 @@ const DECK_FLIP_MS = 260;
 function renderDeckNav(unitKey: string): void {
   if (!deckNavEl) return;
   const deck = deckForUnit(unitKey);
-  const pos = deckPosition(deck, digestPath);
+  const pos = deckPosition(deck, readerState.digestPath);
   // No position ⇒ the loaded artifact isn't a card of this deck (blank hero, or a
   // session switch mid-flight). Hide rather than guess a number.
   if (!pos || pos.total < 2) {
@@ -3082,7 +3072,7 @@ function renderDeckNav(unitKey: string): void {
   if (posEl) posEl.textContent = `${pos.index + 1} of ${pos.total}`;
   for (const btn of deckNavEl.querySelectorAll<HTMLButtonElement>(".deck-nav-btn")) {
     const dir = Number(btn.dataset.dir) as FlipDir;
-    btn.disabled = flipTarget(deck, digestPath, dir) === null;
+    btn.disabled = flipTarget(deck, readerState.digestPath, dir) === null;
   }
 }
 
@@ -3095,7 +3085,7 @@ function renderDeckNav(unitKey: string): void {
 async function flipDeck(dir: FlipDir): Promise<void> {
   const view = currentView();
   if (view.level !== "unit") return;
-  const target = flipTarget(deckForUnit(view.unitKey), digestPath, dir);
+  const target = flipTarget(deckForUnit(view.unitKey), readerState.digestPath, dir);
   if (!target) return; // at an end of the deck; the chevron is disabled anyway
   // The card being flipped TO is the one the user asked for, so any pill offering that
   // same path is now moot. A pill offering a DIFFERENT path stays: still unseen.
@@ -3103,7 +3093,7 @@ async function flipDeck(dir: FlipDir): Promise<void> {
   digestEl.removeAttribute("hidden");
   syncSurfaceStrip(true, true); // a flip within the deck — stay in whatever view the user picked
   applyBar(null);
-  digestPath = target.path;
+  reader.navigateHero(readerState, target.path);
   markArtifactRead(target.path);
   renderDeckNav(view.unitKey); // position + chevron ends update with the motion, not after
   playFlip(dir);
@@ -3163,7 +3153,7 @@ async function viewHeroPending(): Promise<void> {
   digestEl.removeAttribute("hidden");
   syncSurfaceStrip(true, true); // same flip vocabulary as flipDeck — stay in the current view
   applyBar(null);
-  digestPath = path;
+  reader.navigateHero(readerState, path);
   markArtifactRead(path);
   // The advance IS a flip toward the newer end of the deck — same motion as a chevron,
   // so "a different document is now in front of you" reads identically however the user
@@ -4063,7 +4053,7 @@ const BLANK_AGENT = {
  *  the moment a real artifact lands, and by leaveUnit on exit. The idle home reuses it
  *  with BLANK_IDLE copy (no terminal, nothing working). */
 function showBlankHero(copy: { title: string; sub: string } = BLANK_FIRST, working = ""): void {
-  digestPath = null;
+  reader.setHero(readerState, null);
   digestEl.setAttribute("hidden", "");
   hideHeroNewPill();
   if (unitEl) {
@@ -4475,12 +4465,11 @@ function navigateTo(to: string): void {
  * Open an artifact full-SURFACE over the Board — the fix for "can't open an
  * artifact fully." A scrim + an inset:0 card with its OWN live iframe (kept out
  * of any pooling) whose JS + ✓/✎/✗ run; submit routes through wireNavigate via
- * `focusPath`. Open-by-path, so history and navigate links all reuse it.
+ * `readerState.focusPath`. Open-by-path, so history and navigate links all reuse it.
  */
 async function openReader(path: string): Promise<void> {
-  if (focusPath) return;
-  focusPath = path;
-  readerStalePath = null; // opening loads current content
+  if (readerState.focusPath) return;
+  reader.open(readerState, path);
 
   const card = document.createElement("div");
   card.className = "reader";
@@ -4500,11 +4489,10 @@ async function openReader(path: string): Promise<void> {
     // The reader now shows a (possibly different) artifact — arm the shell reset,
     // superseded by a curated shell message if this one declares one.
     noteArtifactShown(focusFrame);
-    if (!focusPath || !focusFrame) return;
-    const stamp = submittedArtifacts.get(focusPath);
-    if (stamp === undefined) return;
-    const art = allArtifacts.find((a) => a.path === focusPath);
-    if (art && art.modified_ms !== stamp) return; // rewritten since → re-armed
+    const shown = readerState.focusPath;
+    if (!shown || !focusFrame) return;
+    const art = allArtifacts.find((a) => a.path === shown);
+    if (!reader.wasSubmitted(readerState, shown, art?.modified_ms)) return;
     focusFrame.contentWindow?.postMessage(
       { source: "shelly-board", kind: "restore-submitted" },
       "*",
@@ -4546,7 +4534,7 @@ function agentQueue(): { source: string; path: string }[] {
   const queued = unread.allPaths(unreadState);
   const freshestBySource = new Map<string, ArtifactEntry>();
   for (const a of allArtifacts) {
-    if (!queued.has(a.path) || a.path === focusPath) continue;
+    if (!queued.has(a.path) || a.path === readerState.focusPath) continue;
     const src = a.source ?? a.path; // unsourced artifact = its own "agent"
     const cur = freshestBySource.get(src);
     if (!cur || a.modified_ms > cur.modified_ms) freshestBySource.set(src, a);
@@ -4578,7 +4566,7 @@ function renderReaderNav(): void {
   }
   const q = agentQueue();
   nav.replaceChildren();
-  if (readerBackStack.length) {
+  if (readerState.backStack.length) {
     const back = document.createElement("button");
     back.className = "reader-back";
     back.textContent = "← Back";
@@ -4587,7 +4575,7 @@ function renderReaderNav(): void {
   }
   // The agent replaced what you are reading. Say so — but let the user pull it,
   // so a half-typed comment is never destroyed by a poll they didn't ask for.
-  if (readerStalePath !== null && readerStalePath === focusPath) {
+  if (readerState.focusPath && reader.isStale(readerState, readerState.focusPath)) {
     const refresh = document.createElement("button");
     refresh.className = "reader-refresh";
     refresh.textContent = "↻ Updated · Refresh";
@@ -4610,9 +4598,8 @@ function renderReaderNav(): void {
  *  it underneath. The ONLY sanctioned reader reload while a unit is live — a click,
  *  not the poll — so it cannot wipe a comment behind the user's back. */
 async function readerRefresh(): Promise<void> {
-  const path = readerStalePath;
-  readerStalePath = null;
-  if (!path || !focusFrame || focusPath !== path) return renderReaderNav();
+  const path = reader.takeStale(readerState);
+  if (!path || !focusFrame || readerState.focusPath !== path) return renderReaderNav();
   renderReaderNav();
   await loadArtifactInto(path, focusFrame).catch((e) =>
     console.error("reader refresh failed", path, e),
@@ -4625,11 +4612,8 @@ async function readerRefresh(): Promise<void> {
 async function readerJumpNext(): Promise<void> {
   const q = agentQueue();
   if (!q.length || !focusFrame) return;
-  awaitingAdvanceSource = null; // manual nav cancels a pending auto-advance
   const next = q[0].path;
-  if (focusPath) readerBackStack.push(focusPath);
-  focusPath = next;
-  readerStalePath = null; // the jump loads current content
+  reader.advance(readerState, next); // pushes the trail, disarms, un-stales
   markArtifactRead(next); // also refreshes the nav via updateGlobalUnread
   renderReaderNav();
   await loadArtifactInto(next, focusFrame).catch((e) =>
@@ -4639,11 +4623,9 @@ async function readerJumpNext(): Promise<void> {
 
 /** Return to the previously-viewed artifact in the reader. */
 async function readerBack(): Promise<void> {
-  const prev = readerBackStack.pop();
-  if (prev === undefined || !focusFrame) return;
-  awaitingAdvanceSource = null; // manual nav cancels a pending auto-advance
-  focusPath = prev;
-  readerStalePath = null; // going back re-loads current content
+  if (!focusFrame) return; // check the frame BEFORE popping — a missing frame must not
+  const prev = reader.back(readerState); // consume a step of the trail it cannot navigate
+  if (prev === null) return;
   renderReaderNav();
   await loadArtifactInto(prev, focusFrame).catch((e) =>
     console.error("reader back failed", prev, e),
@@ -4656,10 +4638,7 @@ function closeFocus(): void {
   scrimEl.classList.remove("on");
   card?.remove();
   focusFrame = null;
-  focusPath = null;
-  readerStalePath = null;
-  awaitingAdvanceSource = null;
-  readerBackStack.length = 0;
+  reader.close(readerState);
   // Closing the reader returns the surface to the hero beneath it: arm a reset so
   // a shell the reader declared doesn't linger over a plain hero. The hero re-fires
   // its own shell if it has one.
@@ -4799,7 +4778,7 @@ async function pollLive(): Promise<void> {
   // still blank and neither a live-source change nor a new ingest re-triggered
   // it (the artifact was absorbed into allArtifacts at init, or the owned-tab
   // correlation wasn't ready the one time maybeLightBlankHero could have fired).
-  // Re-check on every poll — self-guarded (no-ops unless digestPath === null),
+  // Re-check on every poll — self-guarded (no-ops unless readerState.digestPath === null),
   // so it only ever lights a BLANK hero, never reloads a live one or disturbs a
   // comment in progress.
   const v = currentView();
@@ -4920,7 +4899,10 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   // was typing into it (the 2026-07-09 comment-loss bug, where an agent re-authored one
   // path 10× in 7 minutes). `effectsForRewrites` owns that rule. Display state is read
   // BEFORE mtimes are updated.
-  const rewrites = effectsForRewrites(lastMtimeByPath, artifacts, { digestPath, focusPath });
+  const rewrites = effectsForRewrites(lastMtimeByPath, artifacts, {
+    digestPath: readerState.digestPath,
+    focusPath: readerState.focusPath,
+  });
   for (const a of artifacts) lastMtimeByPath.set(a.path, a.modified_ms);
   for (const p of [...lastMtimeByPath.keys()]) if (!present.has(p)) lastMtimeByPath.delete(p);
   for (const r of rewrites) {
@@ -4928,7 +4910,7 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
     if (r.affordance === "reader-refresh") {
       // The focused frame is still never touched — but it no longer goes silent.
       // Mark it stale and let the nav offer "↻ Updated"; the reload is the user's click.
-      readerStalePath = r.path;
+      reader.markStale(readerState, r.path);
       renderReaderNav();
       continue;
     }
@@ -4947,6 +4929,9 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   for (const p of [...pendingIdentity.keys()]) if (!present.has(p)) pendingIdentity.delete(p);
   for (const p of [...unroutedPaths]) if (!present.has(p)) unroutedPaths.delete(p);
   unread.retainPaths(unreadState, present);
+  // The answered-card stamps prune on the same sweep. They used to accumulate for the life
+  // of the process — one entry per submit, never dropped, even for artifacts long deleted.
+  reader.retainSubmitted(readerState, present);
   if (heroPendingPath !== null && !present.has(heroPendingPath)) hideHeroNewPill();
 
   // Pull every re-routed artifact out of the unread bucket its OLD identity filed it
@@ -4990,7 +4975,7 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
       // surface it as ambient unread, exactly as a different unit's artifact would be.
       addUnread(unit, a.path);
       branch = "unread:sibling-session";
-    } else if (digestPath !== null && a.path !== digestPath) {
+    } else if (readerState.digestPath !== null && a.path !== readerState.digestPath) {
       // The active session's hero is populated + sticky. Rather than let a newer
       // artifact drop silently into history (the reported bug), surface the freshest
       // one as a click-to-advance pill on the hero.
@@ -5041,7 +5026,7 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
         activeSrc: activeSessionSource(unit) ?? "",
         ownedTab: ownedTabForUnit(unit) ?? "",
         unitFrom,
-        digestPath: digestPath ?? "",
+        digestPath: readerState.digestPath ?? "",
         branch,
         kind: reRoutedSet.has(a.path) ? "reroute" : "new",
       });
@@ -5064,31 +5049,28 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
  *  session's new artifact is intentionally ignored here (it surfaces as ambient
  *  unread instead). The freshest matching new artifact wins. */
 function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
-  if (awaitingAdvanceSource === null) return;
+  if (!reader.isArmed(readerState)) return;
   const next = newOnes
     .filter(
       (a) =>
-        artifactMatchesSource(a, awaitingAdvanceSource) &&
-        a.path !== focusPath &&
-        a.path !== digestPath,
+        artifactMatchesSource(a, reader.armedSource(readerState)) &&
+        !reader.isOnScreen(readerState, a.path),
     )
     .sort((x, y) => y.modified_ms - x.modified_ms)[0];
   if (!next) {
-    trace("autoadvance.skip", { reason: "no-match", awaiting: awaitingAdvanceSource });
+    trace("autoadvance.skip", { reason: "no-match", awaiting: readerState.awaitingSource });
     return;
   }
 
   // Reader open → slide the reader to the next artifact.
-  if (focusPath !== null && focusFrame) {
+  if (reader.isReaderOpen(readerState) && focusFrame) {
     trace("autoadvance.fire", {
       corr: next.path,
       target: "reader",
-      awaiting: awaitingAdvanceSource,
+      awaiting: readerState.awaitingSource,
     });
-    awaitingAdvanceSource = null;
     dismissBoardSubmitted();
-    readerBackStack.push(focusPath);
-    focusPath = next.path;
+    reader.advance(readerState, next.path); // consuming the arm IS the disarm
     markArtifactRead(next.path);
     renderReaderNav();
     void loadArtifactInto(next.path, focusFrame).catch((e) =>
@@ -5108,11 +5090,14 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
     unitForArtifact(next) === v.unitKey &&
     artifactMatchesSource(next, activeSessionSource(v.unitKey))
   ) {
-    trace("autoadvance.fire", { corr: next.path, target: "hero", awaiting: awaitingAdvanceSource });
-    awaitingAdvanceSource = null;
+    trace("autoadvance.fire", {
+      corr: next.path,
+      target: "hero",
+      awaiting: readerState.awaitingSource,
+    });
     dismissBoardSubmitted();
     hideHeroNewPill();
-    digestPath = next.path;
+    reader.navigateHero(readerState, next.path);
     markArtifactRead(next.path);
     // The user's own submit asked for this card, so it flips like any other advance.
     renderDeckNav(v.unitKey);
@@ -5126,7 +5111,7 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
       corr: next.path,
       reason: "hero-guard",
       level: v.level,
-      awaiting: awaitingAdvanceSource,
+      awaiting: readerState.awaitingSource,
     });
   }
 }
@@ -5137,16 +5122,16 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
  *  reloading tears down the document — wiping any comment the user is mid-typing
  *  and bouncing focus to the terminal. New artifacts still surface as unread +
  *  history rows, and the hero re-resolves on re-entry (enterUnit). The lone
- *  exception: an empty unit with no hero yet (`digestPath === null`) paints its
+ *  exception: an empty unit with no hero yet (`readerState.digestPath === null`) paints its
  *  first artifact, so a unit lights up live the moment its first work lands.
  *  Preserves scroll. Deferred entirely while the reader overlay is open. */
 function ingestIntoUnit(unitKey: string): void {
-  if (focusPath !== null) {
+  if (readerState.focusPath !== null) {
     pendingIngest.add(unitKey);
     return;
   }
   const keep = unitEl.scrollTop;
-  if (digestPath === null) void renderHero(unitKey); // empty unit → light up its first artifact
+  if (readerState.digestPath === null) void renderHero(unitKey); // empty unit → light up its first artifact
   renderHistory(unitKey);
   // A new artifact makes the deck DEEPER — repaint the position ("2 of 5" → "2 of 6")
   // and re-enable the "newer" chevron now that there IS something newer. Chrome only:
@@ -5166,7 +5151,7 @@ function updateGlobalUnread(): void {
   if (count) count.textContent = total > 99 ? "99+" : String(total);
   // Keep the reader's "N agents need you" pill live as artifacts arrive mid-read
   // (ingestArtifacts still routes unread while the reader defers its unit rebuild).
-  if (focusPath !== null) renderReaderNav();
+  if (readerState.focusPath !== null) renderReaderNav();
   postUnreadToHub();
 }
 
@@ -5248,7 +5233,7 @@ function wireNavigate(): void {
       // surfaces as a click-to-view pill instead of yanking them off what they're
       // reading. (Old artifacts never send this, so they keep the always-advance
       // behavior — backward-compatible.)
-      awaitingAdvanceSource = null;
+      reader.disarm(readerState);
       return;
     }
     if (d && d.source === "shelly-artifact" && d.kind === "submit" && typeof d.text === "string") {
@@ -5260,26 +5245,24 @@ function wireNavigate(): void {
       // Remember this artifact was answered, stamped with its current mtime, so
       // navigating back to it re-shows the "submitted" overlay instead of the
       // pristine form. A later rewrite changes the mtime and re-arms the card.
-      if (focusPath) {
-        const art = allArtifacts.find((a) => a.path === focusPath);
-        submittedArtifacts.set(focusPath, art?.modified_ms ?? 0);
-        // Arm same-session auto-advance: this session's next artifact will
-        // replace the waiting scene in the reader (no click, no terminal).
-        awaitingAdvanceSource = art?.source ?? null;
-      } else if (digestPath) {
-        // Hero submit (no reader): arm same-slot auto-advance so this session's
-        // next artifact replaces the waiting scene in the hero, in place.
-        const art = allArtifacts.find((a) => a.path === digestPath);
-        submittedArtifacts.set(digestPath, art?.modified_ms ?? 0);
-        awaitingAdvanceSource = art?.source ?? null;
+      // Whichever slot it came from — the reader wins when open, which is what
+      // `openPath` decides — stamp the card and arm same-session auto-advance, so
+      // this session's next artifact replaces the waiting scene with no click and
+      // no terminal. One branch now: the two used to differ only in which pointer
+      // they read, and the hero copy had drifted to a raw `.set()`.
+      const answered = reader.openPath(readerState);
+      if (answered) {
+        const art = allArtifacts.find((a) => a.path === answered);
+        reader.noteSubmitted(readerState, answered, art?.modified_ms ?? 0);
+        reader.arm(readerState, art?.source ?? null);
       }
-      // Fallback arm: a transient per-session hero blank can leave BOTH focusPath and
-      // digestPath null at submit time, so the branches above no-op and the next
-      // artifact mis-shows the click-to-view pill instead of auto-loading. Arm from the
-      // active session so the waiting splash still advances to its own next artifact.
-      if (awaitingAdvanceSource === null) {
+      // Fallback arm: a transient per-session hero blank can leave BOTH pointers null
+      // at submit time, so the branch above no-ops and the next artifact mis-shows the
+      // click-to-view pill instead of auto-loading. Arm from the active session so the
+      // waiting splash still advances to its own next artifact.
+      if (!reader.isArmed(readerState)) {
         const sv = currentView();
-        if (sv.level === "unit") awaitingAdvanceSource = activeSessionSource(sv.unitKey);
+        if (sv.level === "unit") reader.arm(readerState, activeSessionSource(sv.unitKey));
       }
       // REMOTE artifact → the reply belongs to its OWNING AGENT, not a local
       // terminal: send it back through the hub inbox (delivered/queued VPS-side).
@@ -5290,7 +5273,7 @@ function wireNavigate(): void {
       // waiting on the answer and shows a real failure if none arrives.
       const acker = e.source as Window | null;
       {
-        const openPath = focusPath ?? digestPath;
+        const openPath = reader.openPath(readerState);
         const openArt = openPath ? allArtifacts.find((a) => a.path === openPath) : undefined;
         const agentId = openArt ? cloudAgentOf(unitForArtifact(openArt)) : null;
         if (openArt && agentId) {
@@ -5312,19 +5295,22 @@ function wireNavigate(): void {
       // Hub-pulled artifacts are now gated above (inbox, never PTY).
       const v = currentView();
       const unitTab = v.level === "unit" ? ownedTabForUnit(v.unitKey) : null;
-      const tabId = (focusPath ? ownedTabForArtifact(focusPath) : null) ?? unitTab;
+      const tabId =
+        (readerState.focusPath ? ownedTabForArtifact(readerState.focusPath) : null) ?? unitTab;
       if (tabId) {
-        const tag = focusPath ? `\n\n— Shelly artifact: ${focusPath} —` : "";
+        const tag = readerState.focusPath
+          ? `\n\n— Shelly artifact: ${readerState.focusPath} —`
+          : "";
         void submitIntoPty(tabId, `${d.text}${tag}`)
           .then(() => postSubmitAck(acker, true, "terminal"))
           .catch((err) => {
             console.error("submit into PTY failed; clipboard fallback", err);
-            void handleSubmit(d.text, focusPath ?? undefined).then((ok) =>
+            void handleSubmit(d.text, readerState.focusPath ?? undefined).then((ok) =>
               postSubmitAck(acker, ok, "clipboard"),
             );
           });
       } else {
-        void handleSubmit(d.text, focusPath ?? undefined).then((ok) =>
+        void handleSubmit(d.text, readerState.focusPath ?? undefined).then((ok) =>
           postSubmitAck(acker, ok, "clipboard"),
         );
       }
