@@ -102,6 +102,33 @@ ok(
   "expands the <!--shelly-frame--> placeholder",
 );
 
+// ---- REGRESSION: an artifact that MENTIONS the marker must still get framed ----
+// The idempotency gate used to be `html.includes("SHELLY-FRAME-START")` — a bare substring
+// test against the whole document. So any artifact that merely TALKED about the frame (a page
+// documenting Shelly's internals, or one showing `grep SHELLY-FRAME-START` as a verification
+// step) looked already-framed, `ensureFrame` bailed, and the mechanics were silently never
+// injected. The artifact explaining the frame was the one artifact guaranteed to ship without
+// it — which is exactly how this was found: by writing that artifact.
+console.log("### an artifact that only MENTIONS the marker is still framed");
+{
+  const TALKS_ABOUT_IT = [
+    '<!doctype html><html><head><meta charset="utf-8"><style>[data-fit-root]{width:900px}</style></head>',
+    "<body><main data-fit-root>",
+    "  <p>To verify, run:</p>",
+    '  <pre>grep -c "SHELLY-FRAME-START" ~/.shelly/artifacts/card.html</pre>',
+    "</main></body></html>",
+  ].join("\n");
+  ok(!F.hasFrame(TALKS_ABOUT_IT), "prose mentioning the marker does not count as a frame");
+  const framedTalk = F.applyFrame(TALKS_ABOUT_IT, FRAME);
+  ok(F.hasFrame(framedTalk), "…so it gets framed anyway");
+  ok(/kind: ?"size"/.test(framedTalk), "…with the size reporter");
+  ok(/<main data-fit-root data-shelly-commentable>/.test(framedTalk), "…and 💬 on the element");
+  ok(F.applyFrame(framedTalk, FRAME) === framedTalk, "…and is STILL idempotent once framed");
+  // The real comment form must of course register.
+  ok(F.hasFrame("<!-- SHELLY-FRAME-START v=abc12345 -->"), "the injected comment form registers");
+  ok(F.frameVersion("grep SHELLY-FRAME-START v=deadbeef") === null, "a version is only read from the comment");
+}
+
 // ---- unit: applyFrame end-to-end ----------------------------------------------
 console.log("### applyFrame (full)");
 const out = F.applyFrame(BROKEN, FRAME);

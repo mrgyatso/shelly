@@ -38,8 +38,29 @@ const FRAME_PATH = path.join(__dirname, "frame", "frame-core.html");
 const FRAME_MARK = "SHELLY-FRAME-START";
 const FRAME_END = "SHELLY-FRAME-END";
 const PLACEHOLDER_RE = /<!--\s*shelly-frame\s*-->/i;
+
+/**
+ * "Is this artifact already framed?" — matched as the injected COMMENT, never as a bare
+ * substring of the document.
+ *
+ * This distinction is not pedantry; the bare-substring version was a live bug. Any artifact
+ * that so much as MENTIONS the marker — a page documenting Shelly's own internals, a card
+ * showing `grep SHELLY-FRAME-START` as a verification step — looked already-framed, so
+ * `ensureFrame` bailed and the mechanics were silently never injected. The artifact explaining
+ * the frame was the one artifact guaranteed to ship without it.
+ *
+ * It is the same mistake as the `ensureCommentable` CSS-selector bug: matching a string
+ * against a whole HTML document instead of in the structure it actually lives in. Fixed there
+ * and, for one commit, left here.
+ */
+const FRAME_MARK_RE = /<!--\s*SHELLY-FRAME-START\b/;
 /** `<!-- SHELLY-FRAME-START v=abc12345 … -->` → "abc12345" (null on an unstamped frame). */
-const VERSION_RE = /SHELLY-FRAME-START\s+v=([0-9a-f]+)/;
+const VERSION_RE = /<!--\s*SHELLY-FRAME-START\s+v=([0-9a-f]+)/;
+
+/** Whether `html` carries an injected frame (as opposed to merely talking about one). */
+function hasFrame(html) {
+  return FRAME_MARK_RE.test(html);
+}
 
 /** Remove a `<script>` block that posts a submit as `payload:` (no `text:`) — a dead button.
  *  The injected frame owns the one correct submit, so a competing hand-rolled one must go.
@@ -47,7 +68,7 @@ const VERSION_RE = /SHELLY-FRAME-START\s+v=([0-9a-f]+)/;
  *  inert — but dead code that flashes "Sent ✓" at the user is worth deleting outright.) */
 function stripPayloadSubmit(html) {
   return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, (block) => {
-    if (block.includes(FRAME_MARK)) return block; // never touch the frame's own scripts
+    if (hasFrame(block)) return block; // never touch the frame's own scripts
     const postsSubmit = /kind:\s*["']submit["']/.test(block);
     const hasText = /\btext:/.test(block);
     const hasPayload = /\bpayload:/.test(block);
@@ -134,12 +155,12 @@ function removeFrame(html) {
  *  current one, so `claude plugin update` takes effect on the next write instead of
  *  only on artifacts created after it. */
 function ensureFrame(html, frame) {
-  if (html.includes(FRAME_MARK)) {
+  if (hasFrame(html)) {
     const have = frameVersion(html);
     const want = frameVersion(frame);
     if (!want || have === want) return html; // already current (or an unstamped frame)
     html = removeFrame(html);
-    if (html.includes(FRAME_MARK)) return html; // couldn't excise it — don't stack two
+    if (hasFrame(html)) return html; // couldn't excise it — don't stack two
   }
   if (PLACEHOLDER_RE.test(html)) return html.replace(PLACEHOLDER_RE, frame);
   if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, frame + "\n</body>");
@@ -196,6 +217,6 @@ function main() {
 if (require.main === module) main();
 module.exports = {
   applyFrame, frameArtifact, ensureFrame, ensureCommentable,
-  stripPayloadSubmit, stripDarkBg, frameVersion, removeFrame,
+  stripPayloadSubmit, stripDarkBg, frameVersion, removeFrame, hasFrame,
   FRAME_MARK, FRAME_PATH,
 };
