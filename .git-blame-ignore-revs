@@ -1,0 +1,10 @@
+# Commits that are pure formatting — `git blame` should look straight through them.
+#
+# Enable once per clone (it is not automatic):
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub's blame view honours this file with no configuration at all.
+
+# style: adopt Prettier for TypeScript only (2026-07-24)
+# Reformatted 22 .ts files; no behaviour change. CSS deliberately untouched.
+a47c6a67998ce9c31b3ced237d1be5b5333a3274

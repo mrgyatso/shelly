@@ -168,9 +168,7 @@ export function sessionIsWriting(
   activeSource: string | null,
 ): boolean {
   if (!activeSource) return false;
-  return pending.some(
-    (p) => p.unit_key === unitKey && artifactMatchesSource(p, activeSource),
-  );
+  return pending.some((p) => p.unit_key === unitKey && artifactMatchesSource(p, activeSource));
 }
 
 /**

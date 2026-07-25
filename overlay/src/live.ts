@@ -49,8 +49,8 @@ export function initLive(): void {
 }
 
 async function tick(): Promise<void> {
-  let local = "";
-  let remote = "";
+  let local: string;
+  let remote: string;
   try {
     [local, remote] = await Promise.all([
       invoke<string>("read_live"),
@@ -194,14 +194,22 @@ async function submit(): Promise<void> {
     flash(submitBtn, "Mark an item first");
     return;
   }
-  const verb: Record<Action, string> = { approve: "✓ Do it:", reject: "✗ Skip:", comment: "✎ Note:" };
+  const verb: Record<Action, string> = {
+    approve: "✓ Do it:",
+    reject: "✗ Skip:",
+    comment: "✎ Note:",
+  };
   const lines = ["[Shelly live]", `Re: ${currentWorking}`, "", "— Decisions —", ""];
   for (const card of items) {
     const state = card.dataset.state as Action;
     lines.push(`${verb[state]} ${card.dataset.label || "(unlabeled)"}`);
     if (state === "comment") {
       const ta = card.querySelector(".live-comment") as HTMLTextAreaElement | null;
-      if (ta && ta.value.trim()) ta.value.trim().split("\n").forEach((l) => lines.push(`    ${l}`));
+      if (ta && ta.value.trim())
+        ta.value
+          .trim()
+          .split("\n")
+          .forEach((l) => lines.push(`    ${l}`));
     }
   }
   try {
@@ -219,5 +227,9 @@ function flash(btn: HTMLElement | null, msg: string): void {
   btn.dataset.label = prev;
   btn.textContent = msg;
   window.clearTimeout(Number(btn.dataset.t));
-  btn.dataset.t = String(window.setTimeout(() => { btn.textContent = btn.dataset.label || prev; }, 2000));
+  btn.dataset.t = String(
+    window.setTimeout(() => {
+      btn.textContent = btn.dataset.label || prev;
+    }, 2000),
+  );
 }

@@ -83,7 +83,10 @@ export function deckTop<T extends DeckCard>(deck: readonly T[]): T | null {
  * cannot. Returns null when the read card has left the deck (session switched, artifact
  * deleted) — the caller hides the nav rather than guessing a position.
  */
-export function deckPosition(deck: readonly DeckCard[], currentPath: string | null): DeckPosition | null {
+export function deckPosition(
+  deck: readonly DeckCard[],
+  currentPath: string | null,
+): DeckPosition | null {
   if (!currentPath) return null;
   const index = deck.findIndex((c) => c.path === currentPath);
   return index === -1 ? null : { index, total: deck.length };

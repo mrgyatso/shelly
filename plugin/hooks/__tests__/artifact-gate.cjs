@@ -266,6 +266,53 @@ function missingPath() {
   return path.join(sandbox, "no-index.json");
 }
 
+// ---- a submit is only "answerable" if it posts `text:` --------------------
+// The gate used to accept marker PRESENCE, so a ballot posting `{kind:'submit',payload:…}`
+// passed as answerable while the Board silently dropped every click. postsLiveSubmit reads
+// the posted OBJECT, so an unrelated `text:` elsewhere in the file can't vouch for it.
+console.log("\n### submit contract, not just marker presence");
+ok(
+  gate.postsLiveSubmit(
+    "<script>parent.postMessage({source:'shelly-artifact',kind:'submit',text:lines.join('\\n')},'*')</script>",
+  ),
+  "a submit carrying text: is live",
+);
+ok(
+  !gate.postsLiveSubmit(
+    "<script>parent.postMessage({source:'shelly-artifact',kind:'submit',payload:picks},'*')</script>",
+  ),
+  "a payload-only submit is DEAD (the Board drops it)",
+);
+ok(
+  !gate.postsLiveSubmit(
+    "<script>var text='x';parent.postMessage({source:'shelly-artifact',kind:'submit',payload:picks},'*')</script>",
+  ),
+  "an unrelated text: elsewhere does not rescue a payload-only submit",
+);
+ok(
+  gate.postsLiveSubmit("<script>send({kind:'submit'})</script>"),
+  "a submit built some other way is not judged (fail open, never false-block)",
+);
+
+// ---- the "author one" reason adapts to whether the frame will be injected --
+// The instructions the gate hands back are the biggest single influence on the next
+// artifact, so the framed variant must NOT tell the model to copy wiring from a
+// neighbouring file — that was how broken artifacts propagated across a repo.
+console.log("\n### buildReason adapts to the frame capability probe");
+const framedReason = gate.buildReason("/tmp/arts", { framed: true });
+const bareReason = gate.buildReason("/tmp/arts", { framed: false });
+ok(/INJECTED FOR YOU/.test(framedReason), "framed: says the mechanics are injected");
+ok(
+  !/verbatim from any recent|copy the size-reporter/i.test(framedReason),
+  "framed: drops the 'copy the wiring from a recent artifact' instruction",
+);
+ok(/do NOT copy them from another artifact/.test(framedReason), "framed: actively forbids copying it");
+ok(/verbatim from any recent/.test(bareReason) === false, "unframed: also no longer says 'copy from a recent .html'");
+ok(/data-shelly-item/.test(framedReason), "framed: still asks for the ballot MARKUP");
+ok(/size-report snippet/.test(bareReason), "unframed: still spells out the full mechanical floor");
+ok(/must be `text`/.test(bareReason), "unframed: warns that payload: is dropped");
+ok(gate.frameWillBeInjected() === true, "this install can inject the frame (asset is present)");
+
 // ---- cleanup + result -----------------------------------------------------
 try {
   fs.rmSync(sandbox, { recursive: true, force: true });

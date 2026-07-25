@@ -70,9 +70,18 @@ console.log("\n### the Home shelf is VISIBLE (the bug that hid the artifacts)");
 
   // Scratch/tmp stays hidden — that rule was right, just applied too broadly.
   ok(isEphemeralUnit([src({ source: "t--1", unit_dir: "/tmp/whatever" })]), "/tmp is ephemeral");
-  ok(isEphemeralUnit([src({ source: "t--2", unit_dir: "/var/folders/xy/z" })]), "/var/folders is ephemeral");
-  ok(isEphemeralUnit([src({ source: "t--3", unit_dir: "/home/me/tmp" })]), "a dir named tmp is ephemeral");
-  ok(!isEphemeralUnit([src({ source: "r--4", unit_dir: "/home/me/real-project" })]), "a real project is not");
+  ok(
+    isEphemeralUnit([src({ source: "t--2", unit_dir: "/var/folders/xy/z" })]),
+    "/var/folders is ephemeral",
+  );
+  ok(
+    isEphemeralUnit([src({ source: "t--3", unit_dir: "/home/me/tmp" })]),
+    "a dir named tmp is ephemeral",
+  );
+  ok(
+    !isEphemeralUnit([src({ source: "r--4", unit_dir: "/home/me/real-project" })]),
+    "a real project is not",
+  );
   ok(isScratchDir("/tmp"), "isScratchDir(/tmp)");
   ok(!isScratchDir("/home/me/templates"), "'templates' is not 'tmp' (no prefix match)");
 }
@@ -83,7 +92,11 @@ console.log("\n### a unit is keyed by its DIRECTORY, never the agent's label");
   // off it let a session TELEPORT to another unit the moment its agent renamed itself
   // (whatnot-api → gyatso). unit_dir is hook-written and agent-proof, so it wins.
   const honest = src({ source: "snake--aaaaaaaa", unit_dir: "/home/me/snake", project: "snake" });
-  const lying = src({ source: "snake--bbbbbbbb", unit_dir: "/home/me/snake", project: "whatnot-api" });
+  const lying = src({
+    source: "snake--bbbbbbbb",
+    unit_dir: "/home/me/snake",
+    project: "whatnot-api",
+  });
 
   ok(sourceProjectKey(honest) === "snake", "label agrees with dir → 'snake'");
   ok(sourceProjectKey(lying) === "snake", "agent RENAMED itself → still 'snake' (no teleport)");
@@ -93,8 +106,14 @@ console.log("\n### a unit is keyed by its DIRECTORY, never the agent's label");
   );
 
   // Fallbacks, for pre-hook sources that carry no unit_dir at all.
-  ok(sourceProjectKey(src({ source: "x--cccccccc", project: "legacy" })) === "legacy", "no unit_dir → falls back to project");
-  ok(sourceProjectKey(src({ source: "legacy--dddddddd" })) === "legacy", "no unit_dir/project → stem prefix");
+  ok(
+    sourceProjectKey(src({ source: "x--cccccccc", project: "legacy" })) === "legacy",
+    "no unit_dir → falls back to project",
+  );
+  ok(
+    sourceProjectKey(src({ source: "legacy--dddddddd" })) === "legacy",
+    "no unit_dir/project → stem prefix",
+  );
   ok(sourceProjectKey(src({ source: "bare" })) === "bare", "a stem with no -- → itself");
 }
 
@@ -122,31 +141,44 @@ console.log("\n### launch-time identity (unitKeyForDir) agrees with read-time (u
   // Two namespaces for one fact ⇒ the "is this unit already on the roster?" test could never
   // match Home ⇒ every ~-launch minted a bogus `mrgyatso~N` project that sat beside Home
   // until its live file landed and re-homed it. One rule, one namespace, no interim card.
-  ok(unitKeyForDir(HOME, HOME) === HOME_UNIT, "launching in $HOME → the Home shelf, not the username");
+  ok(
+    unitKeyForDir(HOME, HOME) === HOME_UNIT,
+    "launching in $HOME → the Home shelf, not the username",
+  );
   ok(unitKeyForDir(HOME + "/", HOME) === HOME_UNIT, "…even with a trailing slash");
   ok(
-    unitKeyForDir(HOME, HOME) === unitKeyOf(src({ source: "mrgyatso--aaaaaaaa", unit_dir: HOME }), HOME),
+    unitKeyForDir(HOME, HOME) ===
+      unitKeyOf(src({ source: "mrgyatso--aaaaaaaa", unit_dir: HOME }), HOME),
     "launch-time key === the key its live source will resolve to (Home)",
   );
 
   const repo = HOME + "/snake";
   ok(unitKeyForDir(repo, HOME) === "snake", "launching in a repo → its project unit");
   ok(
-    unitKeyForDir(repo, HOME) === unitKeyOf(src({ source: "snake--cccccccc", unit_dir: repo }), HOME),
+    unitKeyForDir(repo, HOME) ===
+      unitKeyOf(src({ source: "snake--cccccccc", unit_dir: repo }), HOME),
     "launch-time key === the key its live source will resolve to (project)",
   );
 
-  ok(unitKeyForDir(HOME, null) === "mrgyatso", "no homeDir → cannot know it is home; falls back to basename");
+  ok(
+    unitKeyForDir(HOME, null) === "mrgyatso",
+    "no homeDir → cannot know it is home; falls back to basename",
+  );
 }
 
 console.log("\n### degenerate input");
 {
-  ok(unitKeyOf(src({ source: "x--aaaaaaaa", unit_dir: HOME }), null) !== HOME_UNIT, "no homeDir → cannot be home-rooted");
+  ok(
+    unitKeyOf(src({ source: "x--aaaaaaaa", unit_dir: HOME }), null) !== HOME_UNIT,
+    "no homeDir → cannot be home-rooted",
+  );
   ok(normalizeDir("") === null, "normalizeDir('') → null");
   ok(normalizeDir("/") === "/", "normalizeDir('/') → '/'");
   ok(projectSlug(null) === null, "projectSlug(null) → null");
   ok(projectSlug("/a/b/") === "b", "projectSlug strips trailing slash");
 }
 
-console.log(`\n${fail === 0 ? "all checks passed" : `${fail} FAILED`} (${pass} ok, ${fail} failed)`);
+console.log(
+  `\n${fail === 0 ? "all checks passed" : `${fail} FAILED`} (${pass} ok, ${fail} failed)`,
+);
 if (fail > 0) process.exit(1);

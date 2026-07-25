@@ -59,8 +59,34 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      - name: Board checks + plugin hook suites
+      - name: Lint + format check
+        # These are green as of the commit that introduced them, which is the whole point:
+        # the rule set was chosen to pass on existing code so that any future failure is a
+        # real signal rather than pre-existing noise somebody learns to ignore.
+        # `format:check` covers TypeScript only — CSS is in .prettierignore because the
+        # formatter grew board.css by 31% expanding deliberately dense declarations.
+        run: |
+          npm run lint
+          npm run format:check
+
+      - name: Board checks + plugin hook suites + frame render
         # `npm test` runs the pure-logic checks (ingest, sibling-unread, compact-state,
-        # unit-identity) and then the hook suites, which drive the REAL shell+node hook
-        # path under a sandboxed HOME. Those shell out to `git init`, which the runner has.
-        run: npm test
+        # unit-identity, unread-store), the file-size ratchets, then the hook suites, which
+        # drive the REAL shell+node hook path under a sandboxed HOME. Those shell out to
+        # `git init`, which the runner has.
+        #
+        # It finishes with `test:render`, which drives HEADLESS CHROME over CDP against a
+        # freshly-framed artifact. That step is not a nicety: the frame's guarantees are
+        # engine behaviours — whether the 💬 icons actually paint, whether a competing click
+        # handler double-toggles the ballot, whether CSS injected at the end of <body>
+        # out-orders the artifact's own background. The string-level suite passed while
+        # `ensureCommentable` was tagging a CSS selector instead of the element, shipping
+        # artifacts with no 💬 at all; only the render caught it.
+        #
+        # ubuntu-latest ships Chrome preinstalled. The script probes for it and exits 0 with
+        # a SKIPPED line if it is absent, so this can never become a platform requirement —
+        # but on this runner it really runs.
+        run: |
+          if [ -x /usr/bin/google-chrome ]; then echo "chrome: $(/usr/bin/google-chrome --version)";
+          else echo "::warning::no Chrome on this runner — the render check will self-skip"; fi
+          npm test

@@ -69,11 +69,7 @@ export interface CopyMessage {
 export function isCopyMessage(d: unknown): d is CopyMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
-  return (
-    m.source === "shelly-artifact" &&
-    m.kind === "copy" &&
-    typeof m.text === "string"
-  );
+  return m.source === "shelly-artifact" && m.kind === "copy" && typeof m.text === "string";
 }
 
 /** A Board navigation request from a full-bleed Hub iframe (or any artifact).
@@ -109,11 +105,7 @@ export interface NewSessionMessage {
 export function isNewSessionMessage(d: unknown): d is NewSessionMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
-  return (
-    m.source === "shelly-artifact" &&
-    m.kind === "new-session" &&
-    typeof m.quote === "string"
-  );
+  return m.source === "shelly-artifact" && m.kind === "new-session" && typeof m.quote === "string";
 }
 
 /** Warn about a `shelly-artifact` message whose kind matches no handler. The
@@ -128,11 +120,7 @@ export function warnUnknownArtifactMessage(d: unknown): void {
  *  helper can show the truth instead of an optimistic "Sent ✓". `via` names the
  *  route that took it: the session's terminal, the owning cloud agent, or the
  *  clipboard fallback. */
-export function postSubmitAck(
-  target: Window | null,
-  ok: boolean,
-  via: SubmitOutcome["via"],
-): void {
+export function postSubmitAck(target: Window | null, ok: boolean, via: SubmitOutcome["via"]): void {
   if (!target) return;
   try {
     target.postMessage(submitAckMessage(ok, via), "*");
@@ -160,11 +148,7 @@ function isFitMessage(d: unknown): d is FitMessage {
 function isSubmitMessage(d: unknown): d is SubmitMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
-  return (
-    m.source === "shelly-artifact" &&
-    m.kind === "submit" &&
-    typeof m.text === "string"
-  );
+  return m.source === "shelly-artifact" && m.kind === "submit" && typeof m.text === "string";
 }
 
 /** Translate a reported content size into a clamped target window size. */

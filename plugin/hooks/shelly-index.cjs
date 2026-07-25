@@ -37,6 +37,22 @@ try {
   charset = require("./shelly-charset.cjs");
 } catch (_) {}
 
+// Frame substrate (same contract as the charset net above: load-bearing but fail-safe).
+// Injects the unified 💬-comments + ✓/✎/✗ helper, the size reporter and the fallback shell
+// so the mechanics are GUARANTEED rather than re-copied by the model every turn — which
+// is what they actually were, and 28% of recent artifacts shipped with no 💬 at all as a
+// result. Rides this hook's existing node spawn rather than adding a second one to the
+// PostToolUse loop; the hot path stays one process per artifact write.
+//
+// This runs only for paths that reach this script, which is exactly right: shelly-hook's
+// case arms send `home.html` / `home.*.html` / `_*.html` elsewhere, and those must NOT be
+// framed — the L0 home is presentation-first, carries its own bar, and would sprout a
+// stray "Message the terminal" bar if the helper mounted in it.
+let frame = { frameArtifact: (h) => h };
+try {
+  frame = require("./shelly-frame.cjs");
+} catch (_) {}
+
 // Trace harness (no-op unless enabled). Co-located; require must never sink the
 // index write, so fall back to a noop if it can't be loaded.
 let trace = { emit() {} };
@@ -55,16 +71,25 @@ try {
 
 const [artifactPath, , indexPath] = process.argv.slice(2);
 
-// Fix the charset label FIRST — independent of routing, so a charset-less artifact is
-// repaired even when identity resolution below bails. Idempotent + fail-safe: on any error
-// (unreadable/mid-write) we leave the file untouched and carry on to indexing.
+// Repair the FILE first — charset label, then the frame substrate — independent of
+// routing, so an artifact is made correct even when identity resolution below bails.
+// One read and at most one write for both. Both transforms are idempotent and both
+// fail safe: on any error (unreadable / mid-write) the file is left untouched and we
+// carry on to indexing, because a half-repaired artifact is worse than an unrepaired one.
 if (artifactPath) {
   try {
     const html = fs.readFileSync(artifactPath, "utf8");
-    const fixed = charset.ensureArtifactCharset(html);
+    let fixed = charset.ensureArtifactCharset(html);
+    const charsetFixed = fixed !== html;
+    const beforeFrame = fixed;
+    fixed = frame.frameArtifact(fixed);
     if (fixed !== html) {
       fs.writeFileSync(artifactPath, fixed);
-      trace.emit("index", "charset-fixed", { corr: path.resolve(artifactPath) });
+      const corr = path.resolve(artifactPath);
+      if (charsetFixed) trace.emit("index", "charset-fixed", { corr });
+      if (fixed !== beforeFrame) {
+        trace.emit("index", "frame-injected", { corr, v: frame.frameVersion(fixed) || "" });
+      }
     }
   } catch (_) {}
 }

@@ -26,7 +26,7 @@
 //     {"evt":"session.registered","session_id","unit_key","root","ts_ms"}  (one/line)
 //     The Board will TAIL this (Phase 3) instead of re-deriving all state every poll.
 //
-// SHARING (§5.4 decision, documented in DECISIONS-identity-registry.md): this file is
+// SHARING (§5.4 decision, documented in docs/identity-registry-decisions.md): this file is
 // the single canonical copy in plugin/hooks/. The observer plugin carries the SAME
 // file via git (its branch rebases onto master at Phase 5) and `require()`s it by the
 // same relative path from its own CLAUDE_PLUGIN_ROOT — never a second forked copy.

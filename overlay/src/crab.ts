@@ -5,23 +5,28 @@
 // light up the L0 idle screen and other Board surfaces. Transform/opacity only,
 // reduced-motion aware.
 
-export interface CrabScene { id: string; cap: string; behind: string; front: string; css: string; }
-
+export interface CrabScene {
+  id: string;
+  cap: string;
+  behind: string;
+  front: string;
+  css: string;
+}
 
 // Shared character rig — body, arms, nested eyes. Drawn once per mount.
 export const CW_RIG =
   '<g class="cw-rig">' +
-    '<g class="cw-body" fill="#d98a5c">' +
-      '<rect x="3" y="13" width="1" height="2"/><rect x="5" y="13" width="1" height="2"/>' +
-      '<rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>' +
-      '<rect x="2" y="6" width="11" height="7"/>' +
-      '<g class="cw-arm-l"><rect x="0" y="9" width="2" height="2"/></g>' +
-      '<g class="cw-arm-r"><rect x="13" y="9" width="2" height="2"/></g>' +
-    '</g>' +
-    '<g class="cw-eyes"><g class="cw-eyes-b" fill="#2a2018">' +
-      '<rect x="4.5" y="8" width="1" height="2"/><rect x="9.5" y="8" width="1" height="2"/>' +
-    '</g></g>' +
-  '</g>';
+  '<g class="cw-body" fill="#d98a5c">' +
+  '<rect x="3" y="13" width="1" height="2"/><rect x="5" y="13" width="1" height="2"/>' +
+  '<rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>' +
+  '<rect x="2" y="6" width="11" height="7"/>' +
+  '<g class="cw-arm-l"><rect x="0" y="9" width="2" height="2"/></g>' +
+  '<g class="cw-arm-r"><rect x="13" y="9" width="2" height="2"/></g>' +
+  "</g>" +
+  '<g class="cw-eyes"><g class="cw-eyes-b" fill="#2a2018">' +
+  '<rect x="4.5" y="8" width="1" height="2"/><rect x="9.5" y="8" width="1" height="2"/>' +
+  "</g></g>" +
+  "</g>";
 
 // Base CSS shared by every scene (halo, canvas, shadow, prop defaults).
 export const CW_BASE =
@@ -42,9 +47,13 @@ export const CW_BASE =
 
 // Each scene: id, caption, behind/front prop SVG, and scoped CSS.
 export const CW_SCENES = [
-  { id:"typing", cap:"Your agent’s heads-down in the code",
-    behind:'<g fill="#40c4ff"><rect class="cw-bit" x="-2" y="12" width="1.4" height="1.4"/><rect class="cw-bit b2" x="6" y="11" width="1.4" height="1.4"/><rect class="cw-bit b3" x="13" y="12" width="1.4" height="1.4"/><rect class="cw-bit b4" x="3" y="10" width="1.4" height="1.4"/></g>',
-    front:'<g transform="translate(2.5 10.5)"><rect x="-0.5" y="4.6" width="11" height="1" fill="#546e7a"/><rect x="0" y="0" width="10" height="4.8" fill="#78909c"/><rect x="4.5" y="2" width="1" height="1" fill="#fff"/></g>',
+  {
+    id: "typing",
+    cap: "Your agent’s heads-down in the code",
+    behind:
+      '<g fill="#40c4ff"><rect class="cw-bit" x="-2" y="12" width="1.4" height="1.4"/><rect class="cw-bit b2" x="6" y="11" width="1.4" height="1.4"/><rect class="cw-bit b3" x="13" y="12" width="1.4" height="1.4"/><rect class="cw-bit b4" x="3" y="10" width="1.4" height="1.4"/></g>',
+    front:
+      '<g transform="translate(2.5 10.5)"><rect x="-0.5" y="4.6" width="11" height="1" fill="#546e7a"/><rect x="0" y="0" width="10" height="4.8" fill="#78909c"/><rect x="4.5" y="2" width="1" height="1" fill="#fff"/></g>',
     css:
       ".crab-stage .cw--typing .cw-rig{transform-origin:7.5px 15px;animation:cwJitter .09s steps(2) infinite alternate}" +
       "@keyframes cwJitter{from{transform:translateY(0)}to{transform:translateY(.5px)}}" +
@@ -57,11 +66,15 @@ export const CW_SCENES = [
       ".crab-stage .cw--typing .cw-eyes-b{animation:none}" +
       ".crab-stage .cw--typing .cw-bit{opacity:0;animation:cwBit 1s linear infinite}" +
       ".crab-stage .cw--typing .cw-bit.b2{animation-delay:.33s}.crab-stage .cw--typing .cw-bit.b3{animation-delay:.66s}.crab-stage .cw--typing .cw-bit.b4{animation-delay:.85s}" +
-      "@keyframes cwBit{0%{opacity:0;transform:translateY(0) scale(.5)}25%{opacity:.85}100%{opacity:0;transform:translateY(-13px) scale(1.15)}}" },
+      "@keyframes cwBit{0%{opacity:0;transform:translateY(0) scale(.5)}25%{opacity:.85}100%{opacity:0;transform:translateY(-13px) scale(1.15)}}",
+  },
 
-  { id:"thinking", cap:"Your agent’s turning it over",
-    behind:'<g transform="translate(7 -10)"><g fill="#fff" opacity="0.95"><rect x="2" y="1" width="8" height="6"/><rect x="1" y="2" width="10" height="4"/><rect x="3" y="0" width="6" height="8"/><rect x="2" y="7" width="2" height="2"/><rect x="1" y="9" width="1" height="1"/></g><g fill="#0082fc"><rect class="cw-load" x="2.5" y="3" width="1.2" height="1.2"/><rect class="cw-load l2" x="5.4" y="3" width="1.2" height="1.2"/><rect class="cw-load l3" x="8.3" y="3" width="1.2" height="1.2"/></g></g>',
-    front:"",
+  {
+    id: "thinking",
+    cap: "Your agent’s turning it over",
+    behind:
+      '<g transform="translate(7 -10)"><g fill="#fff" opacity="0.95"><rect x="2" y="1" width="8" height="6"/><rect x="1" y="2" width="10" height="4"/><rect x="3" y="0" width="6" height="8"/><rect x="2" y="7" width="2" height="2"/><rect x="1" y="9" width="1" height="1"/></g><g fill="#0082fc"><rect class="cw-load" x="2.5" y="3" width="1.2" height="1.2"/><rect class="cw-load l2" x="5.4" y="3" width="1.2" height="1.2"/><rect class="cw-load l3" x="8.3" y="3" width="1.2" height="1.2"/></g></g>',
+    front: "",
     css:
       ".crab-stage .cw--thinking .cw-rig{transform-origin:7.5px 15px;animation:cwSway 4s ease-in-out infinite}" +
       "@keyframes cwSway{0%,100%{transform:rotate(0deg)}25%{transform:rotate(-3deg)}75%{transform:rotate(3deg)}}" +
@@ -69,11 +82,15 @@ export const CW_SCENES = [
       "@keyframes cwTap{0%{transform:rotate(-122deg)}100%{transform:rotate(-145deg)}}" +
       ".crab-stage .cw--thinking .cw-load{opacity:.15;animation:cwLoad 2s infinite}" +
       ".crab-stage .cw--thinking .cw-load.l2{animation-delay:.25s}.crab-stage .cw--thinking .cw-load.l3{animation-delay:.5s}" +
-      "@keyframes cwLoad{0%,18%{opacity:.15}40%,80%{opacity:1}100%{opacity:.15}}" },
+      "@keyframes cwLoad{0%,18%{opacity:.15}40%,80%{opacity:1}100%{opacity:.15}}",
+  },
 
-  { id:"conducting", cap:"Your agent’s orchestrating the next move",
-    behind:'<g><rect class="cw-str" x="0" y="0" width="1.5" height="1.5" fill="#0082fc"/><rect class="cw-str s2" x="0" y="0" width="1.5" height="1.5" fill="#ffc107"/><rect class="cw-str s3" x="0" y="0" width="1.5" height="1.5" fill="#ff5252"/><rect class="cw-str s4" x="0" y="0" width="1.5" height="1.5" fill="#4caf50"/><rect class="cw-str s5" x="0" y="0" width="1.5" height="1.5" fill="#9c27b0"/></g>',
-    front:"",
+  {
+    id: "conducting",
+    cap: "Your agent’s orchestrating the next move",
+    behind:
+      '<g><rect class="cw-str" x="0" y="0" width="1.5" height="1.5" fill="#0082fc"/><rect class="cw-str s2" x="0" y="0" width="1.5" height="1.5" fill="#ffc107"/><rect class="cw-str s3" x="0" y="0" width="1.5" height="1.5" fill="#ff5252"/><rect class="cw-str s4" x="0" y="0" width="1.5" height="1.5" fill="#4caf50"/><rect class="cw-str s5" x="0" y="0" width="1.5" height="1.5" fill="#9c27b0"/></g>',
+    front: "",
     css:
       ".crab-stage .cw--conducting .cw-rig{transform-origin:7.5px 15px;animation:cwBob 2s ease-in-out infinite}" +
       "@keyframes cwBob{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(1.5px) scaleY(.98)}}" +
@@ -83,11 +100,15 @@ export const CW_SCENES = [
       "@keyframes cwCondR{0%,100%{transform:rotate(-85deg)}50%{transform:rotate(-15deg)}}" +
       ".crab-stage .cw--conducting .cw-str{opacity:0;animation:cwStream 2s linear infinite}" +
       ".crab-stage .cw--conducting .cw-str.s2{animation-delay:.4s}.crab-stage .cw--conducting .cw-str.s3{animation-delay:.8s}.crab-stage .cw--conducting .cw-str.s4{animation-delay:1.2s}.crab-stage .cw--conducting .cw-str.s5{animation-delay:1.6s}" +
-      "@keyframes cwStream{0%{opacity:0;transform:translate(-2px,6px) scale(0)}15%{opacity:1;transform:translate(0,1px) scale(1)}50%{opacity:1;transform:translate(7.5px,-3px) scale(1.5)}85%{opacity:1;transform:translate(15px,1px) scale(1)}100%{opacity:0;transform:translate(17px,6px) scale(0)}}" },
+      "@keyframes cwStream{0%{opacity:0;transform:translate(-2px,6px) scale(0)}15%{opacity:1;transform:translate(0,1px) scale(1)}50%{opacity:1;transform:translate(7.5px,-3px) scale(1.5)}85%{opacity:1;transform:translate(15px,1px) scale(1)}100%{opacity:0;transform:translate(17px,6px) scale(0)}}",
+  },
 
-  { id:"juggling", cap:"Your agent’s juggling a few threads",
-    behind:"",
-    front:'<g><rect class="cw-pk" x="-1" y="-1" width="2" height="2" fill="#ff5252"/><rect class="cw-pk p2" x="-1" y="-1" width="2" height="2" fill="#ffc107"/><rect class="cw-pk p3" x="-1" y="-1" width="2" height="2" fill="#4caf50"/></g>',
+  {
+    id: "juggling",
+    cap: "Your agent’s juggling a few threads",
+    behind: "",
+    front:
+      '<g><rect class="cw-pk" x="-1" y="-1" width="2" height="2" fill="#ff5252"/><rect class="cw-pk p2" x="-1" y="-1" width="2" height="2" fill="#ffc107"/><rect class="cw-pk p3" x="-1" y="-1" width="2" height="2" fill="#4caf50"/></g>',
     css:
       ".crab-stage .cw--juggling .cw-rig{transform-origin:7.5px 15px;animation:cwRock .6s ease-in-out infinite alternate}" +
       "@keyframes cwRock{0%{transform:rotate(-5deg)}100%{transform:rotate(5deg)}}" +
@@ -100,11 +121,16 @@ export const CW_SCENES = [
       ".crab-stage .cw--juggling .cw-eyes-b{animation:none}" +
       ".crab-stage .cw--juggling .cw-pk{animation:cwJuggle 1.2s linear infinite}" +
       ".crab-stage .cw--juggling .cw-pk.p2{animation-delay:-.4s}.crab-stage .cw--juggling .cw-pk.p3{animation-delay:-.8s}" +
-      "@keyframes cwJuggle{0%{transform:translate(0,9px) rotate(0deg)}25%{transform:translate(8px,0) rotate(90deg)}50%{transform:translate(15px,9px) rotate(180deg)}75%{transform:translate(8px,4px) rotate(270deg)}100%{transform:translate(0,9px) rotate(360deg)}}" },
+      "@keyframes cwJuggle{0%{transform:translate(0,9px) rotate(0deg)}25%{transform:translate(8px,0) rotate(90deg)}50%{transform:translate(15px,9px) rotate(180deg)}75%{transform:translate(8px,4px) rotate(270deg)}100%{transform:translate(0,9px) rotate(360deg)}}",
+  },
 
-  { id:"sweeping", cap:"Your agent’s sweeping up the details",
-    behind:'<g class="cw-dust" fill="#9e9e9e"><rect x="0" y="0" width="1.5" height="1.5"/></g><g class="cw-dust d2" fill="#b0bec5"><rect x="0" y="0" width="1" height="1"/></g>',
-    front:'<g class="cw-broom"><rect x="13.5" y="4" width="1" height="10" fill="#795548"/><rect x="12" y="14" width="4" height="2" fill="#ffc107"/></g>',
+  {
+    id: "sweeping",
+    cap: "Your agent’s sweeping up the details",
+    behind:
+      '<g class="cw-dust" fill="#9e9e9e"><rect x="0" y="0" width="1.5" height="1.5"/></g><g class="cw-dust d2" fill="#b0bec5"><rect x="0" y="0" width="1" height="1"/></g>',
+    front:
+      '<g class="cw-broom"><rect x="13.5" y="4" width="1" height="10" fill="#795548"/><rect x="12" y="14" width="4" height="2" fill="#ffc107"/></g>',
     css:
       ".crab-stage .cw--sweeping .cw-rig{transform-origin:7.5px 15px;animation:cwLean 1.5s ease-in-out infinite}" +
       "@keyframes cwLean{0%,100%{transform:rotate(5deg) translate(1px,0)}50%{transform:rotate(13deg) translate(3px,1px)}}" +
@@ -115,11 +141,16 @@ export const CW_SCENES = [
       "@keyframes cwBroom{0%,100%{transform:rotate(10deg)}50%{transform:rotate(30deg) translate(2px,-1px)}}" +
       ".crab-stage .cw--sweeping .cw-dust{opacity:0;animation:cwDust 1.5s ease-out infinite}" +
       ".crab-stage .cw--sweeping .cw-dust.d2{animation-delay:.3s}" +
-      "@keyframes cwDust{0%,40%{transform:translate(17px,14px) scale(0);opacity:0}50%{transform:translate(19px,14px) scale(1);opacity:1}100%{transform:translate(25px,14px) scale(.5);opacity:0}}" },
+      "@keyframes cwDust{0%,40%{transform:translate(17px,14px) scale(0);opacity:0}50%{transform:translate(19px,14px) scale(1);opacity:1}100%{transform:translate(25px,14px) scale(.5);opacity:0}}",
+  },
 
-  { id:"beacon", cap:"Your agent’s directing the subagents",
-    behind:'<g fill="none"><circle class="cw-wave" cx="7.5" cy="5" r="3" stroke="#0082fc" stroke-width="0.6"/><circle class="cw-wave w2" cx="7.5" cy="5" r="3" stroke="#ffc107" stroke-width="0.6"/><circle class="cw-wave w3" cx="7.5" cy="5" r="3" stroke="#ff5252" stroke-width="0.6"/></g>',
-    front:'<g><rect x="7" y="2" width="1" height="4" fill="#78909c"/><circle class="cw-ant" cx="7.5" cy="1.5" r="1" fill="#ff5252"/></g>',
+  {
+    id: "beacon",
+    cap: "Your agent’s directing the subagents",
+    behind:
+      '<g fill="none"><circle class="cw-wave" cx="7.5" cy="5" r="3" stroke="#0082fc" stroke-width="0.6"/><circle class="cw-wave w2" cx="7.5" cy="5" r="3" stroke="#ffc107" stroke-width="0.6"/><circle class="cw-wave w3" cx="7.5" cy="5" r="3" stroke="#ff5252" stroke-width="0.6"/></g>',
+    front:
+      '<g><rect x="7" y="2" width="1" height="4" fill="#78909c"/><circle class="cw-ant" cx="7.5" cy="1.5" r="1" fill="#ff5252"/></g>',
     css:
       ".crab-stage .cw--beacon .cw-rig{transform-origin:7.5px 15px;animation:cwBeac 1.5s ease-in-out infinite}" +
       "@keyframes cwBeac{0%,100%{transform:translateY(0)}50%{transform:translateY(.5px)}}" +
@@ -129,11 +160,16 @@ export const CW_SCENES = [
       ".crab-stage .cw--beacon .cw-wave.w2{animation-delay:.5s}.crab-stage .cw--beacon .cw-wave.w3{animation-delay:1s}" +
       "@keyframes cwWave{0%{transform:scale(.4);opacity:0}10%{opacity:.7}100%{transform:scale(2.6);opacity:0}}" +
       ".crab-stage .cw--beacon .cw-ant{animation:cwAnt .8s ease-in-out infinite alternate}" +
-      "@keyframes cwAnt{0%{opacity:.4}100%{opacity:1}}" },
+      "@keyframes cwAnt{0%{opacity:.4}100%{opacity:1}}",
+  },
 
-  { id:"wizard", cap:"Your agent’s working some magic",
-    behind:'<g class="cw-stars"><polygon class="cw-star" points="14,-6 14.5,-5.5 15,-5.5 14.6,-5.1 14.8,-4.5 14,-4.9 13.2,-4.5 13.4,-5.1 13,-5.5 13.5,-5.5" fill="#ffd700"/><polygon class="cw-star sb" points="4,-4 4.5,-3.5 5,-3.5 4.6,-3.1 4.8,-2.5 4,-2.9 3.2,-2.5 3.4,-3.1 3,-3.5 3.5,-3.5" fill="#40c4ff"/><polygon class="cw-star sc" points="19,0 19.5,.5 20,.5 19.6,.9 19.8,1.5 19,1.1 18.2,1.5 18.4,.9 18,.5 18.5,.5" fill="#b388ff"/></g>',
-    front:'<g class="cw-wand"><rect x="13.5" y="4" width="1" height="6" fill="#8d6e63"/><rect x="13.5" y="4" width="1" height="1" fill="#ffd700"/></g><g transform="translate(7.5 6)"><polygon points="-4,0 4,0 0,-6" fill="#673ab7"/><rect x="-5" y="0" width="10" height="1" fill="#512da8"/></g>',
+  {
+    id: "wizard",
+    cap: "Your agent’s working some magic",
+    behind:
+      '<g class="cw-stars"><polygon class="cw-star" points="14,-6 14.5,-5.5 15,-5.5 14.6,-5.1 14.8,-4.5 14,-4.9 13.2,-4.5 13.4,-5.1 13,-5.5 13.5,-5.5" fill="#ffd700"/><polygon class="cw-star sb" points="4,-4 4.5,-3.5 5,-3.5 4.6,-3.1 4.8,-2.5 4,-2.9 3.2,-2.5 3.4,-3.1 3,-3.5 3.5,-3.5" fill="#40c4ff"/><polygon class="cw-star sc" points="19,0 19.5,.5 20,.5 19.6,.9 19.8,1.5 19,1.1 18.2,1.5 18.4,.9 18,.5 18.5,.5" fill="#b388ff"/></g>',
+    front:
+      '<g class="cw-wand"><rect x="13.5" y="4" width="1" height="6" fill="#8d6e63"/><rect x="13.5" y="4" width="1" height="1" fill="#ffd700"/></g><g transform="translate(7.5 6)"><polygon points="-4,0 4,0 0,-6" fill="#673ab7"/><rect x="-5" y="0" width="10" height="1" fill="#512da8"/></g>',
     css:
       ".crab-stage .cw--wizard .cw-rig{transform-origin:7.5px 15px;animation:cwFloat 3s ease-in-out infinite}" +
       "@keyframes cwFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}" +
@@ -144,11 +180,15 @@ export const CW_SCENES = [
       "@keyframes cwWizR{0%,100%{transform:rotate(-20deg)}50%{transform:rotate(-120deg)}}" +
       ".crab-stage .cw--wizard .cw-star{opacity:0;animation:cwSparkle 2s ease-out infinite}" +
       ".crab-stage .cw--wizard .cw-star.sb{animation-delay:.6s}.crab-stage .cw--wizard .cw-star.sc{animation-delay:1.2s}" +
-      "@keyframes cwSparkle{0%{opacity:0;transform:translateY(4px) scale(0) rotate(0)}20%{opacity:1}100%{opacity:0;transform:translateY(-13px) scale(1.4) rotate(180deg)}}" },
+      "@keyframes cwSparkle{0%{opacity:0;transform:translateY(4px) scale(0) rotate(0)}20%{opacity:1}100%{opacity:0;transform:translateY(-13px) scale(1.4) rotate(180deg)}}",
+  },
 
-  { id:"confused", cap:"Your agent’s puzzling it out",
-    behind:'<g class="cw-q" fill="#40c4ff"><rect x="1" y="0" width="2" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="2"/><rect x="2" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="1" y="6" width="1" height="1"/></g><g class="cw-q q2" fill="#ffc107" transform="translate(10 0)"><rect x="1" y="0" width="2" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="2"/><rect x="2" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="1" y="6" width="1" height="1"/></g>',
-    front:"",
+  {
+    id: "confused",
+    cap: "Your agent’s puzzling it out",
+    behind:
+      '<g class="cw-q" fill="#40c4ff"><rect x="1" y="0" width="2" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="2"/><rect x="2" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="1" y="6" width="1" height="1"/></g><g class="cw-q q2" fill="#ffc107" transform="translate(10 0)"><rect x="1" y="0" width="2" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="3" y="1" width="1" height="2"/><rect x="2" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="1" y="6" width="1" height="1"/></g>',
+    front: "",
     css:
       ".crab-stage .cw--confused .cw-rig{transform-origin:7.5px 15px;animation:cwLook 6s ease-in-out infinite}" +
       "@keyframes cwLook{0%,10%{transform:translate(0,0)}15%,35%{transform:translate(-2px,0) rotate(-2deg)}40%,45%{transform:translate(0,0)}50%,70%{transform:translate(2px,0) rotate(2deg)}75%,100%{transform:translate(0,0)}}" +
@@ -158,11 +198,15 @@ export const CW_SCENES = [
       ".crab-stage .cw--confused .cw-q{opacity:0;animation:cwQL 6s ease-in-out infinite}" +
       ".crab-stage .cw--confused .cw-q.q2{animation:cwQR 6s ease-in-out infinite}" +
       "@keyframes cwQL{0%,15%{opacity:0;transform:translate(-6px,6px) scale(.5)}20%,30%{opacity:1;transform:translate(-8px,-2px) scale(1)}35%,100%{opacity:0;transform:translate(-8px,-8px) scale(1.2)}}" +
-      "@keyframes cwQR{0%,50%{opacity:0;transform:translate(16px,6px) scale(.5)}55%,65%{opacity:1;transform:translate(18px,-2px) scale(1)}70%,100%{opacity:0;transform:translate(18px,-8px) scale(1.2)}}" },
+      "@keyframes cwQR{0%,50%{opacity:0;transform:translate(16px,6px) scale(.5)}55%,65%{opacity:1;transform:translate(18px,-2px) scale(1)}70%,100%{opacity:0;transform:translate(18px,-8px) scale(1.2)}}",
+  },
 
-  { id:"happy", cap:"Your agent’s pretty pleased with that",
-    behind:'<g class="cw-sp" fill="#ffd700"><rect x="-4" y="-2" width="1.4" height="1.4"/></g><g class="cw-sp sp2" fill="#ffa000"><rect x="18" y="-4" width="1.4" height="1.4"/></g><g class="cw-sp sp3" fill="#fff59d"><rect x="19" y="9" width="1.4" height="1.4"/></g><g class="cw-sp sp4" fill="#ffc107"><rect x="-5" y="11" width="1.4" height="1.4"/></g><g class="cw-sp sp5" fill="#fff59d"><rect x="7" y="-8" width="1.4" height="1.4"/></g>',
-    front:"",
+  {
+    id: "happy",
+    cap: "Your agent’s pretty pleased with that",
+    behind:
+      '<g class="cw-sp" fill="#ffd700"><rect x="-4" y="-2" width="1.4" height="1.4"/></g><g class="cw-sp sp2" fill="#ffa000"><rect x="18" y="-4" width="1.4" height="1.4"/></g><g class="cw-sp sp3" fill="#fff59d"><rect x="19" y="9" width="1.4" height="1.4"/></g><g class="cw-sp sp4" fill="#ffc107"><rect x="-5" y="11" width="1.4" height="1.4"/></g><g class="cw-sp sp5" fill="#fff59d"><rect x="7" y="-8" width="1.4" height="1.4"/></g>',
+    front: "",
     css:
       ".crab-stage .cw--happy .cw-rig{transform-origin:7.5px 15px;animation:cwBounce 1s ease-in-out infinite}" +
       "@keyframes cwBounce{0%,15%,100%{transform:translateY(0) scaleY(1)}20%{transform:translateY(0) scaleY(.85)}40%{transform:translateY(-9px) scaleY(1.05)}50%{transform:translateY(-11px) scaleY(1)}60%{transform:translateY(-9px) scaleY(1.05)}80%{transform:translateY(0) scaleY(.85)}85%{transform:translateY(0) scaleY(1)}}" +
@@ -172,51 +216,66 @@ export const CW_SCENES = [
       "@keyframes cwHapR{0%{transform:rotate(-45deg)}100%{transform:rotate(-85deg)}}" +
       ".crab-stage .cw--happy .cw-sp{opacity:0;animation:cwSpark 1.5s step-end infinite}" +
       ".crab-stage .cw--happy .cw-sp.sp2{animation-delay:.3s}.crab-stage .cw--happy .cw-sp.sp3{animation-delay:.6s}.crab-stage .cw--happy .cw-sp.sp4{animation-delay:.9s}.crab-stage .cw--happy .cw-sp.sp5{animation-delay:1.2s}" +
-      "@keyframes cwSpark{0%{opacity:0}12%{opacity:1}30%{opacity:0}100%{opacity:0}}" },
+      "@keyframes cwSpark{0%{opacity:0}12%{opacity:1}30%{opacity:0}100%{opacity:0}}",
+  },
 
   // Crab nestled in a hermit-crab shell, peeking out and waving — because the app
   // is a "shell" for Claude. The shell is a static pixel coil in `behind`; the crab
   // (CW_RIG) sits in front of it and the left claw gives a slow friendly wave.
-  { id:"hermit", cap:"Your agent’s making himself at home",
-    behind:'<g>' +
+  {
+    id: "hermit",
+    cap: "Your agent’s making himself at home",
+    behind:
+      "<g>" +
       '<g fill="#d9c9a3">' +
-        '<rect x="10" y="-1" width="6" height="1"/><rect x="8" y="0" width="10" height="1"/>' +
-        '<rect x="7" y="1" width="12" height="1"/><rect x="6" y="2" width="13" height="1"/>' +
-        '<rect x="6" y="3" width="14" height="1"/><rect x="6" y="4" width="14" height="1"/>' +
-        '<rect x="6" y="5" width="13" height="1"/><rect x="6" y="6" width="13" height="1"/>' +
-        '<rect x="7" y="7" width="11" height="1"/><rect x="7" y="8" width="10" height="1"/>' +
-        '<rect x="8" y="9" width="8" height="1"/><rect x="9" y="10" width="6" height="1"/>' +
-        '<rect x="10" y="11" width="4" height="1"/><rect x="11" y="12" width="2" height="1"/>' +
-      '</g>' +
+      '<rect x="10" y="-1" width="6" height="1"/><rect x="8" y="0" width="10" height="1"/>' +
+      '<rect x="7" y="1" width="12" height="1"/><rect x="6" y="2" width="13" height="1"/>' +
+      '<rect x="6" y="3" width="14" height="1"/><rect x="6" y="4" width="14" height="1"/>' +
+      '<rect x="6" y="5" width="13" height="1"/><rect x="6" y="6" width="13" height="1"/>' +
+      '<rect x="7" y="7" width="11" height="1"/><rect x="7" y="8" width="10" height="1"/>' +
+      '<rect x="8" y="9" width="8" height="1"/><rect x="9" y="10" width="6" height="1"/>' +
+      '<rect x="10" y="11" width="4" height="1"/><rect x="11" y="12" width="2" height="1"/>' +
+      "</g>" +
       '<g fill="#ece0c6">' +
-        '<rect x="10" y="-1" width="3" height="1"/><rect x="8" y="0" width="2" height="1"/>' +
-        '<rect x="7" y="1" width="1" height="1"/><rect x="6" y="2" width="1" height="2"/>' +
-        '<rect x="6" y="4" width="1" height="2"/>' +
-      '</g>' +
+      '<rect x="10" y="-1" width="3" height="1"/><rect x="8" y="0" width="2" height="1"/>' +
+      '<rect x="7" y="1" width="1" height="1"/><rect x="6" y="2" width="1" height="2"/>' +
+      '<rect x="6" y="4" width="1" height="2"/>' +
+      "</g>" +
       '<g fill="#c9a875">' +
-        '<rect x="18" y="2" width="1" height="1"/><rect x="17" y="3" width="1" height="1"/>' +
-        '<rect x="17" y="4" width="1" height="1"/><rect x="16" y="5" width="1" height="1"/>' +
-        '<rect x="15" y="6" width="1" height="1"/><rect x="14" y="7" width="1" height="1"/>' +
-        '<rect x="13" y="8" width="1" height="1"/>' +
-      '</g>' +
+      '<rect x="18" y="2" width="1" height="1"/><rect x="17" y="3" width="1" height="1"/>' +
+      '<rect x="17" y="4" width="1" height="1"/><rect x="16" y="5" width="1" height="1"/>' +
+      '<rect x="15" y="6" width="1" height="1"/><rect x="14" y="7" width="1" height="1"/>' +
+      '<rect x="13" y="8" width="1" height="1"/>' +
+      "</g>" +
       '<rect x="13" y="4" width="3" height="3" fill="#c9a875"/><rect x="14" y="5" width="1" height="1" fill="#b89a6b"/>' +
-    '</g>',
-    front:"",
+      "</g>",
+    front: "",
     css:
       ".crab-stage .cw--hermit .cw-arm-l{transform-origin:2px 10px;animation:cwHermitWave 2.4s ease-in-out infinite}" +
       "@keyframes cwHermitWave{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-40deg)}}" +
-      ".crab-stage .cw--hermit .cw-arm-r{transform-origin:14px 10px;transform:rotate(-10deg)}" },
+      ".crab-stage .cw--hermit .cw-arm-r{transform-origin:14px 10px;transform:rotate(-10deg)}",
+  },
 ];
 
 // Assemble the full stylesheet (base + every scene) once.
-export const CW_CSS = CW_BASE + CW_SCENES.map(function (s) { return s.css; }).join("");
+export const CW_CSS =
+  CW_BASE +
+  CW_SCENES.map(function (s) {
+    return s.css;
+  }).join("");
 
 // Build one scene's SVG: shadow + behind props + shared rig + front props.
 export function cwSceneSVG(scene: CrabScene): string {
-  return '<svg class="cw cw--' + scene.id + '" viewBox="-7 -12 30 30" aria-hidden="true">' +
+  return (
+    '<svg class="cw cw--' +
+    scene.id +
+    '" viewBox="-7 -12 30 30" aria-hidden="true">' +
     '<rect class="cw-shadow" x="3" y="15" width="9" height="1"/>' +
-    scene.behind + CW_RIG + scene.front +
-    '</svg>';
+    scene.behind +
+    CW_RIG +
+    scene.front +
+    "</svg>"
+  );
 }
 
 // Inject the library CSS once, then mount a scene (random unless pinned).

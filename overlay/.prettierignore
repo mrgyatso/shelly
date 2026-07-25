@@ -1,0 +1,11 @@
+# CSS is deliberately hand-formatted and DENSE — multiple declarations per line, grouped by
+# concern. Prettier expands every declaration onto its own line, which grew board.css from
+# 3,076 to 4,037 lines (+31%) in a codebase whose own standard is 800 lines a file. That is a
+# formatter making a file measurably worse to satisfy a default, so CSS stays out.
+# (Also keeps a 960-line diff out of `git blame` on the stylesheet.)
+*.css
+
+# Generated / vendored.
+dist/
+dist-demo/
+demo.html

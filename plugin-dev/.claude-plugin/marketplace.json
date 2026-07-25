@@ -1,0 +1,15 @@
+{
+  "name": "shelly-dev",
+  "description": "Dev marketplace for testing the Shelly plugin straight out of a git worktree, installed ALONGSIDE the released one instead of replacing it. Never publish this; it exists so `claude plugin` can install a branch.",
+  "owner": {
+    "name": "mrgyatso",
+    "url": "https://github.com/mrgyatso"
+  },
+  "plugins": [
+    {
+      "name": "shelly",
+      "source": "./plugin",
+      "description": "The Shelly plugin as it stands in THIS working tree \u2014 branch code, not a release."
+    }
+  ]
+}

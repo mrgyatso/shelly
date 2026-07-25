@@ -2,7 +2,7 @@
 // Run all identity-registry hook-integration suites; exit non-zero if any fails.
 // These exercise the REAL shell+node hook path (shelly-session, shelly-index.cjs,
 // shelly-identity.cjs) under a sandboxed throwaway HOME — the deterministic slice of the
-// §8 matrix the live merge-and-test session leans on (see DECISIONS-identity-registry.md).
+// §8 matrix the live merge-and-test session leans on (see docs/identity-registry-decisions.md).
 //
 //   node plugin/hooks/__tests__/run.cjs
 
@@ -19,6 +19,7 @@ const suites = [
   "artifact-fork.cjs",
   "artifact-seal.cjs",
   "charset.cjs",
+  "frame.cjs",
   "codex-provider.cjs",
   "home-adoption.cjs",
   "bash-writes.cjs",

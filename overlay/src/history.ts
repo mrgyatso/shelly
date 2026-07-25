@@ -56,7 +56,7 @@ export async function initHistory(): Promise<void> {
   });
 
   setStatus(status, "Loading…");
-  let entries: ArtifactEntry[] = [];
+  let entries: ArtifactEntry[];
   try {
     entries = await invoke<ArtifactEntry[]>("list_artifacts");
   } catch (e) {
@@ -183,8 +183,12 @@ function wireNavigation(): void {
     });
   });
 
-  document.getElementById("hist-prev")?.addEventListener("click", () => centerOn(activeIndex - 1, true));
-  document.getElementById("hist-next")?.addEventListener("click", () => centerOn(activeIndex + 1, true));
+  document
+    .getElementById("hist-prev")
+    ?.addEventListener("click", () => centerOn(activeIndex - 1, true));
+  document
+    .getElementById("hist-next")
+    ?.addEventListener("click", () => centerOn(activeIndex + 1, true));
 
   window.addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.key === "ArrowRight") centerOn(activeIndex + 1, true);

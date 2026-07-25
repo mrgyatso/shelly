@@ -26,7 +26,9 @@ function load() {
   try {
     raw = fs.readFileSync(LOG, "utf8");
   } catch {
-    console.error(`no trace log at ${LOG} — is the harness on? (touch ${path.dirname(LOG)}/trace.on)`);
+    console.error(
+      `no trace log at ${LOG} — is the harness on? (touch ${path.dirname(LOG)}/trace.on)`,
+    );
     process.exit(1);
   }
   return raw
@@ -72,7 +74,10 @@ function timeline(sub) {
     console.log(`  ${layer.padEnd(10)} +${ts - t0}ms`);
   }
   const branch = ls.find((o) => o.evt === "ingest.branch");
-  if (branch) console.log(`\n--- board branch: ${branch.branch} (unitFrom=${branch.unitFrom}, source="${branch.source}") ---`);
+  if (branch)
+    console.log(
+      `\n--- board branch: ${branch.branch} (unitFrom=${branch.unitFrom}, source="${branch.source}") ---`,
+    );
 }
 
 function branches() {

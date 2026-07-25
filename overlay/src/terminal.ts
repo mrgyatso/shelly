@@ -111,7 +111,11 @@ export async function createTerminal(
       return false;
     }
     if (e.code === "KeyV") {
-      void readText().then((t) => { if (t) term.paste(t); }).catch(() => {});
+      void readText()
+        .then((t) => {
+          if (t) term.paste(t);
+        })
+        .catch(() => {});
       e.preventDefault();
       return false;
     }
@@ -209,7 +213,14 @@ export async function createTerminal(
   // (File.prototype.path from v1 is gone). Only respond when this terminal's
   // mount is actually visible — prevents background terminals from stealing drops.
   // Suppress the browser's default "navigate to file" behaviour over the canvas.
-  mount.addEventListener("dragover", (e) => { e.preventDefault(); e.stopPropagation(); }, { capture: true, passive: false });
+  mount.addEventListener(
+    "dragover",
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    { capture: true, passive: false },
+  );
   const unlistenDrop = await win.onDragDropEvent((e) => {
     if (e.payload.type !== "drop") return;
     if (!isLaidOut(mount)) return;
@@ -257,7 +268,16 @@ export async function createTerminal(
     const isClaude = (opts.agent ?? "claude") !== "codex";
     const launch = getLaunchModel();
     const model = isClaude && !opts.resume && launch !== "default" ? launch : null;
-    await invoke("spawn_pty", { tabId, rows, cols, cwd: opts.cwd ?? null, resume: opts.resume ?? null, agent: opts.agent ?? null, codexApproval, model });
+    await invoke("spawn_pty", {
+      tabId,
+      rows,
+      cols,
+      cwd: opts.cwd ?? null,
+      resume: opts.resume ?? null,
+      agent: opts.agent ?? null,
+      codexApproval,
+      model,
+    });
   } catch (e) {
     term.write(`\r\n\x1b[31m${String(e)}\x1b[0m\r\n`);
   }

@@ -1,68 +1,103 @@
-# Interaction helper — commentable blocks + Decide ballot → one submit
+<!-- SHELLY-FRAME-START v=8d37372d (generated; do not edit) -->
+<!-- shelly-frame: injected substrate — behaviour + affordance defaults + base shell.
+     Source of truth: plugin/skills/prefer-html/references/interaction-helper.md
+     Regenerate with: node plugin/hooks/frame/extract.mjs  (--check verifies in CI) -->
+<style data-shelly-frame>
+  /* Zero-specificity FALLBACK shell — never overrides an artifact's own paint. */
+  :where(html), :where(body) { background: oklch(0.945 0.014 60); margin: 0; }
+  :where(html) { scrollbar-width: none; }
+  html::-webkit-scrollbar { width: 0; height: 0; display: none; }
+</style>
+<script data-shelly-frame>
+  (function () {
+    if (window.__shellySizeMounted) return;
+    window.__shellySizeMounted = true;
+    var el = document.querySelector("[data-fit-root]") || document.body;
+    var post = function () { parent.postMessage({ source: "shelly-artifact", kind: "size", w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
+    addEventListener("load", post); post();
+  })();
+</script>
+<style>
+  [data-shelly-commentable] .shelly-commentable {
+    position: relative; border-radius: 5px; cursor: text;
+    transition: background 140ms ease, box-shadow 140ms ease;
+  }
+  /* Hover-bridge: extend the hover hit area 36 px into the left gutter so
+     the cursor doesn't leave :hover while travelling toward the 💬 icon. */
+  .shelly-commentable::before {
+    content: ""; position: absolute;
+    top: 0; left: -36px; width: 36px; height: 100%;
+  }
+  .shelly-commentable:hover {
+    background: rgba(182,120,29,0.07); box-shadow: inset 2px 0 0 #b6781d;
+  }
+  .shelly-commentable.has-comment {
+    background: rgba(46,125,82,0.05); box-shadow: inset 2px 0 0 #2e7d52;
+  }
+  .shelly-ask-btn {
+    position: absolute; left: -36px; top: 50%; transform: translateY(-50%);
+    width: 26px; height: 26px; padding: 0;
+    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #6e655b;
+    border-radius: 6px; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    font-size: 12px; box-shadow: 0 4px 10px -6px rgba(26,23,20,0.4);
+  }
+  .shelly-commentable:hover > .shelly-ask-btn,
+  .shelly-commentable.has-comment > .shelly-ask-btn { display: inline-flex; }
+  .shelly-commentable.has-comment > .shelly-ask-btn {
+    color: #2e7d52; border-color: #2e7d52;
+  }
+  .shelly-composer {
+    margin: 6px 0 10px; padding: 10px 11px;
+    background: #fff; border: 1px solid #b6781d; border-radius: 8px;
+    box-shadow: 0 10px 24px -16px rgba(26,23,20,0.5);
+  }
+  .shelly-composer .ref {
+    font: 600 11px/1.4 ui-monospace, Menlo, monospace; color: #6e655b;
+    border-left: 2px solid #b6781d; padding: 4px 8px; margin-bottom: 6px;
+    background: rgba(182,120,29,0.07); border-radius: 0 4px 4px 0;
+  }
+  .shelly-composer textarea {
+    display: block; width: 100%; min-height: 64px; padding: 8px 10px;
+    font: 13px/1.5 -apple-system, system-ui, sans-serif;
+    background: #f4f1ec; color: #1a1714;
+    border: 1px solid rgba(26,23,20,0.2); border-radius: 6px;
+    outline: none; resize: vertical; box-sizing: border-box;
+  }
+  .shelly-composer textarea:focus { border-color: #b6781d; }
+  .shelly-composer .row {
+    display: flex; justify-content: space-between; gap: 8px; margin-top: 8px;
+  }
+  .shelly-composer button {
+    font: 600 11.5px/1 -apple-system, system-ui, sans-serif;
+    padding: 7px 11px; border-radius: 6px; cursor: pointer;
+    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #1a1714;
+  }
+  .shelly-composer button.save {
+    background: #1a1714; color: #f4f1ec; border-color: #1a1714;
+  }
+  .shelly-composer button.delete {
+    color: #6e655b; border-color: transparent; background: transparent;
+  }
+  .shelly-annotation {
+    margin: 4px 0 10px; padding: 7px 10px;
+    background: rgba(46,125,82,0.08); border-left: 2px solid #2e7d52;
+    border-radius: 0 6px 6px 0; color: #1a1714;
+    font-size: 12.5px; line-height: 1.5; cursor: pointer;
+  }
+  .shelly-annotation::before { content: "💬 "; }
 
-Paste-able, self-contained interactivity for a Shelly artifact. **Load this file when the
-artifact has commentable content, a Decide review ballot, or both.** Copy the `<script>` **verbatim**
-(do not retype or trim it). The **ambient-comments CSS is included below** (one fetch, self-sufficient);
-style the review-item ballot (`.item`, `.act`, `.bar`, `[data-state]`) yourself in the Broadsheet house style.
-
-One unified Submit gathers block-comments **and** item-decisions into one pasteable payload. Put
-`data-shelly-commentable` only on **content** blocks, never on the Next-steps ballot, so the two
-do not double up on the same block.
-
-## HTML wiring
-
-```html
-<!-- content page(s): commentable -->
-<section data-shelly-commentable> … prose, lists, headings … </section>
-<!-- the Next-steps ballot: review items, NOT commentable -->
-<section>
-  <div class="item" data-shelly-item data-item-label="Short label that reads well in the submit message">
-    <div class="item-row">
-      <div class="item-main"><div class="item-title">…</div><div class="item-sub">…</div></div>
-      <div class="item-actions">
-        <button class="act do"   data-action="approve" title="Do it">✓</button>
-        <button class="act info" data-action="comment" title="More info / note">✎</button>
-        <button class="act skip" data-action="reject"  title="Skip">✗</button>
-      </div>
-    </div>
-    <textarea data-comment hidden placeholder="What to clarify, or a note…"></textarea>
-  </div>
-  <div class="bar">
-    <span class="count" data-count>nothing marked yet</span>
-    <button class="doall" data-doall>✓ Do all</button>
-    <button class="submit" data-shelly-submit="Title that prefixes the compiled message">Submit → ⌘V</button>
-  </div>
-</section>
-```
-
-The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) inside a
-`data-shelly-commentable` region. Content in styled `<div>`s is invisible to that list — add
-`data-shelly-block` to any such container to make it commentable.
-
-**Click anywhere — comment on anything, not just marked blocks. No mode, no toggle.** Prose,
-list items and headings inside `data-shelly-commentable` keep working exactly as above (hover →
-gutter 💬 → click the icon) so reading and text selection are never disturbed by a stray click.
-For everything else on the page — a card, an image, a whole section, anything not already
-commentable and not a native interactive control — a plain click opens the same composer
-immediately, keyed off a generated name + short CSS-ish path instead of a text snippet. Hovering
-such an element first shows a small, decorative 💬 hint near its corner (`pointer-events: none` —
-it never intercepts the click itself) so the reader knows it's there before they click. There is
-no activation step: it's live the moment the page loads, same as the gutter icons. Both paths
-write into the same `comments`/`picked` state and compile into the one Submit payload — no second
-submit button, no separate flow. Native interactive elements (`a`, `button`, `input`, etc.) and
-the Decide ballot are excluded automatically; give any other custom-interactive region (rare) a
-`data-shelly-noninspect` attribute to opt it out too.
-
-**Reading always wins over picking.** Two guards keep the picker from fighting the reader, and
-they apply to the *whole* page, not just commentable regions: a click that ends a **text
-selection** is treated as a read and never opens a composer (otherwise dragging across any
-non-commentable text would pop a composer and wipe the selection — an artifact you can't copy
-from); and `body` / `documentElement` / the `data-fit-root` wrapper are never pickable, so
-clicking dead space dismisses rather than spawning a composer named `body` with an empty path.
-
-## The unified helper script (copy verbatim)
-
-```html
+  /* Click-anywhere picker: decorative hover hint + persistent "has comment" marker.
+     No toggle, no mode CSS — this is live from page load. */
+  .shelly-pick-badge {
+    position: fixed; pointer-events: none; z-index: 10000; display: none;
+    align-items: center; justify-content: center; width: 24px; height: 24px;
+    border-radius: 7px; background: #1a1714; color: #f4f1ec; font-size: 12px;
+    box-shadow: 0 6px 16px -8px rgba(0,0,0,.6); opacity: .9;
+  }
+  .shelly-pick-marked { outline: 2px solid #2e7d52; outline-offset: 2px; cursor: pointer; }
+</style>
 <script>
 (function () {
   // HANDOVER GUARD — run-second-stand-down.
@@ -868,104 +903,4 @@ clicking dead space dismisses rather than spawning a composer named `body` with 
   refresh();
 })();
 </script>
-```
-
-## Ambient-comments CSS (pair with the helper)
-
-The helper adds these classes for the 💬 affordance and the inline composer — include this `<style>` so
-they render right. Tune the colors to your artifact’s accent. (The review-item ballot — `.item`,
-`.act`, `.bar`, `[data-state]` — you style yourself in the Broadsheet house style.)
-
-```html
-<style>
-  [data-shelly-commentable] .shelly-commentable {
-    position: relative; border-radius: 5px; cursor: text;
-    transition: background 140ms ease, box-shadow 140ms ease;
-  }
-  /* Hover-bridge: extend the hover hit area 36 px into the left gutter so
-     the cursor doesn't leave :hover while travelling toward the 💬 icon. */
-  .shelly-commentable::before {
-    content: ""; position: absolute;
-    top: 0; left: -36px; width: 36px; height: 100%;
-  }
-  .shelly-commentable:hover {
-    background: rgba(182,120,29,0.07); box-shadow: inset 2px 0 0 #b6781d;
-  }
-  .shelly-commentable.has-comment {
-    background: rgba(46,125,82,0.05); box-shadow: inset 2px 0 0 #2e7d52;
-  }
-  .shelly-ask-btn {
-    position: absolute; left: -36px; top: 50%; transform: translateY(-50%);
-    width: 26px; height: 26px; padding: 0;
-    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #6e655b;
-    border-radius: 6px; cursor: pointer;
-    display: none; align-items: center; justify-content: center;
-    font-size: 12px; box-shadow: 0 4px 10px -6px rgba(26,23,20,0.4);
-  }
-  .shelly-commentable:hover > .shelly-ask-btn,
-  .shelly-commentable.has-comment > .shelly-ask-btn { display: inline-flex; }
-  .shelly-commentable.has-comment > .shelly-ask-btn {
-    color: #2e7d52; border-color: #2e7d52;
-  }
-  .shelly-composer {
-    margin: 6px 0 10px; padding: 10px 11px;
-    background: #fff; border: 1px solid #b6781d; border-radius: 8px;
-    box-shadow: 0 10px 24px -16px rgba(26,23,20,0.5);
-  }
-  .shelly-composer .ref {
-    font: 600 11px/1.4 ui-monospace, Menlo, monospace; color: #6e655b;
-    border-left: 2px solid #b6781d; padding: 4px 8px; margin-bottom: 6px;
-    background: rgba(182,120,29,0.07); border-radius: 0 4px 4px 0;
-  }
-  .shelly-composer textarea {
-    display: block; width: 100%; min-height: 64px; padding: 8px 10px;
-    font: 13px/1.5 -apple-system, system-ui, sans-serif;
-    background: #f4f1ec; color: #1a1714;
-    border: 1px solid rgba(26,23,20,0.2); border-radius: 6px;
-    outline: none; resize: vertical; box-sizing: border-box;
-  }
-  .shelly-composer textarea:focus { border-color: #b6781d; }
-  .shelly-composer .row {
-    display: flex; justify-content: space-between; gap: 8px; margin-top: 8px;
-  }
-  .shelly-composer button {
-    font: 600 11.5px/1 -apple-system, system-ui, sans-serif;
-    padding: 7px 11px; border-radius: 6px; cursor: pointer;
-    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #1a1714;
-  }
-  .shelly-composer button.save {
-    background: #1a1714; color: #f4f1ec; border-color: #1a1714;
-  }
-  .shelly-composer button.delete {
-    color: #6e655b; border-color: transparent; background: transparent;
-  }
-  .shelly-annotation {
-    margin: 4px 0 10px; padding: 7px 10px;
-    background: rgba(46,125,82,0.08); border-left: 2px solid #2e7d52;
-    border-radius: 0 6px 6px 0; color: #1a1714;
-    font-size: 12.5px; line-height: 1.5; cursor: pointer;
-  }
-  .shelly-annotation::before { content: "💬 "; }
-
-  /* Click-anywhere picker: decorative hover hint + persistent "has comment" marker.
-     No toggle, no mode CSS — this is live from page load. */
-  .shelly-pick-badge {
-    position: fixed; pointer-events: none; z-index: 10000; display: none;
-    align-items: center; justify-content: center; width: 24px; height: 24px;
-    border-radius: 7px; background: #1a1714; color: #f4f1ec; font-size: 12px;
-    box-shadow: 0 6px 16px -8px rgba(0,0,0,.6); opacity: .9;
-  }
-  .shelly-pick-marked { outline: 2px solid #2e7d52; outline-offset: 2px; cursor: pointer; }
-</style>
-```
-
-## Pre-ship self-check
-
-- [ ] This `<script>` is present and **unedited** (copy-paste, do not retype).
-- [ ] Every `[data-action]` button sits inside a `[data-shelly-item]` ancestor.
-- [ ] Exactly one `[data-shelly-submit]` button exists.
-- [ ] No `position:fixed`/absolute element overlaps the buttons at load (the `.cmp-submitted`
-      overlay is fine — it only appears *after* submit).
-- [ ] The click-anywhere picker never fights native interactive elements or the Decide ballot —
-      both are excluded automatically (`isDirectPickable`); no extra markup needed unless a
-      custom non-ballot region also needs `data-shelly-noninspect`.
+<!-- SHELLY-FRAME-END -->

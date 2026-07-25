@@ -18,8 +18,7 @@ import { IS_LINUX } from "./platform";
 // already gives them resize borders — they don't call this either.
 
 type Dir =
-  | "North" | "South" | "East" | "West"
-  | "NorthEast" | "NorthWest" | "SouthEast" | "SouthWest";
+  "North" | "South" | "East" | "West" | "NorthEast" | "NorthWest" | "SouthEast" | "SouthWest";
 
 /** Grip geometry: a thin band along each edge, with fatter squares at the
  *  corners so diagonal resizing is actually hittable. */
@@ -63,9 +62,9 @@ export function initEdgeResize(): void {
     grip.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
-      void win.startResizeDragging(dir).catch((err) =>
-        console.error("startResizeDragging failed", dir, err),
-      );
+      void win
+        .startResizeDragging(dir)
+        .catch((err) => console.error("startResizeDragging failed", dir, err));
     });
 
     document.body.append(grip);

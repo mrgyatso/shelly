@@ -41,7 +41,10 @@ console.log("\n### curated-set validation");
 
 console.log("\n### case-insensitivity");
 {
-  ok(resolveShell("#e7ecf1")?.bg === "#E7ECF1", "lowercase bg still resolves (canonical case returned)");
+  ok(
+    resolveShell("#e7ecf1")?.bg === "#E7ECF1",
+    "lowercase bg still resolves (canonical case returned)",
+  );
   ok(resolveShell("#e6F1eA")?.bg === "#E6F1EA", "mixed case bg resolves");
   ok(resolveShell("  #FBFAF6  ")?.bg === "#FBFAF6", "surrounding whitespace is trimmed");
 }
@@ -54,7 +57,10 @@ console.log("\n### off-palette + junk rejection");
   ok(resolveShell("") === null, "empty string is ignored");
   ok(resolveShell(undefined) === null, "undefined is ignored");
   ok(resolveShell(42) === null, "non-string is ignored");
-  ok(resolveShell("#E7ECF1; background:url(x)") === null, "an injection-y string is ignored (never interpreted)");
+  ok(
+    resolveShell("#E7ECF1; background:url(x)") === null,
+    "an injection-y string is ignored (never interpreted)",
+  );
 }
 
 console.log("\n### ink fallback — message ink is never trusted");
@@ -62,14 +68,26 @@ console.log("\n### ink fallback — message ink is never trusted");
   // resolveShell ignores any caller-supplied ink; the curated ink always wins,
   // which IS the "ink missing/wrong → curated ink" rule.
   const s = resolveShell("#E7ECF1");
-  ok(s?.ink === "#1B2530", "a curated bg always yields the curated ink regardless of any provided ink");
+  ok(
+    s?.ink === "#1B2530",
+    "a curated bg always yields the curated ink regardless of any provided ink",
+  );
 }
 
 console.log("\n### message type guard");
 {
-  ok(isShellMessage({ source: "shelly-artifact", kind: "shell", bg: "#E7ECF1" }), "well-formed shell message accepted");
-  ok(isShellMessage({ source: "shelly-artifact", kind: "shell", bg: "#E7ECF1", ink: "#1B2530" }), "ink is optional");
-  ok(!isShellMessage({ source: "shelly-artifact", kind: "size", w: 1, h: 1 }), "a size message is not a shell message");
+  ok(
+    isShellMessage({ source: "shelly-artifact", kind: "shell", bg: "#E7ECF1" }),
+    "well-formed shell message accepted",
+  );
+  ok(
+    isShellMessage({ source: "shelly-artifact", kind: "shell", bg: "#E7ECF1", ink: "#1B2530" }),
+    "ink is optional",
+  );
+  ok(
+    !isShellMessage({ source: "shelly-artifact", kind: "size", w: 1, h: 1 }),
+    "a size message is not a shell message",
+  );
   ok(!isShellMessage({ source: "evil", kind: "shell", bg: "#E7ECF1" }), "wrong source rejected");
   ok(!isShellMessage({ source: "shelly-artifact", kind: "shell" }), "missing bg rejected");
   ok(!isShellMessage(null), "null rejected");

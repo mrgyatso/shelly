@@ -51,11 +51,7 @@ export interface ShellMessage {
 export function isShellMessage(d: unknown): d is ShellMessage {
   if (!d || typeof d !== "object") return false;
   const m = d as Record<string, unknown>;
-  return (
-    m.source === "shelly-artifact" &&
-    m.kind === "shell" &&
-    typeof m.bg === "string"
-  );
+  return m.source === "shelly-artifact" && m.kind === "shell" && typeof m.bg === "string";
 }
 
 /** Map a requested bg (any case) to the curated {bg, ink}, or null if off-palette.

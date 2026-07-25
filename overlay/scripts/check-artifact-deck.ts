@@ -20,7 +20,14 @@
  *   node --experimental-strip-types scripts/check-artifact-deck.ts
  */
 import { readFileSync } from "node:fs";
-import { buildDeck, deckTop, deckPosition, flipTarget, deckHas, type DeckCard } from "../src/deck-logic.ts";
+import {
+  buildDeck,
+  deckTop,
+  deckPosition,
+  flipTarget,
+  deckHas,
+  type DeckCard,
+} from "../src/deck-logic.ts";
 import { heroArtifactFor } from "../src/ingest-logic.ts";
 
 let failed = 0;
@@ -49,9 +56,15 @@ check("1b. deck top is the newest card", deckTop(deck)?.path === NEW.path);
 check("1c. deckTop of an empty deck → null", deckTop([]) === null);
 
 // ---- 2. ADDRESSING: position is found by path, and reads 1-based at the UI ----
-check("2. position of the newest card is 3 of 3", JSON.stringify(deckPosition(deck, NEW.path)) === '{"index":2,"total":3}');
+check(
+  "2. position of the newest card is 3 of 3",
+  JSON.stringify(deckPosition(deck, NEW.path)) === '{"index":2,"total":3}',
+);
 check("2b. position of the oldest card is 1 of 3", deckPosition(deck, OLD.path)?.index === 0);
-check("2c. a path outside the deck has no position (nav hides, never guesses)", deckPosition(deck, SIBLING.path) === null);
+check(
+  "2c. a path outside the deck has no position (nav hides, never guesses)",
+  deckPosition(deck, SIBLING.path) === null,
+);
 check("2d. a null path (blank hero) has no position", deckPosition(deck, null) === null);
 check("2e. deckHas mirrors position", deckHas(deck, MID.path) && !deckHas(deck, SIBLING.path));
 
@@ -68,9 +81,15 @@ check("3b. the read card is still in the deck, same identity", deckHas(deeper, M
 // for an artifact the user never touched, which is a renumber they didn't ask for.
 const before = deckPosition(deck, MID.path)!;
 const after = deckPosition(deeper, MID.path)!;
-check("4. THE INVARIANT: an arrival leaves the read card's index untouched", before.index === after.index);
+check(
+  "4. THE INVARIANT: an arrival leaves the read card's index untouched",
+  before.index === after.index,
+);
 check("4b. …and only the total grows (2 of 3 → 2 of 4)", before.total === 3 && after.total === 4);
-check("4c. the new card is reachable — it is the deck's new top", deckTop(deeper)?.path === LATE.path);
+check(
+  "4c. the new card is reachable — it is the deck's new top",
+  deckTop(deeper)?.path === LATE.path,
+);
 
 // ---- 4d. THE LIMIT OF CASE 4, PINNED HONESTLY -------------------------------
 // An in-place REWRITE (same path, newer mtime — the 10×-in-7-minutes agent) DOES re-sort
@@ -81,16 +100,43 @@ check("4c. the new card is reachable — it is the deck's new top", deckTop(deep
 // is never reloaded (that rule lives in `effectsForRewrites`, which raises the "Updated"
 // pill for exactly this). If a future change freezes the deck's order at first-sight,
 // this case flips — and case 6's lockstep with the hero is what it would cost.
-const rewritten = buildDeck(UNIT.map((c) => (c.path === MID.path ? { ...c, modified_ms: 5_000 } : c)), A_SRC, true);
-check("4d. an in-place rewrite re-sorts its own card to the deck's top (accepted)", deckTop(rewritten)?.path === MID.path);
-check("4e. …and the rewrite does not reload: it is the label that moved, not the frame", deckPosition(rewritten, MID.path)?.index === 2);
+const rewritten = buildDeck(
+  UNIT.map((c) => (c.path === MID.path ? { ...c, modified_ms: 5_000 } : c)),
+  A_SRC,
+  true,
+);
+check(
+  "4d. an in-place rewrite re-sorts its own card to the deck's top (accepted)",
+  deckTop(rewritten)?.path === MID.path,
+);
+check(
+  "4e. …and the rewrite does not reload: it is the label that moved, not the frame",
+  deckPosition(rewritten, MID.path)?.index === 2,
+);
 
 // ---- 5. SCOPE: a sibling's artifact is never a card, however new --------------
-check("5. the sibling's NEWEST artifact is not in A's deck", !deck.some((c) => c.path === SIBLING.path));
-check("5b. …so it can never be flipped onto from the newest card", flipTarget(deck, NEW.path, 1) === null);
-check("5c. picking session B decks B's own artifact only", buildDeck(UNIT, B_SRC, true).map((c) => c.path).join() === SIBLING.path);
-check("5d. a fresh session (owned tab, no source yet) → empty deck, not a sibling's", buildDeck(UNIT, null, true).length === 0);
-check("5e. no owned tab and no source (cloud/closed) → the whole unit decks", buildDeck(UNIT, null, false).length === 4);
+check(
+  "5. the sibling's NEWEST artifact is not in A's deck",
+  !deck.some((c) => c.path === SIBLING.path),
+);
+check(
+  "5b. …so it can never be flipped onto from the newest card",
+  flipTarget(deck, NEW.path, 1) === null,
+);
+check(
+  "5c. picking session B decks B's own artifact only",
+  buildDeck(UNIT, B_SRC, true)
+    .map((c) => c.path)
+    .join() === SIBLING.path,
+);
+check(
+  "5d. a fresh session (owned tab, no source yet) → empty deck, not a sibling's",
+  buildDeck(UNIT, null, true).length === 0,
+);
+check(
+  "5e. no owned tab and no source (cloud/closed) → the whole unit decks",
+  buildDeck(UNIT, null, false).length === 4,
+);
 
 // ---- 6. LOCKSTEP WITH THE HERO ----------------------------------------------
 // The deck's top and the hero's pick must be the same artifact, or entering a unit would
@@ -104,17 +150,36 @@ for (const [name, src, owned] of [
 ] as const) {
   check(
     `6. deck top === hero pick (${name})`,
-    (deckTop(buildDeck(UNIT, src, owned))?.path ?? null) === (heroArtifactFor(UNIT, src, owned)?.path ?? null),
+    (deckTop(buildDeck(UNIT, src, owned))?.path ?? null) ===
+      (heroArtifactFor(UNIT, src, owned)?.path ?? null),
   );
 }
 
 // ---- 7. FLIP ARITHMETIC: steps, and hard ends (no wrap) ----------------------
-check("7. next from the oldest → the middle card", flipTarget(deck, OLD.path, 1)?.path === MID.path);
-check("7b. prev from the middle → the oldest card", flipTarget(deck, MID.path, -1)?.path === OLD.path);
-check("7c. prev from the oldest → null (no wrap to the newest)", flipTarget(deck, OLD.path, -1) === null);
-check("7d. next from the newest → null (no wrap to the oldest)", flipTarget(deck, NEW.path, 1) === null);
-check("7e. flipping from a path outside the deck → null", flipTarget(deck, SIBLING.path, 1) === null);
-check("7f. flipping a single-card deck → null both ways", flipTarget([NEW], NEW.path, 1) === null && flipTarget([NEW], NEW.path, -1) === null);
+check(
+  "7. next from the oldest → the middle card",
+  flipTarget(deck, OLD.path, 1)?.path === MID.path,
+);
+check(
+  "7b. prev from the middle → the oldest card",
+  flipTarget(deck, MID.path, -1)?.path === OLD.path,
+);
+check(
+  "7c. prev from the oldest → null (no wrap to the newest)",
+  flipTarget(deck, OLD.path, -1) === null,
+);
+check(
+  "7d. next from the newest → null (no wrap to the oldest)",
+  flipTarget(deck, NEW.path, 1) === null,
+);
+check(
+  "7e. flipping from a path outside the deck → null",
+  flipTarget(deck, SIBLING.path, 1) === null,
+);
+check(
+  "7f. flipping a single-card deck → null both ways",
+  flipTarget([NEW], NEW.path, 1) === null && flipTarget([NEW], NEW.path, -1) === null,
+);
 
 // ---- 8. STRUCTURAL: the poll must never flip the deck ------------------------
 // Cases 3–4 prove the deck's LOGIC can't move the reader. This pins the other half —
@@ -131,7 +196,10 @@ const fnBody = (name: string): string => {
 for (const fn of ["ingestArtifacts", "ingestIntoUnit", "maybeLightBlankHero"]) {
   const body = fnBody(fn);
   check(`8. ${fn}() body was located (guard is live, not vacuous)`, body.length > 0);
-  check(`8b. ${fn} never flips the deck (the flip is the user's click)`, !/\bflipDeck\s*\(/.test(body));
+  check(
+    `8b. ${fn} never flips the deck (the flip is the user's click)`,
+    !/\bflipDeck\s*\(/.test(body),
+  );
 }
 
 console.log(failed === 0 ? "\nall checks passed" : `\n${failed} check(s) FAILED`);

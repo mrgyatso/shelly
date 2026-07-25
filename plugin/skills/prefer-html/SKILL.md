@@ -95,12 +95,17 @@ template below:
   outside, so the artifact self-reports its size (see §7.3).
 - **The `shelly-meta` block** in `<head>` — so feedback is self-identifying, even to a later
   session reopening it (see §7.4).
-- **`data-shelly-commentable` on the content + the unified helper `<script>` pasted verbatim**
-  from `references/interaction-helper.md`, plus the §4.2 ambient CSS. §1.3 is only true if the 💬
-  actually renders. **The markup alone is inert — the helper is what injects the icons**, so
-  shipping one without the other is the single most common way an artifact arrives with nothing
-  to click (§4.4). Content in styled `<div>`s (cards, blobs, callouts) is invisible to the
-  helper's tag list until you mark it `data-shelly-block`.
+- **`data-shelly-commentable` on the content.** That is your whole job here — **the helper is
+  INJECTED FOR YOU at write time**, along with the ambient CSS, the ballot handler and the size
+  reporter. Do **not** paste it, and do **not** copy it out of another artifact.
+  *(Why this changed: getting 💬 + ✓/✎/✗ both right needs ~860 lines of helper, inlined, because
+  the Board's iframe blocks external scripts. Asking a model to reproduce that every turn was
+  the bug, not a discipline problem — 28% of artifacts shipped with no 💬 at all. A PostToolUse
+  step now injects it; the copy in `references/interaction-helper.md` is the SOURCE that step is
+  generated from, kept for reading, not for pasting. If you do paste a copy anyway it is
+  harmless — whichever copy runs second stands down — but it is 860 wasted lines.)*
+  Content in styled `<div>`s (cards, blobs, callouts) is invisible to the helper's tag list
+  until you mark it `data-shelly-block`, and marking is still yours to do.
   *Two shapes are exempt:* the **compact pill** (§3.1 — a status flip has nothing to annotate)
   and the **bespoke dashboard / L0 home** (§3.6 — presentation-first and persistent, not a turn
   artifact; it still carries its own responder per §1.3). Every other shape carries the helper.
@@ -506,7 +511,9 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
      trim it, and do not substitute a ballot-only script (that is what silently ships a
      canvas with no 💬 on it). Paste it here, plus the ambient-comment CSS from §4.2. -->
 <script>
-  /* … unified helper from references/interaction-helper.md, verbatim … */
+  /* NOTHING GOES HERE. The unified helper is injected at write time — leave this out
+     entirely. Marking the content `data-shelly-commentable` and the moves
+     `data-shelly-item` is the whole contract. */
 </script>
 <script>
   (function () {
@@ -703,7 +710,9 @@ throws (same constraint the sidebar template documents). The size-reporter obser
      decisions. Copy the <script> from references/interaction-helper.md VERBATIM — a ballot-only
      script silently ships a wizard whose pages cannot be answered. Add the §4.2 ambient CSS too. -->
 <script>
-  /* … unified helper from references/interaction-helper.md, verbatim … */
+  /* NOTHING GOES HERE. The unified helper is injected at write time — leave this out
+     entirely. Marking the content `data-shelly-commentable` and the moves
+     `data-shelly-item` is the whole contract. */
 </script>
 <script>
   (function () {
@@ -852,7 +861,9 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
        Copy the <script> from references/interaction-helper.md VERBATIM, plus the §4.2 ambient CSS.
        Without it the pages are marked up but inert: no 💬, nothing to answer (§4.4). -->
   <script>
-    /* … unified helper from references/interaction-helper.md, verbatim … */
+    /* NOTHING GOES HERE. The unified helper is injected at write time — leave this out
+     entirely. Marking the content `data-shelly-commentable` and the moves
+     `data-shelly-item` is the whole contract. */
   </script>
 </body>
 </html>
@@ -924,7 +935,9 @@ scrolls. The left column carries `data-shelly-commentable`; the visual does not.
      it is the helper that injects the 💬 icons. Copy the <script> from
      references/interaction-helper.md VERBATIM, plus the §4.2 ambient CSS. -->
 <script>
-  /* … unified helper from references/interaction-helper.md, verbatim … */
+  /* NOTHING GOES HERE. The unified helper is injected at write time — leave this out
+     entirely. Marking the content `data-shelly-commentable` and the moves
+     `data-shelly-item` is the whole contract. */
 </script>
 ```
 
@@ -1491,12 +1504,17 @@ custom rows — is invisible to that tag list and will get no 💬.** Add `data-
 to any such container to make it commentable (the helper de-dupes nested matches, so marking
 an outer card won't double-icon its inner text).
 
-**The unified helper lives in `references/interaction-helper.md`** — a ~540-line self-contained
-`<script>`. It is self-contained (no external files, no machine-specific paths). **When building
-any artifact with commentable blocks AND a Decide ballot, read that file and copy the `<script>`
-verbatim** — do not retype or trim it. On its own the markup is inert; the helper is what makes
-the buttons click and the 💬 icons appear. Use the ambient-comments CSS (§4.2) and the
-review-form CSS (§4.1) for styling.
+**You do not paste the unified helper — it is injected.** A PostToolUse step
+(`shelly-frame.cjs`) puts it into every artifact on write, generated from
+`references/interaction-helper.md`, which is now a **reference you may read, not a block you
+copy**. So there is nothing to reproduce, nothing to trim, and no way to drop half of it:
+**mark the content `data-shelly-commentable` and the moves `data-shelly-item`, and the icons,
+the click handling and the single unified submit all arrive.** The §4.1/§4.2 CSS is injected
+with it; style the ballot itself (`.item`, `.act`, `.bar`, `[data-state]`) however your design
+wants.
+
+If you paste a copy anyway, nothing breaks — whichever copy runs second stands down, so two
+copies never fight — but it is ~860 lines of waste and the reason it used to go wrong.
 
 The single-purpose ambient-comments and review-form snippets above remain valid for a **pure**
 recap or a **pure** decision list; the unified helper supersedes them whenever one artifact
