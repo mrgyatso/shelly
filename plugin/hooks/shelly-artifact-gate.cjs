@@ -116,6 +116,19 @@ const RESPONDER_RE = /data-shelly-(?:item|submit|commentable)/;
 // the RAW html (scripts included), then gated on a real <button being present in the MARKUP.
 const SUBMIT_POST_RE = /kind:\s*["']submit["']/;
 
+// …but a submit is only ALIVE if it carries `text:`. The Board's handler requires
+// `typeof d.text === "string"`; there is no `payload` path anywhere in it, so a ballot that
+// posts `{kind:'submit', payload:picks}` is dropped on the floor while its button cheerfully
+// flashes "Sent ✓". This gate used to accept marker PRESENCE and pass those as answerable.
+// Match the posted OBJECT, not the whole file, so a `text:` belonging to some unrelated call
+// can't vouch for a dead ballot.
+const SUBMIT_OBJ_RE = /postMessage\s*\(\s*(\{[\s\S]{0,600}?\})\s*,/g;
+function postsLiveSubmit(html) {
+  const objs = [...html.matchAll(SUBMIT_OBJ_RE)].map((m) => m[1]).filter((o) => SUBMIT_POST_RE.test(o));
+  if (!objs.length) return SUBMIT_POST_RE.test(html); // built some other way — don't judge it
+  return objs.some((o) => /(^|[{,\s])text\s*:/.test(o));
+}
+
 // Do the artifacts written this turn give the user an in-place way to respond? Reads each
 // path and applies a two-signal check. Returns { known, any }: known=false when ANY path was
 // unreadable (mid-write, moved) so the caller fails OPEN — we only ever block on a positive
@@ -150,30 +163,73 @@ function hasAnswerableSurface(paths) {
     // kind:"submit" in its script source — but the helper injects its chat-bar button at
     // RUNTIME, so the static markup has no <button; requiring a markup <button keeps that
     // recap blocked while letting the genuine custom ballot through.
-    if (SUBMIT_POST_RE.test(html) && /<button\b/i.test(markup)) any = true;
+    if (postsLiveSubmit(html) && /<button\b/i.test(markup)) any = true;
   }
   return { known: allReadable, any };
 }
 
-function buildReason(artifactsDir) {
-  return (
+// CAPABILITY PROBE — can this install inject the frame? When the frame asset is readable,
+// shelly-index.cjs will inject the mechanics (helper, size reporter, shell) into every
+// artifact on write, and the agent must be told to write the INTERIOR ONLY. When it is not
+// (an older plugin snapshot in the cache — see the version-gated cache trap), the agent has
+// to carry the wiring itself and needs the full floor spelled out.
+//
+// This is a probe rather than an assumption on purpose: the instructions the gate hands back
+// are the single largest influence on what the next artifact looks like, and being wrong in
+// the "mechanics are handled" direction would ship a genuinely dead page.
+function frameWillBeInjected() {
+  try {
+    return fs.existsSync(require("./shelly-frame.cjs").FRAME_PATH);
+  } catch (_) {
+    return false;
+  }
+}
+
+function buildReason(artifactsDir, opts) {
+  const framed = (opts && typeof opts.framed === "boolean") ? opts.framed : frameWillBeInjected();
+  const head =
     "This turn ended with no artifact on the Shelly Board. THE RULE IS ABSOLUTE: every turn " +
     "ends with one, with no exemptions. AUTHOR IT NOW: write a self-contained .html into " +
     artifactsDir +
     ". Size it to the turn — a decision, plan, review or analysis earns a full document; a quick " +
-    "answer or a lookup earns a COMPACT CARD, not a padded one. The mechanical floor, inline (you " +
-    'need nothing else): (a) a real <head> with <meta charset="utf-8">; (b) data-fit-root on the ' +
-    "main wrapper plus the size-report snippet at the end of <body> — it posts " +
+    "answer or a lookup earns a COMPACT CARD, not a padded one. ";
+  const tail =
+    "Every artifact ends by showing the user where they stand and what happens next; even when " +
+    "the work is finished, say so and hand them the next move as a surface they can answer in " +
+    "place. Only STOP if you already wrote an artifact this turn and it simply hasn't been " +
+    "indexed yet.";
+
+  // The framed path deliberately does NOT say "copy the wiring from a recent artifact".
+  // That instruction was the propagation mechanism for broken artifacts: each new page was
+  // photocopied from the previous one, so a repo converged on whatever its FIRST artifact
+  // looked like and never self-corrected. The mechanics are injected now — asking the model
+  // to reproduce ~860 lines of helper was the bug, and there is nothing left to copy.
+  if (framed) {
+    return (
+      head +
+      "The interaction MECHANICS ARE INJECTED FOR YOU at write time — the 💬 comment helper, " +
+      "the ✓/✎/✗ ballot handler, the submit wiring and the size reporter all arrive " +
+      "automatically, so do NOT hand-write them and do NOT copy them from another artifact. " +
+      "Write the INTERIOR: (a) a real <head> with <meta charset=\"utf-8\">; (b) data-fit-root " +
+      "on the main wrapper; (c) a shelly-meta JSON <script> block in the head; (d) the content " +
+      "itself, and the next moves marked up as a ballot — one data-shelly-item per move with a " +
+      "data-item-label written as an imperative, and one data-shelly-submit button. Marking " +
+      "them is all that is required; the click handling and the postMessage are supplied. " +
+      "Design it freely — the look is entirely yours. " +
+      tail
+    );
+  }
+  return (
+    head +
+    'The mechanical floor, inline (you need nothing else): (a) a real <head> with <meta charset="utf-8">; ' +
+    "(b) data-fit-root on the main wrapper plus the size-report snippet at the end of <body> — it posts " +
     "{source:'shelly-artifact',kind:'size',w,h} to parent so the overlay can size the frame; " +
     "(c) a shelly-meta JSON <script> block in the head; (d) an ANSWERABLE SURFACE — a short " +
     "'Next steps' ballot (✓ do it / ✎ note / ✗ skip), each move marked data-shelly-item and the " +
     "Submit button marked data-shelly-submit, whose click posts " +
-    "parent.postMessage({source:'shelly-artifact',kind:'submit',text},'*'). Every artifact ends " +
-    "by showing the user where they stand and what happens next; even when the work is finished, " +
-    "say so and hand them the next move as a surface they can answer in place. You may copy the " +
-    "size-reporter and ballot wiring verbatim from any recent .html in " +
-    artifactsDir +
-    ". Only STOP if you already wrote an artifact this turn and it simply hasn't been indexed yet."
+    "parent.postMessage({source:'shelly-artifact',kind:'submit',text},'*'). Note that a submit " +
+    "carrying `payload:` instead of `text:` is silently DROPPED by the Board — it must be `text`. " +
+    tail
   );
 }
 
@@ -274,5 +330,7 @@ else
     sealIfDone,
     buildReason,
     buildResponderReason,
+    postsLiveSubmit,
+    frameWillBeInjected,
     safeId,
   };

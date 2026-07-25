@@ -4,7 +4,7 @@ Integration tests for the register-once identity machinery (`shelly-session`,
 `shelly-index.cjs`, `shelly-identity.cjs`). They run the **real shell + node hook
 path** under a sandboxed throwaway `HOME`, so they touch no live `~/.shelly`
 state. This is the deterministic slice of the §8 regression matrix the live
-merge-and-test session leans on (see `DECISIONS-identity-registry.md`).
+merge-and-test session leans on (see `docs/identity-registry-decisions.md`).
 
 Run all:
 

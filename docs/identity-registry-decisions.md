@@ -1,6 +1,6 @@
 # Decisions log — identity registry redesign
 
-Shelly to `PLAN-identity-registry.md`. Records choices made while implementing, so a
+Shelly to `identity-registry-plan.md`. Records choices made while implementing, so a
 later/cold agent doesn't re-litigate them.
 
 ## D1 — Shared identity lib: ONE canonical file, inherited via git (§5.4)

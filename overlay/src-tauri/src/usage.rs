@@ -102,6 +102,7 @@ const WIDE_WINDOW_MODELS: &[&str] = &[
     "claude-opus-4-6",
     "claude-opus-4-7",
     "claude-opus-4-8",
+    "claude-opus-5",
     "claude-sonnet-4-6",
     "claude-sonnet-5",
     "claude-fable-5",
@@ -505,6 +506,7 @@ mod tests {
     #[test]
     fn unknown_models_get_the_conservative_window() {
         assert_eq!(window_for("claude-opus-4-8"), MILLION);
+        assert_eq!(window_for("claude-opus-5"), MILLION);
         assert_eq!(window_for("claude-sonnet-5"), MILLION);
         assert_eq!(window_for("claude-haiku-4-5"), DEFAULT_WINDOW);
         assert_eq!(window_for("claude-something-new"), DEFAULT_WINDOW);

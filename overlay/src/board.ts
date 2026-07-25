@@ -73,6 +73,7 @@ import {
   noteArtifactShown,
 } from "./shell-repaint";
 import { classifyUpdate, type UpdateAttempt } from "./update-stale";
+import * as unread from "./unread-store";
 import { mountCrab } from "./crab";
 import { initCodePeek, closeCodePeek } from "./code-peek";
 import {
@@ -381,8 +382,13 @@ let boardSubmittedCleanup: (() => void) | null = null;
 /** Every artifact path we've ever seen — seeded at init so existing files aren't "new". */
 const knownPaths = new Set<string>();
 /** Unread (arrived-while-away) artifact paths, per UNIT key (so two same-repo
- *  agents' artifacts accrue onto the one unit card, and UNSOURCED clears too). */
-const unreadByUnit = new Map<string, Set<string>>();
+ *  agents' artifacts accrue onto the one unit card, and UNSOURCED clears too).
+ *
+ *  The ledger's arithmetic lives in `unread-store.ts`, which is unit-tested — the
+ *  "drop the key when its set empties" invariant used to be hand-written at four
+ *  separate mutation sites in this file, and every unread bug shipped so far was one
+ *  of those sites disagreeing with another. Read through the store, never poke `.byUnit`. */
+const unreadState = unread.createUnreadState();
 /** Signature of the last-seen artifact set (path:mtime) — a cheap poll no-op guard. */
 let lastArtifactSig = "";
 
@@ -1301,8 +1307,7 @@ function toggleNotifMenu(anchor: HTMLElement): void {
   menu.className = "notif-menu";
   menu.setAttribute("role", "menu");
 
-  const entries: { unit: string; n: number }[] = [];
-  for (const [unit, set] of unreadByUnit) if (set.size > 0) entries.push({ unit, n: set.size });
+  const entries = unread.unitsWithUnread(unreadState);
   entries.sort((a, b) => b.n - a.n);
 
   const head = document.createElement("div");
@@ -1336,9 +1341,9 @@ function toggleNotifMenu(anchor: HTMLElement): void {
         // Already on this unit → open the freshest unread artifact directly in the reader
         // instead of a no-op re-nav that leaves the user wondering where it went.
         if (v.level === "unit" && v.unitKey === unit) {
-          const unread = unreadByUnit.get(unit);
-          if (unread && unread.size > 0) {
-            const freshest = [...unread]
+          const queued = unread.pathsIn(unreadState, unit);
+          if (queued.length > 0) {
+            const freshest = queued
               .map((p) => allArtifacts.find((a) => a.path === p))
               .filter((a): a is ArtifactEntry => !!a)
               .sort((a, b) => b.modified_ms - a.modified_ms)[0];
@@ -4474,11 +4479,10 @@ async function openReader(path: string): Promise<void> {
  *  artifact. Count = distinct agents, so "N agents need you" reads true even when
  *  one agent dropped several artifacts. Freshest agent first. */
 function agentQueue(): { source: string; path: string }[] {
-  const unread = new Set<string>();
-  for (const set of unreadByUnit.values()) for (const p of set) unread.add(p);
+  const queued = unread.allPaths(unreadState);
   const freshestBySource = new Map<string, ArtifactEntry>();
   for (const a of allArtifacts) {
-    if (!unread.has(a.path) || a.path === focusPath) continue;
+    if (!queued.has(a.path) || a.path === focusPath) continue;
     const src = a.source ?? a.path; // unsourced artifact = its own "agent"
     const cur = freshestBySource.get(src);
     if (!cur || a.modified_ms > cur.modified_ms) freshestBySource.set(src, a);
@@ -4491,12 +4495,7 @@ function agentQueue(): { source: string; path: string }[] {
 /** Mark a single artifact read (it's now on the reader) without clearing the rest
  *  of its unit's unread — surgical, so jumping to one agent leaves the others queued. */
 function markArtifactRead(path: string): void {
-  for (const [unit, set] of unreadByUnit) {
-    if (set.delete(path)) {
-      if (set.size === 0) unreadByUnit.delete(unit);
-      break;
-    }
-  }
+  unread.markRead(unreadState, path);
   updateGlobalUnread();
 }
 
@@ -4766,31 +4765,23 @@ function artifactRouteKey(a: ArtifactEntry): string {
 }
 
 function addUnread(unitKey: string, path: string): void {
-  let set = unreadByUnit.get(unitKey);
-  if (!set) {
-    set = new Set();
-    unreadByUnit.set(unitKey, set);
-  }
-  set.add(path);
+  unread.add(unreadState, unitKey, path);
 }
 function unreadCount(unitKey: string): number {
-  return unreadByUnit.get(unitKey)?.size ?? 0;
+  return unread.count(unreadState, unitKey);
 }
 /** Unread artifacts belonging to ONE session — the rail's per-session badge, so a
  *  sibling's queued work says WHICH session to go look in. Unread is stored per unit,
  *  so resolve each path's owning source through `allArtifacts` rather than keeping a
  *  second map that could drift out of sync with it. */
 function unreadCountForSource(source: string): number {
-  const unread = new Set<string>();
-  for (const set of unreadByUnit.values()) for (const p of set) unread.add(p);
+  const queued = unread.allPaths(unreadState);
   let n = 0;
-  for (const a of allArtifacts) if (artifactMatchesSource(a, source) && unread.has(a.path)) n++;
+  for (const a of allArtifacts) if (artifactMatchesSource(a, source) && queued.has(a.path)) n++;
   return n;
 }
 function totalUnread(): number {
-  let n = 0;
-  for (const set of unreadByUnit.values()) n += set.size;
-  return n;
+  return unread.total(unreadState);
 }
 
 /**
@@ -4882,20 +4873,16 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   // Deleted artifacts can't stay held or alarmed.
   for (const p of [...pendingIdentity.keys()]) if (!present.has(p)) pendingIdentity.delete(p);
   for (const p of [...unroutedPaths]) if (!present.has(p)) unroutedPaths.delete(p);
-  for (const [unit, set] of unreadByUnit) {
-    for (const p of [...set]) if (!present.has(p)) set.delete(p);
-    if (set.size === 0) unreadByUnit.delete(unit);
-  }
+  unread.retainPaths(unreadState, present);
   if (heroPendingPath !== null && !present.has(heroPendingPath)) hideHeroNewPill();
 
   // Pull every re-routed artifact out of the unread bucket its OLD identity filed it
-  // under, so the branch loop below re-files it under the corrected unit (or surfaces
-  // it). Without this it would linger as a dot on the wrong unit even after re-routing.
+  // under, so the branch loop below re-files it under the corrected unit (or surfaces it).
+  // Belt-and-braces now rather than load-bearing: `unread.add` is exclusive, so re-filing
+  // alone would move the path off the stale unit. Kept because the re-routed artifact may
+  // turn out to be HELD (never re-added this pass), and it earns the trace line.
   if (reRoutedSet.size) {
-    for (const [unit, set] of unreadByUnit) {
-      for (const p of [...set]) if (reRoutedSet.has(p)) set.delete(p);
-      if (set.size === 0) unreadByUnit.delete(unit);
-    }
+    unread.drop(unreadState, reRoutedSet);
     trace("ingest.reroute", { count: reRouted.length });
   }
 
@@ -5107,8 +5094,7 @@ function postUnreadToHub(): void {
   if (currentView().level !== "hub") return;
   const frame = document.getElementById("hub-frame") as HTMLIFrameElement | null;
   if (!frame || frame.hasAttribute("hidden") || !frame.contentWindow) return;
-  const counts: Record<string, number> = {};
-  for (const [unit, set] of unreadByUnit) counts[unit] = set.size;
+  const counts = unread.countsByUnit(unreadState);
   frame.contentWindow.postMessage(
     { source: "shelly", kind: "unread", total: totalUnread(), counts },
     "*",
