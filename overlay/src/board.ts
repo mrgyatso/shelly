@@ -3300,17 +3300,23 @@ async function syncUpdate(): Promise<void> {
     btn.disabled = false;
 
     // Did the last Update click actually move us? If we relaunched on the same version
-    // and are still behind, the tap/repo hadn't published yet — say so, don't re-offer
-    // the same update as if the click never happened.
+    // and are still behind, something went wrong — say so, don't re-offer the same
+    // update as if the click never happened.
     const verdict = classifyUpdate(s, readUpdateAttempt(), Date.now());
     if (verdict.clearMarker) clearUpdateAttempt();
 
     if (verdict.stale) {
       btn.dataset.state = "behind";
-      const source = IS_LINUX ? "the package repository" : "the Homebrew tap";
-      subEl.textContent = s.latest
-        ? `Still on ${s.app} after the last update — ${source} hasn't published ${s.latest} yet. This is a release delay, not your machine; try again shortly.`
-        : `Still on ${s.app} after the last update. Try again shortly.`;
+      // Report what actually failed, from the helper's own log. This used to assert
+      // "the tap hasn't published yet — a release delay, not your machine", which
+      // classifyUpdate() cannot possibly know: it only sees that the version didn't
+      // move. That guess was wrong in the field (a cask that conflicted with itself
+      // aborted the upgrade locally, while the tap had published four days earlier)
+      // and it sent the user off waiting for a release that had already shipped.
+      const reason = await invoke<string | null>("update_failure").catch(() => null);
+      subEl.textContent = reason
+        ? `Still on ${s.app} — the last update failed: ${reason}`
+        : `Still on ${s.app} after the last update, and it didn't take. See ~/.shelly/update.log for what happened.`;
     } else if (s.behind && s.latest) {
       btn.dataset.state = "behind";
       subEl.textContent = `Version ${s.latest} is available. ${restart}`;

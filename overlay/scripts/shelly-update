@@ -96,6 +96,15 @@ update_app_macos() {
     log "no brew on PATH — cannot update the app (the plugin update below still runs)"
     return 1
   fi
+  # Refresh the tap FIRST. `brew upgrade` compares against the local tap checkout,
+  # not against GitHub — and Homebrew's auto-update is time-gated (and skipped
+  # entirely under HOMEBREW_NO_AUTO_UPDATE), so a machine can sit days behind and
+  # the upgrade will cheerfully decide there is nothing to do. Observed in the
+  # wild: a clone six days stale, two commits behind, upgrading to "latest" while
+  # the release it wanted was already published. Failure here is not fatal — an
+  # offline machine should still get the chance to install whatever it has.
+  log "refreshing Homebrew"
+  run brew update || log "brew update failed — upgrading against the tap as-is"
   # `upgrade` is a no-op when the cask is already current, so this is safe to run
   # unconditionally — the button also exists to refresh a stale PLUGIN under a
   # perfectly current app.

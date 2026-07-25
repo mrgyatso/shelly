@@ -10,8 +10,15 @@
 //!
 //! This turns that silence into a message. On click we record what version we were on;
 //! after the relaunch we compare. Same version + still behind + recent click = the
-//! upgrade didn't take, and the honest thing to say is "the download source is stale —
-//! not your machine". The logic is pure and clock-injected so it can be pinned by a test.
+//! upgrade didn't take. The logic is pure and clock-injected so it can be pinned by a test.
+//!
+//! What it deliberately does NOT do is say *why*. It cannot: these three facts are
+//! consistent with a stale tap, a brew error, a dead helper, or a half-finished install.
+//! An earlier version guessed "the tap hasn't published yet — a release delay, not your
+//! machine" and was wrong in exactly the way a guess fails: the tap had published, the
+//! cask was aborting locally, and the user was told to sit and wait. The cause comes from
+//! `update_failure`, which reads the helper's own log; this module only decides *whether*
+//! the last click failed.
 
 /** How long after an Update click we still treat "still behind" as a *failed update*
  *  rather than an unrelated new release. Past this, a lingering marker is stale intent,
