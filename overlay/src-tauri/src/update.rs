@@ -135,6 +135,70 @@ pub async fn update_status(app: tauri::AppHandle) -> UpdateStatus {
     .unwrap_or_default()
 }
 
+/// Marker `shelly-update` writes when it begins a run.
+const RUN_START: &str = "--- update started";
+/// Marker it writes when it has finished every step (successful or degraded).
+const RUN_FINISH: &str = "--- update finished";
+/// What `shelly-update`'s `run()` helper logs when a command exits non-zero.
+const RUN_FAILED: &str = "FAILED:";
+
+/// Why the last `shelly-update` run didn't move us, read from its own log.
+///
+/// The Board used to answer this by *inference*: same version + still behind + a recent
+/// click, therefore "the tap hasn't published yet". That reasoning cannot see the actual
+/// failure, and it was wrong in the field — a cask that conflicted with itself aborted
+/// every upgrade locally while the message blamed a release delay that did not exist and
+/// told the user to wait it out. The helper already writes what happened; read that
+/// instead of guessing.
+///
+/// Returns `None` when the last run finished cleanly (or there is no log) — the caller
+/// then falls back to a message that claims no cause at all, which is still honest.
+fn last_run_failure(log: &str) -> Option<String> {
+    // Only the most recent run is evidence about the most recent click.
+    let last_run = match log.rfind(RUN_START) {
+        Some(i) => &log[i..],
+        None => return None,
+    };
+    if last_run.contains(RUN_FINISH) {
+        // It ran to completion, so any failure inside it was a step we recovered from.
+        // Still worth surfacing the step that failed, but not the "died early" case.
+        return last_run
+            .lines()
+            .rev()
+            .find(|l| l.contains(RUN_FAILED))
+            .map(|l| trim_reason(l, RUN_FAILED));
+    }
+    // No finish marker and the process is long gone: the run died partway. Say where.
+    let brew_error = last_run
+        .lines()
+        .rev()
+        .find(|l| l.trim_start().starts_with("Error:"))
+        .map(|l| l.trim().to_string());
+    if let Some(e) = brew_error {
+        return Some(e);
+    }
+    if let Some(l) = last_run.lines().rev().find(|l| l.contains(RUN_FAILED)) {
+        return Some(trim_reason(l, RUN_FAILED));
+    }
+    Some("the update helper stopped before it finished — see ~/.shelly/update.log".into())
+}
+
+/// Strip the log's leading timestamp and marker, leaving the reason itself.
+fn trim_reason(line: &str, marker: &str) -> String {
+    match line.find(marker) {
+        Some(i) => line[i + marker.len()..].trim().to_string(),
+        None => line.trim().to_string(),
+    }
+}
+
+/// The last update run's failure reason, or `None` if it completed cleanly.
+#[tauri::command]
+pub fn update_failure() -> Option<String> {
+    let path = crate::paths::shelly_dir()?.join("update.log");
+    let log = std::fs::read_to_string(path).ok()?;
+    last_run_failure(&log)
+}
+
 /// Where the bundled CLI scripts live, resolved from the running binary.
 ///
 /// Not from `PATH`: a GUI-launched app on macOS inherits launchd's minimal PATH
@@ -327,5 +391,59 @@ mod tests {
             shell_quote("/Applications/Shelly.app/x"),
             "'/Applications/Shelly.app/x'"
         );
+    }
+
+    #[test]
+    fn a_completed_run_reports_no_failure() {
+        let log = "2026-07-25 09:10:30 --- update started (pid to await: 743) ---\n\
+                   2026-07-25 09:10:31 updating the app via Homebrew\n\
+                   2026-07-25 09:11:02 relaunching\n\
+                   2026-07-25 09:11:02 --- update finished ---\n";
+        assert_eq!(last_run_failure(log), None);
+    }
+
+    #[test]
+    fn a_brew_error_is_surfaced_verbatim() {
+        // The real 0.11.0 blocker: the cask conflicted with itself, brew aborted, and
+        // the Board told the user the tap hadn't published yet.
+        let log = "2026-07-25 09:10:30 --- update started (pid to await: 743) ---\n\
+                   2026-07-25 09:10:31 updating the app via Homebrew\n\
+                   Error: Cask 'shelly' conflicts with 'shelly'.\n";
+        assert_eq!(
+            last_run_failure(log).unwrap(),
+            "Error: Cask 'shelly' conflicts with 'shelly'."
+        );
+    }
+
+    #[test]
+    fn a_run_that_died_before_homebrew_says_so_rather_than_inventing_a_cause() {
+        let log = "2026-07-25 09:10:30 --- update started (pid to await: 743) ---\n";
+        assert!(last_run_failure(log).unwrap().contains("stopped before"));
+    }
+
+    #[test]
+    fn only_the_most_recent_run_counts() {
+        // An old failure must not be reported against a later, clean run.
+        let log = "2026-07-19 13:21:00 --- update started (pid to await: 1) ---\n\
+                   Error: Cask 'shelly' conflicts with 'shelly'.\n\
+                   2026-07-25 09:10:30 --- update started (pid to await: 743) ---\n\
+                   2026-07-25 09:11:02 --- update finished ---\n";
+        assert_eq!(last_run_failure(log), None);
+    }
+
+    #[test]
+    fn a_failed_step_inside_a_completed_run_is_still_reported() {
+        let log = "2026-07-25 09:10:30 --- update started (pid to await: 743) ---\n\
+                   2026-07-25 09:10:31 FAILED: brew upgrade --cask mrgyatso/tap/shelly\n\
+                   2026-07-25 09:11:02 --- update finished ---\n";
+        assert_eq!(
+            last_run_failure(log).unwrap(),
+            "brew upgrade --cask mrgyatso/tap/shelly"
+        );
+    }
+
+    #[test]
+    fn no_log_at_all_is_not_a_failure() {
+        assert_eq!(last_run_failure(""), None);
     }
 }

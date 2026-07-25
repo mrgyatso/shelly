@@ -176,6 +176,7 @@ pub fn run() {
             code_peek::session_files,
             code_peek::read_touched_file,
             update::update_status,
+            update::update_failure,
             update::run_update
         ])
         .setup(|app| {
