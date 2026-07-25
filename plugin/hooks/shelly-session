@@ -93,7 +93,8 @@ shortid=$(printf '%s' "$line" | cut -f3)
 is_repo=$(printf '%s' "$line" | cut -f4)
 unit_key=$(printf '%s' "$line" | cut -f5)
 root=$(printf '%s' "$line" | cut -f6)
-digest_path="${HOME}/.shelly/artifacts/home.${unit_key}.html"
+# (The per-project digest path used to be derived here and never used. shelly-digest.cjs
+#  owns that derivation now — see section 2c — so there is only one definition of it.)
 # The stem slug (live/<slug>--<shortid>.json) — the session's on-disk name. Recorded
 # alongside unit_key because the two DIFFER for $HOME sessions ('gyatso' vs '__home__');
 # artifact source stamps are built from the slug and must match the live stem.
@@ -293,14 +294,26 @@ if [ "$is_repo" = "1" ]; then
   fi
 fi
 
+# 2c. The per-project STANDING DIGEST (home.<unit_key>.html). The Board has always been
+#     able to show one full-bleed on entering a unit — history.rs keeps the slug out of the
+#     artifact index and out of pruning so it can live forever, and board.ts's renderHero()
+#     prefers it over the unit's latest artifact — but nothing ever WROTE one, so the
+#     surface sat empty. shelly-digest.cjs decides whether this unit's digest is missing,
+#     behind HEAD, aged, or current, and returns the line to inject; arriving at a project
+#     is both when the digest matters and when refreshing it is cheapest, which is why this
+#     rides SessionStart rather than nagging at every Stop. Fail-quiet: "" on any doubt.
+digest_note=$(node "$CMP_HOOK_DIR/shelly-digest.cjs" line "$unit_key" "$root" "$is_repo" 2>/dev/null)
+trace session digest "unit_key=$unit_key" "note=$([ -n "$digest_note" ] && echo 1 || echo 0)"
+
 # 3. Tell the agent its live path (a status/roster heartbeat) AND that it now authors
 #    artifact HTML itself, inline, when a turn earns one. The live file is no longer
 #    rendered into a card; a Stop-hook backstop (shelly-artifact-gate) reminds the agent
 #    once if a substantive turn ends with nothing written.
 artifacts_dir="${SHELLY_ARTIFACTS_DIR:-$HOME/.shelly/artifacts}"
-LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e '
+LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" DIGEST_NOTE="$digest_note" node -e '
   const p=process.env.LIVE_PATH;
   const a=process.env.ARTIFACTS_DIR;
+  const dg=process.env.DIGEST_NOTE ? "\n\n"+process.env.DIGEST_NOTE : "";
   const wt=process.env.WT_NOTE ? "\n"+process.env.WT_NOTE : "";
   const ctx=`Shelly live surface: rewrite your live state to ${p} on each work turn. This is a `+
     `STATUS heartbeat only — it drives the Board roster AND the always-on status strip; it is NOT `+
@@ -348,7 +361,7 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `Curated set only (bg/ink): paper #FBFAF6/#171A1F · slate #E7ECF1/#1B2530 · mint #E6F1EA/#16281F · `+
     `clay #F3E7DF/#2A1C14 · ink #14181D/#E8EDF3. Never any other color; never a partial repaint (the `+
     `seam is the enemy). A Stop-hook backstop hands the turn back once if it ends with nothing written, `+
-    `but author it inline.`+wt;
+    `but author it inline.`+dg+wt;
   process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:ctx}}));
 '
 exit 0
