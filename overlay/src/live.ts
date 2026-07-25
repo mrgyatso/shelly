@@ -49,8 +49,8 @@ export function initLive(): void {
 }
 
 async function tick(): Promise<void> {
-  let local = "";
-  let remote = "";
+  let local: string;
+  let remote: string;
   try {
     [local, remote] = await Promise.all([
       invoke<string>("read_live"),

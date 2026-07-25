@@ -205,6 +205,75 @@ console.log("\n### shelly-hook end-to-end (Bash payload)");
     ok(entry && entry.session_id === "owner-session", "a read by another session leaves the owner's entry intact");
     fs.rmSync(home, { recursive: true, force: true });
   }
+
+  // 5c — THE WIRING PROOF for the frame substrate.
+  //
+  // Everything else about the frame is tested one layer in: the transform is unit-tested,
+  // and shelly-index.cjs is driven directly. Neither can tell you the frame is reachable
+  // from the thing Claude Code actually invokes — a `sh` script with several early exits
+  // (the external-terminals gate, the artifacts-dir prefilter, the CLI-presence seam, and
+  // a `case` that deliberately routes home.* / _* elsewhere). If any of those swallow the
+  // path, the whole fix is inert while every other test stays green.
+  //
+  // So: a real Write payload, through the real shell entry point, asserting the file on
+  // disk came out frame-complete. This is the test that says "it is switched on".
+  console.log("\n### the frame lands through the REAL shell hook (wiring proof)");
+  {
+    const { home, bin, artifacts } = mkHome("frame");
+    const fp = path.join(artifacts, "unframed.html");
+    // An interior with no mechanics at all — and, like every skill template, one that
+    // styles [data-fit-root] in CSS before using it as an attribute.
+    fs.writeFileSync(
+      fp,
+      [
+        '<!doctype html><html><head><meta charset="utf-8">',
+        "<style>[data-fit-root]{width:900px}</style></head>",
+        "<body><main data-fit-root><p>prose</p></main></body></html>",
+      ].join("\n"),
+    );
+    fire(
+      home,
+      bin,
+      JSON.stringify({
+        session_id: "frame-writer-1",
+        cwd: fs.mkdtempSync(path.join(os.tmpdir(), "shelly-proj-")),
+        tool_name: "Write",
+        tool_input: { file_path: fp },
+      }),
+    );
+    const out = fs.readFileSync(fp, "utf8");
+    ok(out.includes("SHELLY-FRAME-START"), "a plain artifact comes out of the live hook FRAMED");
+    ok(/<main data-fit-root data-shelly-commentable>/.test(out), "…with 💬 on the ELEMENT, not the CSS selector");
+    ok(/\[data-fit-root\]\{width:900px\}/.test(out), "…and the artifact's own CSS left intact");
+    ok(/kind: ?"submit"/.test(out) && /\btext:/.test(out), "…and a live text: submit");
+    ok(!!readIdx(home)[fp], "…and it is still indexed to its session (framing did not break routing)");
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+
+  // 5d — the L0 home must NOT be framed. It is presentation-first, carries its own top
+  // bar, and would sprout a stray "Message the terminal" bar if the helper mounted in it.
+  // This is guaranteed by the shell's `case` arms routing home.* away from the index step,
+  // which means it is a property of the WIRING and can only be checked here.
+  {
+    const { home, bin, artifacts } = mkHome("home");
+    const fp = path.join(artifacts, "home.claude-code-companion.html");
+    const src = '<!doctype html><html><head><meta charset="utf-8"></head><body><main data-fit-root>dash</main></body></html>';
+    fs.writeFileSync(fp, src);
+    fire(
+      home,
+      bin,
+      JSON.stringify({
+        session_id: "frame-writer-2",
+        cwd: fs.mkdtempSync(path.join(os.tmpdir(), "shelly-proj-")),
+        tool_name: "Write",
+        tool_input: { file_path: fp },
+      }),
+    );
+    const out = fs.readFileSync(fp, "utf8");
+    ok(!out.includes("SHELLY-FRAME-START"), "a unit-home digest is NEVER framed");
+    ok(out === src, "…and is left byte-identical");
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -237,7 +237,7 @@ const AGENT_ACTIVE_WINDOW_MS = 15 * 60 * 1000;
 
 /** Pull the connected-agents registry; re-render the rail / home doors on change. */
 async function pollHubAgents(): Promise<void> {
-  let raw = "";
+  let raw: string;
   try {
     raw = await invoke<string>("hub_agents");
   } catch {
@@ -828,7 +828,7 @@ async function newHomeSession(agent?: string): Promise<void> {
 
 /** "+ New session in a folder…" (secondary): pick a folder/repo, spawn there. */
 async function newFolderSession(agent?: string): Promise<void> {
-  let dir: string | null = null;
+  let dir: string | null;
   const label = agent === "codex" ? "codex" : "claude";
   try {
     const picked = await openDialog({ directory: true, title: `Start a ${label} session in…` });
@@ -1483,7 +1483,7 @@ function goUnit(unitKey: string): void {
 async function renderHub(): Promise<void> {
   const frame = document.getElementById("hub-frame") as HTMLIFrameElement | null;
   const fallback = document.getElementById("hub-fallback");
-  let home: string | null = null;
+  let home: string | null;
   try {
     home = await invoke<string | null>("resolve_home");
   } catch {
@@ -1512,7 +1512,10 @@ function renderHubFallback(): void {
   const { order } = computeRoster(Date.now());
   let sessions = 0;
   let agents = 0;
-  for (const u of order) unitKindWith(u) === "agenthub" ? agents++ : sessions++;
+  for (const u of order) {
+    if (unitKindWith(u) === "agenthub") agents++;
+    else sessions++;
+  }
   const sc = document.getElementById("hub-door-sessions-count");
   const ac = document.getElementById("hub-door-agenthub-count");
   if (sc) sc.textContent = sessions > 0 ? `${sessions} live` : "none live";
@@ -4606,7 +4609,7 @@ function closeFocus(): void {
 
 async function pollLive(): Promise<void> {
   trace("poll.start");
-  let sources: LiveSource[] = [];
+  let sources: LiveSource[];
   try {
     sources = await invoke<LiveSource[]>("read_all_live");
   } catch (e) {
@@ -5363,7 +5366,7 @@ function ownedTabForArtifact(path: string): string | null {
 /** Validate an artifact path is in scope, then open it in the reader (drilling
  *  to its unit first so the back button lands somewhere sensible). */
 async function navigateToArtifact(path: string): Promise<void> {
-  let ok = false;
+  let ok: boolean;
   try {
     ok = await invoke<boolean>("artifact_in_scope", { path });
   } catch {

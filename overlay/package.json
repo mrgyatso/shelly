@@ -12,7 +12,11 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "node --experimental-strip-types scripts/check-ingest-rewrite.ts && node --experimental-strip-types scripts/check-sibling-unread.ts && node --experimental-strip-types scripts/check-artifact-deck.ts && node --experimental-strip-types scripts/check-compact-state.ts && node --experimental-strip-types scripts/check-unit-identity.ts && node --experimental-strip-types scripts/check-demo-loop.ts && node --experimental-strip-types scripts/check-shell-repaint.ts && node --experimental-strip-types scripts/check-update-stale.ts && node --experimental-strip-types scripts/check-submit-ack.ts && node --experimental-strip-types scripts/check-board-state.ts && node --experimental-strip-types scripts/check-file-budgets.ts && node ../plugin/hooks/__tests__/run.cjs && npm run test:render",
-    "test:render": "node ../plugin/hooks/__tests__/render-frame.mjs"
+    "test:render": "node ../plugin/hooks/__tests__/render-frame.mjs",
+    "lint": "eslint src scripts",
+    "lint:fix": "eslint src scripts --fix",
+    "format": "prettier --write \"src/**/*.{ts,css}\" \"scripts/**/*.{ts,mjs}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,css}\" \"scripts/**/*.{ts,mjs}\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -26,8 +30,12 @@
     "monaco-editor": "^0.55.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
+    "eslint": "^10.8.0",
+    "prettier": "^3.9.6",
     "typescript": "~5.6.2",
+    "typescript-eslint": "^8.65.0",
     "vite": "^6.0.3"
   }
 }

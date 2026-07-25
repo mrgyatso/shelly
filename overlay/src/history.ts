@@ -56,7 +56,7 @@ export async function initHistory(): Promise<void> {
   });
 
   setStatus(status, "Loading…");
-  let entries: ArtifactEntry[] = [];
+  let entries: ArtifactEntry[];
   try {
     entries = await invoke<ArtifactEntry[]>("list_artifacts");
   } catch (e) {
