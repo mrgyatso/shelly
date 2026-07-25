@@ -41,7 +41,14 @@ const DEFAULT_MAX = 800;
 /** Grandfathered files, with the size they must stay under. Each is a debt with a number
  *  on it rather than an unbounded one. */
 const BUDGETS: Record<string, number> = {
-  "src/board.ts": 5500,
+  // Raised once, deliberately, from 5500: adopting Prettier normalised this file's formatting
+  // and cost +76 lines (5,431 → 5,507) in one-time churn, not new code. That is the kind of
+  // increase this ratchet is meant to make you justify out loud rather than nudge silently —
+  // so it is written down here. It goes DOWN from now on, as extractions land.
+  "src/board.ts": 5560,
+  // board.css is NOT Prettier-formatted on purpose (see .prettierignore): the formatter grew
+  // it by 960 lines expanding dense declarations, which is a formatter making a too-big file
+  // measurably worse. So this number reflects hand-formatted CSS and should stay tight.
   "src/board.css": 3150,
 };
 
@@ -50,7 +57,9 @@ for (const [file, max] of Object.entries(BUDGETS)) {
   const n = lines(file);
   check(`${file} is ${n} lines, budget ${max}`, n <= max);
   if (n <= max - SLACK) {
-    console.log(`  ↓  ${file} is ${max - n} lines under budget — lower it to ~${n + 20} in this commit`);
+    console.log(
+      `  ↓  ${file} is ${max - n} lines under budget — lower it to ~${n + 20} in this commit`,
+    );
   }
 }
 
@@ -59,11 +68,22 @@ const srcFiles = readdirSync(new URL("../src", import.meta.url))
   .filter((f) => /\.(ts|css)$/.test(f) && !f.endsWith(".d.ts"))
   .map((f) => `src/${f}`)
   .filter((f) => !(f in BUDGETS));
+// Count THIS section's failures, not the global `failed`. Reusing the global made a
+// grandfathered budget being over ALSO fail the unrelated "everything else is fine" summary,
+// so one real problem reported as two and the summary line was simply lying. A check whose
+// condition is "did anything at all go wrong earlier" is not a check.
+let oversized = 0;
 for (const file of srcFiles) {
   const n = lines(file);
-  if (n > DEFAULT_MAX) check(`${file} is ${n} lines (max ${DEFAULT_MAX}) — extract a module`, false);
+  if (n > DEFAULT_MAX) {
+    check(`${file} is ${n} lines (max ${DEFAULT_MAX}) — extract a module`, false);
+    oversized++;
+  }
 }
-check(`all ${srcFiles.length} ungrandfathered src files are under ${DEFAULT_MAX} lines`, failed === 0);
+check(
+  `all ${srcFiles.length} ungrandfathered src files are under ${DEFAULT_MAX} lines`,
+  oversized === 0,
+);
 
 /**
  * SHARED MUTABLE STATE in board.ts — the real liability, of which line count is only a
@@ -79,9 +99,14 @@ console.log("\n### board.ts shared mutable state (ratchet down, never up)");
 const boardSrc = read("src/board.ts");
 const globals = (boardSrc.match(/^let /gm) || []).length;
 const GLOBAL_BUDGET = 66;
-check(`board.ts has ${globals} module-level \`let\`s, budget ${GLOBAL_BUDGET}`, globals <= GLOBAL_BUDGET);
+check(
+  `board.ts has ${globals} module-level \`let\`s, budget ${GLOBAL_BUDGET}`,
+  globals <= GLOBAL_BUDGET,
+);
 if (globals < GLOBAL_BUDGET) {
-  console.log(`  ↓  ${GLOBAL_BUDGET - globals} fewer than budget — lower GLOBAL_BUDGET to ${globals}`);
+  console.log(
+    `  ↓  ${GLOBAL_BUDGET - globals} fewer than budget — lower GLOBAL_BUDGET to ${globals}`,
+  );
 }
 
 console.log(failed === 0 ? "\nall checks passed" : `\n${failed} check(s) FAILED`);

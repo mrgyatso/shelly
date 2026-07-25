@@ -46,7 +46,10 @@ const B1 = "/art/applier-status.html";
   U.add(s, OTHER, B1);
   check("1. count is per unit", U.count(s, REPO) === 2 && U.count(s, OTHER) === 1);
   check("1b. total sums across units", U.total(s) === 3);
-  check("1c. adding the same path twice is idempotent", (U.add(s, REPO, A1), U.count(s, REPO) === 2));
+  check(
+    "1c. adding the same path twice is idempotent",
+    (U.add(s, REPO, A1), U.count(s, REPO) === 2),
+  );
   check("1d. an unknown unit counts zero, not undefined", U.count(s, "never-seen") === 0);
 }
 
@@ -83,7 +86,10 @@ const B1 = "/art/applier-status.html";
   U.markRead(s, A1);
   check("3. marking one artifact read leaves the sibling's queued", U.count(s, REPO) === 1);
   check("3b. …and it is the OTHER path that survives", U.pathsIn(s, REPO)[0] === A2);
-  check("3c. markRead reports whether anything was actually unread", U.markRead(s, "/art/nope.html") === false);
+  check(
+    "3c. markRead reports whether anything was actually unread",
+    U.markRead(s, "/art/nope.html") === false,
+  );
 }
 
 // ---- 4. THE DOT THAT LINGERED AFTER RE-ROUTING -------------------------------
@@ -107,14 +113,23 @@ const B1 = "/art/applier-status.html";
   U.add(s, OTHER, B1);
   const counts = U.countsByUnit(s);
   check("5. countsByUnit matches count() per unit", counts[REPO] === 2 && counts[OTHER] === 1);
-  check("5b. countsByUnit sums to total", Object.values(counts).reduce((a, b) => a + b, 0) === U.total(s));
+  check(
+    "5b. countsByUnit sums to total",
+    Object.values(counts).reduce((a, b) => a + b, 0) === U.total(s),
+  );
   check("5c. allPaths is the flattened union", U.allPaths(s).size === 3);
   const rows = U.unitsWithUnread(s).sort((a, b) => b.n - a.n);
-  check("5d. unitsWithUnread reports both units, biggest first", rows.length === 2 && rows[0].unit === REPO);
+  check(
+    "5d. unitsWithUnread reports both units, biggest first",
+    rows.length === 2 && rows[0].unit === REPO,
+  );
   // retainPaths must prune per-unit, not wholesale — one unit's artifact vanishing cannot
   // take another unit's with it.
   U.retainPaths(s, new Set([A2, B1]));
-  check("5e. retainPaths drops only the missing path", U.count(s, REPO) === 1 && U.count(s, OTHER) === 1);
+  check(
+    "5e. retainPaths drops only the missing path",
+    U.count(s, REPO) === 1 && U.count(s, OTHER) === 1,
+  );
 }
 
 // ---- 6. the blunt clear is opt-in, and only that -----------------------------
@@ -133,7 +148,10 @@ const B1 = "/art/applier-status.html";
 {
   const boardSrc = readFileSync(new URL("../src/board.ts", import.meta.url), "utf8");
   check("7. board.ts holds no bare unreadByUnit map any more", !/\bunreadByUnit\b/.test(boardSrc));
-  check("7b. board.ts owns the state object", /const unreadState = unread\.createUnreadState\(\)/.test(boardSrc));
+  check(
+    "7b. board.ts owns the state object",
+    /const unreadState = unread\.createUnreadState\(\)/.test(boardSrc),
+  );
   check(
     "7c. board.ts never mutates the ledger's internals directly",
     !/unreadState\.byUnit\s*\.\s*(set|delete|clear)/.test(boardSrc),

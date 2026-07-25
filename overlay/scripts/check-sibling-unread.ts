@@ -48,13 +48,19 @@ check(
 );
 
 // ---- 3. …and B is reachable: picking B re-heroes to B, clearing only B ------
-check("3. picking session B heroes B's own artifact", heroArtifactFor(UNIT, B_SRC, true)?.path === B_ART);
+check(
+  "3. picking session B heroes B's own artifact",
+  heroArtifactFor(UNIT, B_SRC, true)?.path === B_ART,
+);
 
 // ---- 4. freshness must not leak in through a null active source ------------
 // `activeSessionSource` falls back to "freshest artifact wins" when no terminal is
 // bound. A FRESH session (owned tab, no live file yet ⇒ null source) must still blank,
 // never inherit a sibling's artifact.
-check("4. fresh session (owned tab, no source) → blank hero, not a sibling's", heroArtifactFor(UNIT, null, true) === null);
+check(
+  "4. fresh session (owned tab, no source) → blank hero, not a sibling's",
+  heroArtifactFor(UNIT, null, true) === null,
+);
 
 // ---- 5. no session at all (cloud unit / closed external) → freshest ---------
 check(
@@ -63,7 +69,10 @@ check(
 );
 
 // ---- 6. a session that owns nothing yet stays blank -------------------------
-check("6. active session with zero artifacts → blank hero", heroArtifactFor(UNIT, "unit--nobody", true) === null);
+check(
+  "6. active session with zero artifacts → blank hero",
+  heroArtifactFor(UNIT, "unit--nobody", true) === null,
+);
 
 // ---- 7. empty unit -----------------------------------------------------------
 check("7. empty unit → null", heroArtifactFor([], A_SRC, true) === null);
@@ -78,7 +87,12 @@ const HOME_SID = "39f7edc5-55ca-4823-8a61-e74f73afbdf6";
 const HOME_LIVE_SRC = "gyatso--39f7edc5";
 const HOME_ART = "/art/discord-links-brief.html";
 const HOME_UNIT_ARTS: HeroCandidate[] = [
-  { path: HOME_ART, modified_ms: 1_784_039_390_000, source: "__home__--39f7edc5", session_id: HOME_SID },
+  {
+    path: HOME_ART,
+    modified_ms: 1_784_039_390_000,
+    source: "__home__--39f7edc5",
+    session_id: HOME_SID,
+  },
 ];
 check(
   "9. home session heroes its OWN artifact despite the '__home__' source stamp",
@@ -90,13 +104,20 @@ check(
 );
 check(
   "9c. no session_id + mismatched source → still no match (no false positives)",
-  heroArtifactFor([{ path: HOME_ART, modified_ms: 1, source: "__home__--39f7edc5" }], HOME_LIVE_SRC, true) === null,
+  heroArtifactFor(
+    [{ path: HOME_ART, modified_ms: 1, source: "__home__--39f7edc5" }],
+    HOME_LIVE_SRC,
+    true,
+  ) === null,
 );
 check(
   "9d. matcher: exact source equality still matches without a session_id",
   artifactMatchesSource({ source: HOME_LIVE_SRC }, HOME_LIVE_SRC),
 );
-check("9e. matcher: null source → no match", !artifactMatchesSource({ session_id: HOME_SID }, null));
+check(
+  "9e. matcher: null source → no match",
+  !artifactMatchesSource({ session_id: HOME_SID }, null),
+);
 
 // ---- 8. STRUCTURAL: entry must not clear the unit's unread wholesale ---------
 // Cases 1–2 prove a sibling's artifact is never PAINTED. This pins the other half of
@@ -108,7 +129,10 @@ const enterAt = boardSrc.indexOf("function enterUnit(");
 const enterEnd = boardSrc.indexOf("\nfunction ", enterAt + 1);
 const enterUnitBody = boardSrc.slice(enterAt, enterEnd === -1 ? undefined : enterEnd);
 
-check("8. enterUnit() body was located (guard is live, not vacuous)", enterAt !== -1 && enterUnitBody.length > 0);
+check(
+  "8. enterUnit() body was located (guard is live, not vacuous)",
+  enterAt !== -1 && enterUnitBody.length > 0,
+);
 check(
   "8b. enterUnit does not clear the unit's unread wholesale",
   !/clearUnread\s*\(|unreadByUnit\s*\.\s*delete\s*\(/.test(enterUnitBody),

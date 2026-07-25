@@ -303,9 +303,7 @@ const win = getCurrentWebviewWindow();
 
 /** The Board's two drill-down levels. L0 Hub → L2 one unit. (The rail IS the
  *  session navigation now; the old L1 sessions roster is gone.) */
-type BoardView =
-  | { level: "hub" }
-  | { level: "unit"; unitKey: string };
+type BoardView = { level: "hub" } | { level: "unit"; unitKey: string };
 
 /** Back-navigation stack; the current view is its top. */
 let viewStack: BoardView[] = [{ level: "hub" }];
@@ -620,10 +618,7 @@ export async function initBoard(): Promise<void> {
     if (stamp === undefined) return;
     const art = allArtifacts.find((a) => a.path === digestPath);
     if (art && art.modified_ms !== stamp) return; // rewritten → form re-arms
-    digest.contentWindow?.postMessage(
-      { source: "shelly-board", kind: "restore-submitted" },
-      "*",
-    );
+    digest.contentWindow?.postMessage({ source: "shelly-board", kind: "restore-submitted" }, "*");
   });
   railEl = document.getElementById("unit-rail");
   railSessionsEl = document.getElementById("unit-rail-sessions");
@@ -1080,7 +1075,9 @@ async function applyHandoff(req: HandoffReq): Promise<void> {
  *  agent. `defaultDir` is offered as "★ Start here" (recommended), but a different
  *  folder is always one click away; the agent toggle only shows Codex when it's
  *  installed. Resolves the chosen {dir, agent}, or null on cancel. */
-function openHandoffPicker(defaultDir: string | null): Promise<{ dir: string; agent: string } | null> {
+function openHandoffPicker(
+  defaultDir: string | null,
+): Promise<{ dir: string; agent: string } | null> {
   return new Promise((resolve) => {
     let dir: string | null = defaultDir;
     let agent = "claude";
@@ -1121,7 +1118,8 @@ function openHandoffPicker(defaultDir: string | null): Promise<{ dir: string; ag
       }
       const other = document.createElement("button");
       other.className = "hp-folder";
-      other.innerHTML = '<span class="hp-ico">📁</span><span class="hp-tx">Choose a folder or project…</span>';
+      other.innerHTML =
+        '<span class="hp-ico">📁</span><span class="hp-tx">Choose a folder or project…</span>';
       other.addEventListener("click", () => {
         void pickFolder();
       });
@@ -1130,7 +1128,10 @@ function openHandoffPicker(defaultDir: string | null): Promise<{ dir: string; ag
 
     const pickFolder = async (): Promise<void> => {
       try {
-        const picked = await openDialog({ directory: true, title: "Hand off — start the new session in…" });
+        const picked = await openDialog({
+          directory: true,
+          title: "Hand off — start the new session in…",
+        });
         if (typeof picked === "string" && picked) {
           dir = picked;
           renderFolders();
@@ -1212,7 +1213,7 @@ function toggleNewSessionMenu(anchor: HTMLElement): void {
     '<div class="ns-agent" role="group" aria-label="Agent">' +
     '<button class="ns-seg" role="menuitemradio" data-agent="claude"><span class="ns-seg-ic">✳</span>Claude</button>' +
     '<button class="ns-seg" role="menuitemradio" data-agent="codex"><span class="ns-seg-ic">◆</span>Codex</button>' +
-    '</div>' +
+    "</div>" +
     '<button class="ns-item" role="menuitem" data-ns="home">' +
     '<span class="ns-ico">⌂</span><span class="ns-tx">Start at home<small>~</small></span></button>' +
     '<button class="ns-item" role="menuitem" data-ns="folder">' +
@@ -1347,7 +1348,10 @@ function toggleNotifMenu(anchor: HTMLElement): void {
               .map((p) => allArtifacts.find((a) => a.path === p))
               .filter((a): a is ArtifactEntry => !!a)
               .sort((a, b) => b.modified_ms - a.modified_ms)[0];
-            if (freshest) { void openReader(freshest.path); return; }
+            if (freshest) {
+              void openReader(freshest.path);
+              return;
+            }
           }
         }
         goUnit(unit);
@@ -1436,9 +1440,15 @@ function goSessions(): void {
   roomFilter = "sessions";
   const { order } = computeRoster(Date.now());
   const first = order.find((u) => unitKindWith(u) === "sessions");
-  if (first) { goUnit(first); return; }
+  if (first) {
+    goUnit(first);
+    return;
+  }
   const u = findMostRecentActiveUnit();
-  if (u) { goUnit(u); return; }
+  if (u) {
+    goUnit(u);
+    return;
+  }
   void newHomeSession(preferredAgent());
 }
 
@@ -1449,7 +1459,10 @@ function goAgentHub(): void {
   roomFilter = "agenthub";
   const { order } = computeRoster(Date.now());
   const first = order.find((u) => unitKindWith(u) === "agenthub");
-  if (first) { goUnit(first); return; }
+  if (first) {
+    goUnit(first);
+    return;
+  }
   roomFilter = null;
   renderHubFallback();
 }
@@ -1739,9 +1752,8 @@ function unitName(unitKey: string, sources: LiveSource[]): string {
   // basename is the user's username, which is what made it read as a bogus project.
   if (unitKey === HOME_UNIT) return "Home";
   const fresh = sources[0];
-  return fresh ? (parseState(fresh.json).project || unitKey) : unitKey;
+  return fresh ? parseState(fresh.json).project || unitKey : unitKey;
 }
-
 
 // ---- Recent sessions (resumable, from claude's transcripts) ------------------
 
@@ -2020,9 +2032,7 @@ function renderUnitRail(activeUnitKey: string | null): void {
   const { order: allOrder, byUnit, bandOf } = computeRoster(now);
   // Scope the rail to the active ROOM when entered via a home door; the L0 home / idle
   // (roomFilter null) shows every unit, exactly as before.
-  const order = roomFilter
-    ? allOrder.filter((u) => unitKindWith(u) === roomFilter)
-    : allOrder;
+  const order = roomFilter ? allOrder.filter((u) => unitKindWith(u) === roomFilter) : allOrder;
   // (The old `unitChanged` / `prevActiveUnit` pair is gone: both animations now diff the
   // painted DRAWER unit rather than the active PROJECT, which is what lets a same-unit
   // toggle animate at all. `lastRailActiveUnit` is still tracked — other callers pass it
@@ -2057,7 +2067,9 @@ function renderUnitRail(activeUnitKey: string | null): void {
     // accurate before you've entered it: any multi-session project is a dropdown.
     const siblings = recentSiblingsFor(projectGroupKeyOf(unit, sources));
     const hasDrawer = unitHasDrawer(unit, sources);
-    nodes.push(buildRailTab(unit, sources, bandOf.get(unit) ?? "idle", isActive, hasDrawer, isExpanded));
+    nodes.push(
+      buildRailTab(unit, sources, bandOf.get(unit) ?? "idle", isActive, hasDrawer, isExpanded),
+    );
     // Click a multi-session project to expand its session chooser inline (this does
     // NOT navigate — picking a session does); mirrors the Recent-project expander.
     // .opening adds the drop-in animation on a unit switch.
@@ -2082,14 +2094,21 @@ function renderUnitRail(activeUnitKey: string | null): void {
       if (!showAll && entries.length > SESSION_DRAWER_COLLAPSED_ROWS) {
         visible = entries.slice(0, SESSION_DRAWER_COLLAPSED_ROWS);
         hidden = entries.length - visible.length;
-        const shownIdx = shownTab === null ? -1 : entries.findIndex(
-          (e) => e.kind === "live" && (parseState(e.s.json).shelly_session ?? null) === shownTab,
-        );
-        if (shownIdx >= SESSION_DRAWER_COLLAPSED_ROWS) visible = [...visible.slice(0, -1), entries[shownIdx]];
+        const shownIdx =
+          shownTab === null
+            ? -1
+            : entries.findIndex(
+                (e) =>
+                  e.kind === "live" && (parseState(e.s.json).shelly_session ?? null) === shownTab,
+              );
+        if (shownIdx >= SESSION_DRAWER_COLLAPSED_ROWS)
+          visible = [...visible.slice(0, -1), entries[shownIdx]];
       }
       for (const e of visible) {
         inner.appendChild(
-          e.kind === "live" ? buildRailSessionRow(unit, e.s, shownTab) : buildRecentSessionRow(e.rs),
+          e.kind === "live"
+            ? buildRailSessionRow(unit, e.s, shownTab)
+            : buildRecentSessionRow(e.rs),
         );
       }
       if (hidden > 0) {
@@ -2115,7 +2134,9 @@ function renderUnitRail(activeUnitKey: string | null): void {
   // Exclude by BASE project key: a project resumed under a provisional `~n` unit must
   // drop out of Recent immediately (not 5s later when correlation re-homes it), and
   // its siblings now live in the active unit's switcher above.
-  const recentGroups = groupRecentByProject(new Set(order.map((u) => projectGroupKeyOf(u, byUnit.get(u)))));
+  const recentGroups = groupRecentByProject(
+    new Set(order.map((u) => projectGroupKeyOf(u, byUnit.get(u)))),
+  );
   // Recent = closed LOCAL Claude Code sessions (coding transcripts). Those are never
   // connected agents, so the Agent Hub room must not show them — it lists agents only.
   if (roomFilter !== "agenthub" && recentGroups.size > 0) {
@@ -2174,7 +2195,6 @@ function renderUnitRail(activeUnitKey: string | null): void {
       setTimeout(() => exitingGroup.remove(), 220);
     }
   }
-
 }
 
 /** Sessions of a project, most-recent first (matches resume-on-entry order). */
@@ -2258,7 +2278,12 @@ function pickSession(unitKey: string, s: LiveSource): void {
     return;
   }
   const st = parseState(s.json);
-  void showSessionInUnit(unitKey, st.shelly_session ?? null, st.session_id ?? null, st.provider).then(() => {
+  void showSessionInUnit(
+    unitKey,
+    st.shelly_session ?? null,
+    st.session_id ?? null,
+    st.provider,
+  ).then(() => {
     goUnit(unitKey); // enterUnit opens this unit's chooser on arrival (it has >1 session)
     // Belt-and-braces: entry derives the drawer from the unit's session count, so if that
     // count momentarily reads as 1 mid-swap the chooser you picked from would vanish under
@@ -2344,7 +2369,11 @@ function groupRecentByProject(excludeUnits: Set<string>): Map<string, RecentSess
 
 /** Rail tab for a recent (closed) project — expands/collapses session list on click,
  *  does NOT navigate the main pane. */
-function buildRecentProjectTab(projectKey: string, sessions: RecentSession[], expanded: boolean): HTMLElement {
+function buildRecentProjectTab(
+  projectKey: string,
+  sessions: RecentSession[],
+  expanded: boolean,
+): HTMLElement {
   const tab = document.createElement("button");
   tab.className = "unit-tab recent-project" + (expanded ? " expanded" : "");
   tab.dataset.unit = projectKey;
@@ -2424,7 +2453,12 @@ async function dismissRecentSession(rs: RecentSession): Promise<void> {
  *  leave the hero/state visible — never a duplicate spawn. */
 function switchToSession(unitKey: string, s: LiveSource): void {
   const st = parseState(s.json);
-  void showSessionInUnit(unitKey, st.shelly_session ?? null, st.session_id ?? null, st.provider).then(() => {
+  void showSessionInUnit(
+    unitKey,
+    st.shelly_session ?? null,
+    st.session_id ?? null,
+    st.provider,
+  ).then(() => {
     if (currentUnitKey === unitKey) {
       renderUnitRail(unitKey);
       // The hero follows the now-active session. A click is the ONLY sanctioned
@@ -2435,7 +2469,6 @@ function switchToSession(unitKey: string, s: LiveSource): void {
     }
   });
 }
-
 
 /** One rail tab: a state dot, the unit's mark, its name, an unread badge. A
  *  multi-session project owns a session-chooser drawer: clicking it toggles that
@@ -2565,7 +2598,11 @@ function unitNeedsYou(sources: LiveSource[], now: number): boolean {
  *  Board-launched terminal + drop it to Recent, where it stays one click from a
  *  `claude --resume`). One menu at a time; dismissed on any outside click, Esc, or
  *  scroll. The hover ✕ does the same close; this is the discoverable right-click. */
-interface CtxItem { label: string; fn: () => void; danger?: boolean; }
+interface CtxItem {
+  label: string;
+  fn: () => void;
+  danger?: boolean;
+}
 
 /** Open a small right-click context menu at the event position. Closes on pick,
  *  outside-click, Esc, or scroll. Shared by the rail's unit / session / recent-
@@ -2622,7 +2659,9 @@ function showUnitMenu(e: MouseEvent, unitKey: string, sources: LiveSource[]): vo
   const dir = unitDirOf(unitKey);
   openCtxMenu(e, [
     { label: "Open", fn: () => goUnit(unitKey) },
-    ...(dir ? [{ label: "New session here", fn: () => void launchSessionIn(dir, preferredAgent()) }] : []),
+    ...(dir
+      ? [{ label: "New session here", fn: () => void launchSessionIn(dir, preferredAgent()) }]
+      : []),
     { label: "Close out", fn: () => void closeUnit(unitKey, sources), danger: true },
   ]);
 }
@@ -2740,7 +2779,9 @@ function showRailSessionMenu(e: MouseEvent, unitKey: string, s: LiveSource): voi
 function showRecentProjectMenu(e: MouseEvent, sessions: RecentSession[]): void {
   const dir = sessions.find((s) => s.cwd)?.cwd;
   if (!dir) return;
-  openCtxMenu(e, [{ label: "New session here", fn: () => void launchSessionIn(dir, preferredAgent()) }]);
+  openCtxMenu(e, [
+    { label: "New session here", fn: () => void launchSessionIn(dir, preferredAgent()) },
+  ]);
 }
 
 // ---- L2 unit home (hero + history) ------------------------------------------
@@ -2996,8 +3037,7 @@ function activeSessionIsWriting(unitKey: string): boolean {
 function syncBuildingPill(): void {
   if (!heroBuildingEl) return;
   const v = currentView();
-  const show =
-    v.level === "unit" && heroPendingPath === null && activeSessionIsWriting(v.unitKey);
+  const show = v.level === "unit" && heroPendingPath === null && activeSessionIsWriting(v.unitKey);
   if (show) heroBuildingEl.removeAttribute("hidden");
   else heroBuildingEl.setAttribute("hidden", "");
 }
@@ -3400,7 +3440,6 @@ function wireSettings(): void {
   }
 }
 
-
 /** Wire the ☰ menu toggle, the Sessions/History/Settings nav, and the floating
  *  surface controls (resize the stacked artifact + terminal, plus end the session). */
 function wireUnitChrome(): void {
@@ -3426,7 +3465,10 @@ function wireUnitChrome(): void {
   controlsEl?.addEventListener("click", (e) => {
     const t = e.target as HTMLElement;
     const f = t.closest<HTMLElement>(".surface-focus")?.dataset.focus;
-    if (f === "split" || f === "artifact" || f === "terminal") { setFocus(f); return; }
+    if (f === "split" || f === "artifact" || f === "terminal") {
+      setFocus(f);
+      return;
+    }
     if (t.closest("#unit-term-close")) endSession();
   });
   // Each tucked surface restores on click via its warm pill.
@@ -3512,7 +3554,9 @@ function wireUnitChrome(): void {
     }
     fitShownTerminal(); // the pane just grew/shrank — refit the terminal to it
   };
-  railToggle?.addEventListener("click", () => setRailCollapsed(unitEl?.dataset.railCollapsed !== "1"));
+  railToggle?.addEventListener("click", () =>
+    setRailCollapsed(unitEl?.dataset.railCollapsed !== "1"),
+  );
   try {
     const collapsed = localStorage.getItem("shelly:railCollapsed") === "1";
     if (unitEl) {
@@ -3583,7 +3627,7 @@ function homeRatePill(collapsed: boolean): void {
   const host = document.querySelector(collapsed ? ".unit-toolbar" : ".rail-foot");
   if (!host || rateEl.parentElement === host) return;
   // Rail foot: above Settings. Toolbar: straight after the rail toggle.
-  host.insertBefore(rateEl, collapsed ? host.children[1] ?? null : host.firstChild);
+  host.insertBefore(rateEl, collapsed ? (host.children[1] ?? null) : host.firstChild);
 }
 
 /** "resets 1:39 PM" for a same-day instant, "resets Jul 21" for a later one. */
@@ -3619,7 +3663,9 @@ async function renderRateLimit(): Promise<void> {
   const lines = [`5-hour window: ${Math.round(pct)}% used ${fmtReset(five.resetsAt)}`.trim()];
   const seven = usage?.sevenDay;
   if (seven) {
-    lines.push(`7-day window: ${Math.round(seven.utilization)}% used ${fmtReset(seven.resetsAt)}`.trim());
+    lines.push(
+      `7-day window: ${Math.round(seven.utilization)}% used ${fmtReset(seven.resetsAt)}`.trim(),
+    );
   }
   rateEl.title = `${lines.join("\n")}\nAccount-wide, across every session.`;
 }
@@ -3908,7 +3954,7 @@ function paintCompactBtn(unitKey: string, sessionId: string, tabId: string | nul
 function lastMeterSessionId(unitKey: string): string | null {
   const src = activeSessionSource(unitKey);
   return src
-    ? parseState(allSources.find((s) => s.source === src)?.json ?? "").session_id ?? null
+    ? (parseState(allSources.find((s) => s.source === src)?.json ?? "").session_id ?? null)
     : null;
 }
 
@@ -3926,7 +3972,12 @@ async function runCompact(): Promise<void> {
   // about to cause is the one that resolves the watch — not an older one.
   const baseline =
     (await invoke<SessionUsage | null>("session_usage", { sessionId }))?.compactions ?? 0;
-  compactState = beginCompact(compactState, { unitKey, sessionId, baseline, startedAt: Date.now() });
+  compactState = beginCompact(compactState, {
+    unitKey,
+    sessionId,
+    baseline,
+    startedAt: Date.now(),
+  });
   paintCompactBtn(unitKey, sessionId, tabId);
 
   try {
@@ -4187,7 +4238,10 @@ function boldRuns(text: string): string {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+  return s.replace(
+    /[&<>"]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string,
+  );
 }
 
 /** A coarse relative time: "just now" / "5m ago" / "3h ago" / "2d ago". */
@@ -4230,9 +4284,10 @@ function renderGreeting(fresh: number, agents: number): void {
   const sub = document.getElementById("board-sub");
   if (hello) hello.innerHTML = greetingHtml();
   if (sub) {
-    sub.innerHTML = agents === 0
-      ? "No agents running"
-      : `<b>${fresh}</b> new · <b>${agents}</b> ${agents === 1 ? "agent" : "agents"} active`;
+    sub.innerHTML =
+      agents === 0
+        ? "No agents running"
+        : `<b>${fresh}</b> new · <b>${agents}</b> ${agents === 1 ? "agent" : "agents"} active`;
   }
   const count = document.getElementById("board-count");
   if (count) count.textContent = `${agents} ${agents === 1 ? "agent" : "agents"}`;
@@ -4387,7 +4442,11 @@ function applyBar(spec: BarSpec | null): void {
   const clocks = custom.querySelectorAll<HTMLElement>(".bar-item-clock");
   if (clocks.length) {
     const tick = () => {
-      const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+      const t = new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
       clocks.forEach((c) => (c.textContent = t));
     };
     tick();
@@ -4474,7 +4533,9 @@ async function openReader(path: string): Promise<void> {
   requestAnimationFrame(() => card.classList.add("shown"));
   renderReaderNav();
 
-  await loadArtifactInto(path, focusFrame).catch((e) => console.error("reader load failed", path, e));
+  await loadArtifactInto(path, focusFrame).catch((e) =>
+    console.error("reader load failed", path, e),
+  );
 }
 
 /** The agents-need-you queue: one entry per source (agent) that has an unread
@@ -4553,7 +4614,9 @@ async function readerRefresh(): Promise<void> {
   readerStalePath = null;
   if (!path || !focusFrame || focusPath !== path) return renderReaderNav();
   renderReaderNav();
-  await loadArtifactInto(path, focusFrame).catch((e) => console.error("reader refresh failed", path, e));
+  await loadArtifactInto(path, focusFrame).catch((e) =>
+    console.error("reader refresh failed", path, e),
+  );
 }
 
 /** Jump the reader to the next agent's freshest unread artifact, pushing the
@@ -4569,7 +4632,9 @@ async function readerJumpNext(): Promise<void> {
   readerStalePath = null; // the jump loads current content
   markArtifactRead(next); // also refreshes the nav via updateGlobalUnread
   renderReaderNav();
-  await loadArtifactInto(next, focusFrame).catch((e) => console.error("reader jump failed", next, e));
+  await loadArtifactInto(next, focusFrame).catch((e) =>
+    console.error("reader jump failed", next, e),
+  );
 }
 
 /** Return to the previously-viewed artifact in the reader. */
@@ -4580,7 +4645,9 @@ async function readerBack(): Promise<void> {
   focusPath = prev;
   readerStalePath = null; // going back re-loads current content
   renderReaderNav();
-  await loadArtifactInto(prev, focusFrame).catch((e) => console.error("reader back failed", prev, e));
+  await loadArtifactInto(prev, focusFrame).catch((e) =>
+    console.error("reader back failed", prev, e),
+  );
 }
 
 /** Close the reader; flush any unit history rebuild deferred while it was open. */
@@ -4837,7 +4904,10 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
   // now-authoritative identity. This is rare by construction post-cutover — the
   // hold above means normal arrivals are never routed before their identity.
   const reRouted = artifacts.filter(
-    (a) => knownPaths.has(a.path) && prevRouteKey.has(a.path) && prevRouteKey.get(a.path) !== artifactRouteKey(a),
+    (a) =>
+      knownPaths.has(a.path) &&
+      prevRouteKey.has(a.path) &&
+      prevRouteKey.get(a.path) !== artifactRouteKey(a),
   );
   const reRoutedSet = new Set(reRouted.map((a) => a.path));
   allArtifacts = artifacts;
@@ -4940,7 +5010,11 @@ function ingestArtifacts(rawArtifacts: ArtifactEntry[]): void {
     if (unit === UNSOURCED || (!a.source && !isCloudUnit(unit))) {
       if (unit === UNSOURCED) unroutedPaths.add(a.path);
       console.warn("[shelly] artifact routed without a firm identity", {
-        path: a.path, unit, source: a.source ?? "", from: reRoutedSet.has(a.path) ? "reroute" : "new", branch,
+        path: a.path,
+        unit,
+        source: a.source ?? "",
+        from: reRoutedSet.has(a.path) ? "reroute" : "new",
+        branch,
       });
       trace("ingest.unrouted", { corr: a.path, unit, source: a.source ?? "", branch });
     }
@@ -5006,7 +5080,11 @@ function maybeAutoAdvance(newOnes: ArtifactEntry[]): void {
 
   // Reader open → slide the reader to the next artifact.
   if (focusPath !== null && focusFrame) {
-    trace("autoadvance.fire", { corr: next.path, target: "reader", awaiting: awaitingAdvanceSource });
+    trace("autoadvance.fire", {
+      corr: next.path,
+      target: "reader",
+      awaiting: awaitingAdvanceSource,
+    });
     awaitingAdvanceSource = null;
     dismissBoardSubmitted();
     readerBackStack.push(focusPath);
@@ -5173,12 +5251,7 @@ function wireNavigate(): void {
       awaitingAdvanceSource = null;
       return;
     }
-    if (
-      d &&
-      d.source === "shelly-artifact" &&
-      d.kind === "submit" &&
-      typeof d.text === "string"
-    ) {
+    if (d && d.source === "shelly-artifact" && d.kind === "submit" && typeof d.text === "string") {
       // Route the compiled ✓/✎/✗ answer STRAIGHT into a session's terminal
       // (no clipboard, no ⌘V): prefer the exact owning session of the open
       // artifact, else any owned terminal in the unit on screen. Only when there
@@ -5360,7 +5433,7 @@ function ownedTabForArtifact(path: string): string | null {
   const art = allArtifacts.find((a) => a.path === path);
   if (!art?.source) return null;
   const src = allSources.find((s) => artifactMatchesSource(art, s.source));
-  return src ? parseState(src.json).shelly_session ?? null : null;
+  return src ? (parseState(src.json).shelly_session ?? null) : null;
 }
 
 /** Validate an artifact path is in scope, then open it in the reader (drilling

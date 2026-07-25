@@ -146,7 +146,10 @@ check(
   "8. compacting a SECOND session does not evict the first's watch",
   compactBtn(BOTH, view()) === "busy",
 );
-check("8b. and the second session is busy too — both at once", compactBtn(BOTH, view({ unitKey: OTHER, sessionId: "other-session", now: T0 + 1000 })) === "busy");
+check(
+  "8b. and the second session is busy too — both at once",
+  compactBtn(BOTH, view({ unitKey: OTHER, sessionId: "other-session", now: T0 + 1000 })) === "busy",
+);
 // The first one finishes. It must still resolve, on its own baseline, to its own button.
 const firstDone = resolveCompact(BOTH, poll({ compactions: 1, now: T0 + 42_452 }));
 check(

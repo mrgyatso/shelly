@@ -37,7 +37,10 @@ console.log("\n### the bug that started it: kind:'feedback' must not pass silent
   const warning = unknownKindWarning("feedback");
   ok(warning.includes('"feedback"'), "the warning names the offending kind");
   ok(warning.includes("submit"), "the warning lists the kind it should have been");
-  ok(warning.includes("DROPPED"), "the warning says the user's answer was lost, not just 'ignored'");
+  ok(
+    warning.includes("DROPPED"),
+    "the warning says the user's answer was lost, not just 'ignored'",
+  );
 }
 
 console.log("\n### known kinds stay silent");
@@ -56,8 +59,14 @@ console.log("\n### known kinds stay silent");
 
 console.log("\n### foreign namespaces are still none of our business");
 {
-  ok(unknownArtifactKind({ source: "my-own-widget", kind: "whatever" }) === null, "a foreign source is ignored");
-  ok(unknownArtifactKind({ source: "shelly-board", kind: "submit-ack" }) === null, "our own ack back is not flagged");
+  ok(
+    unknownArtifactKind({ source: "my-own-widget", kind: "whatever" }) === null,
+    "a foreign source is ignored",
+  );
+  ok(
+    unknownArtifactKind({ source: "shelly-board", kind: "submit-ack" }) === null,
+    "our own ack back is not flagged",
+  );
   ok(unknownArtifactKind({ kind: "submit" }) === null, "a message with no source is ignored");
   ok(unknownArtifactKind("just a string") === null, "a non-object is ignored");
   ok(unknownArtifactKind(null) === null, "null is ignored");
@@ -67,10 +76,22 @@ console.log("\n### foreign namespaces are still none of our business");
 
 console.log("\n### malformed kinds in OUR namespace are still surfaced");
 {
-  ok(unknownArtifactKind({ source: "shelly-artifact" }) === "(missing)", "a missing kind is reported");
-  ok(unknownArtifactKind({ source: "shelly-artifact", kind: 7 }) === "7", "a non-string kind is reported");
-  ok(unknownArtifactKind({ source: "shelly-artifact", kind: "Submit" }) === "Submit", "kinds are case-sensitive");
-  ok(unknownArtifactKind({ source: "shelly-artifact", kind: "submit " }) === "submit ", "a stray space is not forgiven");
+  ok(
+    unknownArtifactKind({ source: "shelly-artifact" }) === "(missing)",
+    "a missing kind is reported",
+  );
+  ok(
+    unknownArtifactKind({ source: "shelly-artifact", kind: 7 }) === "7",
+    "a non-string kind is reported",
+  );
+  ok(
+    unknownArtifactKind({ source: "shelly-artifact", kind: "Submit" }) === "Submit",
+    "kinds are case-sensitive",
+  );
+  ok(
+    unknownArtifactKind({ source: "shelly-artifact", kind: "submit " }) === "submit ",
+    "a stray space is not forgiven",
+  );
 }
 
 console.log("\n### the ack tells the truth about the route taken");
@@ -80,11 +101,17 @@ console.log("\n### the ack tells the truth about the route taken");
   ok(sent.kind === "submit-ack", "ack kind is 'submit-ack'");
   ok(sent.ok === true && sent.via === "terminal", "a PTY write acks ok via terminal");
 
-  ok(submitAckMessage(true, "clipboard").via === "clipboard", "a clipboard fallback acks via clipboard, not terminal");
+  ok(
+    submitAckMessage(true, "clipboard").via === "clipboard",
+    "a clipboard fallback acks via clipboard, not terminal",
+  );
   ok(submitAckMessage(true, "agent").via === "agent", "a hub delivery acks via agent");
 
   const failed = submitAckMessage(false, "clipboard");
-  ok(failed.ok === false, "a failed clipboard write acks ok:false — the artifact must not claim success");
+  ok(
+    failed.ok === false,
+    "a failed clipboard write acks ok:false — the artifact must not claim success",
+  );
 }
 
 console.log(`\n${fail === 0 ? "PASS" : "FAIL"} — ${pass} passed, ${fail} failed\n`);

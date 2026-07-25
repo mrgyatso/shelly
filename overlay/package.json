@@ -15,8 +15,8 @@
     "test:render": "node ../plugin/hooks/__tests__/render-frame.mjs",
     "lint": "eslint src scripts",
     "lint:fix": "eslint src scripts --fix",
-    "format": "prettier --write \"src/**/*.{ts,css}\" \"scripts/**/*.{ts,mjs}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,css}\" \"scripts/**/*.{ts,mjs}\""
+    "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.{ts,mjs}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.{ts,mjs}\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -70,25 +70,29 @@ export function initChatBar(opts: ChatBarOpts): void {
   bar.dataset.state = "min"; // min | open
   bar.innerHTML =
     '<button class="chatbar-pill" type="button" aria-label="Open the composer">' +
-      '<span class="chatbar-pill-mark" aria-hidden="true">✳</span>' +
-      '<span class="chatbar-pill-label">Message the task…</span>' +
+    '<span class="chatbar-pill-mark" aria-hidden="true">✳</span>' +
+    '<span class="chatbar-pill-label">Message the task…</span>' +
     "</button>" +
     '<div class="chatbar-composer" role="group" aria-label="Message composer">' +
-      '<textarea class="chatbar-input" rows="1" placeholder="How can I help you today?" ' +
-        'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>' +
-      '<div class="chatbar-row">' +
-        // The model sits with the composer because it is a property of what you are
-        // about to send — the same reason claude.ai puts it there.
-        '<div class="chatbar-model">' +
-          '<button class="cb-model-face" type="button" aria-haspopup="menu" aria-expanded="false">' +
-            '<span class="cb-model-name"></span>' +
-            '<span class="cb-model-caret" aria-hidden="true">' + CARET_ICON + "</span>" +
-          "</button>" +
-          '<div class="cb-model-menu" role="menu" hidden></div>' +
-        "</div>" +
-        '<span class="chatbar-ctx"></span>' +
-        '<button class="chatbar-send" type="button" aria-label="Send" disabled>' + SEND_ICON + "</button>" +
-      "</div>" +
+    '<textarea class="chatbar-input" rows="1" placeholder="How can I help you today?" ' +
+    'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>' +
+    '<div class="chatbar-row">' +
+    // The model sits with the composer because it is a property of what you are
+    // about to send — the same reason claude.ai puts it there.
+    '<div class="chatbar-model">' +
+    '<button class="cb-model-face" type="button" aria-haspopup="menu" aria-expanded="false">' +
+    '<span class="cb-model-name"></span>' +
+    '<span class="cb-model-caret" aria-hidden="true">' +
+    CARET_ICON +
+    "</span>" +
+    "</button>" +
+    '<div class="cb-model-menu" role="menu" hidden></div>' +
+    "</div>" +
+    '<span class="chatbar-ctx"></span>' +
+    '<button class="chatbar-send" type="button" aria-label="Send" disabled>' +
+    SEND_ICON +
+    "</button>" +
+    "</div>" +
     "</div>";
   opts.mount.append(bar);
   root = bar;
@@ -178,9 +182,7 @@ export function initChatBar(opts: ChatBarOpts): void {
     if (c.canPickModel) {
       modelName.textContent = modelLabel(c.model);
       modelFace.title =
-        c.mode === "message"
-          ? "Switch this session's model"
-          : "The model a new session starts on";
+        c.mode === "message" ? "Switch this session's model" : "The model a new session starts on";
       paintModelMenu(c.model);
     } else {
       closeModelMenu();

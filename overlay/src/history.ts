@@ -183,8 +183,12 @@ function wireNavigation(): void {
     });
   });
 
-  document.getElementById("hist-prev")?.addEventListener("click", () => centerOn(activeIndex - 1, true));
-  document.getElementById("hist-next")?.addEventListener("click", () => centerOn(activeIndex + 1, true));
+  document
+    .getElementById("hist-prev")
+    ?.addEventListener("click", () => centerOn(activeIndex - 1, true));
+  document
+    .getElementById("hist-next")
+    ?.addEventListener("click", () => centerOn(activeIndex + 1, true));
 
   window.addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.key === "ArrowRight") centerOn(activeIndex + 1, true);

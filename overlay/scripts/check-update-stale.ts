@@ -18,11 +18,7 @@
  *
  *   node --experimental-strip-types scripts/check-update-stale.ts
  */
-import {
-  classifyUpdate,
-  STALE_WINDOW_MS,
-  type UpdateAttempt,
-} from "../src/update-stale.ts";
+import { classifyUpdate, STALE_WINDOW_MS, type UpdateAttempt } from "../src/update-stale.ts";
 
 let failed = 0;
 function check(name: string, cond: boolean): void {
@@ -69,11 +65,7 @@ check(
 // 6. The click was long ago → a still-behind app is just an un-taken update, not a fresh
 //    failure. Drop the marker so it stops nagging across days of an always-open daemon.
 {
-  const v = classifyUpdate(
-    { app: "0.8.1", behind: true },
-    CLICK,
-    T0 + STALE_WINDOW_MS + 1,
-  );
+  const v = classifyUpdate({ app: "0.8.1", behind: true }, CLICK, T0 + STALE_WINDOW_MS + 1);
   check("stale marker past the window → cleared, not stale", !v.stale && v.clearMarker);
 }
 
@@ -85,11 +77,7 @@ check(
 
 // 8. One millisecond inside the window still counts as a fresh failure.
 {
-  const v = classifyUpdate(
-    { app: "0.8.1", behind: true },
-    CLICK,
-    T0 + STALE_WINDOW_MS - 1,
-  );
+  const v = classifyUpdate({ app: "0.8.1", behind: true }, CLICK, T0 + STALE_WINDOW_MS - 1);
   check("just inside the window → stale", v.stale && !v.clearMarker);
 }
 
