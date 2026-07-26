@@ -35,6 +35,16 @@ do not double up on the same block.
 </section>
 ```
 
+**Copy buttons** are part of the same injected helper — mark the copyable element `data-copy`
+and put a `data-copy-btn` button in the same container (or point at it with
+`data-copy-target="#id"`). Nothing to paste; the handler is delegated, so blocks revealed
+later still copy.
+
+```html
+<div class="cmd"><code data-copy>cd ~/my-project &amp;&amp; npm run dev</code>
+  <button type="button" data-copy-btn>Copy</button></div>
+```
+
 The helper auto-discovers semantic blocks (`p, li, h2–h4, blockquote, pre`) inside a
 `data-shelly-commentable` region. Content in styled `<div>`s is invisible to that list — add
 `data-shelly-block` to any such container to make it commentable.
@@ -864,6 +874,63 @@ clicking dead space dismisses rather than spawning a composer named `body` with 
     document.addEventListener("mousedown", function (e) { if (tb && !tb.contains(e.target)) clearTb(); });
     window.addEventListener("scroll", clearTb, true);
   })();
+
+  // ---------------------------------------------------------------------
+  // COPY BUTTONS — `data-copy` blocks (a command deck, a handoff brief, a prompt).
+  //
+  // Delegated on `document`, not bound per button: a deck can be built after load
+  // (a page the router reveals, a block rendered by the artifact's own script) and
+  // must still copy. Late binding costs nothing here and a missed button reads to
+  // the user as a dead control.
+  //
+  // Two paths, deliberately BOTH: inside the overlay the iframe is sandboxed and
+  // opaque-origin, where WebKitGTK blocks `navigator.clipboard` AND
+  // `execCommand("copy")` outright — so the real write is the overlay bridge
+  // (`kind:"copy"`, which the overlay performs through Tauri). The in-page attempt
+  // is what keeps an artifact opened straight in a browser (no overlay parent)
+  // working, which is a promise the frame makes everywhere else too.
+  function copyTargetFor(btn) {
+    var sel = btn.getAttribute("data-copy-target");
+    if (sel) { try { return document.querySelector(sel); } catch (e) { return null; } }
+    // Nearest ancestor that CONTAINS a [data-copy]. Stopping at the fit-root (not
+    // walking to <body>) is what keeps a lone button from silently copying some
+    // unrelated block on the far side of the page.
+    var el = btn.parentElement;
+    while (el && el !== document.body && el !== document.documentElement) {
+      var t = el.querySelector("[data-copy]");
+      if (t) return t;
+      if (el.hasAttribute("data-fit-root")) break;
+      el = el.parentElement;
+    }
+    return null;
+  }
+  function copyTextOf(el) {
+    // The ambient-comment helper appends a 💬 button INSIDE blocks it marks, and
+    // <pre> is one of them — so reading innerText naively ships the icon inside the
+    // copied command. Detach it for the read, then put it back.
+    var icon = el.querySelector(".shelly-ask-btn");
+    var next = icon && icon.nextSibling;
+    if (icon) icon.remove();
+    var text = String(el.innerText || el.textContent || "").replace(/\s+$/, "");
+    if (icon) { if (next) el.insertBefore(icon, next); else el.appendChild(icon); }
+    return text;
+  }
+  document.addEventListener("click", function (e) {
+    var btn = e.target && e.target.closest && e.target.closest("[data-copy-btn]");
+    if (!btn) return;
+    var target = copyTargetFor(btn);
+    if (!target) return;
+    var text = copyTextOf(target);
+    if (!text) return;
+    try { parent.postMessage({ source: "shelly-artifact", kind: "copy", text: text }, "*"); } catch (err) {}
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(function () { fallbackCopy(text); });
+    } else { fallbackCopy(text); }
+    var prev = btn.dataset.copyLabel || btn.textContent;
+    btn.dataset.copyLabel = prev; btn.textContent = "Copied ✓";
+    clearTimeout(btn._ct);
+    btn._ct = setTimeout(function () { btn.textContent = btn.dataset.copyLabel; }, 1600);
+  });
 
   refresh();
 })();

@@ -1559,60 +1559,47 @@ surface: a Shelly artifact can deliver ready-to-paste handoffs for the user's *o
 agents/tools, so "onboard this agent" becomes "open the card → Copy → paste."
 
 Mark the copyable element `data-copy` and pair a `data-copy-btn` button with it (same
-container, or point at it with `data-copy-target="#id"`). The artifact runs in a sandboxed,
-opaque-origin iframe where **both `navigator.clipboard` and `execCommand("copy")` are blocked
-on WebKitGTK (Linux)** — so the helper below **bridges to the Shelly overlay**
-(`postMessage({kind:"copy"})`, which the overlay writes through Tauri's clipboard) *and* also
-tries the in-page clipboard so a standalone browser (artifact opened directly, no overlay
-parent) still copies. Whichever path lands, the button confirms. Supports multiple blocks per
-artifact.
+container, or point at it with `data-copy-target="#id"`). **That is the whole contract — the
+click handler ships in the injected helper (§1.4), so never paste a copy script.** A
+hand-rolled one is the drift the frame exists to remove: it binds at load, so any block
+revealed later — a wizard page, a router tab — gets a dead button.
 
 ```html
 <div class="copy-block">
+  <code data-copy>cd ~/claude-code-companion &amp;&amp; npm run dev</code>
   <button type="button" data-copy-btn>Copy</button>
-  <pre data-copy>the exact text to copy…</pre>
 </div>
 ```
 
-```html
-<script>
-(function () {
-  // Copy `text` to the user's system clipboard from inside the sandboxed iframe.
-  function copy(text) {
-    // 1) Bridge to the Shelly overlay — the reliable path on Linux, where the
-    //    iframe's own clipboard APIs are blocked. The overlay writes it via Tauri.
-    //    A no-op (harmless) in a standalone browser with no such parent listener.
-    try { parent.postMessage({ source: "shelly-artifact", kind: "copy", text: text }, "*"); } catch (e) {}
-    // 2) Also try the in-page clipboard so a standalone browser still copies.
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).catch(function () { exec(text); });
-    } else { exec(text); }
-  }
-  function exec(text) {
-    try {
-      var ta = document.createElement("textarea");
-      ta.value = text; ta.setAttribute("readonly", "");
-      ta.style.position = "fixed"; ta.style.top = "-1000px";
-      document.body.appendChild(ta); ta.select();
-      document.execCommand("copy"); document.body.removeChild(ta);
-    } catch (e) { /* both paths exhausted; the overlay bridge above still handles the overlay case */ }
-  }
-  document.querySelectorAll("[data-copy-btn]").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var sel = btn.getAttribute("data-copy-target");
-      var target = sel ? document.querySelector(sel)
-                       : (btn.closest(".copy-block") || btn.parentElement).querySelector("[data-copy]");
-      if (!target) return;
-      copy(target.innerText);
-      var prev = btn.dataset.label || btn.textContent;
-      btn.dataset.label = prev; btn.textContent = "Copied ✓";
-      clearTimeout(btn._t);
-      btn._t = setTimeout(function () { btn.textContent = btn.dataset.label; }, 1600);
-    });
-  });
-})();
-</script>
-```
+The button confirms with `Copied ✓` and restores itself; multiple blocks per artifact are
+fine. It writes two ways because it has to: inside the overlay the iframe is sandboxed and
+opaque-origin, where WebKitGTK blocks **both** `navigator.clipboard` and
+`execCommand("copy")` — so the real write is a bridge to the overlay
+(`postMessage({kind:"copy"})`, which writes through Tauri's clipboard), and the in-page
+attempt is what keeps an artifact opened straight in a browser working.
+
+### The command deck
+
+The highest-value use is the one an orientation surface owes its reader: **the commands
+needed to actually start this project.** Someone returning after two weeks should not have to
+remember whether the UI is `npm run dev` or `pnpm dev`, or which directory the server comes up
+in. Give each command its own row — one line, exact, runnable as pasted — and lead with the
+`cd` so everything after it has somewhere to run.
+
+What separates a useful deck from a decorative one:
+
+- **Absolute path in the `cd`** — `cd ~/claude-code-companion`, never `cd .` or a relative
+  hop. It is being pasted into a fresh shell that is somewhere else.
+- **Found, not guessed.** Read them out of `package.json` scripts, the Makefile, `Cargo.toml`,
+  a compose file, or the README quickstart. A command you inferred gets labelled as inferred
+  rather than presented as fact — a confidently wrong start command costs more than a missing
+  one.
+- **Say what it's for in the user's words** — "start the UI", "run the desktop app", "watch
+  the tests" — not the script name read back to them.
+- **Cap it at what a person actually runs**, roughly 4–7 rows. A deck listing every npm script
+  is a `package.json` dump, and the reader is back to remembering which one matters.
+- **Fuse a `cd` into a run** (`cd ~/x && npm run dev`) when that pairing is always how it's
+  used. One paste beats two.
 
 This is independent of the `data-shelly-submit` helper (which routes feedback to the
 agent) — a Copy button copies to the *system clipboard for the user*, so the two coexist

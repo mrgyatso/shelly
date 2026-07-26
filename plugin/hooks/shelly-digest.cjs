@@ -118,11 +118,24 @@ function digestState(opts) {
 
 // What the digest has to answer. Kept in one place because all three lines below quote it,
 // and because it is the actual contract with the reader arriving cold.
+//
+// The COMMAND DECK is the last clause and the most mechanical, which is exactly why it is
+// here rather than left to taste. Everything else the digest answers is narrative — what this
+// is, what we did, what's next — and a reader who has absorbed all of it still cannot start
+// the thing without remembering whether the UI is `npm run dev` or `pnpm dev` and which
+// directory the server comes up in. That recall is the actual friction of returning to a
+// project after two weeks, and it is the one part of orientation a document can remove
+// outright instead of merely describing. Copyable, because a command you have to retype is a
+// command you have to read carefully first.
 const CONTENT_BRIEF =
   "what this project IS (two sentences, for someone who forgot), what we LAST did, what the " +
   "NEXT objective was, the honest STATE (shipping · mid-refactor · blocked · parked · cold) " +
-  "including the loose ends that actually block progress, and the RANKED next moves with one " +
-  "recommended and why";
+  "including the loose ends that actually block progress, the RANKED next moves with one " +
+  "recommended and why, and a FREQUENT COMMANDS deck — the 4–7 commands that actually start " +
+  "this project (the `cd` with an absolute path first, then run the UI, start the server, run " +
+  "the tests, build), READ OUT of package.json scripts / Makefile / Cargo.toml / compose files " +
+  "/ the README rather than guessed, each one a copyable row (a `data-copy` element paired " +
+  "with a `data-copy-btn` button — the injected helper wires them, paste no script)";
 
 // The living-document rule, repeated in both write paths because it is the one way this
 // artifact differs from every other one and the one-turn-one-slug rule points the other way.

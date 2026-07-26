@@ -155,6 +155,21 @@ function makeRepo(name, agoMs) {
   ok(digest.buildLine({}) === "", "buildLine on a stateless object is empty");
 }
 
+// ---- the content contract --------------------------------------------------
+// Every write path quotes CONTENT_BRIEF, so the command deck has to be reachable from all
+// of them — a digest that describes the project but never says how to start it leaves the
+// reader exactly where they were.
+{
+  const missing = digest.buildLine({ path: "/x/home.u.html", exists: false, stale: true, why: "missing" });
+  const behind = digest.buildLine({ path: "/x/home.u.html", exists: true, stale: true, why: "behind", commits: 3 });
+  const aged = digest.buildLine({ path: "/x/home.u.html", exists: true, stale: true, why: "aged", days: 9 });
+  for (const [name, line] of [["missing", missing], ["behind", behind], ["aged", aged]]) {
+    ok(/FREQUENT COMMANDS/.test(line), `the ${name} line asks for the command deck`);
+    ok(/data-copy/.test(line), `the ${name} line names the copyable markup`);
+  }
+  ok(/READ OUT of/.test(missing), "commands are to be read from the repo, not guessed");
+}
+
 // ---- the CLI surface the sh wrapper actually calls -------------------------
 {
   const r = spawnSync("node", [path.join(__dirname, "..", "shelly-digest.cjs"), "line", "cli-unit", "", "0"], {

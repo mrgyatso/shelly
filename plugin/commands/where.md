@@ -6,7 +6,7 @@ argument-hint: "[project name or path — defaults to the current directory]"
 The user has come back to a project and needs to get their bearings. Produce a **short,
 beautiful orientation briefing** as a Shelly artifact that answers, in order: *what is this
 project · what did we last do · what was the next objective · what's the overall state · what
-should we do next.*
+should we do next · and what are the commands to actually start it.*
 
 Optimise for **re-entry**, not for completeness. The reader has forgotten the details and
 wants to be productive within thirty seconds of reading. Cut anything that doesn't help them
@@ -42,6 +42,16 @@ handoff. Never block on a missing source, and never invent one.
   **`ls -t` it; never chase a path from memory**, those go stale.
 - Any in-repo `HANDOFF*.md`, `TODO.md`, `PLAN*.md`, `DECISIONS*.md` at the repo root.
 
+**How you start it — the command deck**
+- `package.json` `scripts`, `Makefile` targets, `Cargo.toml` `[[bin]]`, `pyproject.toml`
+  scripts, `docker-compose.yml` services, `justfile`/`Taskfile`, and the README/CLAUDE.md
+  quickstart. **Read them; never guess a start command** — a confidently wrong one costs the
+  user more than a missing one.
+- Cross-check against what was actually run: the repo's own docs beat a script name, and a
+  script nothing references (`lint:ci`, `predeploy`) is not a frequent command.
+- Resolve the project's **absolute path** — the deck opens with `cd <abs path>`, since it is
+  being pasted into a shell that is somewhere else.
+
 **Durable state**
 - `~/wiki/entities/<slug>/` — the *Current state*, *Next / roadmap*, *Open questions*, and
   *Decisions log* sections. Read them; don't paraphrase from memory.
@@ -70,7 +80,7 @@ briefing should feel different.
 
 ## 4 · What the briefing must answer
 
-Five things, in this order. Keep each one tight.
+Six things, in this order. Keep each one tight.
 
 1. **What this is** — two sentences, maximum. Written for someone who forgot. Name the actual
    purpose, not the tech stack.
@@ -86,6 +96,23 @@ Five things, in this order. Keep each one tight.
 5. **What to pick up next** — 3–5 concrete, ranked moves. **Recommend one and say why.** Each
    must be a real action ("push the 4 unpushed commits, then rotate the exposed key"), never a
    vague direction ("continue improving the bot").
+6. **Frequent commands** — the 4–7 commands that actually start this project, each **copyable
+   in one click**. Open with `cd <absolute path>`, then the ones a person really runs: bring up
+   the UI, start the server, run the tests, build. Caption each in the user's words ("start the
+   overlay app"), not by repeating the script name. This section is *the* reason a returning
+   user opens the briefing rather than digging through `package.json`, so it earns real estate
+   even on an otherwise quiet project — but keep it to what gets run. A deck listing every npm
+   script is a `package.json` dump and puts the reader back to remembering. Anything you had to
+   infer rather than find gets said so in its caption.
+
+   Markup — the click handler is injected, so **paste no copy script**:
+
+   ```html
+   <div class="cmd">
+     <code data-copy>cd ~/claude-code-companion &amp;&amp; npm run dev</code>
+     <button type="button" data-copy-btn>Copy</button>
+   </div>
+   ```
 
 ## 5 · Render it
 
@@ -97,10 +124,15 @@ destroyed under the user.
 **Load the `prefer-html` skill before writing** — it owns the mechanics and the house style.
 
 - **Pattern:** default to a **single-scroll editorial briefing** in the Broadsheet house style.
-  The five answers are one narrative about one subject, so resist the sidebar. Reach for the
+  The narrative answers are one story about one subject, so resist the sidebar. Reach for the
   **blob canvas** only when the project has genuinely fractured into independent workstreams,
   and for a **compact pill** when the honest answer is one line ("clean tree, nothing pending,
-  last touched yesterday").
+  last touched yesterday") — a pill still carries the command deck, because "nothing pending"
+  is precisely the state in which the only thing the reader needs is how to start it again.
+- **Give the command deck its own block, low on the page but never cut.** It is reference the
+  reader scans, not argument they read, so it sits below the recommendation — a fixed-width
+  monospace row per command, caption alongside, Copy button on the right. Set the rows in one
+  rhythm so the deck reads as a table the eye can run down.
 - **Lead with the decision, not the recap.** The loudest thing on the page is *what to do next*
   — the "what we last did" section exists only to justify it. If the recap is longer than the
   recommendation, you've written a transcript. Cut it.
@@ -125,5 +157,8 @@ they get the answer even without looking at the Board. If nothing pops, point th
 - Don't dump the wiki page or the commit log into the artifact. This is a briefing.
 - Don't fabricate a next objective to fill the section. "We never wrote down what was next" is
   a legitimate — and actionable — finding.
+- Don't invent a command to round the deck out to a nice number. A start command that doesn't
+  work is worse than an absent one: the user pastes it, it fails, and now they distrust the
+  whole briefing. Four real rows beat seven with a guess among them.
 - Don't editorialise about code quality. Orientation only; `/code-review` is a different verb.
 - Don't ask the user which project unless the argument is genuinely ambiguous. Resolve and go.
