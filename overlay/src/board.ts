@@ -29,14 +29,21 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { handleSubmit, copyToClipboard } from "./submit";
 import { initChatBar, syncChatBar, MODEL_CHOICES, type ChatBarContext } from "./chatbar";
 import { IS_LINUX } from "./platform";
-import { loadArtifactInto } from "./artifact-view";
+import { loadArtifactInto, resolveUnitDigest } from "./artifact-view";
 import {
   heroArtifactFor,
   artifactMatchesSource,
   effectsForRewrites,
   sessionIsWriting,
 } from "./ingest-logic";
-import { buildDeck, deckPosition, flipTarget, type FlipDir } from "./deck-logic";
+import {
+  buildDeck,
+  deckPosition,
+  flipTarget,
+  withDigest,
+  type DeckCard,
+  type FlipDir,
+} from "./deck-logic";
 import {
   HOME_UNIT,
   isScratchDir,
@@ -2929,6 +2936,9 @@ async function renderHero(unitKey: string): Promise<void> {
   if (freshLaunchUnit === unitKey) {
     freshLaunchUnit = null;
     reader.setHero(readerState, null);
+    // Clear the digest too: deckForUnit's only guard is `unitKey !== currentUnitKey`, which
+    // is already false here, so a stale one would append the PREVIOUS project's card.
+    readerState.unitDigestPath = null;
     applyBar(null);
     digestEl.setAttribute("hidden", "");
     // A fresh session with no artifact of its own → show the waiting crab band; a
@@ -2942,13 +2952,30 @@ async function renderHero(unitKey: string): Promise<void> {
     else showBlankHero(BLANK_FIRST, blankWorkingLine(flSrc));
     return;
   }
+  const src = activeSessionSource(unitKey);
+  const unitArts = groupArtifactsByUnit().get(unitKey) ?? [];
+  // THE STANDING DIGEST LEADS — entering a project answers itself rather than dropping the
+  // reader into whichever artifact happened to be written last. It rides the deck's newest
+  // end (`withDigest`), so one flip back is their latest work. Absent ⇒ fall through, as
+  // before: progressive enhancement, like the L0 Hub.
+  readerState.unitDigestPath = await resolveUnitDigest(unitKey);
+  const digest = readerState.unitDigestPath;
+  if (digest) {
+    digestEl.removeAttribute("hidden");
+    syncSurfaceStrip(true);
+    reader.setHero(readerState, digest);
+    renderDeckNav(unitKey); // no markArtifactRead: un-indexed ⇒ no unread to clear
+    applyBar(await barSpecFor(digest));
+    await loadArtifactInto(digest, digestEl).catch((e) =>
+      console.error("hero digest load failed", e),
+    );
+    return;
+  }
   // Lead with the ACTIVE SESSION's most recent artifact. The hero follows the session
   // shown in the terminal (matched by source slug), not the unit. Selection lives in
   // `heroArtifactFor` (ingest-logic.ts) so the sibling-scoping rule is pinned by
   // `scripts/check-sibling-unread.ts` rather than re-derived here.
   applyBar(null);
-  const src = activeSessionSource(unitKey);
-  const unitArts = groupArtifactsByUnit().get(unitKey) ?? [];
   const latest = heroArtifactFor(unitArts, src, ownedTabForUnit(unitKey) !== null);
   if (latest) {
     digestEl.removeAttribute("hidden");
@@ -3038,12 +3065,16 @@ function syncBuildingPill(): void {
 // through, so it cannot drift onto a sibling session's artifact — see deck-logic.ts.
 
 /** This unit's deck: the active session's cards, oldest first. */
-function deckForUnit(unitKey: string): ArtifactEntry[] {
-  return buildDeck(
+function deckForUnit(unitKey: string): DeckCard[] {
+  const deck = buildDeck(
     groupArtifactsByUnit().get(unitKey) ?? [],
     activeSessionSource(unitKey),
     ownedTabForUnit(unitKey) !== null,
   );
+  // The standing digest rides the deck's newest end as a card — see `withDigest` for why
+  // it must BE a card rather than just be shown. Only meaningful for the unit on screen.
+  if (unitKey !== currentUnitKey || !readerState.unitDigestPath) return deck;
+  return withDigest(deck, readerState.unitDigestPath);
 }
 
 /** How long a flip takes. Matches the `deck-flip-*` keyframes — the incoming card is
@@ -3092,7 +3123,9 @@ async function flipDeck(dir: FlipDir): Promise<void> {
   if (heroPendingPath === target.path) hideHeroNewPill();
   digestEl.removeAttribute("hidden");
   syncSurfaceStrip(true, true); // a flip within the deck — stay in whatever view the user picked
-  applyBar(null);
+  // Flipping ONTO the digest re-themes the bar from its own shelly-bar block as entry does;
+  // off it, back to native chrome. Else the bar themes on entry then goes stale on a flip.
+  applyBar(target.path === readerState.unitDigestPath ? await barSpecFor(target.path) : null);
   reader.navigateHero(readerState, target.path);
   markArtifactRead(target.path);
   renderDeckNav(view.unitKey); // position + chevron ends update with the motion, not after

@@ -146,6 +146,7 @@ pub fn run() {
             history::sweep_artifacts,
             history::reopen_artifact,
             history::resolve_home,
+            history::resolve_unit_digest,
             trace::trace_event,
             trace::trace_enabled,
             events::poll_events,

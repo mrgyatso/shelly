@@ -204,6 +204,25 @@ ok(/document\.querySelector\("\.shelly-ask-btn"\)/.test(FRAME), "stand-down also
 ok(/stopImmediatePropagation/.test(FRAME), "ballot clicks are vetoed so a hand-rolled handler can't double-fire");
 ok(/\}, true\);/.test(FRAME), "the ballot listener is registered in the capture phase");
 
+// ---- copy buttons ------------------------------------------------------------
+// A command deck is only worth rendering if its Copy actually copies, and the handler has
+// to arrive the same way the ballot's does — injected. It was documentation-only before
+// (SKILL.md carried a snippet to paste), which is the same shape as the 💬 failure: an
+// invariant that survives only when someone remembers it.
+console.log("### copy buttons ship in the frame");
+ok(/data-copy-btn/.test(FRAME), "the frame carries the copy-button handler");
+ok(/kind: ?"copy"/.test(FRAME), "…which bridges to the overlay (the only path that works on WebKitGTK)");
+ok(/navigator\.clipboard/.test(FRAME), "…and still tries the in-page clipboard for a standalone browser");
+ok(/data-copy-target/.test(FRAME), "…and honours an explicit target selector");
+ok(
+  /addEventListener\("click", function \(e\) \{\s*var btn = e\.target && e\.target\.closest && e\.target\.closest\("\[data-copy-btn\]"\)/.test(FRAME),
+  "the copy handler is DELEGATED, so a block revealed after load still copies",
+);
+ok(
+  /querySelector\("\.shelly-ask-btn"\)[\s\S]{0,400}innerText/.test(FRAME),
+  "the 💬 icon is detached before the read, so it can't land in the copied command",
+);
+
 // ---- version awareness -------------------------------------------------------
 // A frame left by an older plugin should be swapped on the next write, so
 // `claude plugin update` reaches artifacts that already exist rather than only new ones.

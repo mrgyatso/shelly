@@ -46,7 +46,21 @@ const BUDGETS: Record<string, number> = {
   // increase this ratchet is meant to make you justify out loud rather than nudge silently —
   // so it is written down here. It goes DOWN from now on, as extractions land — and it has:
   // 5560 → 5512 as the reader state moved to `src/reader-state.ts`.
-  "src/board.ts": 5512,
+  // Raised 5512 → 5525 for the standing-project-digest hero: entering a unit now resolves
+  // `home.<unit_key>.html` and leads with it. Saying why out loud, as this header demands:
+  // the +13 is the behaviour itself (the resolve, the hero branch, the two staleness
+  // guards), and it is what is left AFTER pushing the parts that could leave — the
+  // `resolveUnitDigest` probe to `artifact-view.ts` and the deck composition to
+  // `withDigest` in `deck-logic.ts`, where it is also finally testable. ~31 lines of the
+  // feature landed outside board.ts; only the DOM-coupled remainder stayed.
+  // Raised 5525 → 5532 for Prettier, not for code: the file had never been run through the
+  // formatter this branch introduced, and `format:check` failed CI on it. Formatting rewrapped
+  // one import across 7 more lines — zero new statements — which is the format gate and this
+  // gate disagreeing about the same 7 lines. The ratchet is meant to catch code growth, so it
+  // yields to the formatter here and keeps its grip on everything else. (`board.css` gets the
+  // opposite treatment two lines down — see .prettierignore — because there the formatter
+  // wanted 960 lines, which is a formatter making a too-big file bigger.)
+  "src/board.ts": 5532,
   // board.css is NOT Prettier-formatted on purpose (see .prettierignore): the formatter grew
   // it by 960 lines expanding dense declarations, which is a formatter making a too-big file
   // measurably worse. So this number reflects hand-formatted CSS and should stay tight.

@@ -24,6 +24,7 @@ const suites = [
   "codex-provider.cjs",
   "home-adoption.cjs",
   "bash-writes.cjs",
+  "digest.cjs",
 ];
 let failed = 0;
 for (const s of suites) {

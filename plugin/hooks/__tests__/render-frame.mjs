@@ -67,6 +67,8 @@ const HOSTILE = `<!doctype html>
     <button data-action="reject">X</button>
     <textarea data-comment hidden></textarea>
   </div>
+  <div class="cmd"><pre data-copy>cd ~/proj && npm run dev</pre>
+    <button type="button" data-copy-btn>Copy</button></div>
   <button data-shelly-submit="Render test">Submit</button>
 </main>
 <script>
@@ -192,6 +194,25 @@ ok(
 );
 
 ok((await ev(`window.__msgs.filter(m=>m&&m.kind==="size").length`)) >= 1, "the size reporter posted");
+
+// Copy buttons — a command deck is worth nothing if the Copy doesn't copy. The <pre> is
+// deliberate: `pre` is in BLOCK_SELECTOR, so the helper appends a 💬 button INSIDE it, and a
+// naive innerText read would ship that icon inside the user's command.
+await ev(`window.__msgs.length = 0; frames[0].document.querySelector("[data-copy-btn]").click()`);
+await new Promise((r) => setTimeout(r, 200));
+const copies = JSON.parse((await ev(`JSON.stringify(window.__msgs.filter(m=>m&&m.kind==="copy"))`)) || "[]");
+ok(copies.length === 1, `the Copy button bridged exactly one copy to the parent (got ${copies.length})`);
+ok(copies[0]?.text === "cd ~/proj && npm run dev", `the exact command was copied (got ${JSON.stringify(copies[0]?.text)})`);
+ok(!/💬/.test(copies[0]?.text || ""), "the gutter 💬 did not leak into the copied command");
+ok(
+  (await ev(`frames[0].document.querySelector("[data-copy-btn]").textContent`)).indexOf("Copied") === 0,
+  "the button confirms with 'Copied ✓'",
+);
+ok(
+  await ev(`!frames[0].document.querySelector(".pick-popover")`),
+  "clicking Copy did not also open a pick composer",
+);
+ok(await ev(`!!frames[0].document.querySelector("[data-copy] .shelly-ask-btn")`), "the 💬 icon was put back after the read");
 
 // One unified submit: ballot decision AND ambient comment in a single message.
 await ev(`frames[0].document.querySelector('[data-action="approve"]').click()`);

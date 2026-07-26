@@ -73,6 +73,30 @@ export function deckTop<T extends DeckCard>(deck: readonly T[]): T | null {
   return deck.length ? deck[deck.length - 1] : null;
 }
 
+/** The title the digest card carries in the deck. */
+export const DIGEST_CARD_TITLE = "Project digest";
+
+/**
+ * Append a unit's STANDING DIGEST (`home.<unit_key>.html`) to the deck's newest end.
+ *
+ * The digest has to be a CARD, not merely a document shown above the deck. It is
+ * un-indexed by design (so the agent can rewrite it forever without the seal protocol
+ * treating each save as a new artifact), which means it is never in `allArtifacts` —
+ * and [`deckPosition`] addresses the read card BY PATH. Shown as the hero without being
+ * a card it would have no position at all: the nav would hide itself and both chevrons
+ * would go dead the moment a project had a digest, stranding the reader on the
+ * orientation page with no route back to their own work.
+ *
+ * It rides the NEWEST end so entry lands on it (`deckTop`) and ONE flip back reaches the
+ * user's most recent artifact. `MAX_SAFE_INTEGER` pins it there under any future re-sort:
+ * the digest is the standing entry point, not a chronological card, so it must not sink
+ * into the middle of the deck merely because artifacts have been written since it was
+ * last refreshed.
+ */
+export function withDigest(deck: readonly DeckCard[], digestPath: string): DeckCard[] {
+  return [...deck, { path: digestPath, modified_ms: Number.MAX_SAFE_INTEGER }];
+}
+
 /**
  * Locate the read card BY PATH — never by a retained index.
  *

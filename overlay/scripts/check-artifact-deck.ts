@@ -26,6 +26,7 @@ import {
   deckPosition,
   flipTarget,
   deckHas,
+  withDigest,
   type DeckCard,
 } from "../src/deck-logic.ts";
 import { heroArtifactFor } from "../src/ingest-logic.ts";
@@ -201,6 +202,75 @@ for (const fn of ["ingestArtifacts", "ingestIntoUnit", "maybeLightBlankHero"]) {
     !/\bflipDeck\s*\(/.test(body),
   );
 }
+
+// ---- 9. THE STANDING DIGEST RIDES THE DECK'S NEWEST END ----------------------
+// `home.<unit_key>.html` is un-indexed by design, so it is never in `allArtifacts` and
+// `deckPosition` (which addresses by path) cannot find it. If it were merely SHOWN as the
+// hero without being a card, the nav would hide itself and both chevrons would go dead the
+// moment a project had a digest — stranding the reader on the orientation page with no way
+// back to their own work. These pin the composition that prevents that.
+const DIGEST_PATH = "/art/home.claude-code-companion.html";
+// The REAL composition deckForUnit calls — not a hand-built array that could drift from it.
+const deckD = withDigest(deck, DIGEST_PATH);
+const DIGEST = { path: DIGEST_PATH };
+check("9. entry lands on the digest — it is the deck top", deckTop(deckD)?.path === DIGEST.path);
+check(
+  "9b. ONE flip back from the digest reaches the newest artifact (not the oldest)",
+  flipTarget(deckD, DIGEST.path, -1)?.path === NEW.path,
+);
+check(
+  "9c. the digest HAS a position, so the nav renders instead of hiding",
+  deckPosition(deckD, DIGEST.path)?.index === deckD.length - 1,
+);
+check("9d. the digest is reachable as a deck card", deckHas(deckD, DIGEST.path));
+check(
+  "9e. forward from the digest is the end of the deck",
+  flipTarget(deckD, DIGEST.path, 1) === null,
+);
+check(
+  "9f. the user's artifacts keep their identity and order beneath it",
+  deckD
+    .slice(0, -1)
+    .map((c) => c.path)
+    .join() === deck.map((c) => c.path).join(),
+);
+// The digest must not sink into the middle just because newer artifacts exist — its
+// MAX_SAFE_INTEGER mtime keeps it last under any re-sort a future refactor might add.
+check(
+  "9g. a re-sort by mtime still leaves the digest on top",
+  deckD
+    .slice()
+    .sort((a, b) => a.modified_ms - b.modified_ms)
+    .at(-1)?.path === DIGEST.path,
+);
+// No digest ⇒ the pre-digest deck, untouched. Progressive enhancement, like the L0 Hub.
+check("9h. without a digest the deck is unchanged", deckTop(deck)?.path === NEW.path);
+
+// ---- 10. STRUCTURAL: the digest wiring board.ts holds ------------------------
+// deckForUnit/renderHero are DOM-coupled, so guard their source the way case 8 does.
+const deckForUnitBody = fnBody("deckForUnit");
+check(
+  "10. deckForUnit() body was located (guard is live, not vacuous)",
+  deckForUnitBody.length > 0,
+);
+check(
+  "10b. deckForUnit composes via withDigest (which appends at the newest end)",
+  /withDigest\(/.test(deckForUnitBody),
+);
+check(
+  "10c. deckForUnit only adds the digest for the unit on screen",
+  /unitKey !== currentUnitKey/.test(deckForUnitBody),
+);
+const renderHeroBody = fnBody("renderHero");
+check("10d. renderHero() body was located", renderHeroBody.length > 0);
+check(
+  "10e. renderHero clears unitDigestPath on the fresh-launch return (no cross-unit leak)",
+  /unitDigestPath = null/.test(renderHeroBody),
+);
+check(
+  "10f. renderHero falls back to the latest artifact when there is no digest",
+  /heroArtifactFor\(/.test(renderHeroBody),
+);
 
 console.log(failed === 0 ? "\nall checks passed" : `\n${failed} check(s) FAILED`);
 process.exit(failed === 0 ? 0 : 1);

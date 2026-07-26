@@ -38,3 +38,23 @@ export async function loadArtifactInto(path: string, iframe: HTMLIFrameElement):
     iframe.srcdoc = html;
   }
 }
+
+/**
+ * A unit's STANDING DIGEST (`home.<unit_key>.html`), or null when it has none.
+ *
+ * Lives here rather than in board.ts because it is pure path resolution over the same
+ * `asset:`-scoped artifacts dir this module already loads from — and board.ts is under a
+ * size ratchet that exists precisely to stop helpers like this accreting there.
+ *
+ * Never throws. A digest that cannot be resolved simply means the hero falls back to the
+ * unit's most recent artifact, which is the pre-digest behaviour and always correct — so a
+ * failed probe degrades to the old experience rather than to an error.
+ */
+export async function resolveUnitDigest(unitKey: string): Promise<string | null> {
+  try {
+    return await invoke<string | null>("resolve_unit_digest", { unitKey });
+  } catch (e) {
+    console.error("resolve_unit_digest failed", e);
+    return null;
+  }
+}

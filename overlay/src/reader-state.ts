@@ -38,6 +38,18 @@ export interface ReaderState {
   focusPath: string | null;
   /** The artifact loaded in the unit hero's iframe, or null when the hero is blank. */
   digestPath: string | null;
+  /** The on-screen unit's STANDING DIGEST (`home.<unit_key>.html`), resolved on the last
+   *  renderHero, or null when that unit has none.
+   *
+   *  Held rather than re-probed because two sites need "is the thing on screen the digest?"
+   *  — the deck (which must carry the digest as a card, since it is un-indexed and would
+   *  otherwise have no position) and the bar (which themes from the digest's own
+   *  `shelly-bar` block). Deriving it as `digestPath === unitDigestPath` keeps that one
+   *  question answered from the frame's actual contents, rather than a second boolean that
+   *  could disagree with what is loaded — the same reasoning as the no-retained-deck-index
+   *  rule. Cleared whenever the hero leaves a unit, or a previous project's digest follows
+   *  the user into the next one. */
+  unitDigestPath: string | null;
   /** Set when the artifact open in the reader is rewritten underneath it — drives the
    *  "↻ Updated" button, which is an OFFER and never an automatic reload, so a comment
    *  being typed survives. */
@@ -59,6 +71,7 @@ export function createReaderState(): ReaderState {
   return {
     focusPath: null,
     digestPath: null,
+    unitDigestPath: null,
     stalePath: null,
     backStack: [],
     awaitingSource: null,
