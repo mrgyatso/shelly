@@ -331,11 +331,16 @@ LIVE_PATH="$live_path" ARTIFACTS_DIR="$artifacts_dir" WT_NOTE="$wt_note" node -e
     `next move ("nothing left here; here is what I would pick up next, or tell me where to go"). `+
     `"Nothing to decide" is never true — choosing the next piece of work IS the decision. It holds for a bespoke `+
     `look-at design too: the visual is yours to craft, but the user must still be able to respond in `+
-    `place. EVERY artifact must include the size-reporter script and the shelly-meta block or it `+
-    `renders at the wrong size. Load the shelly:prefer-html skill for the full template WHEN building `+
-    `a non-trivial artifact (anything beyond a compact pill) — it is the pattern library, carrying the `+
-    `interaction helper (commentable blocks + the Decide review form), those required snippets, and the `+
-    `Broadsheet house style. Pattern menu — pick by content shape: compact pill (quick answer / status `+
+    `place. THE MARKUP CONTRACT — this is your whole job, because the helper, its CSS and the size `+
+    `reporter are INJECTED at write time: never paste a helper and never hand-roll a click handler `+
+    `(a second one fights the injected helper and the button reads as dead). What you owe: a real `+
+    `<head> with <meta charset="utf-8">, data-fit-root on the main wrapper, a shelly-meta block, `+
+    `data-shelly-commentable on the content blocks, and for each move a data-shelly-item carrying a `+
+    `data-item-label — that label is the ONLY text that reaches you, so phrase it as an imperative, `+
+    `never a yes/no question — with data-action="approve|comment|reject" buttons, plus exactly ONE `+
+    `data-shelly-submit on the page. Load the shelly:prefer-html skill for the full template WHEN building `+
+    `a non-trivial artifact (anything beyond a compact pill) — it is the pattern library, carrying a `+
+    `template per content shape and the Broadsheet house style. Pattern menu — pick by content shape: compact pill (quick answer / status `+
     `flip) · blob canvas (N independent points as floating expandable colored cards; DEFAULT for `+
     `multi-point turns; the one pattern where multiple palette colors are sanctioned) · paginated wizard `+
     `(one deep sequence as pages 1..N ending on a decisions page) · sidebar multi-page (3+ peer subjects, `+

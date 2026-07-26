@@ -118,5 +118,70 @@ console.log(
     `~${Math.round(tokensAt(Buffer.byteLength(src))).toLocaleString()} tok total, ` +
     `floor ends at line ${src.slice(0, startOfThree).split("\n").length}`,
 );
+
+// ---------------------------------------------------------------------------
+// The OTHER floor: the always-on session context.
+//
+// `shelly-session` runs on SessionStart — including `SessionStart:compact`, so unlike the
+// skill body this text is RE-INJECTED after every compaction. It is therefore the only
+// artifact guidance guaranteed to be present on every turn of a long session, which makes
+// it the real backstop and makes any staleness in it expensive: a false instruction here
+// is a false instruction the model can never lose.
+//
+// (This is almost certainly why the compaction correlation came back null. The mitigation
+// already existed; it just had not been kept in step with the injector.)
+// ---------------------------------------------------------------------------
+console.log("\n### the always-on session context is a complete, truthful floor");
+
+const { spawnSync } = require("node:child_process");
+const hook = path.join(__dirname, "..", "shelly-session");
+const run = spawnSync("bash", [hook], {
+  input: JSON.stringify({
+    session_id: "skillbudget-probe",
+    cwd: path.join(__dirname, "..", "..", ".."),
+    source: "compact",
+  }),
+  env: { ...process.env, SHELLY_ARTIFACTS_DIR: require("node:os").tmpdir() + "/shelly-probe" },
+  encoding: "utf8",
+});
+
+let ctx = "";
+try {
+  ctx = JSON.parse(run.stdout || "{}").hookSpecificOutput?.additionalContext ?? "";
+} catch {
+  /* falls through to the check below */
+}
+check("the hook emits parseable SessionStart context", ctx.length > 500, `${ctx.length} bytes`);
+
+if (ctx) {
+  // Everything the injector CONSUMES but cannot invent. Marker attributes the model fails to
+  // write are the one failure the frame cannot repair — `ensureCommentable` falls back to the
+  // fit-root, and an unmarked ballot has nothing to bind to.
+  for (const needle of [
+    "meta charset",
+    "data-fit-root",
+    "shelly-meta",
+    "data-shelly-commentable",
+    "data-shelly-item",
+    "data-item-label",
+    "data-action",
+    "data-shelly-submit",
+  ]) {
+    check(`the always-on floor names ${needle}`, ctx.includes(needle));
+  }
+  // …and must not ask for what the hook now supplies, nor describe the skill as it used to be.
+  check(
+    "it does not ask for the injected size reporter",
+    !/size-reporter script/.test(ctx),
+    "the frame injects it; asking produces a duplicate and a false instruction",
+  );
+  check(
+    "it does not claim the skill carries a helper to paste",
+    !/carrying the interaction helper/.test(ctx),
+  );
+  console.log(`\n  always-on context: ${ctx.length} bytes, ~${Math.round(ctx.length / 4)} tok, `
+    + "paid on EVERY session start and re-paid on every compaction");
+}
+
 console.log(`\n${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
