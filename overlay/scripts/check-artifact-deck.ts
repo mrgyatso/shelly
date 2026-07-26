@@ -223,16 +223,25 @@ check(
   deckPosition(deckD, DIGEST.path)?.index === deckD.length - 1,
 );
 check("9d. the digest is reachable as a deck card", deckHas(deckD, DIGEST.path));
-check("9e. forward from the digest is the end of the deck", flipTarget(deckD, DIGEST.path, 1) === null);
+check(
+  "9e. forward from the digest is the end of the deck",
+  flipTarget(deckD, DIGEST.path, 1) === null,
+);
 check(
   "9f. the user's artifacts keep their identity and order beneath it",
-  deckD.slice(0, -1).map((c) => c.path).join() === deck.map((c) => c.path).join(),
+  deckD
+    .slice(0, -1)
+    .map((c) => c.path)
+    .join() === deck.map((c) => c.path).join(),
 );
 // The digest must not sink into the middle just because newer artifacts exist — its
 // MAX_SAFE_INTEGER mtime keeps it last under any re-sort a future refactor might add.
 check(
   "9g. a re-sort by mtime still leaves the digest on top",
-  deckD.slice().sort((a, b) => a.modified_ms - b.modified_ms).at(-1)?.path === DIGEST.path,
+  deckD
+    .slice()
+    .sort((a, b) => a.modified_ms - b.modified_ms)
+    .at(-1)?.path === DIGEST.path,
 );
 // No digest ⇒ the pre-digest deck, untouched. Progressive enhancement, like the L0 Hub.
 check("9h. without a digest the deck is unchanged", deckTop(deck)?.path === NEW.path);
@@ -240,7 +249,10 @@ check("9h. without a digest the deck is unchanged", deckTop(deck)?.path === NEW.
 // ---- 10. STRUCTURAL: the digest wiring board.ts holds ------------------------
 // deckForUnit/renderHero are DOM-coupled, so guard their source the way case 8 does.
 const deckForUnitBody = fnBody("deckForUnit");
-check("10. deckForUnit() body was located (guard is live, not vacuous)", deckForUnitBody.length > 0);
+check(
+  "10. deckForUnit() body was located (guard is live, not vacuous)",
+  deckForUnitBody.length > 0,
+);
 check(
   "10b. deckForUnit composes via withDigest (which appends at the newest end)",
   /withDigest\(/.test(deckForUnitBody),

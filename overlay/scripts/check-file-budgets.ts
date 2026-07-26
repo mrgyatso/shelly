@@ -53,7 +53,14 @@ const BUDGETS: Record<string, number> = {
   // `resolveUnitDigest` probe to `artifact-view.ts` and the deck composition to
   // `withDigest` in `deck-logic.ts`, where it is also finally testable. ~31 lines of the
   // feature landed outside board.ts; only the DOM-coupled remainder stayed.
-  "src/board.ts": 5525,
+  // Raised 5525 → 5532 for Prettier, not for code: the file had never been run through the
+  // formatter this branch introduced, and `format:check` failed CI on it. Formatting rewrapped
+  // one import across 7 more lines — zero new statements — which is the format gate and this
+  // gate disagreeing about the same 7 lines. The ratchet is meant to catch code growth, so it
+  // yields to the formatter here and keeps its grip on everything else. (`board.css` gets the
+  // opposite treatment two lines down — see .prettierignore — because there the formatter
+  // wanted 960 lines, which is a formatter making a too-big file bigger.)
+  "src/board.ts": 5532,
   // board.css is NOT Prettier-formatted on purpose (see .prettierignore): the formatter grew
   // it by 960 lines expanding dense declarations, which is a formatter making a too-big file
   // measurably worse. So this number reflects hand-formatted CSS and should stay tight.

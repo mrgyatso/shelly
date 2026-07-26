@@ -36,7 +36,14 @@ import {
   effectsForRewrites,
   sessionIsWriting,
 } from "./ingest-logic";
-import { buildDeck, deckPosition, flipTarget, withDigest, type DeckCard, type FlipDir } from "./deck-logic";
+import {
+  buildDeck,
+  deckPosition,
+  flipTarget,
+  withDigest,
+  type DeckCard,
+  type FlipDir,
+} from "./deck-logic";
 import {
   HOME_UNIT,
   isScratchDir,
