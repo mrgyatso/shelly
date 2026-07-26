@@ -141,7 +141,14 @@ const run = spawnSync("bash", [hook], {
     cwd: path.join(__dirname, "..", "..", ".."),
     source: "compact",
   }),
-  env: { ...process.env, SHELLY_ARTIFACTS_DIR: require("node:os").tmpdir() + "/shelly-probe" },
+  env: {
+    ...process.env,
+    SHELLY_ARTIFACTS_DIR: require("node:os").tmpdir() + "/shelly-probe",
+    // A Board-started session. Without this the hook takes its external-terminals
+    // early-exit and emits nothing at all — correct behaviour, and how this check first
+    // failed in CI while passing on a machine that has external terminals switched on.
+    SHELLY_SESSION: "1",
+  },
   encoding: "utf8",
 });
 
