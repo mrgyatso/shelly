@@ -609,6 +609,41 @@ pub fn resolve_home() -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+/// Resolve a unit's living per-project digest (`home.<unit_key>.html`), if one exists.
+///
+/// The L2 counterpart to [`resolve_home`] — same dirs, for the same `asset:`-scope reason —
+/// but keyed to a unit, so entering a project lands on its standing orientation page instead
+/// of whatever artifact happened to be written last. `None` ⇒ the Board falls back to the
+/// unit's most recent artifact, exactly as before.
+///
+/// This is the half of the digest that never existed. The reserved slug has been protected
+/// from the index and from pruning (see the reserved-stem skips in [`entry_from_path`] and
+/// [`sweep_artifacts`]), and the Board's bar already reads a `shelly-bar` block from it — but
+/// nothing ever RESOLVED
+/// the file, so a written digest was invisible.
+///
+/// `unit_key` is interpolated into a FILENAME, so a key containing a separator or `..` could
+/// otherwise walk out of the artifacts dir and pull an arbitrary file into an `asset:`-scoped
+/// iframe. Reject those outright rather than sanitising: every legitimate unit_key is already
+/// a flat slug (`shelly-livepath.sh` derives it from a directory basename), so a key that
+/// needs normalising is a key we should not be trusting.
+#[tauri::command]
+pub fn resolve_unit_digest(unit_key: String) -> Option<String> {
+    if unit_key.is_empty()
+        || unit_key.contains('/')
+        || unit_key.contains('\\')
+        || unit_key.contains("..")
+    {
+        return None;
+    }
+    let name = format!("home.{unit_key}.html");
+    artifact_dirs()
+        .iter()
+        .map(|d| d.join(&name))
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
 /// Re-open an artifact as a normal panel and dismiss the HUD. The HUD is hidden
 /// (not closed) so the next ⌘8 re-shows it warm without rebuilding.
 #[tauri::command]
