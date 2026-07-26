@@ -974,8 +974,8 @@ intentional.
 The responders below compose *into* whichever pattern you picked in §3. Pick by what the artifact
 is: a decision list → the **Decide ballot / review form** (§4.1); an informational page the user
 might question → **ambient comments** (§4.2); an artifact that carries *both* → the **unified
-helper** (§4.3). Copyable handoff content → a **copy block** (§4.4), which coexists with any of
-them.
+helper** (§4.3). Copyable handoff content, or the commands that start this project → a **copy
+block** (§4.5), which coexists with any of them.
 
 ## 4.1 · The Decide ballot / interactive review form
 
