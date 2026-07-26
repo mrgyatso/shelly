@@ -20,6 +20,7 @@ const suites = [
   "artifact-seal.cjs",
   "charset.cjs",
   "frame.cjs",
+  "skill-budget.cjs",
   "codex-provider.cjs",
   "home-adoption.cjs",
   "bash-writes.cjs",
