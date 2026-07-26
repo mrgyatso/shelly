@@ -1,12 +1,18 @@
 {
   "name": "shelly",
-  "description": "Render your agent's work as HTML artifacts in Shelly — the shell your coding agents work inside. The working agent authors the artifact's content and design; the interaction mechanics (💬 per-block comments, the ✓/✎/✗ ballot, the submit wiring, the size reporter) are INJECTED at write time, so they are guaranteed rather than re-copied every turn. A Stop-hook backstop reminds the agent once if a substantive turn ends with nothing written. The live-state is a status heartbeat only. Manual /shelly:html remains available.",
-  "version": "0.10.0",
+  "description": "Render your agent's work as HTML artifacts in Shelly \u2014 the shell your coding agents work inside. The working agent authors the artifact's content and design; the interaction mechanics (\ud83d\udcac per-block comments, the \u2713/\u270e/\u2717 ballot, the submit wiring, the size reporter) are INJECTED at write time, so they are guaranteed rather than re-copied every turn. A Stop-hook backstop reminds the agent once if a substantive turn ends with nothing written. The live-state is a status heartbeat only. Manual /shelly:html remains available.",
+  "version": "0.10.1",
   "author": {
     "name": "mrgyatso",
     "url": "https://github.com/mrgyatso/shelly"
   },
   "homepage": "https://github.com/mrgyatso/shelly",
   "repository": "https://github.com/mrgyatso/shelly",
-  "keywords": ["html", "artifacts", "overlay", "tauri", "macos"]
+  "keywords": [
+    "html",
+    "artifacts",
+    "overlay",
+    "tauri",
+    "macos"
+  ]
 }

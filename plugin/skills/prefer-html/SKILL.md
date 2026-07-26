@@ -1,14 +1,13 @@
 ---
 name: prefer-html
-description: The Shelly artifact pattern library — invariants + copy-paste templates (pill, blob canvas, paginated wizard, sidebar multi-page, two-zone, dashboard) + the interaction helpers (Decide ballot, ambient comments, copy blocks). MANDATORY to read before building any non-trivial artifact (anything past a compact pill) — load it proactively the moment you pick a pattern. The floor (charset, size reporter, answerable responder, shell shade) is also enforced by the always-on session context + the Stop-hook gate; this skill is the single source for *how* to make an artifact good.
+description: The Shelly artifact pattern library — the invariants, a template per content shape (pill, blob canvas, wizard, sidebar multi-page, two-zone, dashboard), the markup contract for the injected interaction helper, and the Broadsheet house style. Read it before building any artifact past a compact pill; load it the moment you pick a shape.
 ---
 
 # Prefer HTML — render what changed in the Shelly overlay
 
-The Shelly overlay renders any `.html` file written into the artifacts dir. **Every
-Shelly artifact is authored inline by the working agent** — there is no background observer
-and no deterministic renderer (both removed in 0.4.5). You write the file yourself, in full
-context; this skill is the single source for *how* to make it good.
+The Shelly overlay renders any `.html` file written into the artifacts dir, and **every
+artifact is authored inline by the working agent** — no background observer, no deterministic
+renderer. You write the file yourself, in full context.
 
 **How this skill is organized — read the layer you need:**
 
@@ -86,29 +85,35 @@ just stops is the failure this exists to prevent.
 
 ### 1.4 The plumbing (mechanical floor — the gate checks these)
 
-Five mechanical things every artifact must carry. They are shape-agnostic and appear in every
-template below:
+Six mechanical things every artifact must carry. They are shape-agnostic and appear in every
+template below. **This list is the post-compaction floor**: auto-compaction re-attaches only the
+first 5,000 tokens of a skill, which is roughly §1 and §2 — so everything needed to write a
+*working* artifact lives here, and the sections below are the craft on top of it.
 
 - **`<meta charset="utf-8">`** in a real `<head>` — not optional (see §7.2 for why: mojibake).
-- **`data-fit-root`** on the main wrapper (definite width, height flows) **+ the size-reporter
-  snippet** at the end of `<body>` — the sandboxed opaque-origin iframe can't be measured from
-  outside, so the artifact self-reports its size (see §7.3).
+- **`data-fit-root`** on the main wrapper (definite width, height flows) — the sandboxed
+  opaque-origin iframe can't be measured from outside, so the artifact self-reports its size.
+  The reporter itself is INJECTED; this attribute is what it measures, and what the 💬 markup
+  falls back to, so it is load-bearing (see §7.3).
 - **The `shelly-meta` block** in `<head>` — so feedback is self-identifying, even to a later
   session reopening it (see §7.4).
 - **`data-shelly-commentable` on the content.** That is your whole job here — **the helper is
   INJECTED FOR YOU at write time**, along with the ambient CSS, the ballot handler and the size
   reporter. Do **not** paste it, and do **not** copy it out of another artifact.
-  *(Why this changed: getting 💬 + ✓/✎/✗ both right needs ~860 lines of helper, inlined, because
-  the Board's iframe blocks external scripts. Asking a model to reproduce that every turn was
-  the bug, not a discipline problem — 28% of artifacts shipped with no 💬 at all. A PostToolUse
-  step now injects it; the copy in `references/interaction-helper.md` is the SOURCE that step is
-  generated from, kept for reading, not for pasting. If you do paste a copy anyway it is
-  harmless — whichever copy runs second stands down — but it is 860 wasted lines.)*
+  *(A pasted copy is harmless — whichever runs second stands down — but it is ~860 wasted
+  lines, and hand-rolling a partial one is not harmless. `references/interaction-helper.md`
+  is the source the injector is generated from: read it if you must, never paste it.)*
   Content in styled `<div>`s (cards, blobs, callouts) is invisible to the helper's tag list
   until you mark it `data-shelly-block`, and marking is still yours to do.
   *Two shapes are exempt:* the **compact pill** (§3.1 — a status flip has nothing to annotate)
   and the **bespoke dashboard / L0 home** (§3.6 — presentation-first and persistent, not a turn
   artifact; it still carries its own responder per §1.3). Every other shape carries the helper.
+- **The ballot contract, when the artifact has one** (§1.3 says it almost always does): each
+  move is a `data-shelly-item` carrying a `data-item-label` — *that label is the ONLY text that
+  reaches the agent, so phrase it as an imperative: ✓ must mean "do this"* — with `✓/✎/✗` buttons
+  marked `data-action="approve|comment|reject"`, an optional `<textarea data-comment hidden>`,
+  and exactly ONE `data-shelly-submit` on the page. Optionally `data-doall`. The injected helper
+  binds all of it; hand-rolling a handler or a `postMessage` fights it and reads as a dead button.
 - **Write it with the `Write` tool, not `Bash`** — a `PostToolUse(Write|Edit)` hook indexes the
   artifact to your session; a `Bash`-written file lands unsourced (see §7.1).
 
@@ -139,24 +144,14 @@ edge — it *is* the surface, with no seam against the board.
 app-shade is home and the default. An artifact **may repaint the entire surface** — shell chrome
 and iframe together — to a **curated** color, animated by the Board (see §5 for the contract).
 
+*(Type pairing and the one-accent rule used to sit here as §1.7/§1.8. They are* look *rather
+than floor, so they now live in §6.1/§6.2 with the rest of the house style — which also keeps
+this section inside the 5,000-token budget that survives a compaction.)*
+
 **The seam is the enemy, not color.** What is *never* allowed: a **partial** repaint (a
 dark card on the light board), or an **off-palette** page background that isn't one of the
 curated shell colors. Either creates the seam this rule exists to kill. If you're not using the
 §5 repaint contract, stay on the app shade. Full stop.
-
-### 1.7 Type pairing (the house default)
-
-The bundled pairing is the default and carries the identity: **Newsreader** = display/headlines,
-**Inter** = reading/body, **JetBrains Mono** = kickers, labels, edition lines, file chips. Load
-the faces via the bundled `fonts.css` (see §7.7) with system fallbacks. A pattern may theme
-*within* this — but reach past the pairing only for a real reason, not a reflex.
-
-### 1.8 One semantic accent per page (blob canvas exempted)
-
-One artifact, one accent, used with meaning (status/type) — not decoration. Accent ∈ blue
-`#3D7EFF`, amber `#F2B84B`, clay `#D98158`, mint `#4DAA7D` (each with a darker ink variant for
-text). **The one sanctioned exception is the blob canvas** (§3.2), where each blob takes its own
-palette color used semantically — lively, never a clown suite.
 
 ---
 
@@ -243,13 +238,6 @@ amber = heads-up/partial, red = broke/blocked):
       </ul>
     </div>
   </main>
-  <script>
-    (function () { var el = document.querySelector("[data-fit-root]") || document.body;
-      var post = function () { parent.postMessage({ source:"shelly-artifact", kind:"size",
-        w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
-      if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
-      addEventListener("load", post); post(); })();
-  </script>
 </body>
 </html>
 ```
@@ -505,25 +493,9 @@ the unified helper. Markup alone is inert: no helper, no icons, no way to answer
   });
 })();
 </script>
-<!-- THE HELPER — NOT OPTIONAL. This canvas carries BOTH 💬 comments and a Decide ballot,
-     so it needs the UNIFIED helper (§4.3): one submit, sectioned comments + decisions.
-     Copy the <script> from references/interaction-helper.md VERBATIM — do not retype or
-     trim it, and do not substitute a ballot-only script (that is what silently ships a
-     canvas with no 💬 on it). Paste it here, plus the ambient-comment CSS from §4.2. -->
-<script>
-  /* NOTHING GOES HERE. The unified helper is injected at write time — leave this out
-     entirely. Marking the content `data-shelly-commentable` and the moves
-     `data-shelly-item` is the whole contract. */
-</script>
-<script>
-  (function () {
-    var el = document.querySelector("[data-fit-root]") || document.body;
-    var post = function () { parent.postMessage({ source: "shelly-artifact", kind: "size",
-      w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
-    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
-    addEventListener("load", post); post();
-  })();
-</script>
+  <!-- No helper here: the unified helper is injected at write time. Marking the
+       content `data-shelly-commentable` and the moves `data-shelly-item` is the
+       whole contract. -->
 </body>
 </html>
 ```
@@ -705,24 +677,9 @@ throws (same constraint the sidebar template documents). The size-reporter obser
   render();
 })();
 </script>
-<!-- THE HELPER — NOT OPTIONAL. Content pages carry 💬 comments and the last page carries the
-     ballot, so this wizard needs the UNIFIED helper (§4.3): one submit, sectioned comments +
-     decisions. Copy the <script> from references/interaction-helper.md VERBATIM — a ballot-only
-     script silently ships a wizard whose pages cannot be answered. Add the §4.2 ambient CSS too. -->
-<script>
-  /* NOTHING GOES HERE. The unified helper is injected at write time — leave this out
-     entirely. Marking the content `data-shelly-commentable` and the moves
-     `data-shelly-item` is the whole contract. */
-</script>
-<script>
-  (function () {
-    var el = document.querySelector("[data-fit-root]") || document.body;
-    var post = function () { parent.postMessage({ source: "shelly-artifact", kind: "size",
-      w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
-    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
-    addEventListener("load", post); post();
-  })();
-</script>
+  <!-- No helper here: the unified helper is injected at write time. Marking the
+       content `data-shelly-commentable` and the moves `data-shelly-item` is the
+       whole contract. -->
 </body>
 </html>
 ```
@@ -849,22 +806,10 @@ Duplicate a `<section data-mp-page>` + its `<a data-mp-link>` per subject:
         a.addEventListener("click", function (e) { e.preventDefault(); show(a.getAttribute("href").slice(1)); });
       });
     })();
-    (function () {
-      var el = document.querySelector("[data-fit-root]") || document.body;
-      var post = function () { parent.postMessage({ source: "shelly-artifact", kind: "size",
-        w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*"); };
-      if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
-      addEventListener("load", post); post();
-    })();
   </script>
-  <!-- THE HELPER — NOT OPTIONAL. One helper covers every page (it scans all commentable roots).
-       Copy the <script> from references/interaction-helper.md VERBATIM, plus the §4.2 ambient CSS.
-       Without it the pages are marked up but inert: no 💬, nothing to answer (§4.4). -->
-  <script>
-    /* NOTHING GOES HERE. The unified helper is injected at write time — leave this out
-     entirely. Marking the content `data-shelly-commentable` and the moves
-     `data-shelly-item` is the whole contract. */
-  </script>
+  <!-- No helper here: the unified helper is injected at write time. Marking the
+       content `data-shelly-commentable` and the moves `data-shelly-item` is the
+       whole contract. -->
 </body>
 </html>
 ```
@@ -931,14 +876,9 @@ scrolls. The left column carries `data-shelly-commentable`; the visual does not.
   /* the 💬 sits at left:-36px — give the prose column room so it isn't clipped */
   .col-main { padding-left: 40px; }
 </style>
-<!-- THE HELPER — NOT OPTIONAL. data-shelly-commentable above is inert markup on its own:
-     it is the helper that injects the 💬 icons. Copy the <script> from
-     references/interaction-helper.md VERBATIM, plus the §4.2 ambient CSS. -->
-<script>
-  /* NOTHING GOES HERE. The unified helper is injected at write time — leave this out
-     entirely. Marking the content `data-shelly-commentable` and the moves
-     `data-shelly-item` is the whole contract. */
-</script>
+  <!-- No helper here: the unified helper is injected at write time. Marking the
+       content `data-shelly-commentable` and the moves `data-shelly-item` is the
+       whole contract. -->
 ```
 
 Reach for two-zone on any substantive full-document turn (a triage, a plan, a comparison,
@@ -1092,66 +1032,15 @@ prefixes the compiled message:
 </button>
 ```
 
-### Required review helper snippet
+### The helper is INJECTED — do not write one
 
-This script handles click delegation (sets `data-state` on items, toggles textarea
-visibility), and on submit walks all items to compose the prose message and
-postMessage it. Include it in addition to (not instead of) the size-reporter
-snippet — the review helper is opt-in, the size-reporter is required for every
-artifact:
+A write-time hook injects the unified helper (comments + ballot, one submit) into every
+artifact in the artifacts dir. Mark the content and the moves; the mechanics arrive on
+their own. Do NOT paste a helper, hand-roll a click handler, or post your own submit —
+a second handler fights the injected one and the button appears dead.
 
-```html
-<script>
-  (function () {
-    var GLY = { approve: "✓", comment: "✎", reject: "✗" };
-
-    // Click delegation: action buttons set data-state on the parent item;
-    // clicking the same action again toggles it off. Comment shows textarea.
-    document.addEventListener("click", function (e) {
-      var btn = e.target.closest("[data-action]");
-      if (btn) {
-        var item = btn.closest("[data-shelly-item]");
-        if (!item) return;
-        var action = btn.getAttribute("data-action");
-        var current = item.getAttribute("data-state");
-        var ta = item.querySelector("textarea[data-comment]");
-        if (current === action) {
-          item.removeAttribute("data-state");
-          if (ta) ta.style.display = "none";
-          return;
-        }
-        item.setAttribute("data-state", action);
-        if (ta) ta.style.display = (action === "comment") ? "block" : "none";
-        if (action === "comment" && ta) setTimeout(function () { ta.focus(); }, 0);
-        return;
-      }
-      var submitBtn = e.target.closest("[data-shelly-submit]");
-      if (submitBtn) {
-        var title = submitBtn.getAttribute("data-shelly-submit") || "Review feedback";
-        var items = document.querySelectorAll("[data-shelly-item][data-state]");
-        if (items.length === 0) return;
-        var lines = ["Re: " + title, ""];
-        items.forEach(function (it) {
-          var state = it.getAttribute("data-state");
-          var label = it.getAttribute("data-item-label") || "(unlabeled)";
-          lines.push(GLY[state] + " " + label);
-          if (state === "comment") {
-            var t = it.querySelector("textarea[data-comment]");
-            if (t && t.value.trim()) {
-              t.value.trim().split("\n").forEach(function (l) { lines.push("   " + l); });
-            }
-          }
-        });
-        parent.postMessage({
-          source: "shelly-artifact",
-          kind: "submit",
-          text: lines.join("\n")
-        }, "*");
-      }
-    });
-  })();
-</script>
-```
+The full source lives in `references/interaction-helper.md` if you ever need to read it
+(a stale plugin install that cannot inject, or debugging). You should not need to.
 
 ### Compiled output shape
 
@@ -1178,12 +1067,8 @@ Avoid the template-y look. Action buttons should:
 - Tint per-state via `[data-state="approve|comment|reject"]` on the item — e.g. coloured
   left border + filled active button. Subtle, not loud.
 - Reveal the textarea inline under the item (not as a modal) when comment is selected.
-- **Keep the comment textarea hidden by default** (`display:none`), revealed only on ✎.
-  GOTCHA: a rule like `.item textarea { display:block }` overrides the `hidden` attribute
-  and leaves the box always-open — which makes ✎ look dead and lets typed text be dropped
-  on submit (the item never gets `data-state="comment"`). The helper now toggles
-  `style.display` inline (and force-hides on load) so this can't bite, but don't author a
-  default-visible textarea anyway.
+- The comment textarea is revealed inline under the item on ✎ — the injected helper
+  toggles it, so do not author a default-visible one.
 
 The whole artifact should still pass the [design-quality](../../../README.md) bar —
 this is not a stock todo widget.
@@ -1232,189 +1117,6 @@ so a Submit button can safely live next to other UI):
 <button data-shelly-submit="Comments on session recap">Submit → ⌘V</button>
 ```
 
-### Required ambient-comments helper snippet
-
-Drop this in addition to (not instead of) the size-reporter snippet. Safe to
-include even when there's no `data-shelly-commentable` wrapper present — the
-helper no-ops in that case:
-
-```html
-<style>
-  [data-shelly-commentable] .shelly-commentable {
-    position: relative; border-radius: 5px; cursor: text;
-    transition: background 140ms ease, box-shadow 140ms ease;
-  }
-  /* Hover-bridge: extend the hover hit area 36 px into the left gutter so
-     the cursor doesn't leave :hover while travelling toward the 💬 icon. */
-  .shelly-commentable::before {
-    content: ""; position: absolute;
-    top: 0; left: -36px; width: 36px; height: 100%;
-  }
-  .shelly-commentable:hover {
-    background: rgba(182,120,29,0.07); box-shadow: inset 2px 0 0 #b6781d;
-  }
-  .shelly-commentable.has-comment {
-    background: rgba(46,125,82,0.05); box-shadow: inset 2px 0 0 #2e7d52;
-  }
-  .shelly-ask-btn {
-    position: absolute; left: -36px; top: 50%; transform: translateY(-50%);
-    width: 26px; height: 26px; padding: 0;
-    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #6e655b;
-    border-radius: 6px; cursor: pointer;
-    display: none; align-items: center; justify-content: center;
-    font-size: 12px; box-shadow: 0 4px 10px -6px rgba(26,23,20,0.4);
-  }
-  .shelly-commentable:hover > .shelly-ask-btn,
-  .shelly-commentable.has-comment > .shelly-ask-btn { display: inline-flex; }
-  .shelly-commentable.has-comment > .shelly-ask-btn {
-    color: #2e7d52; border-color: #2e7d52;
-  }
-  .shelly-composer {
-    margin: 6px 0 10px; padding: 10px 11px;
-    background: #fff; border: 1px solid #b6781d; border-radius: 8px;
-    box-shadow: 0 10px 24px -16px rgba(26,23,20,0.5);
-  }
-  .shelly-composer .ref {
-    font: 600 11px/1.4 ui-monospace, Menlo, monospace; color: #6e655b;
-    border-left: 2px solid #b6781d; padding: 4px 8px; margin-bottom: 6px;
-    background: rgba(182,120,29,0.07); border-radius: 0 4px 4px 0;
-  }
-  .shelly-composer textarea {
-    display: block; width: 100%; min-height: 64px; padding: 8px 10px;
-    font: 13px/1.5 -apple-system, system-ui, sans-serif;
-    background: #f4f1ec; color: #1a1714;
-    border: 1px solid rgba(26,23,20,0.2); border-radius: 6px;
-    outline: none; resize: vertical; box-sizing: border-box;
-  }
-  .shelly-composer textarea:focus { border-color: #b6781d; }
-  .shelly-composer .row {
-    display: flex; justify-content: space-between; gap: 8px; margin-top: 8px;
-  }
-  .shelly-composer button {
-    font: 600 11.5px/1 -apple-system, system-ui, sans-serif;
-    padding: 7px 11px; border-radius: 6px; cursor: pointer;
-    border: 1px solid rgba(26,23,20,0.2); background: #fff; color: #1a1714;
-  }
-  .shelly-composer button.save {
-    background: #1a1714; color: #f4f1ec; border-color: #1a1714;
-  }
-  .shelly-composer button.delete {
-    color: #6e655b; border-color: transparent; background: transparent;
-  }
-  .shelly-annotation {
-    margin: 4px 0 10px; padding: 7px 10px;
-    background: rgba(46,125,82,0.08); border-left: 2px solid #2e7d52;
-    border-radius: 0 6px 6px 0; color: #1a1714;
-    font-size: 12.5px; line-height: 1.5; cursor: pointer;
-  }
-  .shelly-annotation::before { content: "💬 "; }
-</style>
-<script>
-  (function () {
-    var root = document.querySelector("[data-shelly-commentable]");
-    if (!root) return;
-    var BLOCK_SELECTOR = "p, li, h2, h3, h4, blockquote, pre, [data-shelly-block]";
-    var blocks = Array.prototype.slice.call(root.querySelectorAll(BLOCK_SELECTOR))
-      .filter(function (b) {   // an outer marked card must not double-icon its inner text
-        return !(b.parentElement && b.parentElement.closest(BLOCK_SELECTOR));
-      });
-    var comments = new Map();
-    var open = null;
-
-    blocks.forEach(function (b, i) {
-      b.classList.add("shelly-commentable");
-      b.dataset.cBlockId = "b" + i;
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "shelly-ask-btn";
-      btn.title = "Comment on this block";
-      btn.textContent = "💬";
-      btn.addEventListener("click", function (e) { e.stopPropagation(); openFor(b); });
-      b.appendChild(btn);
-      b.addEventListener("click", function (e) {
-        if (btn.contains(e.target)) return;
-        if (!e.shiftKey) return;
-        openFor(b);
-      });
-    });
-
-    function snippet(b) {
-      var c = b.cloneNode(true);
-      var x = c.querySelector(".shelly-ask-btn"); if (x) x.remove();
-      var t = (c.textContent || "").replace(/\s+/g, " ").trim();
-      return t.length > 80 ? t.slice(0, 77) + "…" : t;
-    }
-    function closeOpen() { if (open) { open.remove(); open = null; } }
-    function openFor(b) {
-      closeOpen();
-      var id = b.dataset.cBlockId;
-      var box = document.createElement("div");
-      box.className = "shelly-composer";
-      box.innerHTML =
-        '<div class="ref"></div>' +
-        '<textarea placeholder="Your question or comment about this block…"></textarea>' +
-        '<div class="row">' +
-          '<button type="button" class="delete">Discard</button>' +
-          '<div style="display:flex;gap:6px;">' +
-            '<button type="button" class="cancel">Cancel</button>' +
-            '<button type="button" class="save">Save</button>' +
-          '</div>' +
-        '</div>';
-      box.querySelector(".ref").textContent = snippet(b);
-      b.parentNode.insertBefore(box, b.nextSibling);
-      open = box;
-      var ta = box.querySelector("textarea");
-      ta.value = comments.get(id) || "";
-      setTimeout(function () { ta.focus(); }, 60);
-      box.querySelector(".save").addEventListener("click", function () {
-        var v = ta.value.trim();
-        if (v) { comments.set(id, v); b.classList.add("has-comment"); renderAnno(b, v); }
-        else   { comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); }
-        closeOpen();
-      });
-      box.querySelector(".cancel").addEventListener("click", closeOpen);
-      box.querySelector(".delete").addEventListener("click", function () {
-        comments.delete(id); b.classList.remove("has-comment"); removeAnno(b); closeOpen();
-      });
-    }
-    function renderAnno(b, t) {
-      removeAnno(b);
-      var note = document.createElement("div");
-      note.className = "shelly-annotation";
-      note.dataset.forBlock = b.dataset.cBlockId;
-      note.textContent = t;
-      note.addEventListener("click", function () { openFor(b); });
-      b.parentNode.insertBefore(note, b.nextSibling);
-    }
-    function removeAnno(b) {
-      var n = b.parentNode.querySelector(
-        '.shelly-annotation[data-for-block="' + b.dataset.cBlockId + '"]'
-      );
-      if (n) n.remove();
-    }
-
-    document.addEventListener("click", function (e) {
-      var submitBtn = e.target.closest("[data-shelly-submit]");
-      if (!submitBtn || comments.size === 0) return;
-      var title = submitBtn.getAttribute("data-shelly-submit") || "Comments";
-      var lines = ["Re: " + title, ""];
-      blocks.forEach(function (b) {
-        var id = b.dataset.cBlockId;
-        if (!comments.has(id)) return;
-        lines.push("On: " + JSON.stringify(snippet(b)));
-        comments.get(id).split("\n").forEach(function (l) { lines.push("    " + l); });
-        lines.push("");
-      });
-      parent.postMessage({
-        source: "shelly-artifact",
-        kind: "submit",
-        text: lines.join("\n")
-      }, "*");
-    });
-  })();
-</script>
-```
-
 ### Layout note (margin for the 💬 icon)
 
 The icon floats in a negative left margin (`left: -36px`). The wrapping container
@@ -1451,9 +1153,8 @@ whole thing back.
 ### When to include ambient comments by default
 
 Default ON for any informational artifact longer than ~3 blocks (a multi-paragraph
-recap, a sectioned briefing, an explainer with code). The cost is small — ~150
-lines of CSS + JS, all dead until the user hovers — and it converts every
-informational artifact from a one-way wall into a thing the user can ask back
+recap, a sectioned briefing, an explainer with code). It now costs nothing to include —
+the helper is injected either way — and it converts every informational artifact from a one-way wall into a thing the user can ask back
 about without leaving the overlay.
 
 Default OFF for: pills, single-card status flips, decision artifacts (use the
@@ -1465,10 +1166,10 @@ least one of them belongs on almost every artifact.
 
 ## 4.3 · The unified helper (both comments AND decisions in one submit)
 
-When one artifact carries **both** ambient-commentable content **and** a Decide ballot, the two
-single-purpose helpers above would fight over `data-shelly-submit`. Use the **combined
-helper** instead: it gathers block-comments *and* item-decisions into one pasteable payload,
-sectioned as `— Questions / comments —` then `— Decisions —`.
+There is ONE helper and it is injected: it carries ambient comments *and* the Decide ballot,
+and gathers block-comments *and* item-decisions into a single submit, sectioned as
+`— Questions / comments —` then `— Decisions —`. Nothing to choose and nothing to paste —
+this section is the MARKUP the helper binds to, which is the part that is yours.
 
 **Critical wiring rule:** put `data-shelly-commentable` only on the **content** pages/blocks,
 never on the Next-steps ballot, so the two behaviours don't double up on the same blocks.
@@ -1516,21 +1217,19 @@ wants.
 If you paste a copy anyway, nothing breaks — whichever copy runs second stands down, so two
 copies never fight — but it is ~860 lines of waste and the reason it used to go wrong.
 
-The single-purpose ambient-comments and review-form snippets above remain valid for a **pure**
-recap or a **pure** decision list; the unified helper supersedes them whenever one artifact
-carries both.
+The same helper serves a pure recap (comments only) and a pure decision list (ballot only) —
+it no-ops on whichever markup is absent, so a page never carries wiring it does not use.
 
 ## 4.4 · Buttons must NEVER be dead (non-negotiable)
 
 A review surface whose ✓/✎/✗ buttons don't respond is a broken artifact — it strands the
 user with a decision form they can't use. This must never ship. Two hard rules:
 
-1. **Always include the matching helper script verbatim** (the review helper §4.1, the ambient
-   helper §4.2, or the unified helper §4.3 from `references/interaction-helper.md`) in any
-   artifact that has `[data-action]` buttons. The buttons are inert markup on their own — *the
-   helper is what makes them click*. Don't hand-roll a partial handler; don't drop the helper to
-   "save space"; don't use the ambient-comments-only helper (it has no `[data-action]`
-   handling) on a page that has review buttons.
+1. **Mark them up correctly and let the helper arrive.** Every `[data-action]` button sits
+   inside a `[data-shelly-item]` that carries a `data-item-label`, and exactly one
+   `[data-shelly-submit]` exists. The injected helper binds all three. Do NOT paste a helper
+   or hand-roll a handler — a second one fights the injected helper on the same click and the
+   button reads as dead, which is the exact failure this rule exists to prevent.
 2. **Keep every review item reachable.** In a multi-page document (wizard or sidebar), buttons on
    a `display:none` page can't be clicked until that page is shown — fine, but never leave a
    ballot on a page with no nav link to it. When in doubt, **put the decision surface on a
@@ -1540,7 +1239,7 @@ user with a decision form they can't use. This must never ship. Two hard rules:
 
 Confirm all four, every time:
 
-- [ ] The interaction helper `<script>` is present and **unedited** (copy-paste, don't retype).
+- [ ] No hand-rolled helper or click handler (the injected one is the only one).
 - [ ] Every `[data-action]` button sits inside a `[data-shelly-item]` ancestor.
 - [ ] Exactly one `[data-shelly-submit]` button exists.
 - [ ] No element with `position:fixed`/absolute overlaps the buttons at load (the
@@ -1714,6 +1413,22 @@ Follow it when nothing better suggests itself; depart when the content wants a d
 
 ---
 
+## 6.1 · Type pairing (the house default)
+
+The bundled pairing is the default and carries the identity: **Newsreader** = display/headlines,
+**Inter** = reading/body, **JetBrains Mono** = kickers, labels, edition lines, file chips. Load
+the faces via the bundled `fonts.css` (see §7.7) with system fallbacks. A pattern may theme
+*within* this — but reach past the pairing only for a real reason, not a reflex.
+
+## 6.2 · One semantic accent per page (blob canvas exempted)
+
+One artifact, one accent, used with meaning (status/type) — not decoration. Accent ∈ blue
+`#3D7EFF`, amber `#F2B84B`, clay `#D98158`, mint `#4DAA7D` (each with a darker ink variant for
+text). **The one sanctioned exception is the blob canvas** (§3.2), where each blob takes its own
+palette color used semantically — lively, never a clown suite.
+
+---
+
 # 7 · Emit, surface, bundled assets, verify
 
 ## 7.1 · How to emit
@@ -1765,27 +1480,18 @@ hand-assemble an artifact, don't drop it.
 ## 7.3 · Required in every artifact (so the overlay sizes it)
 
 The overlay loads artifacts in a sandboxed, opaque-origin iframe and **cannot measure
-them** — each artifact must self-report its size. Mark the main wrapper with
-`data-fit-root` (definite width, height flows), give `html, body` a background, hide the
-root scrollbar, and include this snippet at the end of `<body>`:
+them**, so an artifact must self-report its size. The reporter and the root-scrollbar
+hiding are **injected** — what you still owe is what the injector consumes:
 
-```html
-<style>
-  html { scrollbar-width: none; }
-  html::-webkit-scrollbar { width: 0; height: 0; display: none; }
-</style>
-<script>
-  (function () {
-    var el = document.querySelector("[data-fit-root]") || document.body;
-    var post = function () {
-      parent.postMessage({ source: "shelly-artifact", kind: "size",
-        w: Math.ceil(el.scrollWidth), h: Math.ceil(el.scrollHeight) }, "*");
-    };
-    if (typeof ResizeObserver !== "undefined") new ResizeObserver(post).observe(el);
-    addEventListener("load", post); post();
-  })();
-</script>
-```
+- **`data-fit-root` on the main wrapper**, with a definite width and height left to flow.
+  Without it the reporter falls back to `<body>` and the 💬 markup has nothing to attach
+  to, so this one is load-bearing.
+- **a background on `html, body`** — the app shade `oklch(0.945 0.014 60)` unless the
+  artifact declares a curated shell (§5). The injected fallback is zero-specificity
+  (`:where()`), so anything you set wins; it only paints when you set nothing.
+
+Inner scrollers (code blocks, wide tables) keep their own bars — only the ROOT one is
+hidden, so wrap wide content in its own `overflow-x: auto` container.
 
 ## 7.4 · Metadata block (so feedback on this artifact is self-identifying)
 
